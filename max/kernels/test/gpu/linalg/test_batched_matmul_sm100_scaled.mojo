@@ -271,7 +271,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
+        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](
@@ -288,7 +288,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
 
     batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](c_ref, a, b, a_scales, b_scales, ctx)
 
@@ -520,7 +520,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     ctx.synchronize()
 
     batched_matmul_dynamic_scaled_fp8_naive[
-        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](c_ref, a, b, a_scales, b_scales, ctx)
 
@@ -554,8 +554,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 256, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 256, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -568,8 +568,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 32, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 32, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -583,8 +583,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.float32,
-            umma_shape = Index(64, 128, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 128, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -598,8 +598,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.float32,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -613,8 +613,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 16, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 16, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -628,8 +628,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 8, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 8, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -643,8 +643,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -658,8 +658,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -672,8 +672,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             use_epilogue=True,
         ](
@@ -689,22 +689,22 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
-            B = Int(128),
-            N = Int(128),
-            K = Int(512),
+            B=Int(128),
+            N=Int(128),
+            K=Int(512),
         ](ctx, 12)
 
         test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
-            B = Int(128),
-            N = Int(512),
-            K = Int(128),
+            B=Int(128),
+            N=Int(512),
+            K=Int(128),
         ](ctx, 12)

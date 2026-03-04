@@ -224,8 +224,8 @@ fn mha_cross_gpu_naive[
     //,
     rank: Int,
 ](
-    output: TileTensor[address_space = AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    output: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     q_input_row_offsets: TileTensor[DType.uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,
@@ -301,8 +301,8 @@ fn mha_cross_gpu_naive[
     var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.numel(), owning=False)
 
     comptime kernel_0 = _bmm0_bs[
-        QLayoutType = q.LayoutType,
-        KVLayoutType = kv_input_row_offsets.LayoutType,
+        QLayoutType=q.LayoutType,
+        KVLayoutType=kv_input_row_offsets.LayoutType,
         type_of(k),
         mask_t,
         q_type,
@@ -351,8 +351,8 @@ fn mha_cross_gpu_naive[
     )
 
     comptime kernel_1 = _bmm1_bs[
-        QLayoutType = q.LayoutType,
-        KVLayoutType = kv_input_row_offsets.LayoutType,
+        QLayoutType=q.LayoutType,
+        KVLayoutType=kv_input_row_offsets.LayoutType,
         type_of(v),
         p_type,
         output.dtype,

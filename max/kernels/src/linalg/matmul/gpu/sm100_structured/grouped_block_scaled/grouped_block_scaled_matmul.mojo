@@ -112,14 +112,14 @@ fn _convert_input_to_batched_tensor[
     tensor.dtype,
     reshape_layout,
     tensor.origin,
-    address_space = tensor.address_space,
+    address_space=tensor.address_space,
 ]:
     """Convert 2D tensor to 3D batched tensor with batch=1."""
     return LayoutTensor[
         dtype,
         reshape_layout,
         tensor.origin,
-        address_space = tensor.address_space,
+        address_space=tensor.address_space,
     ](
         tensor.ptr,
         RuntimeLayout[reshape_layout].row_major(
@@ -445,7 +445,7 @@ fn grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -463,7 +463,7 @@ fn grouped_block_scaled_matmul[
         KernelType.ATmaTile.tile_layout,
         KernelType.ATmaTile.desc_layout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_tensor_batched)
 
     # B matrix TMA
@@ -474,7 +474,7 @@ fn grouped_block_scaled_matmul[
         KernelType.BTmaTile.tile_layout,
         KernelType.BTmaTile.desc_layout,
         b_tma_tile_shape,
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_tensor_batched)
 
     # C matrix TMA
@@ -485,7 +485,7 @@ fn grouped_block_scaled_matmul[
         KernelType.CTmaTile.tile_layout,
         KernelType.CTmaTile.desc_layout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c_tensor_batched)
 
     # Scaling factors TMA - 5D tensors (using converted batched tensors)

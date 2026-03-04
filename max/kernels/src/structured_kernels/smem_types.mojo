@@ -54,7 +54,7 @@ comptime SMemTile[
     _dtype,
     layout,
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
     element_layout=element_layout,
     layout_int_type=layout_int_type,
     linear_idx_type=linear_idx_type,
@@ -77,7 +77,7 @@ comptime RegTile[
     _dtype,
     layout,
     MutAnyOrigin,
-    address_space = AddressSpace.LOCAL,
+    address_space=AddressSpace.LOCAL,
     element_layout=element_layout,
     layout_int_type=layout_int_type,
     linear_idx_type=linear_idx_type,
@@ -87,7 +87,7 @@ comptime RegTile[
 """Type alias for register (local memory) tile tensors."""
 
 comptime SMemBarrier = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
+    SharedMemBarrier, address_space=AddressSpace.SHARED
 ]
 """Type alias for shared memory barrier pointer."""
 
@@ -103,7 +103,7 @@ comptime SMemTileIter[
     dtype,
     layout,
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
     alignment=128,
 ]
 
@@ -126,7 +126,7 @@ struct SMemTileArray[
     comptime Tile = SMemTile[
         Self.dtype,
         Self.layout,
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
 
     comptime num_elements = Self.layout.size() * Self.num_tiles
@@ -136,7 +136,7 @@ struct SMemTileArray[
     comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(
@@ -155,7 +155,7 @@ struct SMemTileArray[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -199,8 +199,8 @@ struct SMemTileArray[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -214,7 +214,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
     """
 
     comptime ptr_type = UnsafePointer[
-        Self.type, address_space = AddressSpace.SHARED
+        Self.type, address_space=AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
     comptime Storage = InlineArray[Self.type, Self.size]
@@ -266,7 +266,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
             Self.len(),
             Self.type,
             alignment=alignment,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -275,5 +275,5 @@ comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
 comptime SMemPtr[type: AnyType] = UnsafePointer[
-    type, address_space = AddressSpace.SHARED
+    type, address_space=AddressSpace.SHARED
 ]

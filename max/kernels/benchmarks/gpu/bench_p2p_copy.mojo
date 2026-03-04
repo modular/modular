@@ -347,7 +347,7 @@ fn main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
     comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
     comptime simd_width = (
-        simd_width_of[dtype, target = get_gpu_target()]() if store_width
+        simd_width_of[dtype, target=get_gpu_target()]() if store_width
         == 0 else store_width
     )
 

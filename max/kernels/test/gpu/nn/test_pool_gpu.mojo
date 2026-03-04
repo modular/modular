@@ -150,7 +150,7 @@ fn pool[
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
     if pool_method == PoolMethod.MAX:
-        max_pool_gpu[int_type = DType.int32](
+        max_pool_gpu[int_type=DType.int32](
             ctx,
             d_input,
             filter_tensor,
@@ -159,7 +159,7 @@ fn pool[
             paddings_tensor,
             d_output,
         )
-        max_pool[int_type = DType.int32](
+        max_pool[int_type=DType.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -168,7 +168,7 @@ fn pool[
             h_output_ref,
         )
     else:
-        avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool_gpu[int_type=DType.int32, count_boundary=count_boundary](
             ctx,
             d_input,
             filter_tensor,
@@ -177,7 +177,7 @@ fn pool[
             paddings_tensor,
             d_output,
         )
-        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -258,7 +258,7 @@ fn pool_ceil_test[
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
     if pool_method == PoolMethod.MAX:
-        max_pool_gpu[int_type = DType.int32](
+        max_pool_gpu[int_type=DType.int32](
             ctx,
             d_input,
             filter_tensor,
@@ -268,7 +268,7 @@ fn pool_ceil_test[
             d_output,
             ceil_mode,
         )
-        max_pool[int_type = DType.int32](
+        max_pool[int_type=DType.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -278,7 +278,7 @@ fn pool_ceil_test[
             ceil_mode,
         )
     else:
-        avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool_gpu[int_type=DType.int32, count_boundary=count_boundary](
             ctx,
             d_input,
             filter_tensor,
@@ -288,7 +288,7 @@ fn pool_ceil_test[
             d_output,
             ceil_mode,
         )
-        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -371,7 +371,7 @@ fn test_avg_pool_2d_with_padding_gpu[
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
-    avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
+    avg_pool_gpu[int_type=DType.int32, count_boundary=count_boundary](
         ctx,
         d_input,
         filter_tensor,
@@ -380,7 +380,7 @@ fn test_avg_pool_2d_with_padding_gpu[
         paddings_tensor,
         d_output,
     )
-    avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+    avg_pool[int_type=DType.int32, count_boundary=count_boundary](
         input_tensor,
         filter_tensor,
         stride_tensor,
@@ -460,7 +460,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
-    max_pool_gpu[int_type = DType.int32](
+    max_pool_gpu[int_type=DType.int32](
         ctx,
         d_input,
         filter_tensor,
@@ -469,7 +469,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
         paddings_tensor,
         d_output,
     )
-    max_pool[int_type = DType.int32](
+    max_pool[int_type=DType.int32](
         input_tensor,
         filter_tensor,
         stride_tensor,

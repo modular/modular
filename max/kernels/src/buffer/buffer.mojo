@@ -261,7 +261,7 @@ struct NDBuffer[
     var data: UnsafePointer[
         Scalar[Self.dtype],
         Self.origin,
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
@@ -289,7 +289,7 @@ struct NDBuffer[
         ptr: UnsafePointer[
             Scalar[Self.dtype],
             Self.origin,
-            address_space = Self.address_space,
+            address_space=Self.address_space,
         ],
     ):
         """Constructs an NDBuffer with statically known rank, shapes and
@@ -322,9 +322,9 @@ struct NDBuffer[
             ImmutOrigin(other.origin),
             other.shape,
             other.strides,
-            alignment2 = other.alignment2,
-            address_space = other.address_space,
-            exclusive = other.exclusive,
+            alignment2=other.alignment2,
+            address_space=other.address_space,
+            exclusive=other.exclusive,
         ],
     ):
         """Implicitly cast a mutable NDBuffer to immutable.
@@ -360,7 +360,7 @@ struct NDBuffer[
         ptr: UnsafePointer[
             Scalar[Self.dtype],
             Self.origin,
-            address_space = Self.address_space,
+            address_space=Self.address_space,
         ],
         dynamic_shape: IndexList[Self.rank, ...],
     ):
@@ -411,7 +411,7 @@ struct NDBuffer[
         ptr: UnsafePointer[
             Scalar[Self.dtype],
             Self.origin,
-            address_space = Self.address_space,
+            address_space=Self.address_space,
         ],
         dynamic_shape: IndexList[Self.rank, ...],
         dynamic_stride: IndexList[Self.rank, ...],
@@ -466,7 +466,7 @@ struct NDBuffer[
         ptr: UnsafePointer[
             Scalar[Self.dtype],
             Self.origin,
-            address_space = Self.address_space,
+            address_space=Self.address_space,
         ],
         one_d_size: Int,
     ):
@@ -485,9 +485,9 @@ struct NDBuffer[
         target_origin,
         Self.shape,
         Self.strides,
-        alignment2 = Self.alignment2,
-        address_space = Self.address_space,
-        exclusive = Self.exclusive,
+        alignment2=Self.alignment2,
+        address_space=Self.address_space,
+        exclusive=Self.exclusive,
     ]
     """Type alias for casting this buffer to a different origin.
 
@@ -681,7 +681,7 @@ struct NDBuffer[
     ) -> UnsafePointer[
         Scalar[Self.dtype],
         Self.origin,
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]:
         """Computes the NDBuffer's offset using the index positions provided.
 
@@ -700,7 +700,7 @@ struct NDBuffer[
     ) -> UnsafePointer[
         Scalar[Self.dtype],
         Self.origin,
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]:
         comptime assert Self.rank <= _MAX_RANK
         return self.data + _compute_ndbuffer_offset(self, idx.as_tuple())
@@ -711,7 +711,7 @@ struct NDBuffer[
     ) -> UnsafePointer[
         Scalar[Self.dtype],
         Self.origin,
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]:
         """Computes the NDBuffer's offset using the index positions provided.
 
@@ -756,7 +756,7 @@ struct NDBuffer[
         Self.rank,
         Self.origin,
         DimList(tile_sizes),
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]:
         """Returns an n-d tile "slice" of the buffer of size tile_sizes at
            coords.
@@ -803,7 +803,7 @@ struct NDBuffer[
             Self.rank,
             Self.origin,
             DimList(tile_sizes),
-            address_space = Self.address_space,
+            address_space=Self.address_space,
         ](
             self.data + offset,
             dynamic_shape=dyn_shape,
@@ -881,7 +881,7 @@ struct NDBuffer[
         """
         comptime assert idx.size == Self.rank, "invalid index size"
         return self.load[width=width, alignment=alignment](
-            rebind[IndexList[Self.rank, element_type = idx.element_type]](
+            rebind[IndexList[Self.rank, element_type=idx.element_type]](
                 idx
             ).as_tuple()
         )
@@ -919,11 +919,11 @@ struct NDBuffer[
             Self.dtype,
             Self.rank,
             _,
-            shape = Self.shape,
-            strides = Self.strides,
-            alignment2 = Self.alignment2,
-            address_space = Self.address_space,
-            exclusive = Self.exclusive,
+            shape=Self.shape,
+            strides=Self.strides,
+            alignment2=Self.alignment2,
+            address_space=Self.address_space,
+            exclusive=Self.exclusive,
         ],
         idx: IndexList[Self.rank, ...],
         val: Scalar[Self.dtype],
@@ -943,11 +943,11 @@ struct NDBuffer[
             Self.dtype,
             Self.rank,
             _,
-            shape = Self.shape,
-            strides = Self.strides,
-            alignment2 = Self.alignment2,
-            address_space = Self.address_space,
-            exclusive = Self.exclusive,
+            shape=Self.shape,
+            strides=Self.strides,
+            alignment2=Self.alignment2,
+            address_space=Self.address_space,
+            exclusive=Self.exclusive,
         ],
         *idx: Int,
         val: Scalar[Self.dtype],
@@ -973,11 +973,11 @@ struct NDBuffer[
             Self.dtype,
             Self.rank,
             _,
-            shape = Self.shape,
-            strides = Self.strides,
+            shape=Self.shape,
+            strides=Self.strides,
             alignment2=_alignment,
-            address_space = Self.address_space,
-            exclusive = Self.exclusive,
+            address_space=Self.address_space,
+            exclusive=Self.exclusive,
         ],
         idx: IndexList[Self.rank, ...],
         val: SIMD[Self.dtype, width],
@@ -1011,11 +1011,11 @@ struct NDBuffer[
             Self.dtype,
             Self.rank,
             _,
-            shape = Self.shape,
-            strides = Self.strides,
+            shape=Self.shape,
+            strides=Self.strides,
             alignment2=_alignment,
-            address_space = Self.address_space,
-            exclusive = Self.exclusive,
+            address_space=Self.address_space,
+            exclusive=Self.exclusive,
         ],
         idx: StaticTuple[Int, Self.rank],
         val: SIMD[Self.dtype, width],
@@ -1119,7 +1119,7 @@ struct NDBuffer[
             1,
             Self.origin,
             Self.shape.product(),
-            address_space = Self.address_space,
+            address_space=Self.address_space,
         ],
     ):
         """Constructs a flattened buffer counterpart for this NDBuffer.
@@ -1141,8 +1141,8 @@ struct NDBuffer[
         out result: NDBuffer[
             Self.dtype,
             Self.rank,
-            address_space = Self.address_space,
-            origin = Self.origin,
+            address_space=Self.address_space,
+            origin=Self.origin,
         ],
     ):
         """Rebinds the NDBuffer to one with unknown shape.
@@ -1187,11 +1187,11 @@ struct NDBuffer[
             Self.dtype,
             Self.rank,
             _,
-            shape = Self.shape,
-            strides = Self.strides,
-            alignment2 = Self.alignment2,
-            address_space = Self.address_space,
-            exclusive = Self.exclusive,
+            shape=Self.shape,
+            strides=Self.strides,
+            alignment2=Self.alignment2,
+            address_space=Self.address_space,
+            exclusive=Self.exclusive,
         ],
         val: Scalar[Self.dtype],
     ):
@@ -1241,11 +1241,11 @@ struct NDBuffer[
             Self.dtype,
             Self.rank,
             _,
-            shape = Self.shape,
-            strides = Self.strides,
-            alignment2 = Self.alignment2,
-            address_space = Self.address_space,
-            exclusive = Self.exclusive,
+            shape=Self.shape,
+            strides=Self.strides,
+            alignment2=Self.alignment2,
+            address_space=Self.address_space,
+            exclusive=Self.exclusive,
         ],
         val: Scalar[Self.dtype],
     ):
@@ -1282,7 +1282,7 @@ struct NDBuffer[
                 Self.shape.product[Self.rank]().get(),
                 Self.dtype,
                 alignment=alignment,
-                address_space = Self.address_space,
+                address_space=Self.address_space,
             ]()
             .unsafe_mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin]()

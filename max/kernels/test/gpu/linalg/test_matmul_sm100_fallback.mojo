@@ -175,7 +175,7 @@ def test_matmul_sm100_fallback[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
+        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](c, a, b, ctx)
@@ -235,7 +235,7 @@ def main() raises:
                     dtype,
                     dtype,
                     DType.bfloat16,
-                    umma_shape = Index(64, 128, MMA_K),
+                    umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -249,7 +249,7 @@ def main() raises:
                     dtype,
                     dtype,
                     DType.bfloat16,
-                    umma_shape = Index(64, 128, MMA_K),
+                    umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -265,7 +265,7 @@ def main() raises:
                     dtype,
                     dtype,
                     DType.bfloat16,
-                    umma_shape = Index(64, 128, MMA_K),
+                    umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -280,7 +280,7 @@ def main() raises:
                     dtype,
                     dtype,
                     DType.bfloat16,
-                    umma_shape = Index(64, 128, MMA_K),
+                    umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
                     BK=BK,
@@ -298,7 +298,7 @@ def main() raises:
                         dtype,
                         dtype,
                         DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
+                        umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -312,7 +312,7 @@ def main() raises:
                         dtype,
                         dtype,
                         DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
+                        umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -326,7 +326,7 @@ def main() raises:
                         dtype,
                         dtype,
                         DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
+                        umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -340,7 +340,7 @@ def main() raises:
                         dtype,
                         dtype,
                         DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
+                        umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](
@@ -354,7 +354,7 @@ def main() raises:
                         dtype,
                         dtype,
                         DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
+                        umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
                     ](

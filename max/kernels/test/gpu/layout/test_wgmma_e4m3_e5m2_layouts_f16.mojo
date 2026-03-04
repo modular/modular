@@ -48,14 +48,14 @@ fn wgmma_f16_kernel[
         a_type,
         smem_operand_a_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var smem_operand_b = LayoutTensor[
         b_type,
         smem_operand_b_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.uint32, 2](0)
@@ -83,7 +83,7 @@ fn wgmma_f16_kernel[
             WMMA_K,
             a_type=a_type,
             b_type=b_type,
-            accum_type = DType.float16,
+            accum_type=DType.float16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -225,8 +225,8 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8_e4m3fn,
-        b_type = DType.float8_e4m3fn,
+        a_type=DType.float8_e4m3fn,
+        b_type=DType.float8_e4m3fn,
     ]
     ctx.enqueue_function_experimental[kernel](
         lhs.device_tensor(),
@@ -361,8 +361,8 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8_e5m2,
-        b_type = DType.float8_e5m2,
+        a_type=DType.float8_e5m2,
+        b_type=DType.float8_e5m2,
     ]
 
     ctx.enqueue_function_experimental[kernel](
@@ -498,8 +498,8 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8_e4m3fn,
-        b_type = DType.float8_e5m2,
+        a_type=DType.float8_e4m3fn,
+        b_type=DType.float8_e5m2,
     ]
 
     ctx.enqueue_function_experimental[kernel](
@@ -635,8 +635,8 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type = DType.float8_e5m2,
-        b_type = DType.float8_e4m3fn,
+        a_type=DType.float8_e5m2,
+        b_type=DType.float8_e4m3fn,
     ]
 
     ctx.enqueue_function_experimental[kernel](

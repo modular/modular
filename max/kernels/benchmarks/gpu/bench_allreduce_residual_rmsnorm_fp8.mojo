@@ -369,7 +369,7 @@ fn _verify_add_results[
 
         allreduce[
             ngpus=ngpus,
-            output_lambda = Optional[elementwise_epilogue_type](add_epilogue_v),
+            output_lambda=Optional[elementwise_epilogue_type](add_epilogue_v),
         ](in_bufs, ar_out_bufs[i], rank_sigs, list_of_ctx[i])
     group_end()
 
@@ -552,7 +552,7 @@ fn bench_allreduce_rmsnorm_fp8[
     var length = num_rows * num_cols
 
     # --- Shared buffer setup ---
-    comptime simd_size = simd_width_of[in_dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[in_dtype, target=get_gpu_target()]()
 
     # Per-GPU input CacheBustingBuffers (for allreduce).
     var cb_inputs = List[CacheBustingBuffer[in_dtype]]()
@@ -901,9 +901,7 @@ fn bench_allreduce_rmsnorm_fp8[
 
             allreduce[
                 ngpus=ngpus,
-                output_lambda = Optional[elementwise_epilogue_type](
-                    add_epilogue
-                ),
+                output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
             ](in_bufs, ar_out_bufs[ctx_idx], rank_sigs, ctx_inner)
 
             # Step 2: Fused RMSNorm + FP8 (reads from ar_out which has

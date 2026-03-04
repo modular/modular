@@ -173,14 +173,14 @@ __extension Attention:
             var num_b_rows = Int(kv_tile_num_rows)
 
             var k_buffer = KBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
-                swizzle = Swizzle(3, 0, 4),
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
+                swizzle=Swizzle(3, 0, 4),
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](
                 k_tile,
                 num_b_rows,
@@ -188,12 +188,12 @@ __extension Attention:
             )
 
             var v_buffer = VBufferTransposeLoads[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Int(Self.BN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                tensor_core_mma=Self.get_tensor_core_mma_pv(),
+                BN=Int(Self.BN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
             @parameter
@@ -283,15 +283,15 @@ __extension Attention:
             ) if not not_last_iter else Optional[Int]()
 
             var k_buffer = KBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=swizzle,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                token_gen = Self.token_gen,
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
+                token_gen=Self.token_gen,
             ](
                 k_tile,
                 num_b_rows,
@@ -299,15 +299,15 @@ __extension Attention:
             )
             var v_tile_slice = v_tile.slice[:, : Self.output_depth]()
             var v_buffer = VBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
+                tensor_core_mma=Self.get_tensor_core_mma_pv(),
                 swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Self.output_depth,
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                token_gen = Self.token_gen,
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Self.output_depth,
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
+                token_gen=Self.token_gen,
             ](
                 v_tile_slice,
                 num_b_rows,

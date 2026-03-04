@@ -26,12 +26,12 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=2,
-                reduction = ReduceOp.MAX,
-                scope = Scope.GPU,
-                accum_type = DType.bfloat16,
-                consistency = Consistency.WEAK,
+                reduction=ReduceOp.MAX,
+                scope=Scope.GPU,
+                accum_type=DType.bfloat16,
+                consistency=Consistency.WEAK,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -41,12 +41,12 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
-                reduction = ReduceOp.ADD,
-                scope = Scope.SYSTEM,
-                accum_type = DType.bfloat16,
-                consistency = Consistency.RELAXED,
+                reduction=ReduceOp.ADD,
+                scope=Scope.SYSTEM,
+                accum_type=DType.bfloat16,
+                consistency=Consistency.RELAXED,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -56,12 +56,12 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
-                reduction = ReduceOp.ADD,
-                scope = Scope.SYSTEM,
-                accum_type = DType.bfloat16,
-                consistency = Consistency.RELAXED,
+                reduction=ReduceOp.ADD,
+                scope=Scope.SYSTEM,
+                accum_type=DType.bfloat16,
+                consistency=Consistency.RELAXED,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -71,11 +71,11 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
-                reduction = ReduceOp.ADD,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.RELAXED,
+                reduction=ReduceOp.ADD,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.RELAXED,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -85,13 +85,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
-                reduction = ReduceOp.ADD,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.RELAXED,
-                accum_type = DType.bfloat16,
+                reduction=ReduceOp.ADD,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.RELAXED,
+                accum_type=DType.bfloat16,
                 output_width=2,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -101,13 +101,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
-                reduction = ReduceOp.ADD,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.RELAXED,
-                accum_type = DType.float32,
+                reduction=ReduceOp.ADD,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.RELAXED,
+                accum_type=DType.float32,
                 output_width=2,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -117,13 +117,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
-                reduction = ReduceOp.MAX,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.RELAXED,
-                accum_type = DType.bfloat16,
+                reduction=ReduceOp.MAX,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.RELAXED,
+                accum_type=DType.bfloat16,
                 output_width=2,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -134,13 +134,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=1,
-                reduction = ReduceOp.ADD,
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
-                accum_type = DType.bfloat16,
+                reduction=ReduceOp.ADD,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
+                accum_type=DType.bfloat16,
                 output_width=2,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -150,13 +150,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.float32,
                 count=1,
-                reduction = ReduceOp.MAX,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.WEAK,
-                accum_type = DType.float32,
+                reduction=ReduceOp.MAX,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.WEAK,
+                accum_type=DType.float32,
                 output_width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -166,13 +166,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.float64,
                 count=1,
-                reduction = ReduceOp.ADD,
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
-                accum_type = DType.float64,
+                reduction=ReduceOp.ADD,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
+                accum_type=DType.float64,
                 output_width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -183,13 +183,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=8,
-                reduction = ReduceOp.ADD,
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
-                accum_type = DType.bfloat16,
+                reduction=ReduceOp.ADD,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
+                accum_type=DType.bfloat16,
                 output_width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -199,13 +199,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.float16,
                 count=8,
-                reduction = ReduceOp.MAX,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.WEAK,
-                accum_type = DType.float16,
+                reduction=ReduceOp.MAX,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.WEAK,
+                accum_type=DType.float16,
                 output_width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -215,13 +215,13 @@ def test_multimem_ld_reduce() raises:
             multimem_ld_reduce[
                 DType.float16,
                 count=8,
-                reduction = ReduceOp.ADD,
-                scope = Scope.CLUSTER,
-                consistency = Consistency.RELAXED,
-                accum_type = DType.float16,
+                reduction=ReduceOp.ADD,
+                scope=Scope.CLUSTER,
+                consistency=Consistency.RELAXED,
+                accum_type=DType.float16,
                 output_width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -235,11 +235,11 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.bfloat16,
                 count=2,
-                scope = Scope.BLOCK,
-                consistency = Consistency.WEAK,
+                scope=Scope.BLOCK,
+                consistency=Consistency.WEAK,
                 width=2,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -249,10 +249,10 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.float32,
                 count=4,
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -262,11 +262,11 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.float16,
                 count=4,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.RELEASE,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.RELEASE,
                 width=2,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -276,10 +276,10 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.bfloat16,
                 count=4,
-                scope = Scope.CLUSTER,
-                consistency = Consistency.RELAXED,
+                scope=Scope.CLUSTER,
+                consistency=Consistency.RELAXED,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -290,11 +290,11 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.bfloat16,
                 count=1,
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
                 width=2,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -304,11 +304,11 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.float32,
                 count=1,
-                scope = Scope.SYSTEM,
-                consistency = Consistency.WEAK,
+                scope=Scope.SYSTEM,
+                consistency=Consistency.WEAK,
                 width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -318,11 +318,11 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.float64,
                 count=1,
-                scope = Scope.GPU,
-                consistency = Consistency.RELEASE,
+                scope=Scope.GPU,
+                consistency=Consistency.RELEASE,
                 width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -333,11 +333,11 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.float16,
                 count=8,
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
                 width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 
@@ -347,11 +347,11 @@ def test_multimem_st() raises:
             multimem_st[
                 DType.bfloat16,
                 count=8,
-                scope = Scope.CLUSTER,
-                consistency = Consistency.WEAK,
+                scope=Scope.CLUSTER,
+                consistency=Consistency.WEAK,
                 width=1,
             ],
-            target = H100.target(),
+            target=H100.target(),
         ]().asm
     )
 

@@ -157,7 +157,7 @@ def test_rope_ragged_gpu[
         dtype,
         dtype,
         interleaved=True,
-        target = StaticString("gpu"),
+        target=StaticString("gpu"),
         output_fn=output_fn,
     ](
         x=q_device_tensor.as_any_origin(),

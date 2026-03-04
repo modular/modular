@@ -109,9 +109,9 @@ struct SM100MHA2Q[
 
     # Unified misc barriers type managing all barriers including K/V/O pipelines
     comptime MiscMBarsType = FA4MiscMBars[
-        num_qk_stages = Self.num_qk_stages,
-        num_pv_stages = Self.num_pv_stages,
-        num_kv_stages = Self.config.num_kv_stages,
+        num_qk_stages=Self.num_qk_stages,
+        num_pv_stages=Self.num_pv_stages,
+        num_kv_stages=Self.config.num_kv_stages,
         separate_kv=True,
         use_order_barriers=EnableForcedOrdering,
     ]
@@ -124,25 +124,25 @@ struct SM100MHA2Q[
     comptime UMMA0Type = SM100TensorAccumulatorSS[
         Self.qkv_type,
         Self.accum_type,
-        MMA_M = Self.MMA_M,  # generally 128
-        MMA_N = Self.BN,
-        BK = align_up(Self.depth, Self.config.MMA_K),  # BK in memory depth
-        swizzle_a = Self.config.swizzle_mode,
-        swizzle_b = Self.config.swizzle_mode,
+        MMA_M=Self.MMA_M,  # generally 128
+        MMA_N=Self.BN,
+        BK=align_up(Self.depth, Self.config.MMA_K),  # BK in memory depth
+        swizzle_a=Self.config.swizzle_mode,
+        swizzle_b=Self.config.swizzle_mode,
         transpose_b=True,
-        num_stages = Self.num_qk_stages,
+        num_stages=Self.num_qk_stages,
     ]
     # Second MMA is P@V (V not staged, but P writing can be staged)
     # (BM x BN) @ (BN x depth) -> (BM x depth)
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         Self.qkv_type,
         Self.accum_type,
-        MMA_M = Self.MMA_M,
-        MMA_N = Self.config.padded_depth,
-        BK = Self.BN,
-        swizzle_b = Self.config.swizzle_mode,
+        MMA_M=Self.MMA_M,
+        MMA_N=Self.config.padded_depth,
+        BK=Self.BN,
+        swizzle_b=Self.config.swizzle_mode,
         transpose_b=False,
-        num_stages = Self.num_pv_stages,
+        num_stages=Self.num_pv_stages,
     ]
 
     comptime swizzle_granularity = Self.config.swizzle_mode.bytes() // Self.qkv_dt_size
@@ -243,29 +243,29 @@ struct SM100MHA2Q[
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BM = Self.config.BM // 2,
-            depth = Self.config.depth,
-            group = Self.config.group,
+            BM=Self.config.BM // 2,
+            depth=Self.config.depth,
+            group=Self.config.group,
             decoding=False,
-            num_qk_stages = Self.config.num_qk_stages,
+            num_qk_stages=Self.config.num_qk_stages,
         ],
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN = Self.config.BN,
-            BK = Self.config.BK0,
+            BN=Self.config.BN,
+            BK=Self.config.BK0,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN = Self.config.BN,
-            BK = Self.config.padded_depth,
+            BN=Self.config.BN,
+            BK=Self.config.padded_depth,
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.swizzle_mode,
-            BM = Self.config.BM // 2,
-            BN = Self.config.depth,
+            BM=Self.config.BM // 2,
+            BN=Self.config.depth,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -315,7 +315,7 @@ struct SM100MHA2Q[
         mbar_base = (
             external_memory[
                 SharedMemBarrier,
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
                 alignment=128,
                 name="mha_dynamic_shared_memory",
             ]()
@@ -366,8 +366,8 @@ struct SM100MHA2Q[
                 return
 
             var pos: PositionSummary = PositionSummary.create[
-                ragged = Self.ragged,
-                _is_cache_length_accurate = Self._is_cache_length_accurate,
+                ragged=Self.ragged,
+                _is_cache_length_accurate=Self._is_cache_length_accurate,
             ](kv_lut, seq_info, num_keys_arg, kv_input_row_offsets, max_seq_len)
 
             fa4_softmax[
@@ -401,8 +401,8 @@ struct SM100MHA2Q[
             if not seq_info.is_valid():
                 return
             var pos: PositionSummary = PositionSummary.create[
-                ragged = Self.ragged,
-                _is_cache_length_accurate = Self._is_cache_length_accurate,
+                ragged=Self.ragged,
+                _is_cache_length_accurate=Self._is_cache_length_accurate,
             ](kv_lut, seq_info, num_keys_arg, kv_input_row_offsets, max_seq_len)
             fa4_correction[
                 Self.qkv_type,
@@ -425,8 +425,8 @@ struct SM100MHA2Q[
                 if not seq_info.is_valid():
                     return
                 var pos: PositionSummary = PositionSummary.create[
-                    ragged = Self.ragged,
-                    _is_cache_length_accurate = Self._is_cache_length_accurate,
+                    ragged=Self.ragged,
+                    _is_cache_length_accurate=Self._is_cache_length_accurate,
                 ](
                     kv_lut,
                     seq_info,
@@ -468,8 +468,8 @@ struct SM100MHA2Q[
                     tmem.deallocate()
                     return
                 var pos: PositionSummary = PositionSummary.create[
-                    ragged = Self.ragged,
-                    _is_cache_length_accurate = Self._is_cache_length_accurate,
+                    ragged=Self.ragged,
+                    _is_cache_length_accurate=Self._is_cache_length_accurate,
                 ](
                     kv_lut,
                     seq_info,
@@ -497,11 +497,11 @@ struct SM100MHA2Q[
         mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
     ) -> TileMaskStatus:
         return mask.status(
-            Index[dtype = DType.int32](
+            Index[dtype=DType.int32](
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype = DType.int32](Self.BM, Self.BN),
+            Index[dtype=DType.int32](Self.BM, Self.BN),
         )
 
     @staticmethod
@@ -510,8 +510,8 @@ struct SM100MHA2Q[
         q_smem: SharedMemPointer[Scalar[Self.qkv_type]],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
-            BMN = Self.config.BM // 2,
-            BK = Self.config.BK0,
-            swizzle_mode = Self.config.swizzle_mode,
+            BMN=Self.config.BM // 2,
+            BK=Self.config.BK0,
+            swizzle_mode=Self.config.swizzle_mode,
             is_k_major=True,
         ](q_smem)

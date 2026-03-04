@@ -184,69 +184,69 @@ def test_bf16(ctx: DeviceContext) raises:
     print("=== test_bf16")
 
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=False,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=True,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=False,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=True,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 256, 256, 128)
 
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=False,
-        N = Int(256),
-        K = Int(128),
+        N=Int(256),
+        K=Int(128),
     ](ctx, 1024, 256, 128)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=False,
-        N = Int(256),
-        K = Int(256),
+        N=Int(256),
+        K=Int(256),
     ](ctx, 1024, 256, 256)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=True,
-        N = Int(256),
-        K = Int(1024),
+        N=Int(256),
+        K=Int(1024),
     ](ctx, 1024, 256, 1024)
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.float32,
+        in_type=DType.bfloat16,
+        out_type=DType.float32,
         transpose_b=True,
-        N = Int(1024),
-        K = Int(1024),
+        N=Int(1024),
+        K=Int(1024),
     ](ctx, 1024, 1024, 1024)
 
     test[
-        in_type = DType.bfloat16,
-        out_type = DType.bfloat16,
+        in_type=DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=True,
-        N = Int(284),
-        K = Int(256),
+        N=Int(284),
+        K=Int(256),
     ](ctx, 256, 284, 256)
 
 
@@ -255,10 +255,10 @@ def test_float8[in_type: DType](ctx: DeviceContext) raises:
 
     test[
         in_type=in_type,
-        out_type = DType.bfloat16,
+        out_type=DType.bfloat16,
         transpose_b=True,
-        N = Int(512),
-        K = Int(640),
+        N=Int(512),
+        K=Int(640),
     ](ctx, 480, 512, 640)
 
 
@@ -277,7 +277,7 @@ def test_block_k(ctx: DeviceContext) raises:
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
         )
-        test[config, N = Int(N), K = Int(K)](ctx, m, n, k)
+        test[config, N=Int(N), K=Int(K)](ctx, m, n, k)
 
     comptime block_ks: List[Int] = [32, 64, 128, 256]
 
@@ -324,7 +324,7 @@ def test_warp_k_partitions(ctx: DeviceContext) raises:
         ]
 
         comptime for i in range(len(configs)):
-            test[configs[i], N = Int(N), K = Int(K)](ctx, m, n, k)
+            test[configs[i], N=Int(N), K=Int(K)](ctx, m, n, k)
 
     test_warp_k_partitions[DType.bfloat16, DType.bfloat16, 2048, 2048](
         16, 2048, 2048
@@ -361,7 +361,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
                     config.warp_tile_shape,
                     config.num_warp_k_partitions,
                 )
-                test[config, M = Int(m_val), N = Int(n_val), K = Int(k)](
+                test[config, M=Int(m_val), N=Int(n_val), K=Int(k)](
                     ctx, m_val, n_val, k
                 )
 

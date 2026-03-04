@@ -167,7 +167,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -187,7 +187,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         KernelType.ATmaTile.tile_layout,
         KernelType.ATmaTile.desc_layout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     # fmt: off
@@ -439,7 +439,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -456,7 +456,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         KernelType.ATmaTile_splitk.tile_layout,
         KernelType.ATmaTile_splitk.desc_layout,
         Index(BM // cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     b_tma_op = create_tma_tile[
@@ -467,7 +467,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_device)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
@@ -489,7 +489,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c_device)
 
     # Get the split-K kernel entry point.

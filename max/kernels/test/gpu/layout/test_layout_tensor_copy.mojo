@@ -62,7 +62,7 @@ fn async_copy_kernel[
         DType.float32,
         Layout(IntTuple(BM, BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     smem_tile.copy_from_async(input_tile)
@@ -161,7 +161,7 @@ fn swizzle_copy[
             dtype,
             Layout.row_major(BM, BK),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -323,7 +323,7 @@ fn partial_copy_dram_to_sram_async_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -391,8 +391,8 @@ def run_partial_copy_dram_to_sram_async_tests(ctx: DeviceContext) raises:
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
     test_partial_copy_dram_to_sram_async[
-        layout = Layout.row_major(2, 16),
-        thread_layout = Layout.row_major(2, 4),
+        layout=Layout.row_major(2, 16),
+        thread_layout=Layout.row_major(2, 4),
         block_dim_x=32,
     ](ctx)
 
@@ -400,8 +400,8 @@ def run_partial_copy_dram_to_sram_async_tests(ctx: DeviceContext) raises:
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
     test_partial_copy_dram_to_sram_async[
-        layout = Layout.row_major(2, 16),
-        thread_layout = Layout.row_major(2, 4),
+        layout=Layout.row_major(2, 16),
+        thread_layout=Layout.row_major(2, 4),
         block_dim_x=2,
         block_dim_y=2,
         block_dim_z=32,
@@ -429,7 +429,7 @@ fn copy_dram_to_sram_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -502,8 +502,8 @@ def run_copy_dram_to_sram_tests(ctx: DeviceContext) raises:
     # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
     # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
     test_copy_dram_to_sram[
-        layout = Layout.row_major(8, 8),
-        thread_layout = Layout.row_major(4, 2),
+        layout=Layout.row_major(8, 8),
+        thread_layout=Layout.row_major(4, 2),
         block_dim_x=2,
         block_dim_y=2,
         block_dim_z=2,
@@ -539,7 +539,7 @@ fn copy_sram_to_dram_kernel[
         DType.float32,
         Layout.row_major(M, N),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     arange(smem_tile)
 
@@ -704,7 +704,7 @@ fn copy_local_to_local_kernel[
         DType.float32,
         Layout.row_major(MMA_M, MMA_N * simd_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
 
@@ -713,7 +713,7 @@ fn copy_local_to_local_kernel[
             DType.bfloat16,
             Layout.row_major(MMA_M, MMA_N * simd_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -725,7 +725,7 @@ fn copy_local_to_local_kernel[
     )
 
     copy_local_to_dram[
-        dst_thread_layout = Layout.row_major(
+        dst_thread_layout=Layout.row_major(
             WM // MMA_M, WN // simd_size // MMA_N
         ),
         block_dim_count=block_dim_count,
@@ -848,7 +848,7 @@ fn copy_dram_to_local_kernel[
                 layout.size() // num_active_threads // simd_width, simd_width
             ),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -961,7 +961,7 @@ fn copy_local_to_sram_kernel[
         DType.float32,
         Layout.row_major(MMA_M * simd_size_row, MMA_N * simd_size_col),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
 
@@ -970,14 +970,14 @@ fn copy_local_to_sram_kernel[
             dtype,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(0)
     )
 
     copy_local_to_shared[
-        thread_layout = Layout.row_major(
+        thread_layout=Layout.row_major(
             WM // simd_size_row // MMA_M, WN // simd_size_col // MMA_N
         ),
         num_threads=num_threads,
@@ -988,7 +988,7 @@ fn copy_local_to_sram_kernel[
     )
 
     copy_sram_to_dram[
-        thread_layout = Layout.row_major(
+        thread_layout=Layout.row_major(
             WM // simd_size_row // MMA_M, WN // simd_size_col // MMA_N
         ),
         num_threads=num_threads,

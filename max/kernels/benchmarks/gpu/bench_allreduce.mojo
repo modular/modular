@@ -107,7 +107,7 @@ fn bench_reduce[
     var temp_buffer_num_bytes = ngpus * num_bytes
     var length = num_bytes // size_of[dtype]()
 
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
     var cb_template = CacheBustingBuffer[dtype](
         length, simd_size, list_of_ctx[0], cache_busting
     )
@@ -359,7 +359,7 @@ def main() raises:
     comptime cache_busting = True
 
     # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     comptime if ragged:
         num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()

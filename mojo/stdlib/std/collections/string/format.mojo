@@ -279,7 +279,7 @@ struct _FormatUtils:
         format: StringSlice,
     ) -> Variant[
         _PrecompiledEntriesRuntime[
-            format_origin = ImmutOrigin(format.origin), *Ts
+            format_origin=ImmutOrigin(format.origin), *Ts
         ],
         Error,
     ]:
@@ -300,7 +300,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntriesRuntime[
-        format_origin = ImmutOrigin(format.origin), *Ts
+        format_origin=ImmutOrigin(format.origin), *Ts
     ]:
         """Parses and compiles a format string at runtime.
 

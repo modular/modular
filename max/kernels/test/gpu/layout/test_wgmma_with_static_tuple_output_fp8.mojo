@@ -62,14 +62,14 @@ fn wgmma_kernel_ss[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128

@@ -115,14 +115,14 @@ fn sgemm_warp_tiling_kernel[
         1,
         MutAnyOrigin,
         DimList(BK * BM_padded),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
         MutAnyOrigin,
         DimList(BK * BN),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.

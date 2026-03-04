@@ -65,7 +65,7 @@ fn tma_ragged_store_kernel[
         dtype,
         Layout.row_major(shared_m, shared_n),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -122,14 +122,14 @@ fn test_tma_load_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -171,14 +171,14 @@ fn test_tma_multiple_loads_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -396,7 +396,7 @@ fn test_tma_async_store_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -428,7 +428,7 @@ fn test_tma_async_multiple_store_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -528,7 +528,7 @@ fn test_tma_async_reduce_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -539,7 +539,7 @@ fn test_tma_async_reduce_kernel[
     fence_async_view_proxy()
 
     if thread_idx.x == 0:
-        tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
+        tma_tile.async_reduce[reduction_kind=ReduceOp.ADD](
             tile, (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM)
         )
         cp_async_bulk_commit_group()
@@ -560,7 +560,7 @@ fn test_tma_async_multiple_reduce_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
 
@@ -575,7 +575,7 @@ fn test_tma_async_multiple_reduce_kernel[
         fence_async_view_proxy()
 
         if thread_idx.x == 0:
-            tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
+            tma_tile.async_reduce[reduction_kind=ReduceOp.ADD](
                 tile, (i * tileN, Int(block_idx.y) * tileM)
             )
             cp_async_bulk_commit_group()
@@ -679,7 +679,7 @@ fn test_tma_loads_two_buffers_kernel[
         dtype,
         a_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -687,14 +687,14 @@ fn test_tma_loads_two_buffers_kernel[
         dtype,
         b_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -838,7 +838,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         dtype,
         a_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -846,14 +846,14 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         dtype,
         b_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -997,221 +997,221 @@ def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_load_f32")
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(4, 4),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(4, 4),
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(9, 24),
-            tile_layout = Layout.row_major(3, 8),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(9, 24),
+            tile_layout=Layout.row_major(3, 8),
         ](ctx)
         print("test_tma_load_oob_fill_f32")
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(7, 8),
-            tile_layout = Layout.row_major(4, 4),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(7, 8),
+            tile_layout=Layout.row_major(4, 4),
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(10, 12),
-            tile_layout = Layout.row_major(4, 8),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(10, 12),
+            tile_layout=Layout.row_major(4, 8),
         ](ctx)
 
         print("test_tma_multiple_loads_f32")
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(12, 16),
-            tile_layout = Layout.row_major(4, 4),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(12, 16),
+            tile_layout=Layout.row_major(4, 4),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(24, 80),
-            tile_layout = Layout.row_major(3, 16),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(24, 80),
+            tile_layout=Layout.row_major(3, 16),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_multiple_loads_oob_fill_f32")
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(6, 20),
-            tile_layout = Layout.row_major(4, 8),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(6, 20),
+            tile_layout=Layout.row_major(4, 8),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float32,
-            src_layout = Layout.row_major(9, 60),
-            tile_layout = Layout.row_major(8, 16),
+            dtype=DType.float32,
+            src_layout=Layout.row_major(9, 60),
+            tile_layout=Layout.row_major(8, 16),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_load_f8e4m3fn")
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(8, 32),
-            tile_layout = Layout.row_major(4, 16),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(8, 32),
+            tile_layout=Layout.row_major(4, 16),
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(9, 48),
-            tile_layout = Layout.row_major(3, 16),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(9, 48),
+            tile_layout=Layout.row_major(3, 16),
         ](ctx)
         print("test_tma_load_oob_fill_f8e4m3fn")
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(7, 32),
-            tile_layout = Layout.row_major(4, 16),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(7, 32),
+            tile_layout=Layout.row_major(4, 16),
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(10, 48),
-            tile_layout = Layout.row_major(4, 32),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(10, 48),
+            tile_layout=Layout.row_major(4, 32),
         ](ctx)
 
         print("test_tma_multiple_loads_f8e4m3fn")
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(12, 64),
-            tile_layout = Layout.row_major(4, 16),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(12, 64),
+            tile_layout=Layout.row_major(4, 16),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(24, 160),
-            tile_layout = Layout.row_major(3, 64),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(24, 160),
+            tile_layout=Layout.row_major(3, 64),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_multiple_loads_oob_fill_f8e4m3fn")
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(6, 80),
-            tile_layout = Layout.row_major(4, 16),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(6, 80),
+            tile_layout=Layout.row_major(4, 16),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
-            dtype = DType.float8_e4m3fn,
-            src_layout = Layout.row_major(9, 240),
-            tile_layout = Layout.row_major(8, 64),
+            dtype=DType.float8_e4m3fn,
+            src_layout=Layout.row_major(9, 240),
+            tile_layout=Layout.row_major(8, 64),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_async_store")
         test_tma_async_store[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(4, 4),
-            dst_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(4, 4),
+            dst_layout=Layout.row_major(8, 8),
         ](ctx)
         test_tma_async_store[
-            src_layout = Layout.row_major(32, 24),
-            tile_layout = Layout.row_major(16, 8),
-            dst_layout = Layout.row_major(32, 24),
+            src_layout=Layout.row_major(32, 24),
+            tile_layout=Layout.row_major(16, 8),
+            dst_layout=Layout.row_major(32, 24),
         ](ctx)
 
         print("test_tma_multiple_async_store")
         test_tma_async_store[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(4, 4),
-            dst_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(4, 4),
+            dst_layout=Layout.row_major(8, 8),
             load_along_last_dim=True,
         ](ctx)
         test_tma_async_store[
-            src_layout = Layout.row_major(9, 24),
-            tile_layout = Layout.row_major(3, 8),
-            dst_layout = Layout.row_major(9, 24),
+            src_layout=Layout.row_major(9, 24),
+            tile_layout=Layout.row_major(3, 8),
+            dst_layout=Layout.row_major(9, 24),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_async_store_oob")
         test_tma_async_store[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(6, 8),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(6, 8),
         ](ctx)
         test_tma_async_store[
-            src_layout = Layout.row_major(32, 8),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(26, 8),
+            src_layout=Layout.row_major(32, 8),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(26, 8),
         ](ctx)
         test_tma_async_store[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(6, 4),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(6, 4),
         ](ctx)
         test_tma_async_store[
-            src_layout = Layout.row_major(32, 16),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(26, 12),
+            src_layout=Layout.row_major(32, 16),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(26, 12),
         ](ctx)
 
         print("test_tma_async_reduce")
         test_tma_async_reduce[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(4, 4),
-            dst_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(4, 4),
+            dst_layout=Layout.row_major(8, 8),
         ](ctx)
         test_tma_async_reduce[
-            src_layout = Layout.row_major(9, 24),
-            tile_layout = Layout.row_major(3, 8),
-            dst_layout = Layout.row_major(9, 24),
+            src_layout=Layout.row_major(9, 24),
+            tile_layout=Layout.row_major(3, 8),
+            dst_layout=Layout.row_major(9, 24),
         ](ctx)
 
         print("test_tma_multiple_async_reduce")
         test_tma_async_reduce[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(4, 4),
-            dst_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(4, 4),
+            dst_layout=Layout.row_major(8, 8),
             load_along_last_dim=True,
         ](ctx)
         test_tma_async_reduce[
-            src_layout = Layout.row_major(9, 24),
-            tile_layout = Layout.row_major(3, 8),
-            dst_layout = Layout.row_major(9, 24),
+            src_layout=Layout.row_major(9, 24),
+            tile_layout=Layout.row_major(3, 8),
+            dst_layout=Layout.row_major(9, 24),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_async_reduce_oob")
         test_tma_async_reduce[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(6, 8),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(6, 8),
         ](ctx)
         test_tma_async_reduce[
-            src_layout = Layout.row_major(32, 8),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(26, 8),
+            src_layout=Layout.row_major(32, 8),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(26, 8),
         ](ctx)
         test_tma_async_reduce[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(6, 4),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(6, 4),
         ](ctx)
         test_tma_async_reduce[
-            src_layout = Layout.row_major(32, 16),
-            tile_layout = Layout.row_major(8, 8),
-            dst_layout = Layout.row_major(26, 12),
+            src_layout=Layout.row_major(32, 16),
+            tile_layout=Layout.row_major(8, 8),
+            dst_layout=Layout.row_major(26, 12),
         ](ctx)
         print("test_tma_load_two_buffer_row_major")
         test_tma_load_two_buffers_row_major[
-            src_layout = Layout.row_major(32, 64),
-            tile_layout = Layout.row_major(8, 16),
+            src_layout=Layout.row_major(32, 64),
+            tile_layout=Layout.row_major(8, 16),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_two_buffers_row_major[
-            src_layout = Layout.row_major(9, 60),
-            tile_layout = Layout.row_major(8, 16),
+            src_layout=Layout.row_major(9, 60),
+            tile_layout=Layout.row_major(8, 16),
         ](ctx)
         print("test_tma_load_and_store_two_buffer")
         test_tma_load_and_store_two_buffers_row_major[
-            src_layout = Layout.row_major(32, 64),
-            tile_layout = Layout.row_major(8, 16),
-            dst_layout = Layout.row_major(32, 64),
+            src_layout=Layout.row_major(32, 64),
+            tile_layout=Layout.row_major(8, 16),
+            dst_layout=Layout.row_major(32, 64),
         ](ctx)
         test_tma_load_and_store_two_buffers_row_major[
-            src_layout = Layout.row_major(32, 64),
-            tile_layout = Layout.row_major(16, 16),
-            dst_layout = Layout.row_major(40, 64),
+            src_layout=Layout.row_major(32, 64),
+            tile_layout=Layout.row_major(16, 16),
+            dst_layout=Layout.row_major(40, 64),
         ](ctx)
 
         print("test_2D_TMA_ragged_store")
@@ -1224,19 +1224,19 @@ def main() raises:
         test_tma_ragged_store[
             DType.bfloat16,
             IndexList[3](55, 11, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_ragged_store[
             DType.bfloat16,
             IndexList[3](55, 11, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_ragged_store[
             DType.bfloat16,
             IndexList[3](55, 11, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_ragged_store[

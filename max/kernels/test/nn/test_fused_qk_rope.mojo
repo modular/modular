@@ -177,7 +177,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
     )
 
     fused_qk_rope[
-        kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
+        kv_collection.CacheType, interleaved=True, target=StaticString("cpu")
     ](
         q_proj=q,
         kv_collection=kv_collection,

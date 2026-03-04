@@ -134,7 +134,7 @@ struct MHATileState(TrivialRegisterPassable):
     # Linear work tile index i.e. idx-th work among all possible workload.
     var idx: UInt32
     var sidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var max_idx: UInt32
 
@@ -143,7 +143,7 @@ struct MHATileState(TrivialRegisterPassable):
         out self,
         idx: UInt32,
         sidx_ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         max_idx: UInt32,
     ):
@@ -377,7 +377,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
@@ -491,7 +491,7 @@ struct TransientScheduler[
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
@@ -604,7 +604,7 @@ struct TileScheduler[
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
@@ -639,7 +639,7 @@ struct QueuedTileScheduler[
 
     # Linear work tile index i.e. idx-th work among all possible workload.
     var gidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+        UInt32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
 
     comptime may_advance: Bool = True
@@ -747,7 +747,7 @@ struct QueuedTileScheduler[
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:

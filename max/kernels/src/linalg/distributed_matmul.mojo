@@ -73,7 +73,7 @@ fn _matmul_allreduce[
 
     comptime for i in range(ngpus):
         allreduce[
-            ngpus=ngpus, output_lambda = outputs_lambda[input_index=i, ...]
+            ngpus=ngpus, output_lambda=outputs_lambda[input_index=i, ...]
         ](
             rebind[InlineArray[NDBuffer[out_dtype, 2, ImmutAnyOrigin], ngpus]](
                 c_temp_buffers
@@ -167,7 +167,7 @@ fn _matmul_allreduce_split_m[
                 _matmul_gpu[
                     use_tensor_core=True,
                     transpose_b=True,
-                    pdl_level = PDLLevel.OVERLAP_AT_END if overlap_with_dpl else PDLLevel(),
+                    pdl_level=PDLLevel.OVERLAP_AT_END if overlap_with_dpl else PDLLevel(),
                 ](
                     C_parts[i].make_dims_unknown(),
                     A_parts[i].make_dims_unknown(),
@@ -178,7 +178,7 @@ fn _matmul_allreduce_split_m[
                 _matmul_gpu[
                     use_tensor_core=True,
                     transpose_b=True,
-                    pdl_level = PDLLevel.NO_WAIT_OVERLAP_AT_END if overlap_with_dpl else PDLLevel(),
+                    pdl_level=PDLLevel.NO_WAIT_OVERLAP_AT_END if overlap_with_dpl else PDLLevel(),
                 ](
                     C_parts[i].make_dims_unknown(),
                     A_parts[i].make_dims_unknown(),
@@ -213,8 +213,8 @@ fn _matmul_allreduce_split_m[
         comptime for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
-                output_lambda = outputs_lambda_wrapper[input_index=i, ...],
-                pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
+                output_lambda=outputs_lambda_wrapper[input_index=i, ...],
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
                 rebind[
                     InlineArray[NDBuffer[out_dtype, 2, ImmutAnyOrigin], ngpus]
@@ -312,7 +312,7 @@ fn _matmul_allreduce_split_n[
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
-                pdl_level = pdl_matmul if overlap_with_dpl else PDLLevel(),
+                pdl_level=pdl_matmul if overlap_with_dpl else PDLLevel(),
             ](
                 C_parts[i].make_dims_unknown(),
                 a_buffers[i].make_dims_unknown(),
@@ -347,8 +347,8 @@ fn _matmul_allreduce_split_n[
         comptime for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
-                output_lambda = outputs_lambda_wrapper[input_index=i, ...],
-                pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
+                output_lambda=outputs_lambda_wrapper[input_index=i, ...],
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
                 rebind[
                     InlineArray[NDBuffer[out_dtype, 2, ImmutAnyOrigin], ngpus]
@@ -442,7 +442,7 @@ fn matmul_allreduce[
         ), "for split_n num_partitions must be a constant"
         _matmul_allreduce_split_n[
             ngpus=ngpus,
-            num_partitions = num_partitions.dim.get(),
+            num_partitions=num_partitions.dim.get(),
             outputs_lambda=outputs_lambda,
             overlap_with_dpl=overlap_with_dpl,
         ](a_buffers, b_buffers, c_temp_buffers, output_buffers, rank_sigs, ctxs)

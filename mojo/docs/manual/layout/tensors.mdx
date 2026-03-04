@@ -313,7 +313,7 @@ var shared_tile = LayoutTensor[
     dtype,
     tile_layout,
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ].stack_allocation()
 ```
 
@@ -619,7 +619,7 @@ fn copy_from_async_example():
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
 
         # Create thread layouts for copying

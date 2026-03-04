@@ -87,7 +87,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 comptime MbarPtr = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
+    SharedMemBarrier, address_space=AddressSpace.SHARED
 ]
 
 

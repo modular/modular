@@ -39,7 +39,7 @@ fn test_static_layout() raises:
 fn test_dynamic_layout() raises:
     """Dynamic 2D layout: first dim unknown at compile time."""
     print("--- test_dynamic_layout ---")
-    comptime dynamic_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
+    comptime dynamic_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
 
     var array = InlineArray[Float32, 32](fill=2.0)
     var lt = LayoutTensor[DType.float32, dynamic_layout](
@@ -57,7 +57,7 @@ fn test_dynamic_layout() raises:
 fn test_fully_dynamic_layout() raises:
     """Fully dynamic 2D layout: both dims unknown at compile time."""
     print("--- test_fully_dynamic_layout ---")
-    comptime dynamic_layout = Layout.row_major[dims = DimList(Dim(), Dim())]()
+    comptime dynamic_layout = Layout.row_major[dims=DimList(Dim(), Dim())]()
 
     var array = InlineArray[Float32, 24](fill=3.0)
     var lt = LayoutTensor[DType.float32, dynamic_layout](

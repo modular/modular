@@ -218,7 +218,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     var q_out = TileTensor(q_out_buffer.unsafe_ptr(), q_layout)
 
     fused_qk_rope_ragged[
-        kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
+        kv_collection.CacheType, interleaved=True, target=StaticString("cpu")
     ](
         q_proj=q,
         input_row_offsets=input_row_offsets,

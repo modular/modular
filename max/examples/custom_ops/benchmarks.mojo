@@ -55,7 +55,7 @@ struct Tensor[
     comptime size = Int(Self.static_spec.shape.product())
 
     var slice: ManagedTensorSlice[
-        io_spec = Self.io_spec, static_spec = Self.static_spec
+        io_spec=Self.io_spec, static_spec=Self.static_spec
     ]
     var buffer: DeviceBuffer[Self.dtype]
 
@@ -63,7 +63,7 @@ struct Tensor[
         self.buffer = ctx.enqueue_create_buffer[Self.dtype](Self.size)
 
         self.slice = ManagedTensorSlice[
-            io_spec = Self.io_spec, static_spec = Self.static_spec
+            io_spec=Self.io_spec, static_spec=Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
             Self.static_spec.shape.into_index_list[Self.rank](),

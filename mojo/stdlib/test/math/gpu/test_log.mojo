@@ -27,7 +27,7 @@ def run_elementwise[
 ](ctx: DeviceContext):
     comptime length = 8192
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)

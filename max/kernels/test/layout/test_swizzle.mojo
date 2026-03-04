@@ -228,13 +228,13 @@ fn test_swizzle_gemm_store() raises:
     comptime MMA_N = 8
     comptime noswizzle = Swizzle(0, 0, 1)
     comptime swizzle = make_swizzle[
-        num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+        num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
     var wfs_noswizzle_reg_to_smem_fp32 = count_wavefronts[
         1,
         2,
-        thread_layout = Layout.row_major(8, 4),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(8, 4),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=noswizzle,
     ]()
@@ -242,8 +242,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_noswizzle_smem_to_gmem_fp32 = count_wavefronts[
         1,
         4,
-        thread_layout = Layout.row_major(32 * 8 // WN, WN // 8),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(32 * 8 // WN, WN // 8),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=noswizzle,
     ]()
@@ -251,8 +251,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_reg_to_smem_fp32 = count_wavefronts[
         1,
         2,
-        thread_layout = Layout.row_major(8, 4),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(8, 4),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=swizzle,
     ]()
@@ -260,8 +260,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_smem_to_gmem_fp32 = count_wavefronts[
         1,
         8,
-        thread_layout = Layout.row_major(32 * 8 // WN, WN // 8),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(32 * 8 // WN, WN // 8),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=swizzle,
     ]()
@@ -269,8 +269,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_reg_to_smem_bf16 = count_wavefronts[
         1,
         2,
-        thread_layout = Layout.row_major(8, 4),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(8, 4),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=2,
         swizzle=swizzle,
     ]()
@@ -278,8 +278,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_smem_to_gmem_bf16 = count_wavefronts[
         1,
         8,
-        thread_layout = Layout.row_major(32 * 8 // WN, WN // 8),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(32 * 8 // WN, WN // 8),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=2,
         swizzle=swizzle,
     ]()

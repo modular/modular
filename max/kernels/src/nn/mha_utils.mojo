@@ -65,7 +65,7 @@ fn as_dynamic_row_major_1d[
     dtype: DType
 ](
     tensor: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
     return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
@@ -419,10 +419,10 @@ fn _copy_frag_to_smem_nvidia[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, ...
+        type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, _, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space=AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -446,7 +446,7 @@ fn _copy_frag_to_smem_nvidia[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
         ImmutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](p_smem_iter.ptr.as_immutable())
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
@@ -518,10 +518,10 @@ fn _copy_frag_to_smem_amd[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, ...
+        type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, _, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space=AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -542,7 +542,7 @@ fn _copy_frag_to_smem_amd[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
         ImmutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](p_smem_iter.ptr.as_immutable())
 
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
@@ -598,10 +598,10 @@ fn _copy_frag_to_smem[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, ...
+        type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, _, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space=AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -616,7 +616,7 @@ fn _copy_frag_to_smem[
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 

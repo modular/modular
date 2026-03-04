@@ -34,10 +34,10 @@ def test_conditional_type_with_bool_function() raises:
         return b
 
     comptime IsInt = ConditionalType[
-        Trait=AnyType, If = bool[True](), Then=Int, Else=String
+        Trait=AnyType, If=bool[True](), Then=Int, Else=String
     ]
     comptime IsString = ConditionalType[
-        Trait=AnyType, If = bool[False](), Then=Int, Else=String
+        Trait=AnyType, If=bool[False](), Then=Int, Else=String
     ]
 
     assert_true(_type_is_eq[IsInt, Int]())
@@ -70,9 +70,9 @@ def test_conditional_type_ternary_tree() raises:
     comptime PickAType[outer: Bool, inner: Bool] = ConditionalType[
         Trait=AnyType,
         If=outer,
-        Then = ConditionalType[Trait=AnyType, If=inner, Then=Int, Else=Float64],
-        Else = ConditionalType[
-            Trait=AnyType, If=inner, Then=String, Else = List[Int]
+        Then=ConditionalType[Trait=AnyType, If=inner, Then=Int, Else=Float64],
+        Else=ConditionalType[
+            Trait=AnyType, If=inner, Then=String, Else=List[Int]
         ],
     ]
 

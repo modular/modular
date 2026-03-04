@@ -176,7 +176,7 @@ fn reducescatter_test[
     comptime for i in range(ngpus):
         reducescatter[
             ngpus=ngpus,
-            output_lambda = Optional[elementwise_epilogue_type](
+            output_lambda=Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
@@ -280,7 +280,7 @@ fn reducescatter_axis_test[
     """
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
     comptime assert axis == 0 or axis == 1
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     print(
         String(
@@ -411,7 +411,7 @@ fn reducescatter_axis_test[
         reducescatter[
             ngpus=ngpus,
             axis=axis,
-            output_lambda = Optional[elementwise_epilogue_type](
+            output_lambda=Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])

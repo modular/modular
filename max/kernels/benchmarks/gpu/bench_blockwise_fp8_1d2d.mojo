@@ -401,8 +401,8 @@ fn bench_blockwise_fp8_1d2d[
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
-                a_scales_type = DType.float32,
-                b_scales_type = DType.float32,
+                a_scales_type=DType.float32,
+                b_scales_type=DType.float32,
                 transpose_b=transpose_b,
             ](
                 c_tt,

@@ -371,7 +371,7 @@ def main() raises:
             depth=128,
             page_size=64,
             top_k=16,
-            mask_name = MaskName.NULL.name,
+            mask_name=MaskName.NULL.name,
         ](
             seq_lens=[16, 32, 8, 64],
             cache_lens=[64, 128, 32, 96],
@@ -384,7 +384,7 @@ def main() raises:
             depth=64,
             page_size=32,
             top_k=32,
-            mask_name = MaskName.NULL.name,
+            mask_name=MaskName.NULL.name,
         ](
             seq_lens=[4, 8, 2],
             cache_lens=[4, 8, 2],
@@ -399,7 +399,7 @@ def main() raises:
             depth=128,
             page_size=64,
             top_k=16,
-            mask_name = MaskName.CAUSAL.name,
+            mask_name=MaskName.CAUSAL.name,
         ](
             seq_lens=[16, 32, 8, 64],
             cache_lens=[64, 128, 32, 96],
@@ -412,7 +412,7 @@ def main() raises:
             depth=128,
             page_size=64,
             top_k=16,
-            mask_name = MaskName.CAUSAL.name,
+            mask_name=MaskName.CAUSAL.name,
         ](
             seq_lens=[1, 1, 32, 1],  # Mix of decode (1) and prefill
             cache_lens=[100, 50, 0, 200],  # Varied cache sizes
@@ -425,7 +425,7 @@ def main() raises:
             depth=64,
             page_size=32,
             top_k=32,
-            mask_name = MaskName.CAUSAL.name,
+            mask_name=MaskName.CAUSAL.name,
         ](
             seq_lens=[4, 8, 2],
             cache_lens=[4, 8, 2],

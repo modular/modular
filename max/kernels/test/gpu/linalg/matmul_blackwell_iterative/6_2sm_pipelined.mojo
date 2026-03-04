@@ -139,7 +139,7 @@ fn load_AB[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -147,15 +147,15 @@ fn load_AB[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -247,7 +247,7 @@ fn consumer_main_loop[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -255,15 +255,15 @@ fn consumer_main_loop[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -325,7 +325,7 @@ fn store_C[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
@@ -409,7 +409,7 @@ fn store_C[
         repeat=main_repetition,
         dtype=accum_type,
         pack=False,
-        width = c_upper_pow_2_main.size,
+        width=c_upper_pow_2_main.size,
     ](tmem_addr | UInt32((warp_id * 32) << 16))
 
     # Load c_frag_lower
@@ -420,7 +420,7 @@ fn store_C[
         repeat=main_repetition,
         dtype=accum_type,
         pack=False,
-        width = c_lower_pow_2_main.size,
+        width=c_lower_pow_2_main.size,
     ](tmem_addr | UInt32((warp_id * 32 + 16) << 16))
 
     comptime if MMA_N != prev_power_of_two(MMA_N):
@@ -433,7 +433,7 @@ fn store_C[
             repeat=remainder_repetitions,
             dtype=accum_type,
             pack=False,
-            width = c_upper_pow_2_rem.size,
+            width=c_upper_pow_2_rem.size,
         ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE)) << 16))
 
         c_lower_pow_2_rem = tcgen05_ld[
@@ -442,7 +442,7 @@ fn store_C[
             repeat=remainder_repetitions,
             dtype=accum_type,
             pack=False,
-            width = c_lower_pow_2_rem.size,
+            width=c_lower_pow_2_rem.size,
         ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE) + 16) << 16))
 
     # Remainder load happens later, only if needed
@@ -451,8 +451,8 @@ fn store_C[
     # Create a layout for everything
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
+        element_type=DType.int32,
+        linear_idx_type=DType.int32,
     ]()
 
     # For 32-column tiles, we need a different swizzle pattern
@@ -510,17 +510,17 @@ fn store_C[
                     # every iteration of tma_n is a motion across BM * 32 elements
                     # and we agree that each of those has 2 rows * 8 elements in the register
                     d_reg_upper = c_upper_pow_2_main.slice[
-                        8, offset = (i * 8) + tma_n * (TMA_BN // 16) * 8
+                        8, offset=(i * 8) + tma_n * (TMA_BN // 16) * 8
                     ]().cast[DType.bfloat16]()
                     d_reg_lower = c_lower_pow_2_main.slice[
-                        8, offset = (i * 8) + tma_n * (TMA_BN // 16) * 8
+                        8, offset=(i * 8) + tma_n * (TMA_BN // 16) * 8
                     ]().cast[DType.bfloat16]()
                 else:
                     d_reg_upper = c_upper_pow_2_rem.slice[
-                        8, offset = (i * 8)
+                        8, offset=(i * 8)
                     ]().cast[DType.bfloat16]()
                     d_reg_lower = c_lower_pow_2_rem.slice[
-                        8, offset = (i * 8)
+                        8, offset=(i * 8)
                     ]().cast[DType.bfloat16]()
 
                 var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
@@ -554,7 +554,7 @@ fn store_C[
             c_type,
             c_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ](c_smem_offset)
 
@@ -632,16 +632,16 @@ fn kernel_6[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
     base_ptr_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]()
     )  # pointer to first byte of scratchpad
@@ -662,7 +662,7 @@ fn kernel_6[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -674,7 +674,7 @@ fn kernel_6[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -740,7 +740,7 @@ fn kernel_6[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape = Index(
+        cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         a_swizzle=a_swizzle,
@@ -806,7 +806,7 @@ fn kernel_6[
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
                 cta_group=cta_group,
-                cluster_shape = Index(
+                cluster_shape=Index(
                     cluster_shape[0], cluster_shape[1], cluster_shape[2]
                 ),
             ](
@@ -901,7 +901,7 @@ fn blackwell_kernel_6[
     c_tma_op = create_tma_tile[
         BM,
         64 if MMA_N == prev_power_of_two(MMA_N) else 32,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B if MMA_N
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B if MMA_N
         == prev_power_of_two(MMA_N) else TensorMapSwizzle.SWIZZLE_64B,
     ](ctx, c)
 
@@ -946,7 +946,7 @@ fn blackwell_kernel_6[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages = UInt(max_pipeline_stages),
+        num_pipeline_stages=UInt(max_pipeline_stages),
     ]
 
     ctx.enqueue_function[kernel, kernel](
@@ -1175,13 +1175,13 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 c_type,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 benchmark=True,
-                M = shape[0],
-                N = shape[1],
-                K = shape[2],
+                M=shape[0],
+                N=shape[1],
+                K=shape[2],
             ](ctx)
         except error:
             print("error")
@@ -1205,9 +1205,9 @@ def main() raises:
             DType.bfloat16,
             block_tile_shape,
             umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             M=4096,
             N=4096,
             K=4096,

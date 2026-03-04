@@ -163,7 +163,7 @@ fn blockscaled_pair_cta_mxfp8[
     ]()
 
     var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
     ]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
@@ -192,7 +192,7 @@ fn blockscaled_pair_cta_mxfp8[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem)
 
@@ -200,7 +200,7 @@ fn blockscaled_pair_cta_mxfp8[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem)
 
@@ -208,7 +208,7 @@ fn blockscaled_pair_cta_mxfp8[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem)
 
@@ -216,7 +216,7 @@ fn blockscaled_pair_cta_mxfp8[
         b_scales_type,
         b_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_scales_smem)
 
@@ -301,7 +301,7 @@ fn blockscaled_pair_cta_mxfp8[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -505,7 +505,7 @@ fn blockscaled_pair_cta_mxfp8[
     c_frag = tcgen05_ld[
         datapaths=32,
         bits=32,
-        repeat = BN if MMA_M == 128 else MMA_N,
+        repeat=BN if MMA_M == 128 else MMA_N,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -672,8 +672,8 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_layout=Layout.row_major(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, a_scales_4d)
@@ -682,8 +682,8 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         Index(
             MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_layout=Layout.row_major(
             MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, b_scales_4d)
@@ -1078,11 +1078,11 @@ def main() raises:
             DType.bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-            k = 3 * BK,
+            k=3 * BK,
         ](ctx, dynamic(256), static[128]())
 
         test_blockscaled_pair_cta_mxfp8[
@@ -1091,11 +1091,11 @@ def main() raises:
             DType.bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-            k = 2 * BK,
+            k=2 * BK,
         ](ctx, dynamic(256), static[256]())
 
         test_blockscaled_pair_cta_mxfp8[
@@ -1104,9 +1104,9 @@ def main() raises:
             DType.bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-            k = 2 * BK,
+            k=2 * BK,
         ](ctx, dynamic(512), static[512]())

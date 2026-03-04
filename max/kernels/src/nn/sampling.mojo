@@ -197,14 +197,12 @@ fn update_frequency_data[
     target: StaticString,
 ](
     compressed_frequency_data: TileTensor[
-        mut=True, DType.int32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    new_tokens: TileTensor[
-        token_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -224,12 +222,12 @@ fn update_frequency_data[
 
         dev_ctx = ctx.get_device_context()
         comptime kernel = update_frequency_data_kernel[
-            freq_data_origin = compressed_frequency_data.origin,
-            FreqDataLayoutType = compressed_frequency_data.LayoutType,
-            freq_offsets_origin = ImmutOrigin(frequency_offsets.origin),
-            FreqOffsetsLayoutType = frequency_offsets.LayoutType,
-            new_tokens_origin = ImmutOrigin(new_tokens.origin),
-            NewTokensLayoutType = new_tokens.LayoutType,
+            freq_data_origin=compressed_frequency_data.origin,
+            FreqDataLayoutType=compressed_frequency_data.LayoutType,
+            freq_offsets_origin=ImmutOrigin(frequency_offsets.origin),
+            FreqOffsetsLayoutType=frequency_offsets.LayoutType,
+            new_tokens_origin=ImmutOrigin(new_tokens.origin),
+            NewTokensLayoutType=new_tokens.LayoutType,
             token_type=token_type,
             block_size=block_size,
         ]

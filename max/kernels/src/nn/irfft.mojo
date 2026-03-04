@@ -146,13 +146,13 @@ fn _irfft[
 ](
     input: TileTensor[
         input_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     output: TileTensor[
         mut=True,
         output_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     n: Int,
@@ -314,13 +314,13 @@ fn irfft[
 ](
     input: TileTensor[
         input_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     output: TileTensor[
         mut=True,
         output_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     n: Int,

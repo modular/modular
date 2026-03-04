@@ -122,7 +122,7 @@ fn test_grouped_tensormap_update_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -130,21 +130,21 @@ fn test_grouped_tensormap_update_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     # Allocate SMEM for tensormap descriptors
     var smem_desc_a = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
     var smem_desc_b = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
     # Allocate barriers
     var mbar = stack_allocation[
-        2, SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        2, SharedMemBarrier, address_space=AddressSpace.SHARED, alignment=8
     ]()
 
     barrier()  # Initial sync before entering loop
@@ -458,28 +458,28 @@ def main() raises:
         print("Test 0: 1 group, 8x4 tiles (sanity check)")
         test_grouped_tensormap_update[
             num_groups=1,
-            tile_shape = Index(8, 4),
+            tile_shape=Index(8, 4),
         ](ctx)
 
         print()
         print("Test 1: 2 groups, 8x4 tiles")
         test_grouped_tensormap_update[
             num_groups=2,
-            tile_shape = Index(8, 4),
+            tile_shape=Index(8, 4),
         ](ctx)
 
         print()
         print("Test 2: 4 groups, 8x4 tiles")
         test_grouped_tensormap_update[
             num_groups=4,
-            tile_shape = Index(8, 4),
+            tile_shape=Index(8, 4),
         ](ctx)
 
         print()
         print("Test 3: 4 groups, 16x4 tiles")
         test_grouped_tensormap_update[
             num_groups=4,
-            tile_shape = Index(16, 4),
+            tile_shape=Index(16, 4),
         ](ctx)
 
         print()

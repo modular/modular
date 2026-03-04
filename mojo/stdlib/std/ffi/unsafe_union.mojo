@@ -260,7 +260,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         ](), "type is not a union element type"
         var ptr = UnsafePointer(to=self._storage).address
         var typed_ptr = __mlir_op.`pop.union.bitcast`[
-            _type = UnsafePointer[T, origin_of(self)]._mlir_type,
+            _type=UnsafePointer[T, origin_of(self)]._mlir_type,
         ](ptr)
         return typed_ptr
 
@@ -423,4 +423,4 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
         Returns True if found, False otherwise.
         """
-        return Variadic.contains[type=T, element_types = Self.Ts]
+        return Variadic.contains[type=T, element_types=Self.Ts]

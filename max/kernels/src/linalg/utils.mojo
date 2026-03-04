@@ -770,7 +770,7 @@ fn apply_epilogue[
 
                 var vec = src.ptr.load[
                     width=vec_width,
-                    alignment = align_of[SIMD[src.dtype, vec_width]](),
+                    alignment=align_of[SIMD[src.dtype, vec_width]](),
                 ](src_idx)
 
                 var m = (dst_idx + offset) // N

@@ -75,7 +75,7 @@ fn mha_operand_tma_copy_kernel[
         kv_t.dtype,
         layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -83,7 +83,7 @@ fn mha_operand_tma_copy_kernel[
     ref mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()[0]
 
@@ -154,10 +154,10 @@ fn mha_operand_copy[
 
     # Create TMA tiles
     src_tma = src.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth = Int(head_size)
+        swizzle_mode, BN=tile_m, depth=Int(head_size)
     ](ctx)
     dst_tma = dst.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth = Int(head_size)
+        swizzle_mode, BN=tile_m, depth=Int(head_size)
     ](ctx)
 
     # Calculate grid dimensions

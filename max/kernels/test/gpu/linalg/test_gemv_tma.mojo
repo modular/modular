@@ -97,11 +97,11 @@ fn gemv_tma_kernel[
     ]()
 
     var a_smem_base = rebind[
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_A_dynamic_shared_memory",
         ]()
@@ -119,7 +119,7 @@ fn gemv_tma_kernel[
         dtype,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -131,7 +131,7 @@ fn gemv_tma_kernel[
         dtype,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](

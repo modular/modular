@@ -59,7 +59,7 @@ fn stencil1d_smem(
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
     var a_shared = stack_allocation[
-        BLOCK_DIM + 2, DType.float32, address_space = AddressSpace.SHARED
+        BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
     a_shared[lindex] = a[tid]

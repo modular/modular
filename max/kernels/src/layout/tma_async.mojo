@@ -452,7 +452,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
     ) -> UnsafePointer[
         Int64,
         origin=origin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]:
         """Get an unsafe pointer to the barrier's memory location.
 
@@ -751,7 +751,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
+        dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
     ):
@@ -847,8 +847,8 @@ struct TMATensorTile[
         self,
         dst: TileTensor[
             mut=True,
-            dtype = Self.dtype,
-            address_space = AddressSpace.SHARED,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
@@ -900,7 +900,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int],
@@ -989,7 +989,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int],
@@ -1081,8 +1081,8 @@ struct TMATensorTile[
         self,
         dst: TileTensor[
             mut=True,
-            dtype = Self.dtype,
-            address_space = AddressSpace.SHARED,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
@@ -1160,7 +1160,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int, Int],
@@ -1267,8 +1267,8 @@ struct TMATensorTile[
         self,
         dst: TileTensor[
             mut=True,
-            dtype = Self.dtype,
-            address_space = AddressSpace.SHARED,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
@@ -1363,7 +1363,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: StaticTuple[UInt32, rank],
@@ -1434,7 +1434,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         coords: StaticTuple[UInt32, rank],
     ):
@@ -1495,7 +1495,7 @@ struct TMATensorTile[
     ](
         self,
         dst: TileTensor[
-            dtype = Self.dtype, address_space = AddressSpace.SHARED, ...
+            dtype=Self.dtype, address_space=AddressSpace.SHARED, ...
         ],
         coords: StaticTuple[UInt32, rank],
     ):
@@ -1528,7 +1528,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
@@ -1597,8 +1597,8 @@ struct TMATensorTile[
         self,
         dst: TileTensor[
             mut=True,
-            dtype = Self.dtype,
-            address_space = AddressSpace.SHARED,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
@@ -1652,7 +1652,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int],
@@ -1745,8 +1745,8 @@ struct TMATensorTile[
         self,
         dst: TileTensor[
             mut=True,
-            dtype = Self.dtype,
-            address_space = AddressSpace.SHARED,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
@@ -1819,7 +1819,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             Self.dtype,
             _,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             ...,
         ],
@@ -1856,7 +1856,7 @@ struct TMATensorTile[
         var dst_slice = LayoutTensor[
             Self.dtype,
             dst.layout,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ](dst.ptr + rank * UInt(tma_load_size))
 
@@ -1871,7 +1871,7 @@ struct TMATensorTile[
     fn async_store(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         coords: Tuple[Int, Int],
     ):
@@ -1924,7 +1924,7 @@ struct TMATensorTile[
     fn async_store(
         self,
         src: TileTensor[
-            dtype = Self.dtype, address_space = AddressSpace.SHARED, ...
+            dtype=Self.dtype, address_space=AddressSpace.SHARED, ...
         ],
         coords: Tuple[Int, Int],
     ):
@@ -1967,7 +1967,7 @@ struct TMATensorTile[
     fn async_store_3d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         coords: Tuple[Int, Int, Int],
     ):
@@ -2043,7 +2043,7 @@ struct TMATensorTile[
     fn async_store_3d(
         self,
         src: TileTensor[
-            dtype = Self.dtype, address_space = AddressSpace.SHARED, ...
+            dtype=Self.dtype, address_space=AddressSpace.SHARED, ...
         ],
         coords: Tuple[Int, Int, Int],
     ):
@@ -2098,7 +2098,7 @@ struct TMATensorTile[
     fn async_store_4d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         coords: Tuple[Int, Int, Int, Int],
     ):
@@ -2172,7 +2172,7 @@ struct TMATensorTile[
     fn async_store_5d(
         self,
         src: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         coords: Tuple[Int, Int, Int, Int, Int],
     ):
@@ -2263,7 +2263,7 @@ struct TMATensorTile[
     ](
         self,
         src: LayoutTensor[
-            Self.dtype, Self.layout, address_space = AddressSpace.SHARED, ...
+            Self.dtype, Self.layout, address_space=AddressSpace.SHARED, ...
         ],
         coords: Tuple[Int, Int],
     ):
@@ -2323,7 +2323,7 @@ struct TMATensorTile[
     fn smem_tensormap_init(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, _, address_space = AddressSpace.SHARED
+            TMADescriptor, _, address_space=AddressSpace.SHARED
         ],
     ):
         """
@@ -2460,7 +2460,7 @@ struct TMATensorTile[
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor,
             _,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         src_ptr: UnsafePointer[Scalar[_dtype], _],
     ):
@@ -2511,7 +2511,7 @@ struct TMATensorTile[
     fn tensormap_cp_fence_release(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, _, address_space = AddressSpace.SHARED
+            TMADescriptor, _, address_space=AddressSpace.SHARED
         ],
     ):
         """
@@ -2561,7 +2561,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, ...
+            TMADescriptor, address_space=AddressSpace.SHARED, ...
         ],
         gmem_dims: IndexList[rank],
         gmem_strides: IndexList[rank],
@@ -2636,7 +2636,7 @@ struct TMATensorTile[
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED, ...
+            TMADescriptor, address_space=AddressSpace.SHARED, ...
         ],
         dim_value: UInt32,
         dim_stride: Optional[UInt64] = None,
@@ -3431,8 +3431,8 @@ fn create_split_tma[
         _tile_shape[res.layout](),
         # k_major_tma=is_k_major,
         swizzle_mode=swizzle_mode,
-        __tile_layout = res.layout,
-        __desc_layout = res.desc_layout,
+        __tile_layout=res.layout,
+        __desc_layout=res.desc_layout,
     ](ctx, tensor)
 
 
@@ -3485,8 +3485,8 @@ fn create_split_tma[
     res = create_tensor_tile[
         _tile_shape[res.layout](),
         swizzle_mode=swizzle_mode,
-        __tile_layout = res.layout,
-        __desc_layout = res.desc_layout,
+        __tile_layout=res.layout,
+        __desc_layout=res.desc_layout,
     ](ctx, tensor)
 
 
@@ -3767,7 +3767,7 @@ struct RaggedTMA3DTile[
     ](
         self,
         dst: UnsafePointer[
-            Scalar[Self.dtype], _, address_space = AddressSpace.SHARED
+            Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         *,
@@ -3816,7 +3816,7 @@ struct RaggedTMA3DTile[
     ](
         self,
         src: UnsafePointer[
-            Scalar[Self.dtype], _, address_space = AddressSpace.SHARED
+            Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
         ],
         *,
         ragged_idx: UInt32,
@@ -3860,7 +3860,7 @@ struct RaggedTMA3DTile[
     ](
         self,
         src: UnsafePointer[
-            Scalar[Self.dtype], _, address_space = AddressSpace.SHARED
+            Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
         ],
         *,
         ragged_idx: UInt32,
@@ -4159,7 +4159,7 @@ struct RaggedTensorMap[
             Self.dtype,
             _,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
     ):
@@ -4438,7 +4438,7 @@ struct TMATensorTileIm2col[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
@@ -4549,7 +4549,7 @@ struct TMATensorTileIm2col[
     ](
         self,
         dst: LayoutTensor[
-            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
@@ -4662,8 +4662,8 @@ struct TMATensorTileIm2col[
         self,
         dst: TileTensor[
             mut=True,
-            dtype = Self.dtype,
-            address_space = AddressSpace.SHARED,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
@@ -4770,8 +4770,8 @@ struct TMATensorTileIm2col[
         self,
         dst: TileTensor[
             mut=True,
-            dtype = Self.dtype,
-            address_space = AddressSpace.SHARED,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,

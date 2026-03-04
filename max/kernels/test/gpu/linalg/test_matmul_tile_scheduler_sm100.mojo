@@ -36,35 +36,35 @@ fn test_kernel[
     var clc_response = stack_allocation[
         num_stages,
         UInt128,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_full_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_empty_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_throttle_full_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_throttle_empty_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
@@ -105,7 +105,7 @@ fn test_kernel[
 
     var scheduler = TileScheduler[
         num_stages=num_stages,
-        cluster_shape = Index[dtype = DType.uint32](
+        cluster_shape=Index[dtype=DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         block_swizzle_size=8,

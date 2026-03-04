@@ -243,11 +243,11 @@ def test_nvfp4_quantization[
             ](row_idx, col_idx)
 
             var output_fp32 = cast_uint_to_fp4e2m1[
-                out_dtype = DType.float32,
+                out_dtype=DType.float32,
                 out_width=SF_VECTOR_SIZE,
             ](output_vector)
             var output_fp32_ref = cast_uint_to_fp4e2m1[
-                out_dtype = DType.float32,
+                out_dtype=DType.float32,
                 out_width=SF_VECTOR_SIZE,
             ](output_vector_ref)
 

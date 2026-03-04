@@ -132,7 +132,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
         buffer.shape.get[buffer.rank - 2](),
         buffer.shape.get[buffer.rank - 1](),
     ),
-    address_space = buffer.address_space,
+    address_space=buffer.address_space,
 ]:
     comptime rank = buffer.rank
     comptime assert rank >= 3, "expecting at least rank-3 NDBuffer"
@@ -157,7 +157,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
         3,
         buffer.origin,
         static_shape,
-        address_space = buffer.address_space,
+        address_space=buffer.address_space,
     ](buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape)
 
 
@@ -228,16 +228,16 @@ fn _shape_types_to_3d[
 fn _reshape_tile_tensor_with_batch_to_3d(
     tensor: TileTensor,
     out result: TileTensor[
-        mut = tensor.mut,
-        LayoutType = TileLayout[
+        mut=tensor.mut,
+        LayoutType=TileLayout[
             _shape_types_to_3d[tensor.LayoutType._shape_types](),
             _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
-        dtype = tensor.dtype,
-        origin = tensor.origin,
-        address_space = tensor.address_space,
-        linear_idx_type = tensor.linear_idx_type,
-        element_size = tensor.element_size,
+        dtype=tensor.dtype,
+        origin=tensor.origin,
+        address_space=tensor.address_space,
+        linear_idx_type=tensor.linear_idx_type,
+        element_size=tensor.element_size,
     ],
 ):
     """
@@ -308,7 +308,7 @@ fn _reshape_tile_tensor_with_batch_to_3d(
 fn _reshape_nd_buffer_with_batch_to_2d(
     buffer: NDBuffer,
 ) -> NDBuffer[
-    buffer.type, 2, buffer.origin, address_space = buffer.address_space
+    buffer.type, 2, buffer.origin, address_space=buffer.address_space
 ]:
     comptime rank = buffer.rank
     comptime assert rank >= 2, "expecting at least rank-2 NDBuffer"
@@ -320,7 +320,7 @@ fn _reshape_nd_buffer_with_batch_to_2d(
 
     var matrix_shape = IndexList[2](batch_size, buffer.dim[rank - 1]())
 
-    return NDBuffer[buffer.type, 2, address_space = buffer.address_space](
+    return NDBuffer[buffer.type, 2, address_space=buffer.address_space](
         buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
     )
 
@@ -685,7 +685,7 @@ fn _batched_matmul_cpu[
                 config,
                 transpose_b,
                 b_packed=False,
-                elementwise_lambda_fn = Optional[
+                elementwise_lambda_fn=Optional[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
                 saturated_vnni=saturated_vnni,
@@ -820,14 +820,14 @@ fn batched_matmul_kernel_gpu[
     comptime if is_nvidia_gpu():
         multistage_gemm_kernel[
             config=config,
-            elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
+            elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
     elif is_amd_gpu() and not _is_amd_rdna():
         gemm_kernel_amd[
             config=config,
-            elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
+            elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
@@ -965,7 +965,7 @@ fn _batched_matmul_gpu[
                     var c_coord = Index(idx[0], idx[1], idx[2])
                     var c_val = c_ndbuf.load[
                         width=simd_width,
-                        alignment = alignment * size_of[c_type](),
+                        alignment=alignment * size_of[c_type](),
                     ](c_coord)
                     epilogue[c_type, simd_width, alignment=alignment](
                         c_coord, c_val
@@ -1309,7 +1309,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=num_threads,
-        elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
+        elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
     ](
@@ -1432,7 +1432,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
     var a_tma_op = create_tensor_tile[
         Index(1, BM, BK),
         swizzle_mode=a_swizzle,
-        __tile_layout = Layout.row_major(1, BM, BK),
+        __tile_layout=Layout.row_major(1, BM, BK),
     ](ctx, a)
 
     comptime b_tile_shape = Index(1, BN, BK) if transpose_b else Index(
@@ -1442,13 +1442,13 @@ fn bmm_sm100_blockwise_scaled_fp8[
     var b_tma_op = create_tensor_tile[
         b_tile_shape,
         swizzle_mode=b_swizzle,
-        __tile_layout = Layout.row_major(b_tile_shape),
+        __tile_layout=Layout.row_major(b_tile_shape),
     ](ctx, b)
 
     var a_scales_tma_op = create_tensor_tile[
         Index(1, 1, BM),
-        __tile_layout = Layout.row_major(1, 1, BM),
-        __desc_layout = Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),
+        __tile_layout=Layout.row_major(1, 1, BM),
+        __desc_layout=Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),
     ](ctx, a_scales)
     # NOTE: desc layout must be specified otherwise a constraint fails
 
@@ -1589,7 +1589,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+            scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         ](
             c_view,
             a_view,
@@ -1657,7 +1657,7 @@ fn batched_matmul_dynamic_scaled_fp8[
 
     else:
         batched_matmul_dynamic_scaled_fp8_naive[
-            scales_granularity_mnk = Index(
+            scales_granularity_mnk=Index(
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
             transpose_b=transpose_b,

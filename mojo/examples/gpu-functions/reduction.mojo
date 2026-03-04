@@ -54,7 +54,7 @@ fn sum_kernel[
     sums = stack_allocation[
         Int(KERNEL_TPB),
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     global_tid = block_idx.x * block_dim.x + thread_idx.x

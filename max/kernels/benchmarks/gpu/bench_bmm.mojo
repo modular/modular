@@ -214,7 +214,7 @@ fn bench_bmm[
             Index(idx[0], idx[1], idx[2]), update_val.cast[c_device.type]()
         )
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_device, b, m, n)
@@ -400,8 +400,8 @@ def main() raises:
             dtype,
             transpose_b=transpose_b,
             use_vendor_blas=use_vendor_blas,
-            N = Int(N),
-            K = Int(K),
+            N=Int(N),
+            K=Int(K),
         ](
             ctx,
             bench,

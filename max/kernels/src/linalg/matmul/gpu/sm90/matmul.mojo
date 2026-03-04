@@ -328,14 +328,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         2,
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+        __desc_layout=Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
     ]()
 
     comptime if use_tma_store:
         c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
-            __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+            __desc_layout=Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
         ](ctx, c)
 
     var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
@@ -379,10 +379,10 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        partitioned_multicast = config.partitioned_multicast,
+        partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level = config.pdl_level(),
+        pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         hilbert_swizzle=hilbert_swizzle,
@@ -749,7 +749,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+        __desc_layout=Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
     ](ctx, c)
 
     comptime scheduler = SplitKTileScheduler[
@@ -818,10 +818,10 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        partitioned_multicast = config.partitioned_multicast,
+        partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level = config.pdl_level(),
+        pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ]

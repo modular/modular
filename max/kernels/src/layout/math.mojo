@@ -233,10 +233,10 @@ fn max[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
         MutAnyOrigin,
-        address_space = inp.address_space,
-        element_layout = inp.element_layout,
-        layout_int_type = inp.layout_int_type,
-        linear_idx_type = inp.linear_idx_type,
+        address_space=inp.address_space,
+        element_layout=inp.element_layout,
+        layout_int_type=inp.layout_int_type,
+        linear_idx_type=inp.linear_idx_type,
     ],
 ):
     """Computes maximum reduction along specified axis, returning a new tensor.
@@ -311,10 +311,10 @@ fn sum[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
         MutAnyOrigin,
-        address_space = inp.address_space,
-        element_layout = inp.element_layout,
-        layout_int_type = inp.layout_int_type,
-        linear_idx_type = inp.linear_idx_type,
+        address_space=inp.address_space,
+        element_layout=inp.element_layout,
+        layout_int_type=inp.layout_int_type,
+        linear_idx_type=inp.linear_idx_type,
     ],
 ):
     """Computes sum reduction along specified axis, returning a new tensor.
@@ -394,7 +394,7 @@ fn mean[
     var dst_1d = LayoutTensor[
         dst.dtype,
         Layout.row_major(UNKNOWN_VALUE),
-        address_space = dst.address_space,
+        address_space=dst.address_space,
     ](
         dst.ptr,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

@@ -132,7 +132,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
-                init.slice[step, offset = i * step]()
+                init.slice[step, offset=i * step]()
             ).cast[DType.int64]()
 
     # --------------------------------------------------------------------- #

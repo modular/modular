@@ -41,16 +41,14 @@ fn test_codegen_memory[
 
     # Test AMD GPU codegen
     var amd_asm = _compile_code[
-        func, target = get_gpu_target["amdgpu:gfx942"]()
+        func, target=get_gpu_target["amdgpu:gfx942"]()
     ]().asm
 
     # Should not load from buffer for compile-time known values
     assert_true("ds_read" not in amd_asm and "ds_write" not in amd_asm)
 
     # Test NVIDIA GPU codegen
-    var nvidia_asm = _compile_code[
-        func, target = get_gpu_target["sm_80"]()
-    ]().asm
+    var nvidia_asm = _compile_code[func, target=get_gpu_target["sm_80"]()]().asm
 
     # Should not use local memory for compile-time known values
     assert_true("ld.local" not in nvidia_asm and "st.local" not in nvidia_asm)

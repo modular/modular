@@ -147,7 +147,7 @@ fn get_tile[
     dtype,
     Layout.row_major(tile_size, tile_size),
     MutAnyOrigin,
-    element_layout = input_tensor.element_layout,
+    element_layout=input_tensor.element_layout,
 ]:
     # TODO: Issue because returning a stack variable? Workaround
     # with @always_inline
@@ -155,7 +155,7 @@ fn get_tile[
         dtype,
         Layout.row_major(tile_size, tile_size),
         MutAnyOrigin,
-        element_layout = input_tensor.element_layout,
+        element_layout=input_tensor.element_layout,
     ].stack_allocation()
 
     for i in range(tile_size):
@@ -273,7 +273,7 @@ fn winograd_conv2d_gpu_nhwc[
 
     # Pre-transform filter (G^T * filter * G)
     # offsets=(0, 0) specifies indices for the non-sliced dimensions (rank-2)
-    var filter_slice = filter.slice[:, :, slice_indices= (0, 1)](offsets=(0, 0))
+    var filter_slice = filter.slice[:, :, slice_indices=(0, 1)](offsets=(0, 0))
     matmul[False](scratch, g, filter_slice)
     matmul[True](g_transformed, scratch, g)
 
@@ -531,55 +531,55 @@ def main() raises:
     with DeviceContext() as ctx:
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(1, 8, 8, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(1, 8, 8, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(32, 256, 256, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(32, 256, 256, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(1, 4, 16, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(1, 4, 16, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
             dtype=dtype,
-            input_dim = IntTuple(1, 16, 4, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            input_dim=IntTuple(1, 16, 4, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
         test_winograd_conv_gpu[
-            dtype = DType.bfloat16,
-            input_dim = IntTuple(1, 32, 32, 1),
-            filter_dim = IntTuple(3, 3, 1, 1),
-            stride = IndexList[2](1, 1),
-            dilation = IndexList[2](1, 1),
-            pad = IndexList[4](
+            dtype=DType.bfloat16,
+            input_dim=IntTuple(1, 32, 32, 1),
+            filter_dim=IntTuple(3, 3, 1, 1),
+            stride=IndexList[2](1, 1),
+            dilation=IndexList[2](1, 1),
+            pad=IndexList[4](
                 0, 0, 0, 0
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)

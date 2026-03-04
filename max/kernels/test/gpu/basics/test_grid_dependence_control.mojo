@@ -41,14 +41,14 @@ def test_grid_control_primitives() raises:
         _compile_code[
             control_dep_grids_kernel,
             emission_kind="asm",
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
     print(
         _compile_code[
             control_dep_grids_kernel,
             emission_kind="asm",
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 
@@ -67,7 +67,7 @@ def test_grid_control_primitives_context() raises:
         _compile_code[
             control_dep_grids_kernel_context,
             emission_kind="asm",
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 

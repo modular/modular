@@ -31,7 +31,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
     var mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -71,13 +71,13 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var producer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -160,7 +160,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         size_per_stage * num_stages,
         DType.float32,
         alignment=16,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Initialize smem buffer
@@ -176,13 +176,13 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     var produced_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumed_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 

@@ -69,7 +69,7 @@ fn test_simd_f32_to_e2m1():
     var e2m1_simd = cast_fp_to_fp4e2m1(f32_simd)
 
     comptime for iter in range(size // 8):
-        var x_slice = e2m1_simd.slice[8, offset = iter * 8]()
+        var x_slice = e2m1_simd.slice[8, offset=iter * 8]()
         print(
             x_slice,
         )
@@ -82,7 +82,7 @@ fn test_simd_f32_to_e2m1_ptx_kernel[
     comptime FP4_E2M1_MASK = pow(2, FP4_E2M1_WIDTH) - 1
 
     comptime for iter in range(size // 8):
-        var x_slice = x.slice[8, offset = iter * 8]()
+        var x_slice = x.slice[8, offset=iter * 8]()
         var x_casted = cast_fp32_to_fp4e2m1(x_slice)
 
         comptime for shift in range(

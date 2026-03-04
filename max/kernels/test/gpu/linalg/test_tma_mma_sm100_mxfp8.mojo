@@ -144,7 +144,7 @@ fn block_scaled_mxfp8_kernel[
     ]()
 
     var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
     ]()
     var a_smem = smem.bitcast[Scalar[a_type]]()
 
@@ -152,14 +152,14 @@ fn block_scaled_mxfp8_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -179,14 +179,14 @@ fn block_scaled_mxfp8_kernel[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_scales_smem_tile_t = LayoutTensor[
         b_scales_type,
         b_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -291,7 +291,7 @@ fn block_scaled_mxfp8_kernel[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype = DType.uint32](umma_shape[0], umma_shape[1]),
+        Index[dtype=DType.uint32](umma_shape[0], umma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -437,7 +437,7 @@ fn block_scaled_mxfp8_kernel[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -598,8 +598,8 @@ fn sm100_block_scaled_mxfp8[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_layout=Layout.row_major(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, a_scales_4d)
@@ -608,8 +608,8 @@ fn sm100_block_scaled_mxfp8[
         Index(
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_layout=Layout.row_major(
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, b_scales_4d)
@@ -989,7 +989,7 @@ def main() raises:
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-            k = BK * 3,
+            k=BK * 3,
         ](ctx, dynamic(256), static[256]())
         test_block_scaled_mxfp8[
             dtype,
@@ -998,7 +998,7 @@ def main() raises:
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-            k = BK * 3,
+            k=BK * 3,
         ](ctx, dynamic(256), static[256 * 2]())
         test_block_scaled_mxfp8[
             dtype,
@@ -1007,7 +1007,7 @@ def main() raises:
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-            k = BK * 3,
+            k=BK * 3,
         ](ctx, dynamic(1000), static[256 * 4]())
 
         test_block_scaled_mxfp8[
@@ -1017,7 +1017,7 @@ def main() raises:
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-            k = BK * 3,
+            k=BK * 3,
         ](ctx, dynamic(256), static[2 * 128]())
         test_block_scaled_mxfp8[
             dtype,
@@ -1026,7 +1026,7 @@ def main() raises:
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-            k = BK * 2,
+            k=BK * 2,
         ](ctx, dynamic(256), static[3 * 128]())
         test_block_scaled_mxfp8[
             dtype,
@@ -1035,5 +1035,5 @@ def main() raises:
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-            k = BK * 3,
+            k=BK * 3,
         ](ctx, dynamic(1000), static[3 * 128]())

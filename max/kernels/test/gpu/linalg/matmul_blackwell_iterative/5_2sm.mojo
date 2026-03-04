@@ -139,26 +139,26 @@ fn kernel_5[
         a_type,
         sub_a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
     var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
     ]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
@@ -179,7 +179,7 @@ fn kernel_5[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem)
 
@@ -187,7 +187,7 @@ fn kernel_5[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem)
 
@@ -271,7 +271,7 @@ fn kernel_5[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape = Index(
+        cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         a_swizzle=a_swizzle,
@@ -351,19 +351,19 @@ fn kernel_5[
     var c_frag_upper = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8 if MMA_M == 128 else MMA_N // 8,
+        repeat=BN // 8 if MMA_M == 128 else MMA_N // 8,
         dtype=accum_type,
         pack=False,
-        width = c_frag.size // 2,
+        width=c_frag.size // 2,
     ](tmem_addr | UInt32((warp_id() * 32) << 16))
 
     var c_frag_lower = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8 if MMA_M == 128 else MMA_N // 8,
+        repeat=BN // 8 if MMA_M == 128 else MMA_N // 8,
         dtype=accum_type,
         pack=False,
-        width = c_frag.size // 2,
+        width=c_frag.size // 2,
     ](tmem_addr | UInt32((warp_id() * 32 + 16) << 16))
     tcgen05_load_wait()
 
@@ -377,8 +377,8 @@ fn kernel_5[
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
+        element_type=DType.int32,
+        linear_idx_type=DType.int32,
     ]()
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
@@ -405,10 +405,10 @@ fn kernel_5[
 
         comptime for i in range(TMA_BN // 16):
             var d_reg_upper = c_frag_upper.slice[
-                8, offset = (i + tma_n * (TMA_BN // 16)) * 8
+                8, offset=(i + tma_n * (TMA_BN // 16)) * 8
             ]().cast[DType.bfloat16]()
             var d_reg_lower = c_frag_lower.slice[
-                8, offset = (i + tma_n * (TMA_BN // 16)) * 8
+                8, offset=(i + tma_n * (TMA_BN // 16)) * 8
             ]().cast[DType.bfloat16]()
 
             var st_matrix_args = RuntimeTuple[
@@ -453,7 +453,7 @@ fn kernel_5[
             c_type,
             c_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ](c_smem_offset)
 
@@ -786,10 +786,10 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             DType.bfloat16,
             block_tile_shape,
             umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            c_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             benchmark=True,
             M=4096,
             N=2560,
@@ -814,10 +814,10 @@ def main() raises:
             DType.bfloat16,
             block_tile_shape,
             umma_shape,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            c_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             M=4096,
             N=4096,
             K=4096,

@@ -169,7 +169,7 @@ fn tpool_patch_merger[
     var max_pat = max_h // kH * max_w // kW * kH * kW
 
     comptime simd_width = simd_width_of[
-        dtype, target = ctx.default_device_info.target()
+        dtype, target=ctx.default_device_info.target()
     ]()
     comptime num_threads = 256
 

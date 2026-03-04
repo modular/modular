@@ -421,7 +421,7 @@ struct List[T: Copyable](
         _constrained_conforms_to[
             conforms_to(Self.T, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
@@ -458,7 +458,7 @@ struct List[T: Copyable](
         _constrained_conforms_to[
             conforms_to(Self.T, Equatable),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="Equatable",
         ]()
 
@@ -685,7 +685,7 @@ struct List[T: Copyable](
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.T]](writer)
+        self._write_self_to[f=fmt.write_to[Self.T]](writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -700,7 +700,7 @@ struct List[T: Copyable](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.T]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "List").params(
             fmt.TypeNames[Self.T](),

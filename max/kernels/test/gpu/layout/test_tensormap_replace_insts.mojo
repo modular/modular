@@ -61,7 +61,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -74,7 +74,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -195,12 +195,12 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -228,7 +228,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -347,12 +347,12 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
         dtype,
         cta_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -397,7 +397,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -534,30 +534,30 @@ def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_replace_global_addr_in_gmem_descriptor")
         test_tma_replace_global_addr_in_gmem_descriptor[
-            src_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
         ](ctx)
 
         print("test_tma_replace_global_addr_in_smem_descriptor")
         test_tma_replace_global_addr_in_smem_descriptor[
-            src_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
         ](ctx)
 
         print("test_tma_replace_global_dim_in_smem_descriptor")
         print(" - SWIZZLE_NONE")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(16, 8),
-            cta_tile_layout = Layout.row_major(32, 8),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            src_layout=Layout.row_major(16, 8),
+            cta_tile_layout=Layout.row_major(32, 8),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](
             ctx,
             Index(0, 9, 16),
         )
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(29, 8),
-            cta_tile_layout = Layout.row_major(32, 8),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            src_layout=Layout.row_major(29, 8),
+            cta_tile_layout=Layout.row_major(32, 8),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](
             ctx,
             Index(0, 9, 16, 25, 29),
@@ -565,9 +565,9 @@ def main() raises:
         print(" - SWIZZLE_32B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(29, 16),
-            cta_tile_layout = Layout.row_major(32, 16),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            src_layout=Layout.row_major(29, 16),
+            cta_tile_layout=Layout.row_major(32, 16),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](
             ctx,
             Index(0, 9, 16, 25, 29),
@@ -575,9 +575,9 @@ def main() raises:
         print(" - SWIZZLE_64B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(29, 32),
-            cta_tile_layout = Layout.row_major(32, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            src_layout=Layout.row_major(29, 32),
+            cta_tile_layout=Layout.row_major(32, 32),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](
             ctx,
             Index(0, 9, 16, 25, 29),
@@ -585,9 +585,9 @@ def main() raises:
         print(" - SWIZZLE_128B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(15, 64),
-            cta_tile_layout = Layout.row_major(16, 64),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            src_layout=Layout.row_major(15, 64),
+            cta_tile_layout=Layout.row_major(16, 64),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](
             ctx,
             Index(0, 3, 7, 11, 15),

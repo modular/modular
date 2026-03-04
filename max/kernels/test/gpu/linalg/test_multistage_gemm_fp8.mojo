@@ -108,12 +108,12 @@ fn test_fp8_multistage_gemm[
         dtype,  # b_type
         b_tensor.layout,
         transpose_b,
-        c_layout_int_type = c_tensor.layout_int_type,
-        c_linear_idx_type = c_tensor.linear_idx_type,
-        a_layout_int_type = a_tensor.layout_int_type,
-        a_linear_idx_type = a_tensor.linear_idx_type,
-        b_layout_int_type = b_tensor.layout_int_type,
-        b_linear_idx_type = b_tensor.linear_idx_type,
+        c_layout_int_type=c_tensor.layout_int_type,
+        c_linear_idx_type=c_tensor.linear_idx_type,
+        a_layout_int_type=a_tensor.layout_int_type,
+        a_linear_idx_type=a_tensor.linear_idx_type,
+        b_layout_int_type=b_tensor.layout_int_type,
+        b_linear_idx_type=b_tensor.linear_idx_type,
         config=config,
     ]
 

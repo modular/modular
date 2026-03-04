@@ -1008,19 +1008,19 @@ struct SmemLayouts[
         Self.a_type,
         Self.BM,
         Self.BK,
-        swizzle_mode = Self.a_swizzle,
+        swizzle_mode=Self.a_swizzle,
     ]()
 
     comptime b_smem_layout = tile_layout_k_major[
         Self.b_type,
         Self.BN,
         Self.BK,
-        swizzle_mode = Self.b_swizzle,
+        swizzle_mode=Self.b_swizzle,
     ]() if Self.transpose_b else tile_layout_mn_major[
         Self.b_type,
         Self.BN,
         Self.BK,
-        swizzle_mode = Self.b_swizzle,
+        swizzle_mode=Self.b_swizzle,
     ]()
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)

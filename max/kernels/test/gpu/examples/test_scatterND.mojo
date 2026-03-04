@@ -374,9 +374,9 @@ fn main():
 
         _ = test_case[
             DType.float32,
-            input_shape = DimList(4, 4, 4),
-            indices_shape = DimList(2, 1),
-            updates_shape = DimList(2, 4, 4),
+            input_shape=DimList(4, 4, 4),
+            indices_shape=DimList(2, 1),
+            updates_shape=DimList(2, 4, 4),
         ]
         (
             data,

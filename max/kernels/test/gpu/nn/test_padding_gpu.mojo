@@ -27,7 +27,7 @@ fn test_pad_constant_gpu[
     dtype: DType, rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: TileTensor[DType.int, address_space = AddressSpace.GENERIC, ...],
+    paddings: TileTensor[DType.int, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
     verbose: Bool = False,
 ) raises:

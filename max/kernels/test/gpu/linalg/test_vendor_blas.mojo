@@ -115,10 +115,10 @@ def test_vendor_blas[
 def dispatch_test_vendor_blas[
     transpose_b: Bool
 ](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
-    test_vendor_blas[dtype = DType.bfloat16, transpose_b=transpose_b](
+    test_vendor_blas[dtype=DType.bfloat16, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
-    test_vendor_blas[dtype = DType.float32, transpose_b=transpose_b](
+    test_vendor_blas[dtype=DType.float32, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
 

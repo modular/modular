@@ -141,7 +141,7 @@ struct TileScheduler[
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
-    comptime wave_shape = Index[dtype = DType.uint32](
+    comptime wave_shape = Index[dtype=DType.uint32](
         Self.tile_shape[0] * Self.grid_shape[1],
         Self.tile_shape[1] * Self.grid_shape[0],
     )
@@ -252,14 +252,14 @@ struct TileScheduler[
     @always_inline
     fn _index_to_mn_tile1d(self) -> Tuple[UInt, UInt]:
         # Grid dim as if there is no persist kernel
-        logical_grid_dim = Index[dtype = DType.uint32](
+        logical_grid_dim = Index[dtype=DType.uint32](
             ceildiv(self.prob_shape[1], Self.tile_shape[1]),
             ceildiv(self.prob_shape[0], Self.tile_shape[0]),
         )
 
         by, bx = divmod(UInt(self.idx), UInt(logical_grid_dim[0]))
         block_xy_swizzle = block_swizzle(
-            Index[dtype = DType.uint32](bx, by), logical_grid_dim
+            Index[dtype=DType.uint32](bx, by), logical_grid_dim
         )
 
         m = UInt(block_xy_swizzle[1] * Self.tile_shape[0])

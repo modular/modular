@@ -217,14 +217,14 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
         dtype,
         lhs.layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem = LayoutTensor[
         dtype,
         rhs.layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime thread_layout = Layout.row_major(WARP_SIZE // 4, 4)
@@ -239,7 +239,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
             dtype,
             Layout.row_major(1, a_simd_width),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, a_simd_width]()
@@ -250,7 +250,7 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
             dtype,
             Layout.row_major(1, b_simd_width),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, b_simd_width]()

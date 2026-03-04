@@ -228,11 +228,11 @@ fn interpolate_point_1d[
         mut=True,
         dtype,
         InputLayoutType,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     var center = (
@@ -270,11 +270,9 @@ fn resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     """Resizes input to output shape using linear interpolation.
@@ -304,11 +302,9 @@ fn _resize[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     comptime assert (
@@ -373,7 +369,7 @@ fn _resize[
             for i in range(out_shape[resize_dim]):
                 coords[resize_dim] = i
                 interpolate_point_1d[
-                    InputLayoutType = in_buf.LayoutType,
+                    InputLayoutType=in_buf.LayoutType,
                     coordinate_transformation_mode,
                     antialias,
                 ](

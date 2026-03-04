@@ -318,7 +318,7 @@ struct TileLoaderCPAsync[
         Self.dtype,
         Self.src_layout,
         ImmutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ]
 
     @always_inline
@@ -328,7 +328,7 @@ struct TileLoaderCPAsync[
             Self.dtype,
             Self.src_layout,
             ImmutAnyOrigin,
-            address_space = AddressSpace.GENERIC,
+            address_space=AddressSpace.GENERIC,
         ],
     ):
         """Initialize the cp.async tile loader.
@@ -389,14 +389,14 @@ fn async_copy_with_bound_check[
         dtype,
         src_layout,
         ImmutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     dst: LayoutTensor[
         dtype,
         dst_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         ...,
     ],
 ):
@@ -502,10 +502,10 @@ fn async_copy_with_bound_check[
             async_copy[
                 size_bytes,
                 bypass_L1_16B=False,
-                fill = Scalar[dst.dtype](0),
+                fill=Scalar[dst.dtype](0),
             ](src_ptr, dst_ptr, src_size=Int32(size_bytes))
         else:
             # Out-of-bounds: zero-fill
             async_copy[
-                size_bytes, bypass_L1_16B=False, fill = Scalar[dst.dtype](0)
+                size_bytes, bypass_L1_16B=False, fill=Scalar[dst.dtype](0)
             ](src_ptr, dst_ptr, src_size=0)

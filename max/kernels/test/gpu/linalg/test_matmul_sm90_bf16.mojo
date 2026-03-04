@@ -43,7 +43,7 @@ def main() raises:
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
                     num_pipeline_stages=4,
-                    schedule = MatmulSchedule.TILE2D,
+                    schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
                     static[1024](),
@@ -60,7 +60,7 @@ def main() raises:
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
                     num_pipeline_stages=4,
-                    schedule = MatmulSchedule.TILE2D,
+                    schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
                     dynamic(99),
@@ -77,7 +77,7 @@ def main() raises:
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
                     num_pipeline_stages=4,
-                    schedule = MatmulSchedule.TILE2D,
+                    schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
                     dynamic(100),
@@ -95,7 +95,7 @@ def main() raises:
                     wgmma_shape[wgmma_n[i]],
                     num_consumer=j,
                     num_pipeline_stages=4,
-                    schedule = MatmulSchedule.TILE2D,
+                    schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
                     dynamic(201),

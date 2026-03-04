@@ -824,7 +824,7 @@ fn test_conv2d_bias_fusion[
     # Run conv2d with fused bias
     comptime if use_1sm:
         conv2d_fprop[
-            config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
+            config=Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
             out_nd.make_dims_unknown(),
@@ -835,7 +835,7 @@ fn test_conv2d_bias_fusion[
         )
     else:
         conv2d_fprop[
-            config = Conv2dConfig[dtype, dtype, dtype].default_bf16(),
+            config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
             out_nd.make_dims_unknown(),

@@ -65,7 +65,7 @@ fn llvm_intrinsic[
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
-            hasSideEffects = has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect._mlir_value,
         ](loaded_pack)
         return rebind[type](None)
 
@@ -73,7 +73,7 @@ fn llvm_intrinsic[
         return __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=type,
-            hasSideEffects = has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect._mlir_value,
         ](loaded_pack)
 
 
@@ -822,7 +822,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index = i.__mlir_index__()](
+        return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
             self._mlir_value
         )
 
@@ -921,7 +921,7 @@ fn assume(val: Bool):
 @always_inline
 fn implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutExternalOrigin, address_space = AddressSpace.CONSTANT
+        UInt8, MutExternalOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):
     """

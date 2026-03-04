@@ -104,7 +104,7 @@ fn bench_broadcast[
 
     var length = num_bytes // size_of[dtype]()
 
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
     var cb_in = CacheBustingBuffer[dtype](
         length, simd_size, list_of_ctx[root], cache_busting
     )

@@ -174,7 +174,7 @@ fn _mask_apply_rdna[
                         block_idx.y * UInt(group) + UInt(group_idx)
                     ) if token_gen else block_idx.x
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                        IndexList[4, element_type = DType.uint32](
+                        IndexList[4, element_type=DType.uint32](
                             Int(block_idx.z),
                             Int(q_head_idx),
                             Int(score_seq_with_start_pos),
@@ -335,15 +335,15 @@ struct AttentionRDNA[
     ]
 
     comptime QRegisterBufferType = QRegisterBufferRDNA[
-        dtype = Self.q_type,
-        mma_shape = Self.mma_shape,
-        k_group_size = Self.k_group_size,
-        WM = Int(Self.WM),
-        WN = Int(Self.WN),
-        BN = Int(Self.BN),
-        BK = Int(Self.BK),
-        depth = Self.q_depth,
-        thread_layout = Self.warp_layout,
+        dtype=Self.q_type,
+        mma_shape=Self.mma_shape,
+        k_group_size=Self.k_group_size,
+        WM=Int(Self.WM),
+        WN=Int(Self.WN),
+        BN=Int(Self.BN),
+        BK=Int(Self.BK),
+        depth=Self.q_depth,
+        thread_layout=Self.warp_layout,
     ]
 
     var out_reg_buffer: Self.OutputRegisterBufferType
@@ -410,7 +410,7 @@ struct AttentionRDNA[
             get_accum_type[Self.q_type](),
             Self.q_type,
             Self.mma_shape,
-            group_size = Self.k_group_size,
+            group_size=Self.k_group_size,
             transpose_b=True,
         ],
     ):
@@ -423,7 +423,7 @@ struct AttentionRDNA[
             get_accum_type[Self.q_type](),
             Self.q_type,
             Self.mma_shape,
-            group_size = Self.k_group_size,
+            group_size=Self.k_group_size,
             transpose_b=False,
         ],
     ):
@@ -439,10 +439,10 @@ struct AttentionRDNA[
         prefetched_b_tile: Bool = False,
     ](mut self, mut k_buffer: k_buffer_type):
         mma_rdna[
-            tensor_core_mma = Self.get_tensor_core_mma_qk(),
-            BK = Int(Self.BK),
+            tensor_core_mma=Self.get_tensor_core_mma_qk(),
+            BK=Int(Self.BK),
             prefetch_function=prefetch_function,
-            swap_a_b = Self.swap_a_b,
+            swap_a_b=Self.swap_a_b,
             beg_iter=beg_iter,
             num_iters=num_iters,
             prefetched_b_tile=prefetched_b_tile,
@@ -465,11 +465,11 @@ struct AttentionRDNA[
             self.p_reg_buffer.copy_to_shared[i]()
 
         mma_rdna[
-            tensor_core_mma = Self.get_tensor_core_mma_pv(),
-            BK = Int(Self.BK),
+            tensor_core_mma=Self.get_tensor_core_mma_pv(),
+            BK=Int(Self.BK),
             prefetch_function=prefetch_function,
-            swap_a_b = Self.swap_a_b,
-            num_iters = Int(Self.BN // Self.BK),
+            swap_a_b=Self.swap_a_b,
+            num_iters=Int(Self.BN // Self.BK),
             prefetched_b_tile=prefetched_b_tile,
             a_copy_fn=copy_p_chunk,
         ](
@@ -485,19 +485,19 @@ struct AttentionRDNA[
     ) -> TileMaskStatus:
         comptime if Self.token_gen:
             return self.mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype = DType.uint32](Int(1), Int(Self.BN)),
+                Index[dtype=DType.uint32](Int(1), Int(Self.BN)),
             )
         else:
             return self.mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype = DType.uint32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype=DType.uint32](Int(Self.BM), Int(Self.BN)),
             )
 
     @always_inline
@@ -535,15 +535,15 @@ struct AttentionRDNA[
         fn _mask_apply_impl[masked: Bool]():
             _mask_apply_rdna[
                 masked=masked,
-                accum_type = Self.accum_type,
-                token_gen = Self.token_gen,
-                mma_shape = Self.mma_shape,
-                num_m_mmas = Int(Self.num_m_mmas),
-                num_n_mmas = Int(Self.num_n_mmas),
-                mask_t = Self.mask_t,
-                group = Self.group,
+                accum_type=Self.accum_type,
+                token_gen=Self.token_gen,
+                mma_shape=Self.mma_shape,
+                num_m_mmas=Int(Self.num_m_mmas),
+                num_n_mmas=Int(Self.num_n_mmas),
+                mask_t=Self.mask_t,
+                group=Self.group,
                 frag_num_rows=RDNA_CD_FRAG_SIZE,
-                use_exp2 = Self.use_exp2,
+                use_exp2=Self.use_exp2,
             ](
                 kv_tile_start_row,
                 kv_tile_num_rows,
@@ -619,7 +619,7 @@ struct AttentionRDNA[
             var p_ptr = stack_allocation[
                 Int(Self.BM) * Int(Self.BK),
                 Self.q_type,
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
         else:
@@ -676,8 +676,8 @@ struct AttentionRDNA[
             Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
             Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
             Self.warp_layout,
-            use_exp2 = Self.use_exp2,
-            fragment_layout = Self.fragment_layout,
+            use_exp2=Self.use_exp2,
+            fragment_layout=Self.fragment_layout,
         ](
             self.out_reg_buffer.vectorize(),
             self.p_reg_buffer.vectorize(),

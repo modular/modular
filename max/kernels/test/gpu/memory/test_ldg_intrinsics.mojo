@@ -61,7 +61,7 @@ fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
 
 def test_register_intrinsics_sm80() raises:
     var asm = _compile_code[
-        register_intrinsics, target = get_gpu_target["sm_80"]()
+        register_intrinsics, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_register_intrinsics(asm)
 
@@ -69,7 +69,7 @@ def test_register_intrinsics_sm80() raises:
 def test_register_intrinsics_sm90() raises:
     var asm = _compile_code[
         register_intrinsics,
-        target = get_gpu_target["sm_90"](),
+        target=get_gpu_target["sm_90"](),
     ]().asm
     _verify_register_intrinsics(asm)
 

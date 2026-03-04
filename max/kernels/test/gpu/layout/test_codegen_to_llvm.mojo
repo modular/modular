@@ -43,7 +43,7 @@ fn test_no_alloca_fill():
         compile_info[
             layout_tensor_kernel,
             emission_kind="llvm",
-            target = get_gpu_target(),
+            target=get_gpu_target(),
         ]()
     )
 

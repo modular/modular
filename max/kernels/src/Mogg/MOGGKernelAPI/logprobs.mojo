@@ -32,8 +32,8 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
     fn __init__(
         out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
     ):
-        self.k_array = InlineArray[size = Self.num_elements](fill=fill_k)
-        self.v_array = InlineArray[size = Self.num_elements](fill=fill_v)
+        self.k_array = InlineArray[size=Self.num_elements](fill=fill_k)
+        self.v_array = InlineArray[size=Self.num_elements](fill=fill_v)
 
     @always_inline
     fn swap(mut self, a: Int, b: Int) -> None:

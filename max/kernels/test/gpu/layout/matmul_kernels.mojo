@@ -403,13 +403,13 @@ fn gemm_kernel_3[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Initialize the register to accumulate the result
@@ -563,18 +563,18 @@ fn gemm_kernel_4[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate a register tile to store the partial results.
     var dst_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     dst_reg.copy_from(dst)
 
@@ -734,27 +734,27 @@ fn gemm_kernel_5[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -910,13 +910,13 @@ fn gemm_kernel_6[
         dtype,
         Layout.col_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate register tiles to store the partial results and operands.
@@ -924,16 +924,16 @@ fn gemm_kernel_6[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -1110,13 +1110,13 @@ fn matmul_kernel_tc[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
@@ -1125,7 +1125,7 @@ fn matmul_kernel_tc[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -1140,10 +1140,10 @@ fn matmul_kernel_tc[
         B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles of A and B into shared memory asynchronously
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
         )
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             B_sram_tile.vectorize[1, 4](), B_dram_tile.vectorize[1, 4]()
         )
 

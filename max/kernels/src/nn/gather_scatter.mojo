@@ -714,7 +714,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype](),
+                simd_width=simd_width_of[dtype](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
@@ -827,7 +827,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype, target=compile_target](),
+                simd_width=simd_width_of[dtype, target=compile_target](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -886,13 +886,11 @@ fn scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1119,13 +1117,11 @@ fn scatter_nd[
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1134,7 +1130,7 @@ fn scatter_nd[
         output_type,
         indices_type,
         single_thread_blocking_override,
-        oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
+        oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
         target=target,
         reduce_fn=None,
     ](data, indices, updates, output, context)

@@ -195,7 +195,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index = idx.__mlir_index__()
+            index=idx.__mlir_index__()
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
@@ -321,7 +321,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
                 trait_downcast[Writable](self[i]).write_to(writer)
 
         write_sequence_to[
-            size = Self.__len__(),
+            size=Self.__len__(),
             ElementFn=elements,
         ](writer, open="", close="")
 

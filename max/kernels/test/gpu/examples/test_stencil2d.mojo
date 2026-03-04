@@ -82,7 +82,7 @@ fn stencil2d_smem(
         2,
         MutAnyOrigin,
         DimList(BLOCK_DIM + 2, BLOCK_DIM + 2),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Each element is loaded in shared memory.

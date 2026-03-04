@@ -61,7 +61,7 @@ fn matmul[
             and ctx.default_device_info.compute >= B200.compute
         )
         comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
-            simd_width_of[c.type, target = get_gpu_target()]()
+            simd_width_of[c.type, target=get_gpu_target()]()
         )
 
         @parameter
@@ -73,7 +73,7 @@ fn matmul[
             var c_val = c.load[
                 width=simd_width,
                 # Load takes alignment in bytes, lambda takes number of elements
-                alignment = alignment * size_of[c_type](),
+                alignment=alignment * size_of[c_type](),
             ](c_coord)
             epilogue[c.type, simd_width, alignment=alignment](c_coord, c_val)
 

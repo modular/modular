@@ -491,7 +491,7 @@ fn matmul[
             transpose_b,
         )
 
-    with Trace[TraceLevel.OP, target = StaticString("gpu")](
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),

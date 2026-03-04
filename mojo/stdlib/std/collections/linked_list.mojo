@@ -809,7 +809,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             writer: The writer to write the list to.
         """
-        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr representation of this LinkedList to a Writer.
@@ -823,7 +823,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "LinkedList").params(
             fmt.TypeNames[Self.ElementType](),

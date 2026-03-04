@@ -131,7 +131,7 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
 
     fn __init__(
         out self,
-        tensor: ManagedTensorSlice[dtype = Self.dtype, rank = Self.rank, ...],
+        tensor: ManagedTensorSlice[dtype=Self.dtype, rank=Self.rank, ...],
     ):
         self.data = Pointer(to=tensor.unsafe_ptr()[])
         self.device = DLDevice()

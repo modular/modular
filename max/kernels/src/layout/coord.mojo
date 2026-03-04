@@ -526,8 +526,8 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         var t = _RegTuple(
             storage=rebind_var[
                 VariadicPack[
-                    elt_is_mutable = type_of(storage).elt_is_mutable,
-                    origin = type_of(storage).origin,
+                    elt_is_mutable=type_of(storage).elt_is_mutable,
+                    origin=type_of(storage).origin,
                     type_of(storage).is_owned,
                     TrivialRegisterPassable,
                     *Self.element_types,
@@ -1377,7 +1377,7 @@ comptime _FlattenReducer[
 comptime _Flattened[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenReducer,
 ]
@@ -1414,7 +1414,7 @@ comptime _FlattenOffsetReducer[
 comptime _FlattenedOffsets[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenOffsetReducer,
 ]
@@ -1484,7 +1484,7 @@ comptime _AllStaticReducer[
 
 
 comptime _AllStatic[*element_types: CoordLike] = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=element_types,
     Reducer=_AllStaticReducer,
 ][0]
@@ -1504,9 +1504,9 @@ comptime _AllEqualReducer[
 comptime _AllEqual[
     T: AnyType, *element_types: AnyType
 ] = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[False],
+    BaseVal=Variadic.values[False],
     VariadicType=element_types,
-    Reducer = _AllEqualReducer[T, ...],
+    Reducer=_AllEqualReducer[T, ...],
 ][
     0
 ]
@@ -1521,7 +1521,7 @@ comptime _StaticProductReducer[
 comptime _StaticProduct[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[1],
+    BaseVal=Variadic.values[1],
     VariadicType=element_types,
     Reducer=_StaticProductReducer,
 ][
@@ -1536,7 +1536,7 @@ comptime _IntToComptimeIntMapper[
 
 
 comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=values,
     Reducer=_IntToComptimeIntMapper,
 ]
@@ -1580,9 +1580,9 @@ Uses direct field access rather than methods for compile-time evaluation.
 comptime _DimsToCoordLike[
     dtype: DType, dims: DimList
 ] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
-    VariadicType = dims.value.value,
-    Reducer = _DimToCoordLikeMapper[dtype, ...],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=dims.value.value,
+    Reducer=_DimToCoordLikeMapper[dtype, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
@@ -1631,11 +1631,11 @@ Uses direct field access rather than methods for compile-time evaluation.
 comptime _IntTupleToCoordLike[
     dtype: DType, tuple: IntTuple
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
-    VariadicType = Variadic.types[
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=Variadic.types[
         T=CoordLike, *_Splatted[RuntimeInt[dtype], len(tuple)]
     ],
-    Reducer = _IntTupleToCoordLikeMapper[dtype, tuple, ...],
+    Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
@@ -1682,7 +1682,7 @@ Uses direct field access rather than methods for compile-time evaluation.
 comptime _CoordToDimList[*dims: CoordLike] = DimList(
     VariadicParamList(
         _ReduceVariadicAndIdxToValue[
-            BaseVal = Variadic.empty_of_type[Dim],
+            BaseVal=Variadic.empty_of_type[Dim],
             VariadicType=dims,
             Reducer=_CoordToDimMapper,
         ]
@@ -1732,9 +1732,9 @@ All elements (ComptimeInt, RuntimeInt of any dtype) are converted to RuntimeInt[
 comptime _CoordToDynamic[
     dtype: DType, *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
-    Reducer = _CoordToDynamicMapper[dtype, ...],
+    Reducer=_CoordToDynamicMapper[dtype, ...],
 ]
 """Converts a variadic of CoordLike types to all RuntimeInt[dtype].
 All elements are converted to RuntimeInt[dtype], regardless of their original type.
@@ -1796,9 +1796,9 @@ comptime _Idx2CrdResultTypes[
     stride_types: Variadic.TypesOfTrait[CoordLike],
     shape_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=shape_types,
-    Reducer = _Idx2CrdResultMapper[out_dtype, idx_type, stride_types, ...],
+    Reducer=_Idx2CrdResultMapper[out_dtype, idx_type, stride_types, ...],
 ]
 """Computes the result types for idx2crd based on shape, stride, and index.
 
@@ -1917,7 +1917,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index = idx.__mlir_index__()
+            index=idx.__mlir_index__()
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
@@ -2272,7 +2272,7 @@ comptime _Multiply[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _MultiplyMapper[Rhs=Rhs, ...],
+    Mapper=_MultiplyMapper[Rhs=Rhs, ...],
 ]
 
 
@@ -2289,7 +2289,7 @@ comptime _MultiplyByScalar[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Types,
-    Mapper = _MultiplyByScalarMapper[scalar=scalar, ...],
+    Mapper=_MultiplyByScalarMapper[scalar=scalar, ...],
 ]
 """Multiply each element in Types by a scalar value.
 
@@ -2315,7 +2315,7 @@ comptime _Divide[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _DivideMapper[Rhs=Rhs, ...],
+    Mapper=_DivideMapper[Rhs=Rhs, ...],
 ]
 
 comptime _CeilDivMapper[
@@ -2334,5 +2334,5 @@ comptime _CeilDiv[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _CeilDivMapper[Rhs=Rhs, ...],
+    Mapper=_CeilDivMapper[Rhs=Rhs, ...],
 ]

@@ -44,8 +44,8 @@ def main() raises:
             num_consumer=2,
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            grid_shape = Index(32, 4),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(32, 4),
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](ctx, dynamic(512), static[2560](), static[8192]())
 
@@ -134,7 +134,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](
             ctx,
@@ -187,7 +187,7 @@ def main() raises:
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn = Optional[
+            elementwise_compute_lambda_fn=Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_fn_square),
             default_epilogue=True,
@@ -216,7 +216,7 @@ def main() raises:
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn = Optional[
+            elementwise_compute_lambda_fn=Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords),
             default_epilogue=True,
@@ -231,7 +231,7 @@ def main() raises:
             wgmma_shape[56, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](
             ctx,
@@ -261,7 +261,7 @@ def main() raises:
             wgmma_shape[256, DType.float32],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](
             ctx,

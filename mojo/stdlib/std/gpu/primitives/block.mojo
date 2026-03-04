@@ -57,7 +57,7 @@ fn _block_reduce_with_padding[
 ](val: Scalar[dtype], *, initial_val: Scalar[dtype], wid: Int) -> Scalar[dtype]:
     # Add padding to avoid bank conflicts
     var shared_mem = stack_allocation[
-        n_warps + padding, dtype, address_space = AddressSpace.SHARED
+        n_warps + padding, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var lid = Int(lane_id())
@@ -228,7 +228,7 @@ fn sum[
     """
 
     return _block_reduce[
-        block_size, warp_reduce_fn = warp.sum, broadcast=broadcast
+        block_size, warp_reduce_fn=warp.sum, broadcast=broadcast
     ](val.reduce_add(), initial_val=0)
 
 
@@ -270,7 +270,7 @@ fn sum[
         block_dim_x,
         block_dim_y,
         block_dim_z,
-        warp_reduce_fn = warp.sum,
+        warp_reduce_fn=warp.sum,
         broadcast=broadcast,
     ](val.reduce_add(), initial_val=0)
 
@@ -308,7 +308,7 @@ fn max[
     """
 
     return _block_reduce[
-        block_size, warp_reduce_fn = warp.max, broadcast=broadcast
+        block_size, warp_reduce_fn=warp.max, broadcast=broadcast
     ](val.reduce_max(), initial_val=Scalar[dtype].MIN_FINITE)
 
 
@@ -352,7 +352,7 @@ fn max[
         block_dim_x,
         block_dim_y,
         block_dim_z,
-        warp_reduce_fn = warp.max,
+        warp_reduce_fn=warp.max,
         broadcast=broadcast,
     ](val.reduce_max(), initial_val=Scalar[dtype].MIN_FINITE)
 
@@ -389,7 +389,7 @@ fn min[
     """
 
     return _block_reduce[
-        block_size, warp_reduce_fn = warp.min, broadcast=broadcast
+        block_size, warp_reduce_fn=warp.min, broadcast=broadcast
     ](val.reduce_min(), initial_val=Scalar[dtype].MAX_FINITE)
 
 
@@ -432,7 +432,7 @@ fn min[
         block_dim_x,
         block_dim_y,
         block_dim_z,
-        warp_reduce_fn = warp.min,
+        warp_reduce_fn=warp.min,
         broadcast=broadcast,
     ](val.reduce_min(), initial_val=Scalar[dtype].MAX_FINITE)
 
@@ -478,7 +478,7 @@ fn broadcast[
 
     # Multi-warp block - use shared memory
     var shared_mem = stack_allocation[
-        width, dtype, address_space = AddressSpace.SHARED
+        width, dtype, address_space=AddressSpace.SHARED
     ]()
 
     # Source thread writes its value to shared memory
@@ -534,7 +534,7 @@ fn broadcast[
         return warp.broadcast(val)
 
     var shared_mem = stack_allocation[
-        width, dtype, address_space = AddressSpace.SHARED
+        width, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var linear_tid = (
@@ -572,7 +572,7 @@ fn _prefix_sum[
     # We need one slot per warp to store warp-level scan results
     comptime n_warps = block_size // WARP_SIZE
     var warp_mem = stack_allocation[
-        align_up(n_warps, WARP_SIZE), dtype, address_space = AddressSpace.SHARED
+        align_up(n_warps, WARP_SIZE), dtype, address_space=AddressSpace.SHARED
     ]()
 
     var thread_result = warp.prefix_sum[exclusive=exclusive](val)

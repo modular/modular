@@ -186,19 +186,19 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         comptime c_2d_layout = _reshape_to_2d[c_ref_lt.layout]()
 
         var a_2d = LayoutTensor[
-            a_type, a_2d_layout, address_space = a_lt.address_space
+            a_type, a_2d_layout, address_space=a_lt.address_space
         ](
             a_lt.ptr + b * M * K,
             RuntimeLayout[a_2d_layout].row_major(IndexList[2](M, K)),
         )
         var b_2d = LayoutTensor[
-            b_type, b_2d_layout, address_space = b_lt.address_space
+            b_type, b_2d_layout, address_space=b_lt.address_space
         ](
             b_lt.ptr + b * N * K,
             RuntimeLayout[b_2d_layout].row_major(IndexList[2](N, K)),
         )
         var c_ref_2d = LayoutTensor[
-            c_type, c_2d_layout, address_space = c_ref_lt.address_space
+            c_type, c_2d_layout, address_space=c_ref_lt.address_space
         ](
             c_ref_lt.ptr + b * M * N,
             RuntimeLayout[c_2d_layout].row_major(IndexList[2](M, N)),
@@ -261,7 +261,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -278,7 +278,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -295,7 +295,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     cta_group=cta_group,
                     block_swizzle_size=8,
                 ](
@@ -313,7 +313,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
                     cta_group=cta_group,
                     block_swizzle_size=4,
                 ](
@@ -331,7 +331,7 @@ def main() raises:
                     dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=cta_group,
                     block_swizzle_size=1,
                 ](
@@ -353,7 +353,7 @@ def main() raises:
                 dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                 cta_group=cta_group,
                 swapAB=True,
             ](
@@ -370,7 +370,7 @@ def main() raises:
                 dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                 cta_group=cta_group,
                 swapAB=True,
                 block_swizzle_size=4,

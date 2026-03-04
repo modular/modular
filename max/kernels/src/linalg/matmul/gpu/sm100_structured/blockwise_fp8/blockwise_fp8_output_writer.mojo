@@ -357,7 +357,7 @@ struct BlockwiseFP8TileWriter[
                 Self.data_paths, Self.stageN
             ](0, 0)
             stsm_helper[
-                swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
+                swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
             ](upper_frag.cast[Self.c_type](), c_smem_warp_tile_upper)
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
@@ -366,7 +366,7 @@ struct BlockwiseFP8TileWriter[
 
             comptime if Self.is_lower_frag_required:
                 stsm_helper[
-                    swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
+                    swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
                 ](lower_frag.cast[Self.c_type](), c_smem_warp_tile_lower)
 
             named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
@@ -439,7 +439,7 @@ struct BlockwiseFP8TileWriter[
             comptime for j in range(zipped.shape[1][0].value()):
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
-                    element_type = DType.uint32,
+                    element_type=DType.uint32,
                 ](Int(thread_idx.x), j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
@@ -453,9 +453,9 @@ struct BlockwiseFP8TileWriter[
                 ) * UInt32(
                     simd_size
                 )
-                var cmem_crd = split_layout_new.idx2crd[
-                    out_dtype = DType.uint32
-                ](Int(linear_idx))
+                var cmem_crd = split_layout_new.idx2crd[out_dtype=DType.uint32](
+                    Int(linear_idx)
+                )
                 var local_i = cmem_crd[0].value()
                 var local_j = cmem_crd[1].value()
                 var coord_m = m_abs + UInt32(i * TMA_BM)

@@ -87,7 +87,7 @@ fn test_combine[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
     comptime token_fmt_type = BF16TokenFormat[
-        output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        output_layout=Layout(), hidden_size, top_k, gpu_alignment
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime combine_msg_bytes = size_of[input_type]() * hidden_size
@@ -693,7 +693,7 @@ def main() raises:
             test_combine[
                 hidden_size=7168,
                 top_k=8,
-                n_experts = num_gpus * n_local_experts,
+                n_experts=num_gpus * n_local_experts,
                 n_ranks=num_gpus,
                 n_slots=1,
                 n_tokens_per_rank=128,

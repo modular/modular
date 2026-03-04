@@ -85,7 +85,7 @@ struct RuntimeTuple[
     comptime scalar_length = len(flatten(Self.S))
     """The total number of scalar elements in this RuntimeTuple after flattening nested tuples."""
 
-    var value: IndexList[Self.scalar_length, element_type = Self.element_type]
+    var value: IndexList[Self.scalar_length, element_type=Self.element_type]
     """Storage for the actual tuple values, implemented as an IndexList with the appropriate size and element type."""
 
     @always_inline
@@ -180,7 +180,7 @@ struct RuntimeTuple[
     @always_inline
     fn __getitem__[
         i: Int
-    ](self, out res: RuntimeTuple[Self.S[i], element_type = Self.element_type]):
+    ](self, out res: RuntimeTuple[Self.S[i], element_type=Self.element_type]):
         """Retrieves the element at the specified index in the tuple.
 
         This method provides array-like indexing for RuntimeTuple, allowing access
@@ -217,9 +217,9 @@ struct RuntimeTuple[
         R: IntTuple
     ](
         self,
-        rhs: RuntimeTuple[R, element_type = Self.element_type],
+        rhs: RuntimeTuple[R, element_type=Self.element_type],
         out result: RuntimeTuple[
-            concat(Self.S, R), element_type = Self.element_type
+            concat(Self.S, R), element_type=Self.element_type
         ],
     ):
         """Concatenates two `RuntimeTuple`s together.
@@ -255,7 +255,7 @@ struct RuntimeTuple[
     fn flatten(
         self,
         out result: RuntimeTuple[
-            flatten(Self.S), element_type = Self.element_type
+            flatten(Self.S), element_type=Self.element_type
         ],
     ):
         """Flattens a potentially nested `RuntimeTuple` into a single-level tuple.
@@ -437,7 +437,7 @@ fn idx2crd[
     stride: RuntimeTuple[stride_t, ...],
     out result: RuntimeTuple[
         idx2crd_int_tuple(idx_t, shape_t, stride_t),
-        element_type = shape.element_type,
+        element_type=shape.element_type,
     ],
 ):
     """Converts a linear index to multi-dimensional coordinates.
@@ -480,7 +480,7 @@ fn idx2crd[
     shape: RuntimeTuple[shape_t, ...],
 ) -> RuntimeTuple[
     idx2crd_int_tuple(idx_t, shape_t, prefix_product_int_tuple(shape_t)),
-    element_type = shape.element_type,
+    element_type=shape.element_type,
 ]:
     """Converts a linear index to multi-dimensional coordinates using shape-derived strides.
     This is a convenience overload of `idx2crd` that automatically calculates the stride

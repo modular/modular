@@ -637,15 +637,11 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[Self.dtype, Self.size]()
 
         var index = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<index>`
+            _type=__mlir_type.`!pop.scalar<index>`
         ](value._mlir_value)
-        var s = __mlir_op.`pop.cast`[_type = Scalar[Self.dtype]._mlir_type](
-            index
-        )
+        var s = __mlir_op.`pop.cast`[_type=Scalar[Self.dtype]._mlir_type](index)
 
-        self._mlir_value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
-            s
-        )
+        self._mlir_value = __mlir_op.`pop.simd.splat`[_type=Self._mlir_type](s)
 
     @always_inline
     fn __init__[T: Floatable, //](out self: Float64, value: T, /):
@@ -716,7 +712,7 @@ struct SIMD[dtype: DType, size: Int](
 
         _simd_construction_checks[Self.dtype, Self.size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<bool>`
+            _type=__mlir_type.`!pop.scalar<bool>`
         ](value._mlir_value)
 
         self._mlir_value = rebind[Self._Mask._mlir_type](s)
@@ -732,11 +728,11 @@ struct SIMD[dtype: DType, size: Int](
         """
         _simd_construction_checks[Self.dtype, Self.size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<bool>`
+            _type=__mlir_type.`!pop.scalar<bool>`
         ](fill._mlir_value)
 
         self._mlir_value = __mlir_op.`pop.simd.splat`[
-            _type = Self._Mask._mlir_type
+            _type=Self._Mask._mlir_type
         ](s)
 
     @doc_private
@@ -761,7 +757,7 @@ struct SIMD[dtype: DType, size: Int](
             value: The value to splat to the elements of the vector.
         """
         _simd_construction_checks[Self.dtype, Self.size]()
-        self._mlir_value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
+        self._mlir_value = __mlir_op.`pop.simd.splat`[_type=Self._mlir_type](
             value._mlir_value
         )
 
@@ -1353,7 +1349,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] == rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred eq>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1370,7 +1366,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] != rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1387,7 +1383,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] > rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred gt>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1405,7 +1401,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] >= rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1422,7 +1418,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] < rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred lt>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1440,7 +1436,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] <= rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred le>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1818,9 +1814,9 @@ struct SIMD[dtype: DType, size: Int](
             True if the SIMD scalar is non-zero and False otherwise.
         """
 
-        var ne_zero = __mlir_op.`pop.cmp`[
-            pred = __mlir_attr.`#pop<cmp_pred ne>`
-        ](self._mlir_value, Self(0)._mlir_value)
+        var ne_zero = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](
+            self._mlir_value, Self(0)._mlir_value
+        )
         return Bool(mlir_value=__mlir_op.`pop.simd.reduce_or`(ne_zero))
 
     @always_inline("nodebug")
@@ -2134,13 +2130,13 @@ struct SIMD[dtype: DType, size: Int](
         comptime if Self.dtype in (DType._uint1, DType._uint2, DType._uint4):
             # `pop.cast` doesn't support some conversions from `ui1`, `ui2`, or `ui4`
             var uint = __mlir_op.`pop.cast`[
-                _type = SIMD[DType.uint32, Self.size]._mlir_type,
-                fast = __mlir_attr.unit,
+                _type=SIMD[DType.uint32, Self.size]._mlir_type,
+                fast=__mlir_attr.unit,
             ](self._mlir_value)
             return SIMD[DType.uint32, Self.size](mlir_value=uint).cast[target]()
 
         var res = __mlir_op.`pop.cast`[
-            _type = SIMD[target, Self.size]._mlir_type, fast = __mlir_attr.unit
+            _type=SIMD[target, Self.size]._mlir_type, fast=__mlir_attr.unit
         ](self._mlir_value)
         return SIMD(mlir_value=res)
 
@@ -2366,7 +2362,7 @@ struct SIMD[dtype: DType, size: Int](
         comptime assert Self.dtype.is_numeric(), "the SIMD type must be numeric"
 
         return Self(
-            mlir_value=__mlir_op.`pop.fma`[fastmathFlags = flag._mlir_attr()](
+            mlir_value=__mlir_op.`pop.fma`[fastmathFlags=flag._mlir_attr()](
                 self._mlir_value,
                 multiplier._mlir_value,
                 accumulator._mlir_value,
@@ -2427,8 +2423,8 @@ struct SIMD[dtype: DType, size: Int](
             ), "invalid index in the shuffle operation"
 
         var res = __mlir_op.`pop.simd.shuffle`[
-            mask = mask._mlir_value,
-            _type = SIMD[Self.dtype, output_size]._mlir_type,
+            mask=mask._mlir_value,
+            _type=SIMD[Self.dtype, output_size]._mlir_type,
         ](self._mlir_value, other._mlir_value)
         return SIMD(mlir_value=res)
 
@@ -2824,7 +2820,7 @@ struct SIMD[dtype: DType, size: Int](
             return self[0]
 
         comptime if CompilationTarget.is_x86() or size_out > 1:
-            return self.reduce[max[dtype = Self.dtype], size_out]()
+            return self.reduce[max[dtype=Self.dtype], size_out]()
 
         comptime if Self.dtype.is_unsigned():
             return llvm_intrinsic[
@@ -2864,7 +2860,7 @@ struct SIMD[dtype: DType, size: Int](
             return self[0]
 
         comptime if CompilationTarget.is_x86() or size_out > 1:
-            return self.reduce[min[dtype = Self.dtype], size_out]()
+            return self.reduce[min[dtype=Self.dtype], size_out]()
 
         comptime if Self.dtype.is_unsigned():
             return llvm_intrinsic[
@@ -3197,7 +3193,7 @@ struct SIMD[dtype: DType, size: Int](
                 res[i] = Self.size - i - 1
             return res
 
-        return self.shuffle[mask = indices()]()
+        return self.shuffle[mask=indices()]()
 
     # ===----------------------------------------------------------------------=== #
     # ConvertibleToPython
@@ -3450,7 +3446,7 @@ fn _convert_float8_to_f32[
         )
     ):
         var res = __mlir_op.`pop.cast`[
-            _type = SIMD[DType.float32, size]._mlir_type
+            _type=SIMD[DType.float32, size]._mlir_type
         ](val._mlir_value)
         return SIMD[DType.float32, size](mlir_value=res)
 
@@ -3463,7 +3459,7 @@ fn _convert_float8_to_f32[
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
             return _convert_float8_to_f32_scalar[result_dtype](val)
 
-        return _simd_apply[wrapper_fn, result_dtype = DType.float32](val)
+        return _simd_apply[wrapper_fn, result_dtype=DType.float32](val)
 
 
 @always_inline
@@ -3477,7 +3473,7 @@ fn _convert_float8_to_f16[
     ):
         # do not call `SIMD.cast` here; the inliner will diverge
         var res = __mlir_op.`pop.cast`[
-            _type = SIMD[DType.float16, size]._mlir_type
+            _type=SIMD[DType.float16, size]._mlir_type
         ](val._mlir_value)
         return SIMD[DType.float16, size](mlir_value=res)
     else:
@@ -3496,7 +3492,7 @@ fn _convert_f32_to_float8[
         DType.float8_e5m2,
     ):
         # do not call `SIMD.cast` here; the inliner will diverge
-        var res = __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+        var res = __mlir_op.`pop.cast`[_type=SIMD[target, size]._mlir_type](
             val._mlir_value
         )
         return SIMD(mlir_value=res)
@@ -3504,7 +3500,7 @@ fn _convert_f32_to_float8[
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
-        var res = __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+        var res = __mlir_op.`pop.cast`[_type=SIMD[target, size]._mlir_type](
             val._mlir_value
         )
         return SIMD(mlir_value=res)
@@ -3829,7 +3825,7 @@ fn _bfloat16_to_f32[
             val._refine[DType.bfloat16](),
         )._refine[result_dtype]()
 
-    return _simd_apply[wrapper_fn, result_dtype = DType.float32](val)
+    return _simd_apply[wrapper_fn, result_dtype=DType.float32](val)
 
 
 comptime _f32_bf16_mantissa_diff = (

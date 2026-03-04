@@ -256,7 +256,7 @@ fn test_prefill[
         ),
     )
 
-    flare_mla_prefill[rank = q_device.rank](
+    flare_mla_prefill[rank=q_device.rank](
         output_device,
         q_device,
         k_device,

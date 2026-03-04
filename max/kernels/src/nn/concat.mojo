@@ -135,7 +135,7 @@ struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
 fn _canonical_reshape[
     dtype: DType
 ](
-    buf: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    buf: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     axis: Int,
 ) -> _CanonicallyReshapedBuffer[buf.origin]:
     var shape = coord_to_index_list(buf.layout.shape_coord())
@@ -152,7 +152,7 @@ fn _canonical_reshape_output[
     dtype: DType,
 ](
     out_buf: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -177,7 +177,7 @@ fn _concat_parallel[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -324,7 +324,7 @@ fn _concat[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -386,7 +386,7 @@ fn _concat_inner[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
@@ -435,7 +435,7 @@ fn _concat_serial[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -466,7 +466,7 @@ fn _concat_small[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -548,7 +548,7 @@ fn _concat_cpu[
     single_thread_blocking_override: Bool,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -655,7 +655,7 @@ fn concat[
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: StaticTuple[
@@ -747,7 +747,7 @@ fn _concat_gpu_elementwise[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: StaticTuple[
@@ -775,7 +775,7 @@ fn _concat_gpu_elementwise[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin],
@@ -837,7 +837,7 @@ fn _concat_gpu[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: StaticTuple[
@@ -897,8 +897,8 @@ fn _concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _concat_inner_most_single_dim[
-                OutputLayoutType = output.LayoutType,
-                output_origin = output.origin,
+                OutputLayoutType=output.LayoutType,
+                output_origin=output.origin,
                 InputLayoutType=InputLayoutType,
                 input_origin=input_origin,
                 dtype,
@@ -931,7 +931,7 @@ fn _fused_concat_cpu[
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr,
 ) raises:
@@ -1012,7 +1012,7 @@ fn _fused_concat_gpu_elementwise[
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1079,8 +1079,8 @@ fn _fused_concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _fused_concat_inner_most_single_dim[
-                OutputLayoutType = output.LayoutType,
-                output_origin = output.origin,
+                OutputLayoutType=output.LayoutType,
+                output_origin=output.origin,
                 rank,
                 dtype,
                 block_size,

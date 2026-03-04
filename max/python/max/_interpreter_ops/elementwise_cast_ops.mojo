@@ -264,7 +264,7 @@ fn unary_mixed_op[
     if not ctx:
         # TODO(MXF-108): Remove use_blocking_impl=True
         elementwise[
-            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
         ](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support

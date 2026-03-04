@@ -147,7 +147,7 @@ fn run_group_norm_gpu[
 def main() raises:
     with DeviceContext() as ctx:
         comptime default_simd = simd_width_of[
-            DType.float32, target = get_gpu_target()
+            DType.float32, target=get_gpu_target()
         ]()
 
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===

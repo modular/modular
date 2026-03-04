@@ -30,8 +30,8 @@ fn test_kernel[
     var offset_tensor = from_ndbuffer_row_major(group_offsets)
     scheduler = TileScheduler[
         static_MN=20,
-        tile_shape = Index(4, 8, 16),
-        cluster = Index(1, 1, 1),
+        tile_shape=Index(4, 8, 16),
+        cluster=Index(1, 1, 1),
         swizzle=swizzle,
     ](len(group_offsets) - 1, offset_tensor)
 

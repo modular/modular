@@ -57,7 +57,7 @@ fn test_tma_mcast_load_kernel[
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -69,7 +69,7 @@ fn test_tma_mcast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -192,7 +192,7 @@ fn test_tma_sliced_multicast_load_kernel[
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -204,7 +204,7 @@ fn test_tma_sliced_multicast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -309,46 +309,46 @@ def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_multicast_load_row_major")
         test_tma_multicast_load_row_major[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(4, 8),
-            dst_layout = Layout.row_major(8, 16),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(4, 8),
+            dst_layout=Layout.row_major(8, 16),
             CLUSTER_M=1,
             CLUSTER_N=2,
         ](ctx)
         test_tma_multicast_load_row_major[
-            src_layout = Layout.row_major(16, 8),
-            tile_layout = Layout.row_major(4, 8),
-            dst_layout = Layout.row_major(16, 16),
+            src_layout=Layout.row_major(16, 8),
+            tile_layout=Layout.row_major(4, 8),
+            dst_layout=Layout.row_major(16, 16),
             CLUSTER_M=2,
             CLUSTER_N=2,
         ](ctx)
 
         print("test_tma_sliced_multicast_load_row_major")
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(8, 16),
-            tile_layout = Layout.row_major(4, 16),
-            dst_layout = Layout.row_major(8, 32),
+            src_layout=Layout.row_major(8, 16),
+            tile_layout=Layout.row_major(4, 16),
+            dst_layout=Layout.row_major(8, 32),
             CLUSTER_M=1,
             CLUSTER_N=2,
         ](ctx)
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(16, 16),
-            tile_layout = Layout.row_major(4, 16),
-            dst_layout = Layout.row_major(16, 32),
+            src_layout=Layout.row_major(16, 16),
+            tile_layout=Layout.row_major(4, 16),
+            dst_layout=Layout.row_major(16, 32),
             CLUSTER_M=2,
             CLUSTER_N=2,
         ](ctx)
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(32, 16),
-            tile_layout = Layout.row_major(4, 16),
-            dst_layout = Layout.row_major(32, 32),
+            src_layout=Layout.row_major(32, 16),
+            tile_layout=Layout.row_major(4, 16),
+            dst_layout=Layout.row_major(32, 32),
             CLUSTER_M=4,
             CLUSTER_N=2,
         ](ctx)
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(32, 16),
-            tile_layout = Layout.row_major(16, 16),
-            dst_layout = Layout.row_major(32, 64),
+            src_layout=Layout.row_major(32, 16),
+            tile_layout=Layout.row_major(16, 16),
+            dst_layout=Layout.row_major(32, 64),
             CLUSTER_M=2,
             CLUSTER_N=4,
         ](ctx)

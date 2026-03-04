@@ -95,8 +95,8 @@ fn shrink_qkv_permute_3mn_sm100[
         c_type,
         2,
         MutAnyOrigin,
-        shape = DimList(Dim(), Dim(N_Total)),
-        strides = DimList.create_unknown[2](),
+        shape=DimList(Dim(), Dim(N_Total)),
+        strides=DimList.create_unknown[2](),
     ]()  # data=null, shape/stride zeroed
 
     # Populate the dynamic shape (row-major strides will be set later if needed).

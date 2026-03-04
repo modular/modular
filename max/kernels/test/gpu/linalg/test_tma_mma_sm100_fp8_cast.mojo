@@ -162,11 +162,11 @@ fn tma_umma_kernel_sgs[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -175,14 +175,14 @@ fn tma_umma_kernel_sgs[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_smem_type,  # BF16 in smem
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -279,7 +279,7 @@ fn tma_umma_kernel_sgs[
         accum_type,
         a_type,
         b_smem_type,  # bfloat16
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_a=False,  # A is not transposed
         transpose_b=transpose_b,
     ]()
@@ -356,7 +356,7 @@ fn tma_umma_kernel_sgs[
                 k_local % b_shape10
             ) * b_stride10
             offset = swizzle(n_offset + k_offset)
-            b_smem_tile.ptr.store[alignment = 2 * simd_size](offset, bf16_val)
+            b_smem_tile.ptr.store[alignment=2 * simd_size](offset, bf16_val)
 
         # Sync: wait for TMA to complete and all threads to finish storing to smem
         tma_mbar[0].wait(tma_phase)
@@ -397,7 +397,7 @@ fn tma_umma_kernel_sgs[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,

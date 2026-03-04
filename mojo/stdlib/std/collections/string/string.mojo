@@ -736,9 +736,7 @@ struct String(
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            return (
-                self._refcount().load[ordering = Consistency.MONOTONIC]() == 1
-            )
+            return self._refcount().load[ordering=Consistency.MONOTONIC]() == 1
         else:
             return False
 
@@ -748,7 +746,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
-            _ = self._refcount().fetch_add[ordering = Consistency.MONOTONIC](1)
+            _ = self._refcount().fetch_add[ordering=Consistency.MONOTONIC](1)
 
     @always_inline("nodebug")
     fn _drop_ref(mut self):
@@ -758,7 +756,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
             var refcount = ptr.bitcast[Atomic[DType.int]]()
-            if refcount[].fetch_sub[ordering = Consistency.RELEASE](1) == 1:
+            if refcount[].fetch_sub[ordering=Consistency.RELEASE](1) == 1:
                 fence[Consistency.ACQUIRE]()
                 ptr.free()
 
@@ -2440,7 +2438,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
     if start == (length - 1):
         return 10, start
     if str_slice[byte=start] == "0":
-        var second_digit = str_slice[byte = start + 1]
+        var second_digit = str_slice[byte=start + 1]
         if second_digit == "b" or second_digit == "B":
             return 2, start + 2
         if second_digit == "o" or second_digit == "O":

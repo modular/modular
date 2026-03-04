@@ -221,7 +221,7 @@ fn store_fragment_to_smem[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     vec: SIMD,
-    dst: TileTensor[address_space = AddressSpace.SHARED, ...],
+    dst: TileTensor[address_space=AddressSpace.SHARED, ...],
     warp_offset: UInt32 = 0,
 ):
     """Store fragment to SMEM via st.matrix."""
@@ -648,7 +648,7 @@ struct TMAStoreExecutor[
         c_layout: Layout,
         c_desc_layout: Layout,
     ](
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -673,7 +673,7 @@ struct TMAStoreExecutor[
 
                 comptime SMemPtrType = LegacyUnsafePointer[
                     Scalar[Self.c_type],
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     origin=MutAnyOrigin,
                 ]
                 var c_lt = SMemTile[
@@ -689,7 +689,7 @@ struct TMAStoreExecutor[
         c_layout: Layout,
         c_desc_layout: Layout,
     ](
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -721,7 +721,7 @@ struct TMAStoreExecutor[
             )
             comptime SMemPtrType = LegacyUnsafePointer[
                 Scalar[Self.c_type],
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
                 origin=MutAnyOrigin,
             ]
             var c_split_lt = SMemTile[Self.c_type, split_layout, alignment=128](
@@ -762,7 +762,7 @@ struct TMAStoreExecutor[
                 )
                 comptime SMemPtrType = LegacyUnsafePointer[
                     Scalar[Self.c_type],
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     origin=MutAnyOrigin,
                 ]
                 var c_warp_lt = SMemTile[
@@ -1105,7 +1105,7 @@ struct EpilogueApplier[
         local_col: UInt32,
         is_upper: Bool,
         src_ptr: UnsafePointer[
-            Scalar[c_type], _, address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space=AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ):
@@ -1174,7 +1174,7 @@ struct EpilogueApplier[
         mut lower_frag: SIMD[epilogue_dtype, frag_size],
         stage: UInt32,
         src_ptr: UnsafePointer[
-            Scalar[c_type], _, address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space=AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[
@@ -1316,7 +1316,7 @@ struct TMEMToSMemWriter[
                 var new_smem = SMemTile[
                     Self.c_type,
                     smem_logical_layout,
-                    alignment = c_smem_tile.alignment,
+                    alignment=c_smem_tile.alignment,
                 ](c_smem_tile.ptr)
 
                 warp_j, warp_i = divmod(Int(self.warp_id), 2)
@@ -1352,7 +1352,7 @@ struct TMEMToSMemWriter[
                 var new_smem = SMemTile[
                     Self.c_type,
                     smem_logical_layout,
-                    alignment = c_smem_tile.alignment,
+                    alignment=c_smem_tile.alignment,
                 ](c_smem_tile.ptr)
                 var _c_smem_warp_tile = new_smem.tile[
                     Self.stageN, 1, tile_width
@@ -1436,7 +1436,7 @@ struct TMEMToSMemWriter[
         self,
         upper_frag: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_frag: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
     ):
         """Write pre-loaded fragments to SMEM."""
         comptime is_lower_required = Self.Config.is_lower_frag_required
@@ -1457,7 +1457,7 @@ struct TMEMToSMemWriter[
         self,
         upper_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
     ):
         """Transposed output using reshape.
 
@@ -1581,7 +1581,7 @@ struct TMEMToSMemWriter[
         self,
         upper_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
     ):
         """Non-transposed output."""
         from layout import Coord, Idx
@@ -1956,7 +1956,7 @@ fn shared_memory_epilogue_transpose[
         )
         comptime thread_layout_new = row_major[1, 8, 1, 4]()
         var lane = lane_id()
-        var crd = thread_layout_new.idx2crd[out_dtype = DType.uint32](Int(lane))
+        var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](Int(lane))
         comptime thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
 
         comptime for iter_i in range(result.shape[1][3].value()):
@@ -1965,7 +1965,7 @@ fn shared_memory_epilogue_transpose[
                     UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
                 )
                 var coord = RuntimeTuple[
-                    [thread_shape, rest_shape], element_type = DType.uint32
+                    [thread_shape, rest_shape], element_type=DType.uint32
                 ](
                     Int(0),
                     crd[1].value(),
@@ -1986,7 +1986,7 @@ fn shared_memory_epilogue_transpose[
                     RuntimeTuple[result.shape](),
                     RuntimeTuple[result.stride](),
                 )
-                var logical_crd = layout_3d.idx2crd[out_dtype = DType.uint32](
+                var logical_crd = layout_3d.idx2crd[out_dtype=DType.uint32](
                     Int(offset)
                 )
                 var local_i: UInt32
@@ -2034,7 +2034,7 @@ fn shared_memory_epilogue_transpose[
             )
             # Use new Layout for idx2crd operations
             comptime thread_layout_new = row_major[min(16, Int(stageN)), 1, 2]()
-            var crd = thread_layout_new.idx2crd[out_dtype = DType.uint32](
+            var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](
                 Int(lane)
             )
             comptime thread_shape = IntTuple(UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
@@ -2048,7 +2048,7 @@ fn shared_memory_epilogue_transpose[
                         iter_i,
                     )
                     var coord = RuntimeTuple[
-                        [thread_shape, rest_shape], element_type = DType.uint32
+                        [thread_shape, rest_shape], element_type=DType.uint32
                     ](
                         crd[0].value(),
                         Int(0),
@@ -2068,7 +2068,7 @@ fn shared_memory_epilogue_transpose[
                         RuntimeTuple[result.stride](),
                     )
                     var logical_crd = layout_2d_new.idx2crd[
-                        out_dtype = DType.uint32
+                        out_dtype=DType.uint32
                     ](Int(offset))
 
                     var local_i = logical_crd[0].value()
@@ -2177,11 +2177,11 @@ fn shared_memory_epilogue[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
                 RuntimeTuple[
                     blocked_m_128_layout.shape,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
                 RuntimeTuple[
                     blocked_m_128_layout.stride,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
             )
 
@@ -2189,11 +2189,11 @@ fn shared_memory_epilogue[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
                 RuntimeTuple[
                     blocked_m_128_layout.shape,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
                 RuntimeTuple[
                     blocked_m_128_layout.stride,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
             )
 

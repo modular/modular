@@ -100,7 +100,7 @@ fn fp8_index_kernel[
         return
 
     ref smem_ptr = external_memory[
-        Scalar[DType.uint8], address_space = AddressSpace.SHARED, alignment=128
+        Scalar[DType.uint8], address_space=AddressSpace.SHARED, alignment=128
     ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
     ref q_smem = smem_ptr.q_smem
@@ -111,14 +111,14 @@ fn fp8_index_kernel[
         dtype,
         Layout.row_major(num_heads, depth),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](q_smem.unsafe_ptr())
 
     var k_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(BN, depth),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
     var k_smem_ptr = k_smem.unsafe_ptr()
@@ -141,28 +141,28 @@ fn fp8_index_kernel[
         DType.float32,
         Layout.row_major(BN // thread_dim_x, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime QSRegTileType = LayoutTensor[
         DType.float32,
         Layout.row_major(1, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime LogitsSumType = LayoutTensor[
         DType.float32,
         Layout.row_major(BN // thread_dim_x, 1),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime ScratchType = LayoutTensor[
         DType.float32,
         Layout.row_major(BN, thread_dim_y),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
 
     var q_tile = QTileType(q_ptr)
@@ -180,8 +180,8 @@ fn fp8_index_kernel[
         q_s_reg_tile[0, q_frag_idx] = q_s_frag[0, q_frag_idx][0]
 
     copy_dram_to_sram[
-        thread_layout = Layout.row_major(16, 8),
-        thread_scope = ThreadScope.BLOCK,
+        thread_layout=Layout.row_major(16, 8),
+        thread_scope=ThreadScope.BLOCK,
         block_dim_count=2,
     ](
         q_smem_tile.vectorize[1, simd_width](),
@@ -284,22 +284,22 @@ fn fp8_index[
         mut=True,
         DType.float32,
         output_layout,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
     q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[dtype, k_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[dtype, k_layout, address_space=AddressSpace.GENERIC, ...],
     k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     max_seq_len: Int,
@@ -535,22 +535,22 @@ fn fp8_index_naive[
         mut=True,
         DType.float32,
         output_layout,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
     q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[dtype, k_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[dtype, k_layout, address_space=AddressSpace.GENERIC, ...],
     k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     max_seq_len: Int,

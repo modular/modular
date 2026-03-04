@@ -61,7 +61,7 @@ fn run_reduce[
     var out_shape = shape
     out_shape[axis] = 1
     comptime init: Scalar[dtype] = Scalar[dtype](0.0)
-    comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
+    comptime align = align_of_simd[dtype, simd_target=get_gpu_target()]()
 
     var in_size = shape.flattened_length()
     var out_size = in_size // shape[axis]

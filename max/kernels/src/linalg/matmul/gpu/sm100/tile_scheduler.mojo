@@ -72,8 +72,8 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
-        dtype = DType.uint32
+    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+        dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
@@ -90,14 +90,12 @@ struct TileScheduler[
     var log_cluster_dim_n: FastDiv[DType.uint32]
     var log_cluster_dim_k: FastDiv[DType.uint32]
 
-    var clc_response: UnsafePointer[
-        UInt128, address_space = AddressSpace.SHARED
-    ]
+    var clc_response: UnsafePointer[UInt128, address_space=AddressSpace.SHARED]
     var full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ]
     var empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ]
 
     @always_inline
@@ -105,13 +103,13 @@ struct TileScheduler[
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         clc_response_ptr: UnsafePointer[
-            UInt128, address_space = AddressSpace.SHARED
+            UInt128, address_space=AddressSpace.SHARED
         ],
         full_mbar_ptr: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED
+            SharedMemBarrier, address_space=AddressSpace.SHARED
         ],
         empty_mbar_ptr: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED
+            SharedMemBarrier, address_space=AddressSpace.SHARED
         ],
     ):
         comptime assert Self.block_swizzle_size in [
@@ -133,7 +131,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn work_info_from_clc_response(
-        result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
+        result: UnsafePointer[UInt128, address_space=AddressSpace.SHARED],
     ) -> WorkInfo:
         comptime asm = """{
             .reg .pred p1;

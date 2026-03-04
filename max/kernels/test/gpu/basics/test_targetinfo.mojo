@@ -18,8 +18,8 @@ from std.testing import assert_equal
 
 
 def test_simd_bit_width() raises:
-    assert_equal(128, simd_bit_width[target = get_gpu_target()]())
-    assert_equal(4, simd_width_of[Float32, target = get_gpu_target()]())
+    assert_equal(128, simd_bit_width[target=get_gpu_target()]())
+    assert_equal(4, simd_width_of[Float32, target=get_gpu_target()]())
 
 
 def main() raises:

@@ -507,7 +507,7 @@ fn shuffle_idx[
     comptime if is_nvidia_gpu():
         return _shuffle[
             "idx",
-            WIDTH_MASK = Int32(_WIDTH_MASK),
+            WIDTH_MASK=Int32(_WIDTH_MASK),
         ](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
@@ -518,7 +518,7 @@ fn shuffle_idx[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -614,7 +614,7 @@ fn shuffle_up[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -703,7 +703,7 @@ fn shuffle_down[
     """
 
     comptime if is_nvidia_gpu():
-        return _shuffle["down", WIDTH_MASK = Int32(_WIDTH_MASK)](
+        return _shuffle["down", WIDTH_MASK=Int32(_WIDTH_MASK)](
             mask, val, offset
         )
     elif is_amd_gpu():
@@ -715,7 +715,7 @@ fn shuffle_down[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -805,7 +805,7 @@ fn shuffle_xor[
     """
 
     comptime if is_nvidia_gpu():
-        return _shuffle["bfly", WIDTH_MASK = Int32(_WIDTH_MASK)](
+        return _shuffle["bfly", WIDTH_MASK=Int32(_WIDTH_MASK)](
             mask, val, offset
         )
     elif is_amd_gpu():
@@ -817,7 +817,7 @@ fn shuffle_xor[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -1439,5 +1439,5 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
         return _vote_amd_helper[ret_type](val)
     else:
         return CompilationTarget.unsupported_target_error[
-            Scalar[ret_type], operation = __get_current_function_name()
+            Scalar[ret_type], operation=__get_current_function_name()
         ]()

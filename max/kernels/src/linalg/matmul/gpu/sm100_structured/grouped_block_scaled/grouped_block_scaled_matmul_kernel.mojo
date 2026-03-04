@@ -157,38 +157,38 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     """
 
     var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
     @staticmethod
     @always_inline
     fn from_smem(
         ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
@@ -652,10 +652,10 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Grouped Tile Scheduler Type ==========
 
     comptime SchedulerType = GroupedTileScheduler[
-        tile_m = Self.BM,
-        tile_n = Self.BN,
-        tile_k = Self.BK,
-        max_groups = Self.max_groups,
+        tile_m=Self.BM,
+        tile_n=Self.BN,
+        tile_k=Self.BK,
+        max_groups=Self.max_groups,
     ]
 
     # ========== TMA Descriptor Array Types ==========
@@ -701,13 +701,13 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Shared Memory Layout Types ==========
 
     comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
+        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
     ]()
 
     comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]()
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
@@ -738,7 +738,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfa_dtype,
         Self.sfb_dtype,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -752,12 +752,12 @@ struct GroupedBlockScaledMatmulKernel[
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Kernel Context Type ==========
@@ -810,8 +810,8 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfa_dtype,
         Self.BM,
         Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
-        num_sf_k_tiles = Self.config.num_sf_k_tiles,
+        cta_group=Self.cta_group,
+        num_sf_k_tiles=Self.config.num_sf_k_tiles,
     ]
 
     comptime OutputPipeline = OutputTilePipeline[Self.opc]
@@ -846,19 +846,19 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Tile Writer Type ==========
 
     comptime TileWriterType = TileWriter[
-        a_type = Self.a_type,
-        accum_type = Self.accum_type,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        opc = Self.opc,
-        c_swizzle = Self.config.c_swizzle,
-        transpose_c = Self.config.AB_swapped,
-        c_smem_dim0 = Self.SmemType.Core.OutputM,
-        c_smem_dim1 = Self.SmemType.Core.OutputN,
-        num_output_stages = Self.config.num_output_stages,
-        num_output_warps = Self.num_output_warps,
-        elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
-        register_based_epilogue = Self.register_based_epilogue,
+        a_type=Self.a_type,
+        accum_type=Self.accum_type,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        opc=Self.opc,
+        c_swizzle=Self.config.c_swizzle,
+        transpose_c=Self.config.AB_swapped,
+        c_smem_dim0=Self.SmemType.Core.OutputM,
+        c_smem_dim1=Self.SmemType.Core.OutputN,
+        num_output_stages=Self.config.num_output_stages,
+        num_output_warps=Self.num_output_warps,
+        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
+        register_based_epilogue=Self.register_based_epilogue,
         batched=True,
     ]
 
@@ -895,7 +895,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.CLUSTER_M,
         Self.CLUSTER_N,
         Self.cta_group,
-        AB_swapped = Self.config.AB_swapped,
+        AB_swapped=Self.config.AB_swapped,
     ]()
     comptime a_tile_dim0 = Self._tma_tile_dims[0]
     comptime b_tile_dim0 = Self._tma_tile_dims[1]
@@ -1207,7 +1207,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -1716,7 +1716,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

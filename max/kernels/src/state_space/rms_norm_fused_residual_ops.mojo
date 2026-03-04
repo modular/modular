@@ -67,7 +67,7 @@ struct RMSNormFusedResidual:
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
         dropout_p: Scalar[dtype=dtype],
-        seed: Scalar[dtype = DType.uint64],
+        seed: Scalar[dtype=DType.uint64],
         ctx: DeviceContextPtr,
     ) capturing raises:
         # Validate shapes
@@ -145,6 +145,6 @@ struct RMSNormFusedResidual:
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
         dropout_p: Scalar[dtype=dtype],
-        seed: Scalar[dtype = DType.uint64],
+        seed: Scalar[dtype=DType.uint64],
     ) -> IndexList[rank]:
         return input.shape()

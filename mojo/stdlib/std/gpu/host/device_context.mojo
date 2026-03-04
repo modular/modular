@@ -1943,9 +1943,9 @@ struct DeviceFunction[
         var result: _DeviceFunctionPtr = {}
         self._func_impl = _compile_code[
             Self.func,
-            emission_kind = self._emission_kind,
-            target = Self.target,
-            compile_options = Self.compile_options,
+            emission_kind=self._emission_kind,
+            target=Self.target,
+            compile_options=Self.compile_options,
         ]()
         var debug_level = String(DebugLevel)
         _checked(
@@ -2097,8 +2097,8 @@ struct DeviceFunction[
             return _compile_code[
                 Self.func,
                 emission_kind="asm",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
         comptime if Self._ptxas_info_verbose:
@@ -2159,8 +2159,8 @@ struct DeviceFunction[
             var llvm = _compile_code[
                 Self.func,
                 emission_kind="llvm-opt",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
             comptime if dump_llvm_val.isa[fn() capturing -> Path]():
@@ -3643,7 +3643,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             Optional[Variadic.TypesOfTrait[AnyType]](None),
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3802,7 +3802,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3877,7 +3877,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3954,7 +3954,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],

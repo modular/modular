@@ -388,7 +388,7 @@ def test_issue_1625() raises:
     for i in range(size):
         ptr[i] = Int64(i)
 
-    var x = ptr.load[width = 2 * simd_width](0)
+    var x = ptr.load[width=2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
 
     # FIXME (40568) should directly use the SIMD assert_equal
@@ -1112,7 +1112,7 @@ def test_shuffle() raises:
     )
 
     assert_equal(
-        vec._shuffle_variadic[7, 6, 5, 4, 3, 2, 1, 0, output_size = 2 * width](
+        vec._shuffle_variadic[7, 6, 5, 4, 3, 2, 1, 0, output_size=2 * width](
             vec
         ),
         SIMD[dtype, 2 * width](103, 102, 101, 100, 103, 102, 101, 100),
@@ -2194,8 +2194,8 @@ def test_from_bytes_as_bytes() raises:
     for x in [Int16(10), 100, -12, 0, 1, -1, 1000, -1000]:
         comptime for b in range(2):
             assert_equal(
-                Int16.from_bytes[big_endian = Bool(b)](
-                    Int16(x).as_bytes[big_endian = Bool(b)]()
+                Int16.from_bytes[big_endian=Bool(b)](
+                    Int16(x).as_bytes[big_endian=Bool(b)]()
                 ),
                 x,
             )

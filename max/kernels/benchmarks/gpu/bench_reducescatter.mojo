@@ -90,7 +90,7 @@ fn bench_reducescatter_2d[
 ) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
     comptime assert axis == 0 or axis == 1
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var multimem_tag = "-multimem" if use_multimem else ""
     var cache_tag = "-cachebust" if cache_busting else ""
@@ -554,7 +554,7 @@ def main() raises:
         var num_bytes = arg_parse("num_bytes", 16 * 1024)
         comptime rank = get_defined_int["rank", 1]()
         comptime ragged = get_defined_bool["ragged", False]()
-        comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+        comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
         comptime if ragged:
             num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()

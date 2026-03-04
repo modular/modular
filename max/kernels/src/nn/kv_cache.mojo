@@ -66,10 +66,8 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -145,10 +143,8 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_paged[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -228,10 +224,8 @@ fn _fused_qkv_matmul_kv_cache[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -282,10 +276,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -396,10 +388,8 @@ fn _matmul_common[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    hidden_state: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
     var BS = hidden_state.dim[0]()
@@ -649,9 +639,7 @@ fn generic_flash_attention_kv_cache_padded[
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -659,7 +647,7 @@ fn generic_flash_attention_kv_cache_padded[
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -723,20 +711,18 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -795,9 +781,7 @@ fn _flash_attention_dispatch[
     mask_str: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     kv_cache: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
@@ -805,7 +789,7 @@ fn _flash_attention_dispatch[
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -845,20 +829,18 @@ fn _flash_attention_dispatch_materialized_mask[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     kv_cache: collection_t,
     layer_idx: UInt32,
     mask_nd: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     valid_lengths: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -1191,7 +1173,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
@@ -1298,7 +1280,7 @@ def print_kv_cache_paged_generic_gpu[
     page_size: Int,
 ](
     valid_lengths: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
@@ -1437,9 +1419,9 @@ fn generic_get_paged_cache[
     dtype: DType,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-    cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-    lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-    max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(

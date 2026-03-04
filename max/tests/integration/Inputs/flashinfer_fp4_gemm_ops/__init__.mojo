@@ -33,13 +33,13 @@ struct Module:
 
     def fp4_gemm(
         self,
-        mat1: DLTensor[dtype = DType.uint8, rank=2],
-        mat2: DLTensor[dtype = DType.uint8, rank=2],
-        mat1_scale: DLTensor[dtype = DType.uint8, rank=1],
-        mat2_scale: DLTensor[dtype = DType.uint8, rank=1],
-        global_scale: DLTensor[dtype = DType.float32, rank=1],
-        out_tensor: DLTensor[dtype = DType.bfloat16, rank=2],
-        workspace: DLTensor[dtype = DType.int8, rank=1],
+        mat1: DLTensor[dtype=DType.uint8, rank=2],
+        mat2: DLTensor[dtype=DType.uint8, rank=2],
+        mat1_scale: DLTensor[dtype=DType.uint8, rank=1],
+        mat2_scale: DLTensor[dtype=DType.uint8, rank=1],
+        global_scale: DLTensor[dtype=DType.float32, rank=1],
+        out_tensor: DLTensor[dtype=DType.bfloat16, rank=2],
+        workspace: DLTensor[dtype=DType.int8, rank=1],
         tactic: Int = 0,  # auto
     ) -> None:
         safe_call = self.lib.get_function[SafeFunction]("__tvm_ffi_fp4_gemm")
@@ -99,13 +99,13 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
     def execute[
         target: StaticString
     ](
-        out_tensor: OutputTensor[dtype = DType.bfloat16, rank=2, ...],
-        mat1: InputTensor[dtype = DType.uint8, rank=2, ...],
-        mat2: InputTensor[dtype = DType.uint8, rank=2, ...],
-        mat1_scale: InputTensor[dtype = DType.uint8, rank=1, ...],
-        mat2_scale: InputTensor[dtype = DType.uint8, rank=1, ...],
-        global_scale: InputTensor[dtype = DType.float32, rank=1, ...],
-        workspace: InputTensor[dtype = DType.int8, rank=1, ...],
+        out_tensor: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        mat1: InputTensor[dtype=DType.uint8, rank=2, ...],
+        mat2: InputTensor[dtype=DType.uint8, rank=2, ...],
+        mat1_scale: InputTensor[dtype=DType.uint8, rank=1, ...],
+        mat2_scale: InputTensor[dtype=DType.uint8, rank=1, ...],
+        global_scale: InputTensor[dtype=DType.float32, rank=1, ...],
+        workspace: InputTensor[dtype=DType.int8, rank=1, ...],
         ctx: DeviceContextPtr,
     ):
         """Execute the FP4 GEMM operation by calling FlashInfer."""

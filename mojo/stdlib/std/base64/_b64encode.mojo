@@ -77,7 +77,7 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
         var `6bit` = shuffled & _repeat_until[width](mask)
         return _rshift_bits_in_u16[shift](`6bit`)
 
-    var shuffled = input.shuffle[mask = indices()]()
+    var shuffled = input.shuffle[mask=indices()]()
     var a = combine[
         Bytes[4](0b0000_0000, 0b1111_1100, 0b0000_0000, 0b0000_0000), 10
     ](shuffled)

@@ -74,9 +74,9 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         x: InputTensor[dtype=dtype, rank=2, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1, ...],
+        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = x.dim_size(0)
@@ -500,9 +500,9 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         x: InputTensor[dtype=dtype, rank=2, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1, ...],
+        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
     ) -> IndexList[2]:
         return x.shape()
 
@@ -542,8 +542,8 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         x: InputTensor[dtype=dtype, rank=3, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        cache_seqlens: InputTensor[dtype = DType.int32, rank=1, ...],
-        conv_state_indices: InputTensor[dtype = DType.int32, rank=1, ...],
+        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -938,8 +938,8 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         x: InputTensor[dtype=dtype, rank=3, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        cache_seqlens: InputTensor[dtype = DType.int32, rank=1, ...],
-        conv_state_indices: InputTensor[dtype = DType.int32, rank=1, ...],
+        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[3]:
         return x.shape()
 
@@ -969,7 +969,7 @@ struct CausalConv1DVarlenStates:
     ](
         states: OutputTensor[dtype=dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
-        cu_seqlens: InputTensor[dtype = DType.int32, rank=1, ...],
+        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var total_tokens = x.dim_size(0)
@@ -1062,7 +1062,7 @@ struct CausalConv1DVarlenStates:
         dtype: DType,
     ](
         x: InputTensor[dtype=dtype, rank=2, ...],
-        cu_seqlens: InputTensor[dtype = DType.int32, rank=1, ...],
+        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[3]:
         var batch = cu_seqlens.dim_size(0) - 1
         var dim = x.dim_size(1)

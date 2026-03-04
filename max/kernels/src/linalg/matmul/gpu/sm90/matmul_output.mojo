@@ -89,12 +89,12 @@ struct MatmulTileWriter[
         Self.dtype,
         Self.layout,
         MutAnyOrigin,
-        address_space = Self.address_space,
-        element_layout = Self.element_layout,
-        layout_int_type = Self.layout_int_type,
-        linear_idx_type = Self.linear_idx_type,
-        masked = Self.masked,
-        alignment = Self.alignment,
+        address_space=Self.address_space,
+        element_layout=Self.element_layout,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
+        masked=Self.masked,
+        alignment=Self.alignment,
     ]
     comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1](
         IndexList[2], mut SIMD[dtype, width]
@@ -244,13 +244,13 @@ struct MatmulTileWriter[
             max_row = UInt32(self.tensor.dim[0]())
 
         var reg_writer = RegisterToGMemWriter[
-            wgmma_shape = Self.wgmma_shape,
-            num_consumer = Self.num_consumer,
-            N = Self.N,
-            epilogue_fn = Self.elementwise_lambda_fn,
-            compute_lambda_fn = Self.elementwise_compute_lambda_fn,
+            wgmma_shape=Self.wgmma_shape,
+            num_consumer=Self.num_consumer,
+            N=Self.N,
+            epilogue_fn=Self.elementwise_lambda_fn,
+            compute_lambda_fn=Self.elementwise_compute_lambda_fn,
             check_runtime_bounds=check_runtime_bounds,
-            swapAB = Self.swapAB,
+            swapAB=Self.swapAB,
         ](
             consumer_tile,
             self.warp_group_thread_idx,
@@ -312,13 +312,13 @@ struct MatmulTileWriter[
             sub_wg_id: Int, half_tile: Bool
         ] = FragmentToSMemWriter[
             tile_n_size=TMA_BN,
-            num_m_mmas = Self.num_m_mmas,
-            num_consumer = Self.num_consumer,
+            num_m_mmas=Self.num_m_mmas,
+            num_consumer=Self.num_consumer,
             half_tile=half_tile,
-            WG_BM = Self.WG_BM,
-            WG_BN = Self.WG_BN,
+            WG_BM=Self.WG_BM,
+            WG_BN=Self.WG_BN,
             sub_wg_id=sub_wg_id,
-            swapAB = Self.swapAB,
+            swapAB=Self.swapAB,
         ]
 
         comptime num_column_tiles = ceildiv(Self.BN, Self.WG_BN)
@@ -428,9 +428,9 @@ struct MatmulTileWriter[
 
                     var threadwise_writer = TileWriterThreadwise[
                         thread_layout=thread_layout,
-                        simd_size = Self.simd_size,
+                        simd_size=Self.simd_size,
                         half_tile=is_partial_tile,
-                        swapAB = Self.swapAB,
+                        swapAB=Self.swapAB,
                     ](workgroup_tile, self.local_thread_idx)
 
                     threadwise_writer.write_tile(

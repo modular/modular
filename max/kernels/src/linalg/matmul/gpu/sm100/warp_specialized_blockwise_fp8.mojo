@@ -147,21 +147,21 @@ fn load_AB[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     a_scales_smem: LayoutTensorIter[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
@@ -267,21 +267,21 @@ fn multi_stage_reg_epilogue[
         accum_type,
         accum_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
         ...,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
         ...,
     ],
     c_iter: LayoutTensorIter[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
@@ -427,21 +427,21 @@ fn promote_accumulators[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     c_upper_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
         ...,
     ],
     c_lower_main_tile: LayoutTensor[
         accum_type,
         accum_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
         ...,
     ],
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
@@ -813,19 +813,19 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # keep the physical SMEM buffer BM x MMA_N
     comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode = config.a_swizzle
+        a_type, BM, BK, swizzle_mode=config.a_swizzle
     ]()
     comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode = config.b_swizzle
+        b_type, BN, BK, swizzle_mode=config.b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode = config.b_swizzle
+        b_type, BN, BK, swizzle_mode=config.b_swizzle
     ]()
 
     comptime a_scales_smem_layout = Layout.row_major(1, BM)
 
     base_ptr_smem = external_memory[
         Scalar[a_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]()
 
@@ -848,7 +848,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         a_smem_base,
@@ -859,7 +859,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         b_smem_base,
@@ -872,7 +872,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             config.output_tile_shape[0], config.output_tile_shape[1]
         ),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
 
@@ -880,7 +880,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         a_scales_smem_base,
@@ -985,22 +985,22 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         config.block_tile_shape,
         config.mma_shape,
         accum_type=accum_type,
-        cta_group = config.cta_group,
-        cluster_shape = config.cluster_shape,
-        a_swizzle = config.a_swizzle,
-        b_swizzle = config.b_swizzle,
+        cta_group=config.cta_group,
+        cluster_shape=config.cluster_shape,
+        a_swizzle=config.a_swizzle,
+        b_swizzle=config.b_swizzle,
         transpose_b=transpose_b,
     ]()
 
     var scheduler = TileScheduler[
-        num_stages = config.num_clc_pipeline_stages,
-        cluster_shape = Index[dtype = DType.uint32](
+        num_stages=config.num_clc_pipeline_stages,
+        cluster_shape=Index[dtype=DType.uint32](
             config.cluster_shape[0],
             config.cluster_shape[1],
             config.cluster_shape[2],
         ),
-        block_swizzle_size = config.block_swizzle_size,
-        rasterize_order = config.raster_order,
+        block_swizzle_size=config.block_swizzle_size,
+        rasterize_order=config.raster_order,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
 
     var work_info = scheduler.initial_work_info()
@@ -1051,9 +1051,9 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
             for i in range(num_iters):
                 load_AB[
-                    block_tile_shape = config.block_tile_shape,
-                    mma_shape = config.mma_shape,
-                    cta_group = config.cta_group,
+                    block_tile_shape=config.block_tile_shape,
+                    mma_shape=config.mma_shape,
+                    cta_group=config.cta_group,
                 ](
                     a_tma_op,
                     b_tma_op,
@@ -1140,10 +1140,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     )
 
                     consumer_main_loop[
-                        block_tile_shape = config.block_tile_shape,
-                        mma_shape = config.mma_shape,
-                        cta_group = config.cta_group,
-                        cluster_shape = config.cluster_shape,
+                        block_tile_shape=config.block_tile_shape,
+                        mma_shape=config.mma_shape,
+                        cta_group=config.cta_group,
+                        cluster_shape=config.cluster_shape,
                     ](
                         tmem_offset,
                         a_smem,
@@ -1188,10 +1188,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         while work_info.is_valid():
             comptime reg_info = _get_accumulator_size[
-                c_smem_layout = c_smem_iter.layout,
-                block_tile_shape = config.block_tile_shape,
-                mma_shape = config.mma_shape,
-                cta_group = config.cta_group,
+                c_smem_layout=c_smem_iter.layout,
+                block_tile_shape=config.block_tile_shape,
+                mma_shape=config.mma_shape,
+                cta_group=config.cta_group,
             ]()
 
             comptime is_lower_frag_required = not (
@@ -1202,14 +1202,14 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 accum_type,
                 Layout.row_major(reg_info[0], reg_info[1]),
                 MutAnyOrigin,
-                address_space = AddressSpace.LOCAL,
+                address_space=AddressSpace.LOCAL,
             ].stack_allocation()
 
             var c_lower_main_tile = LayoutTensor[
                 accum_type,
                 Layout.row_major(reg_info[0], reg_info[1]),
                 MutAnyOrigin,
-                address_space = AddressSpace.LOCAL,
+                address_space=AddressSpace.LOCAL,
             ].stack_allocation()
 
             _ = c_upper_main_tile.fill(0.0)
@@ -1219,10 +1219,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
             for k_iter in range(num_iters):
                 promote_accumulators[
-                    block_tile_shape = config.block_tile_shape,
-                    mma_shape = config.mma_shape,
-                    cta_group = config.cta_group,
-                    CLUSTER_SIZE = Int32(CLUSTER_SIZE),
+                    block_tile_shape=config.block_tile_shape,
+                    mma_shape=config.mma_shape,
+                    cta_group=config.cta_group,
+                    CLUSTER_SIZE=Int32(CLUSTER_SIZE),
                     is_lower_frag_required=is_lower_frag_required,
                     num_output_warps=num_output_warps,
                 ](
@@ -1249,12 +1249,12 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             # wait for CUDA core promotion to finish and store result
             # scheduler fetch next work
             multi_stage_reg_epilogue[
-                block_tile_shape = config.block_tile_shape,
-                mma_shape = config.mma_shape,
+                block_tile_shape=config.block_tile_shape,
+                mma_shape=config.mma_shape,
                 is_lower_frag_required=is_lower_frag_required,
-                cta_group = config.cta_group,
+                cta_group=config.cta_group,
                 num_output_warps=num_output_warps,
-                c_swizzle = config.c_swizzle,
+                c_swizzle=config.c_swizzle,
             ](
                 c_upper_main_tile,
                 c_lower_main_tile,
@@ -1329,7 +1329,7 @@ fn sm100_warp_specialized_blockwise_fp8[
 
     a_tma_op = create_tensor_tile[
         Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
     b_tma_op = create_tensor_tile[
@@ -1338,7 +1338,7 @@ fn sm100_warp_specialized_blockwise_fp8[
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
     a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
@@ -1352,7 +1352,7 @@ fn sm100_warp_specialized_blockwise_fp8[
 
     var c_tma_op = create_tensor_tile[
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c)
 
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -1441,8 +1441,8 @@ fn sm100_warp_specialized_blockwise_fp8[
         a_scales_tma_op.desc_layout,
         transpose_b=transpose_b,
         config=config,
-        num_pipeline_stages = Int(max_pipeline_stages),
-        cluster_shape = StaticTuple[Int32, 3](
+        num_pipeline_stages=Int(max_pipeline_stages),
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),

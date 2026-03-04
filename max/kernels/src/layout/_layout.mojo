@@ -347,8 +347,8 @@ struct Layout[
 
 
 comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
-    VariadicType = Variadic.reverse[*element_types],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=Variadic.reverse[*element_types],
     Reducer=_RowMajorMapper,
 ]
 
@@ -435,8 +435,8 @@ fn row_major[*idxs: Int]() -> RowMajorLayout[*_IntToComptimeInt[*idxs]]:
 fn row_major(
     idx: ComptimeInt[...],
 ) -> Layout[
-    shape_types = Variadic.types[type_of(idx)],
-    stride_types = Variadic.types[ComptimeInt[1]],
+    shape_types=Variadic.types[type_of(idx)],
+    stride_types=Variadic.types[ComptimeInt[1]],
 ]:
     return Layout(Coord(idx), Coord(Idx[1]()))
 
@@ -445,8 +445,8 @@ fn row_major(
 fn row_major(
     idx: RuntimeInt[...],
 ) -> Layout[
-    shape_types = Variadic.types[type_of(idx)],
-    stride_types = Variadic.types[ComptimeInt[1]],
+    shape_types=Variadic.types[type_of(idx)],
+    stride_types=Variadic.types[ComptimeInt[1]],
 ]:
     return Layout(Coord(idx), Coord(Idx[1]()))
 
@@ -462,8 +462,8 @@ comptime ColMajorLayout[*shape_types: CoordLike] = Layout[
 
 
 comptime _ColMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
-    VariadicType = Variadic.types[*element_types],  # Process in forward order
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=Variadic.types[*element_types],  # Process in forward order
     Reducer=_ColMajorMapper,
 ]
 
@@ -578,8 +578,8 @@ fn col_major[*idxs: Int]() -> ColMajorLayout[*_IntToComptimeInt[*idxs]]:
 fn col_major(
     idx: ComptimeInt[...],
 ) -> Layout[
-    shape_types = Variadic.types[type_of(idx)],
-    stride_types = Variadic.types[ComptimeInt[1]],
+    shape_types=Variadic.types[type_of(idx)],
+    stride_types=Variadic.types[ComptimeInt[1]],
 ]:
     """Create a 1D column-major layout (same as row-major for 1D)."""
     return Layout(Coord(idx), Coord(Idx[1]()))
@@ -589,8 +589,8 @@ fn col_major(
 fn col_major(
     idx: RuntimeInt[...],
 ) -> Layout[
-    shape_types = Variadic.types[type_of(idx)],
-    stride_types = Variadic.types[ComptimeInt[1]],
+    shape_types=Variadic.types[type_of(idx)],
+    stride_types=Variadic.types[ComptimeInt[1]],
 ]:
     """Create a 1D column-major layout (same as row-major for 1D)."""
     return Layout(Coord(idx), Coord(Idx[1]()))

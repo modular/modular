@@ -41,7 +41,7 @@ def main() raises:
         _compile_code[
             check_sm9x,
             emission_kind="llvm",
-            target = get_gpu_target[_accelerator_arch()](),
+            target=get_gpu_target[_accelerator_arch()](),
         ]()
     )
 
@@ -52,6 +52,6 @@ def main() raises:
         _compile_code[
             check_sm9x_or_newer,
             emission_kind="llvm",
-            target = get_gpu_target[_accelerator_arch()](),
+            target=get_gpu_target[_accelerator_arch()](),
         ]()
     )

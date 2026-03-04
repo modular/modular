@@ -134,7 +134,7 @@ struct Bool(
             mlir_value: The initial value.
         """
         self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
-            _type = __mlir_type.i1
+            _type=__mlir_type.i1
         ](mlir_value)
 
     @always_inline("nodebug")

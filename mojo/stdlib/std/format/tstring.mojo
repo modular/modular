@@ -45,7 +45,7 @@ struct TString[
     """
 
     comptime _InjectedValues = VariadicPack[
-        origin = Self.origins, False, Writable, *Self.Ts
+        origin=Self.origins, False, Writable, *Self.Ts
     ]
     var _values: Self._InjectedValues
 
@@ -129,7 +129,7 @@ fn __make_tstring[
 ](
     *args: *Ts,
     out tstring: TString[
-        origins = ImmutOrigin(type_of(args).origin),
+        origins=ImmutOrigin(type_of(args).origin),
         StaticString(format_string),
         *Ts,
     ],

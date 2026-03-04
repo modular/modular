@@ -382,7 +382,7 @@ def test_ds_read_tr16_b64_compile() raises:
 
     fn test_kernel[dtype: DType]():
         var x = UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED
+            Scalar[dtype], address_space=AddressSpace.SHARED
         ]()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1

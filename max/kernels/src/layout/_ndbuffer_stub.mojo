@@ -207,9 +207,9 @@ comptime _ValueToValueVariadicMapper[
     Mapper: _ValueIdxToValueGeneratorType[FromType, ToType],
     From: Variadic.ValuesOfType[FromType],
 ] = _ReduceVariadicValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_type[ToType],
+    BaseVal=Variadic.empty_of_type[ToType],
     VariadicType=From,
-    Reducer = _ValueToValueMapper[Mapper, ...],
+    Reducer=_ValueToValueMapper[Mapper, ...],
 ]
 """Given a mapping function for an element+index and a variadic list of that
 element, this applies the function to each entry in the list and returns a new
@@ -390,9 +390,9 @@ fn vectorize[
         dtype,
         rank,
         origin,
-        shape = _vectorize_shape[*sizes, shape=shape](),
-        strides = DimList.create_unknown[rank](),
-        address_space = buff.address_space,
+        shape=_vectorize_shape[*sizes, shape=shape](),
+        strides=DimList.create_unknown[rank](),
+        address_space=buff.address_space,
     ],
     ElementLayout[rank, _to_static_tuple[*sizes, rank=rank]()],
 ]:
@@ -513,11 +513,11 @@ fn _copy_nd_buffer_to_layout_tensor[
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
-                        alignment = align_of[SIMD[dtype, vec_width]](),
+                        alignment=align_of[SIMD[dtype, vec_width]](),
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        alignment = align_of[SIMD[dtype, vec_width]](),
+                        alignment=align_of[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
     # Scalar case.
@@ -650,11 +650,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
-                        alignment = align_of[SIMD[dtype, vec_width]](),
+                        alignment=align_of[SIMD[dtype, vec_width]](),
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        alignment = align_of[SIMD[dtype, vec_width]](),
+                        alignment=align_of[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
     # Scalar case.
@@ -754,10 +754,10 @@ fn _copy_layout_tensor_to_nd_buffer[
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
-                    alignment = align_of[SIMD[dtype, vec_width]](),
+                    alignment=align_of[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = align_of[SIMD[dtype, vec_width]]()](
+                dst.data.store[alignment=align_of[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 
@@ -857,10 +857,10 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
-                    alignment = align_of[SIMD[dtype, vec_width]](),
+                    alignment=align_of[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = align_of[SIMD[dtype, vec_width]]()](
+                dst.data.store[alignment=align_of[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 
@@ -994,7 +994,7 @@ fn copy_from_nd_buffer_masked[
         var src_vectorized = vectorize[1, Int(dst_element_layout.shape[0])](src)
         var vec_mask = _vectorize_mask[
             rank=tile_mask_elt_rank,
-            sizes = (1, Int(dst_element_layout.shape[0])),
+            sizes=(1, Int(dst_element_layout.shape[0])),
         ](tile_mask)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
@@ -1021,7 +1021,7 @@ fn copy_from_nd_buffer_masked[
         ](src)
         var vec_mask = _vectorize_mask[
             rank=tile_mask_elt_rank,
-            sizes = (
+            sizes=(
                 Int(dst_element_layout.shape[0]),
                 Int(dst_element_layout.shape[1]),
             ),
@@ -1145,7 +1145,7 @@ fn copy_to_nd_buffer_masked[
         var dst_vectorized = vectorize[1, Int(src_element_layout.shape[0])](dst)
         var vectorize_mask = _vectorize_mask[
             rank=tile_mask_elt_rank,
-            sizes = (1, Int(src_element_layout.shape[0])),
+            sizes=(1, Int(src_element_layout.shape[0])),
         ](tile_mask)
         var dst_vectorized_buffer = dst_vectorized[0]
         var dst_element_layout = dst_vectorized[1]
@@ -1168,7 +1168,7 @@ fn copy_to_nd_buffer_masked[
         ](dst)
         var vectorize_mask = _vectorize_mask[
             rank=tile_mask_elt_rank,
-            sizes = (
+            sizes=(
                 Int(src_element_layout.shape[0]),
                 Int(src_element_layout.shape[1]),
             ),
@@ -1220,9 +1220,9 @@ fn from_ndbuffer_row_major(
     buffer: NDBuffer,
     out result: LayoutTensor[
         buffer.type,
-        Layout.row_major[dims = buffer.shape](),
+        Layout.row_major[dims=buffer.shape](),
         buffer.origin,
-        address_space = buffer.address_space,
+        address_space=buffer.address_space,
     ],
 ):
     """This function takes the underlying buffer from NDBuffer without explicitly

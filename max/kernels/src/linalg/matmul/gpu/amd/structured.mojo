@@ -191,7 +191,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
             UnsafePointer[
                 Scalar[DType.int32],
                 MutAnyOrigin,
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
             ]
         ](Pointer(to=self.__repr))
         bar[warp_id] += 1
@@ -331,8 +331,8 @@ struct AmdTileOperator[
         Self.OutType,
         Self._out_layout,
         MutAnyOrigin,
-        alignment = Self._type_alignment,
-        address_space = AddressSpace.LOCAL,
+        alignment=Self._type_alignment,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime OutRegTileFragmentType = Self.OutRegTile.TileType[
@@ -419,7 +419,7 @@ struct AmdTileOperator[
         # Only load if this is the first fragment in the group
         # (tensor core loads k_group_size tiles at once)
         comptime if fragment_idx == 0:
-            Self.tensor_core.load_a[swizzle = Self.swizzle](
+            Self.tensor_core.load_a[swizzle=Self.swizzle](
                 smem_tile_a,
                 self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
                     group_idx, 0
@@ -427,7 +427,7 @@ struct AmdTileOperator[
                 UInt(group_idx),
             )
 
-            Self.tensor_core.load_b[swizzle = Self.swizzle](
+            Self.tensor_core.load_b[swizzle=Self.swizzle](
                 smem_tile_b,
                 self._b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
                     group_idx, 0

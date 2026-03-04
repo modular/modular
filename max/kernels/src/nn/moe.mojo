@@ -639,7 +639,7 @@ fn moe_create_indices_bucket_group_kernel[
 
     # Allocate shared memory for temporary storage of matching token indices
     # alignment=128,
-    var smem = tensor_alloc[DType.uint32, address_space = AddressSpace.SHARED](
+    var smem = tensor_alloc[DType.uint32, address_space=AddressSpace.SHARED](
         row_major[1, expected_count]()
     )
 
@@ -912,10 +912,10 @@ fn group_limited_router_kernel[
     var shared_mem = stack_allocation[
         topk_group * n_experts_per_tok,
         TopK_2[scores_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var selected_group = stack_allocation[
-        topk_group, DType.int32, address_space = AddressSpace.SHARED
+        topk_group, DType.int32, address_space=AddressSpace.SHARED
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
@@ -989,7 +989,7 @@ fn group_limited_router_kernel[
                 thd_topk2 = TopK_2[scores_type]()
 
             var global_topk_result = _warp_bitonic_sort[
-                num_lanes = topk_group * n_experts_per_tok
+                num_lanes=topk_group * n_experts_per_tok
             ](thd_topk2)
 
             var weights_sum: Scalar[scores_type] = 0

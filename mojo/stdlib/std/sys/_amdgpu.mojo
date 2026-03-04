@@ -57,7 +57,7 @@ struct amd_signal_t(Copyable):
 fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
     var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
         UnsafePointer[
-            UInt64, MutExternalOrigin, address_space = AddressSpace.GLOBAL
+            UInt64, MutExternalOrigin, address_space=AddressSpace.GLOBAL
         ]
     ]()[]
     if mb:
@@ -72,7 +72,7 @@ fn hsa_signal_add(sig: UInt64, value: UInt64):
         UnsafePointer[
             amd_signal_t,
             MutExternalOrigin,
-            address_space = AddressSpace.GLOBAL,
+            address_space=AddressSpace.GLOBAL,
         ]
     ]()[]
     _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
@@ -522,7 +522,7 @@ fn printf_append_string_n(
 @fieldwise_init
 struct Header(TrivialRegisterPassable):
     var _handle: UnsafePointer[
-        header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
+        header_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
     ]
 
     fn fill_packet(
@@ -636,7 +636,7 @@ struct payload_t(Copyable):
 @fieldwise_init
 struct Buffer(TrivialRegisterPassable):
     var _handle: UnsafePointer[
-        buffer_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
+        buffer_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
     ]
 
     @always_inline
@@ -727,7 +727,7 @@ struct Buffer(TrivialRegisterPassable):
 @fieldwise_init
 struct buffer_t(Copyable, TrivialRegisterPassable):
     var headers: UnsafePointer[
-        header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
+        header_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
     ]
     var payloads: UnsafePointer[payload_t, MutExternalOrigin]
     var doorbell: UInt64
@@ -869,7 +869,7 @@ fn hostcall(
             UnsafePointer[
                 buffer_t,
                 MutExternalOrigin,
-                address_space = AddressSpace.GLOBAL,
+                address_space=AddressSpace.GLOBAL,
             ]
         ]()[10]
     )

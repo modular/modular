@@ -72,7 +72,7 @@ struct Softmax[
         Self.dtype,
         Self.row_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime RowSumTensorType = Self.RowMaxTensorType
@@ -84,19 +84,19 @@ struct Softmax[
         Self.dtype,
         Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     var score_frag_rowsum: LayoutTensor[
         Self.dtype,
         Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     var correction: LayoutTensor[
         Self.dtype,
         Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     @always_inline
@@ -147,7 +147,7 @@ struct Softmax[
                     col_tile, row
                 ] = warp.lane_group_max_and_broadcast[
                     Int(Self.num_rowwise_lanes),
-                    stride = Int(Self.rowwise_lanes_stride),
+                    stride=Int(Self.rowwise_lanes_stride),
                 ](
                     self.score_frag_rowmax[col_tile, row]
                 )
@@ -211,7 +211,7 @@ struct Softmax[
                         col_tile, row
                     ] = warp.lane_group_max_and_broadcast[
                         Int(Self.num_rowwise_lanes),
-                        stride = Int(Self.rowwise_lanes_stride),
+                        stride=Int(Self.rowwise_lanes_stride),
                     ](
                         self.score_frag_rowmax[col_tile, row]
                     )
@@ -253,7 +253,7 @@ struct Softmax[
                     col_tile, row
                 ] = warp.lane_group_sum_and_broadcast[
                     Int(Self.num_rowwise_lanes),
-                    stride = Int(Self.rowwise_lanes_stride),
+                    stride=Int(Self.rowwise_lanes_stride),
                 ](
                     self.score_frag_rowsum[col_tile, row]
                 )
@@ -316,7 +316,7 @@ struct Softmax[
                         col_tile, row
                     ] = warp.lane_group_max_and_broadcast[
                         Int(Self.num_rowwise_lanes),
-                        stride = Int(Self.rowwise_lanes_stride),
+                        stride=Int(Self.rowwise_lanes_stride),
                     ](
                         self.score_frag_rowsum[col_tile, row]
                     )

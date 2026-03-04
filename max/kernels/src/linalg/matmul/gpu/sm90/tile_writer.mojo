@@ -251,12 +251,12 @@ struct TileWriterThreadwise[
         Self.dtype,
         Self.dst_layout,
         MutAnyOrigin,
-        address_space = Self.dst_address_space,
-        element_layout = Self.dst_element_layout,
-        layout_int_type = Self.dst_layout_int_type,
-        linear_idx_type = Self.dst_linear_idx_type,
-        masked = Self.dst_masked,
-        alignment = Self.dst_alignment,
+        address_space=Self.dst_address_space,
+        element_layout=Self.dst_element_layout,
+        layout_int_type=Self.dst_layout_int_type,
+        linear_idx_type=Self.dst_linear_idx_type,
+        masked=Self.dst_masked,
+        alignment=Self.dst_alignment,
     ]
     var dst: Self.DstType
     var thread_idx: UInt
@@ -378,7 +378,7 @@ struct TileWriterThreadwise[
         else:
             # Normal case - write full tile
             copy_sram_to_dram[
-                thread_layout = Self.thread_layout,
+                thread_layout=Self.thread_layout,
                 swizzle=swizzle,
             ](
                 self.dst.vectorize[1, Self.simd_size](),
@@ -455,8 +455,8 @@ struct FragmentToSMemWriter[
 
     comptime st_matrix_rt_layout_type = RuntimeLayout[
         Self.st_matrix_layout_regular if not Self.swapAB else Self.st_matrix_layout_transpose,
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
+        element_type=DType.int32,
+        linear_idx_type=DType.int32,
     ]
 
     comptime st_matrix_layout = Layout.row_major(
@@ -542,7 +542,7 @@ struct FragmentToSMemWriter[
         var swizzled_offset = self._compute_swizzled_offset[n_frag, m_frag]()
 
         # Execute st.matrix hardware instruction
-        st_matrix[simd_width=packed_width, transpose = Self.swapAB](
+        st_matrix[simd_width=packed_width, transpose=Self.swapAB](
             smem_tile.ptr + swizzled_offset, packed_data
         )
 
@@ -674,12 +674,12 @@ struct RegisterToGMemWriter[
         Self.c_type,
         Self.dst_layout,
         MutAnyOrigin,
-        address_space = Self.dst_address_space,
-        element_layout = Self.dst_element_layout,
-        layout_int_type = Self.dst_layout_int_type,
-        linear_idx_type = Self.dst_linear_idx_type,
-        masked = Self.dst_masked,
-        alignment = Self.dst_alignment,
+        address_space=Self.dst_address_space,
+        element_layout=Self.dst_element_layout,
+        layout_int_type=Self.dst_layout_int_type,
+        linear_idx_type=Self.dst_linear_idx_type,
+        masked=Self.dst_masked,
+        alignment=Self.dst_alignment,
     ]
     var dst: Self.DstType
     var num_m_mmas: Int
@@ -971,7 +971,7 @@ struct RegisterToGMemWriter[
                     comptime if Self.epilogue_fn:
                         comptime epilogue = Self.epilogue_fn.value()
                         var frag_m, frag_n = epilogue_coordinates()
-                        epilogue[alignment = align_of[Scalar[Self.c_type]]()](
+                        epilogue[alignment=align_of[Scalar[Self.c_type]]()](
                             (frag_m, frag_n), reg_val
                         )
                     else:
@@ -979,7 +979,7 @@ struct RegisterToGMemWriter[
                             comptime compute_lambda = Self.compute_lambda_fn.value()
                             var frag_m, frag_n = epilogue_coordinates()
                             reg_val = compute_lambda[
-                                alignment = align_of[Scalar[Self.c_type]]()
+                                alignment=align_of[Scalar[Self.c_type]]()
                             ]((frag_m, frag_n), reg_val)
 
                         # Store coordinates

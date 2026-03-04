@@ -93,7 +93,7 @@ struct ImageData[
     fn to_static_layout[
         new_static_image_layout: Image2DLayout
     ](self) -> ImageData[
-        LayoutType = Self.LayoutType,
+        LayoutType=Self.LayoutType,
         Self.dtype,
         new_static_image_layout,
         Self.origin,
@@ -106,7 +106,7 @@ struct ImageData[
         """
         comptime assert Self.static_image_layout == Image2DLayout.UNKNOWN
         return ImageData[
-            LayoutType = Self.LayoutType,
+            LayoutType=Self.LayoutType,
             Self.dtype,
             new_static_image_layout,
         ](self.data)

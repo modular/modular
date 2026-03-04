@@ -24,7 +24,7 @@ fn test_shared_mem_barrier():
     mbar = stack_allocation[
         10,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -35,4 +35,4 @@ fn test_shared_mem_barrier():
 def main() raises:
     print("== test_shared_mem_barrier")
     comptime kernel = test_shared_mem_barrier
-    print(_compile_code[kernel, target = get_gpu_target["sm_90a"]()]())
+    print(_compile_code[kernel, target=get_gpu_target["sm_90a"]()]())

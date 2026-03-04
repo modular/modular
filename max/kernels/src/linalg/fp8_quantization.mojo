@@ -105,11 +105,11 @@ fn quantize_static_scaled_fp8[
         )
 
     comptime target_simd_width = simd_width_of[
-        in_dtype, target = get_gpu_target()
+        in_dtype, target=get_gpu_target()
     ]()
 
     _elementwise_impl_gpu[
-        func=scaled_fp8_quant, simd_width = UInt(target_simd_width)
+        func=scaled_fp8_quant, simd_width=UInt(target_simd_width)
     ](IndexList[2](in_buffer.dim[0](), in_buffer.dim[1]()), context)
 
 
@@ -164,7 +164,7 @@ fn quantize_dynamic_scaled_fp8[
         group_size % simd_width == 0
     ), "group size must be multiple of simd size"
 
-    with Trace[TraceLevel.OP, target = StaticString("gpu")](
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_dynamic_scaled_fp8",
         task_id=Int(ctx.id()),
     ):
@@ -422,14 +422,14 @@ fn matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[mut=True, c_type, address_space = AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space = AddressSpace.GENERIC, ...],
-    b: TileTensor[b_type, address_space = AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, ...
+        a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: TileTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, ...
+        b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -692,7 +692,7 @@ fn matmul_dynamic_scaled_fp8[
 
         blockwise_scaled_fp8_with_epilogue[
             transpose_b=transpose_b,
-            scales_granularity_mnk = IndexList[3](
+            scales_granularity_mnk=IndexList[3](
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,
@@ -722,20 +722,14 @@ fn naive_blockwise_scaled_fp8_matmul[
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
-    c: LayoutTensor[
-        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    a: LayoutTensor[
-        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    b: LayoutTensor[
-        mut=False, b_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: LayoutTensor[
-        mut=False, a_scales_type, address_space = AddressSpace.GENERIC, ...
+        mut=False, a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        mut=False, b_scales_type, address_space = AddressSpace.GENERIC, ...
+        mut=False, b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1314,11 +1308,11 @@ fn convert_e4m3fn_to_e4m3fnuz(
         output_buffer.store(idx, output_vec)
 
     comptime target_simd_width = simd_width_of[
-        DType.float8_e4m3fn, target = get_gpu_target()
+        DType.float8_e4m3fn, target=get_gpu_target()
     ]()
 
     _elementwise_impl_gpu[
-        func=convert_kernel, simd_width = UInt(target_simd_width)
+        func=convert_kernel, simd_width=UInt(target_simd_width)
     ](IndexList[2](input_buffer.dim[0](), input_buffer.dim[1]()), context)
 
 
@@ -1340,20 +1334,20 @@ fn blockwise_scaled_fp8_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[
-        mut=True, c_type, _, _, address_space = AddressSpace.GENERIC, ...
+        mut=True, c_type, _, _, address_space=AddressSpace.GENERIC, ...
     ],
     a: LayoutTensor[
-        mut=False, a_type, _, _, address_space = AddressSpace.GENERIC, ...
+        mut=False, a_type, _, _, address_space=AddressSpace.GENERIC, ...
     ],
     b: LayoutTensor[
-        mut=False, b_type, _, _, address_space = AddressSpace.GENERIC, ...
+        mut=False, b_type, _, _, address_space=AddressSpace.GENERIC, ...
     ],
     a_scales: LayoutTensor[
         mut=False,
         a_scales_type,
         _,
         _,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     b_scales: LayoutTensor[
@@ -1361,7 +1355,7 @@ fn blockwise_scaled_fp8_with_epilogue[
         b_scales_type,
         _,
         _,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     ctx: DeviceContext,
@@ -1421,7 +1415,7 @@ fn blockwise_scaled_fp8_with_epilogue[
                 and ctx.default_device_info.compute >= B200.compute
             )
             comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-                simd_width_of[c_type, target = get_gpu_target()]()
+                simd_width_of[c_type, target=get_gpu_target()]()
             )
 
             @parameter

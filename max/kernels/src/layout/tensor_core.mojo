@@ -248,7 +248,7 @@ struct TensorCore[
         Self.out_type,
         Layout.col_major(1, Self.c_reg_type.size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     """LayoutTensor type for the C register tile."""
 
@@ -304,7 +304,7 @@ struct TensorCore[
             Self.in_type,
             _get_a_reg_tile_layout[a.layout, Self.shape](),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         """
@@ -340,7 +340,7 @@ struct TensorCore[
             Self.in_type,
             _get_a_reg_tile_layout[a.layout, Self.shape](),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         comptime mma_m = Self.shape[0]
@@ -402,7 +402,7 @@ struct TensorCore[
             Self.in_type,
             _get_a_reg_tile_layout[a.layout, Self.shape](),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         comptime mma_m = Self.shape[0]
@@ -474,7 +474,7 @@ struct TensorCore[
             Self.in_type,
             _get_b_reg_tile_layout[b.layout, Self.shape, Self.transpose_b](),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         """
@@ -517,7 +517,7 @@ struct TensorCore[
             Self.in_type,
             _get_b_reg_tile_layout[b.layout, Self.shape, Self.transpose_b](),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         comptime mma_n = Self.shape[1]
@@ -588,7 +588,7 @@ struct TensorCore[
             Self.in_type,
             _get_b_reg_tile_layout[b.layout, Self.shape, Self.transpose_b](),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         comptime mma_n = Self.shape[1]
@@ -1590,7 +1590,7 @@ struct TiledTensorCore[
 @always_inline
 fn _load_tr16_b64_row[
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+](tile: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 4
 ]:
     """Load a 4x16 tile using ds_read_tr16_b64 with optional swizzle.
@@ -1642,7 +1642,7 @@ fn _load_tr16_b64_row[
 fn _load_tr16_b64_warp[
     mma_shape: IndexList[3],
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+](tile: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 4
 ]:
     # for 8x32 we need 2x2 distribution of rows (16 lanes), 2x2 x 4x16 = 8x32
@@ -1675,7 +1675,7 @@ fn _load_tr16_b64_warp[
 fn load_b_tr[
     mma_shape: IndexList[3],
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+](tile: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 8
 ]:
     """Loads the b operand tile for AMD tensor core MFMA instructions using transposed memory access.
@@ -1747,7 +1747,7 @@ fn load_b_tr[
 fn load_b_nt[
     mma_shape: IndexList[3],
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
+](tile: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 8
 ]:
     """Loads the b operand tile for AMD tensor core MFMA from (N, K) storage.

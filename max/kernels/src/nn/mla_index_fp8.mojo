@@ -180,15 +180,15 @@ fn mla_indexer_ragged_float8_paged[
         mut=True,
         DType.int32,
         output_layout,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
     q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     k_collection: KCollectionT,
     layer_idx: UInt32,

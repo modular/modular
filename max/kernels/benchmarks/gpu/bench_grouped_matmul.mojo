@@ -560,7 +560,7 @@ fn bench_grouped_matmul[
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                         config=config,
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -629,7 +629,7 @@ fn bench_grouped_matmul[
 
                 else:
                     grouped_matmul[
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](

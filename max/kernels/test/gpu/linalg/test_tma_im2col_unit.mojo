@@ -72,7 +72,7 @@ fn im2col_load_kernel[
 
     var smem_ptr = external_memory[
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         name="im2col_smem",
     ]()
@@ -80,7 +80,7 @@ fn im2col_load_kernel[
     var barrier_ptr = (
         external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="im2col_smem",
         ]()
@@ -98,7 +98,7 @@ fn im2col_load_kernel[
             dtype,
             smem_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]
         var smem_tile = smem_tile_t(smem_ptr)
@@ -306,8 +306,8 @@ fn run_im2col_test[
 
     var act_tma = create_tensor_tile_im2col[
         dtype,
-        tile_shape = Index(BM, BK),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+        tile_shape=Index(BM, BK),
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ](
         ctx,
         input_tensor,

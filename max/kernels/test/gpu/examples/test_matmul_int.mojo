@@ -60,7 +60,7 @@ fn matmul(
     var b_shared = stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.int,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.

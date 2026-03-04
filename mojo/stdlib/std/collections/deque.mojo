@@ -425,7 +425,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -440,7 +440,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "Deque").params(
             fmt.TypeNames[Self.ElementType](),

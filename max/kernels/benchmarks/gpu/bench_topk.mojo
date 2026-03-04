@@ -204,7 +204,7 @@ fn bench_topk_batched[
             topk_idxs_cpu_ptr, row_major((Idx(batch_size), Idx(K)))
         )
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_buffer,
             max_k,
             rank - 1,
@@ -375,7 +375,7 @@ fn bench_topk_multi_rank[
             topk_idxs_cpu_ptr, row_major(Coord(out_idxs_shape))
         )
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_buffer,
             max_k,
             rank - 1,

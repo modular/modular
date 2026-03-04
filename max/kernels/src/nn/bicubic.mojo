@@ -271,9 +271,9 @@ fn resize_bicubic[
     target: StaticString,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -296,10 +296,10 @@ fn resize_bicubic[
         var block_size = 256
         comptime kernel = gpu_bicubic_kernel[
             output.dtype,
-            output_origin = output.origin,
-            OutputLayoutType = output.LayoutType,
-            input_origin = ImmutOrigin(input.origin),
-            InputLayoutType = input.LayoutType,
+            output_origin=output.origin,
+            OutputLayoutType=output.LayoutType,
+            input_origin=ImmutOrigin(input.origin),
+            InputLayoutType=input.LayoutType,
         ]
         ctx.get_device_context().enqueue_function_experimental[kernel](
             output,

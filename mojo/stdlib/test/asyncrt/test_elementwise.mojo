@@ -27,7 +27,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     print("-")
     print("run_elementwise[", dtype, "]:")
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     comptime rank = 2
     comptime dim_x = 2

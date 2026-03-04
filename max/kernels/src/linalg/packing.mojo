@@ -190,9 +190,9 @@ struct PackMatrixRows[
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
                     #  without any predicate.
-                    row_data = self.original_matrix.load[
-                        width = Self.simd_size
-                    ](row_global_index)
+                    row_data = self.original_matrix.load[width=Self.simd_size](
+                        row_global_index
+                    )
                 else:
                     # Not skipping col bound, need to do a partial fill of
                     #  the transpose buffer row.
@@ -203,12 +203,12 @@ struct PackMatrixRows[
                         0,
                     )
 
-                transpose_buffer.store[width = Self.simd_size](
+                transpose_buffer.store[width=Self.simd_size](
                     Index(inner_row_idx, 0), row_data
                 )
             else:
                 # Row out of defined bound, fill the transpose buffer with zero
-                transpose_buffer.store[width = Self.simd_size](
+                transpose_buffer.store[width=Self.simd_size](
                     Index(inner_row_idx, 0), SIMD[Self.dtype, Self.simd_size](0)
                 )
 
@@ -220,7 +220,7 @@ struct PackMatrixRows[
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
         comptime for idx in range(Self.simd_size):
-            var transposed_data = transpose_buffer.load[width = Self.simd_size](
+            var transposed_data = transpose_buffer.load[width=Self.simd_size](
                 Index(idx, 0)
             )
             # compute the packed index
@@ -228,7 +228,7 @@ struct PackMatrixRows[
             var _row_inner = local_off_set[0] % Self.row_inner_size
 
             if skip_col_bound or (idx < write_bound[1]):
-                self.packed_matrix.store[width = Self.simd_size](
+                self.packed_matrix.store[width=Self.simd_size](
                     Index(
                         _row_outer,
                         local_off_set[1] + idx,
@@ -250,7 +250,7 @@ struct PackMatrixRows[
             MutAnyOrigin,
             DimList(Self.simd_size, Self.simd_size),
         ].stack_allocation[
-            alignment = align_of[SIMD[Self.dtype, Self.simd_size]]()
+            alignment=align_of[SIMD[Self.dtype, Self.simd_size]]()
         ]()
 
         var valid_tile_simd_dim = Index(
@@ -400,7 +400,7 @@ struct PackMatrixCols[
             if skip_col_bound or (
                 col_idx + Self.simd_size <= self.valid_data_dim[1]
             ):
-                data = self.original_matrix.load[width = Self.simd_size](
+                data = self.original_matrix.load[width=Self.simd_size](
                     global_idx
                 )
             elif col_idx < self.valid_data_dim[1]:
@@ -416,7 +416,7 @@ struct PackMatrixCols[
             # map to packed index
             var col_idx_outer = col_idx // Self.column_inner_size
             var col_idx_inner = col_idx % Self.column_inner_size
-            self.packed_matrix.store[width = Self.simd_size](
+            self.packed_matrix.store[width=Self.simd_size](
                 Index(col_idx_outer, row_idx, col_idx_inner),
                 data,
             )
@@ -828,7 +828,7 @@ fn _pack_b_ndbuffer_impl[
                 b_type,
                 c_type,
                 src_shape=b_shape,
-                dst_shape = DimList.create_unknown[2](),
+                dst_shape=DimList.create_unknown[2](),
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
 
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)

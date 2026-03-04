@@ -106,7 +106,7 @@ struct _Accumulator[
 
     @always_inline
     fn __getitem__(self, m: Int, n: Int) -> SIMD[Self.dtype, Self.simd_width]:
-        return self._storage.load[width = Self.simd_width](
+        return self._storage.load[width=Self.simd_width](
             self._storage_index(m, n)
         )
 
@@ -163,7 +163,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype]]):
-            self[m, n] = ptr.load[width = Self.simd_width]()
+            self[m, n] = ptr.load[width=Self.simd_width]()
 
         self._transfer[do_transfer](base_ptr, stride)
 
@@ -987,7 +987,7 @@ struct _Accumulator[
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),
@@ -1044,7 +1044,7 @@ struct _Accumulator[
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),
@@ -1103,7 +1103,7 @@ struct _Accumulator[
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),

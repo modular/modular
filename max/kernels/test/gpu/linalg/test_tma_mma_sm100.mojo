@@ -148,11 +148,11 @@ fn tma_umma_kernel_ss[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -161,14 +161,14 @@ fn tma_umma_kernel_ss[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -261,7 +261,7 @@ fn tma_umma_kernel_ss[
         accum_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_a=transpose_a,
         transpose_b=transpose_b,
     ]()
@@ -315,7 +315,7 @@ fn tma_umma_kernel_ss[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -406,11 +406,11 @@ fn tma_umma_kernel_ts[
     ]()
 
     b_smem = rebind[
-        UnsafePointer[Scalar[b_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[b_type], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[b_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -419,7 +419,7 @@ fn tma_umma_kernel_ts[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -487,7 +487,7 @@ fn tma_umma_kernel_ts[
         accum_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -525,7 +525,7 @@ fn tma_umma_kernel_ts[
         tcgen05_st[
             datapaths=16,
             bits=256,
-            repeat = BK * size_of[a_type]() // 4 // 8,
+            repeat=BK * size_of[a_type]() // 4 // 8,
             pack=False,
         ](a_tmem, a_frag)
 
@@ -586,7 +586,7 @@ fn tma_umma_kernel_ts[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -882,7 +882,7 @@ def main() raises:
                                     Index(MMA_M, 128, MMA_K),
                                     a_swizzle=swizzle,
                                     b_swizzle=swizzle,
-                                    transpose_b = Bool(transpose_b),
+                                    transpose_b=Bool(transpose_b),
                                 ](ctx)
 
                                 comptime if dtype == DType.bfloat16:
@@ -898,7 +898,7 @@ def main() raises:
                                         Index(MMA_M, 128, BK),
                                         Index(MMA_M, 128, MMA_K),
                                         b_swizzle=swizzle,
-                                        transpose_b = Bool(transpose_b),
+                                        transpose_b=Bool(transpose_b),
                                         a_smem=False,
                                     ](ctx)
 
@@ -916,7 +916,7 @@ def main() raises:
                                         a_swizzle=swizzle,
                                         b_swizzle=swizzle,
                                         transpose_a=True,
-                                        transpose_b = Bool(transpose_b),
+                                        transpose_b=Bool(transpose_b),
                                     ](ctx)
 
                                     test_tma_umma[
@@ -931,9 +931,9 @@ def main() raises:
                                         Index(MMA_M, 128, BK),
                                         Index(MMA_M, 128, MMA_K),
                                         a_swizzle=swizzle,
-                                        b_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+                                        b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
                                         transpose_a=True,
-                                        transpose_b = Bool(transpose_b),
+                                        transpose_b=Bool(transpose_b),
                                     ](ctx)
                                     test_tma_umma[
                                         dtype,
@@ -946,10 +946,10 @@ def main() raises:
                                         ),
                                         Index(MMA_M, 128, BK),
                                         Index(MMA_M, 128, MMA_K),
-                                        a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-                                        b_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
+                                        a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
+                                        b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
                                         transpose_a=True,
-                                        transpose_b = Bool(transpose_b),
+                                        transpose_b=Bool(transpose_b),
                                     ](ctx)
 
         comptime for size_scale in range(1, 3):
@@ -962,8 +962,8 @@ def main() raises:
                         Index(size_scale * 64, 8, 16),
                         Index(size_scale * 64, 8, 16),
                         Index(size_scale * 64, 8, 16),
-                        a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-                        b_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-                        transpose_a = Bool(transpose_a),
-                        transpose_b = Bool(transpose_b),
+                        a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
+                        b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
+                        transpose_a=Bool(transpose_a),
+                        transpose_b=Bool(transpose_b),
                     ](ctx)

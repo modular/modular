@@ -81,7 +81,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
             DType.float32,
             DType.float32,
             DType.float32,
-            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
         ctx.enqueue_function_experimental[kernel](
@@ -257,7 +257,7 @@ fn run_matvec_with_epilogue_fn(
             DType.float32,
             DType.float32,
             DType.float32,
-            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
         var func = ctx.compile_function_experimental[kernel]()

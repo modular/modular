@@ -79,7 +79,7 @@ comptime ReduceFn = fn[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) capturing raises -> None
@@ -97,7 +97,7 @@ fn _reduce_max[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -123,7 +123,7 @@ fn _reduce_min[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -149,7 +149,7 @@ fn _reduce_sum[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -175,7 +175,7 @@ fn _reduce_mean[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:
@@ -207,7 +207,7 @@ fn _reduce_mul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr,
 ) raises:

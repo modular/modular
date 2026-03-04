@@ -41,7 +41,7 @@ fn kernel[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
 
 fn kernel_lds[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
     var a_shared = stack_allocation[
-        size, dtype, address_space = AddressSpace.SHARED
+        size, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var aligned_size = align_down(size, width)
@@ -65,10 +65,10 @@ fn cache_policy_kernel_always():
     var dummy_ptr = UnsafePointer[Float32]()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
-    var v = buffer.load[DType.float32, 4, cache_policy = CacheOperation.ALWAYS](
+    var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.ALWAYS](
         offset
     )
-    buffer.store[DType.float32, 4, cache_policy = CacheOperation.ALWAYS](
+    buffer.store[DType.float32, 4, cache_policy=CacheOperation.ALWAYS](
         offset, v
     )
 
@@ -78,9 +78,9 @@ fn cache_policy_kernel_streaming():
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[
-        DType.float32, 4, cache_policy = CacheOperation.STREAMING
+        DType.float32, 4, cache_policy=CacheOperation.STREAMING
     ](offset)
-    buffer.store[DType.float32, 4, cache_policy = CacheOperation.STREAMING](
+    buffer.store[DType.float32, 4, cache_policy=CacheOperation.STREAMING](
         offset, v
     )
 
@@ -89,10 +89,10 @@ fn cache_policy_kernel_global():
     var dummy_ptr = UnsafePointer[Float32]()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
-    var v = buffer.load[DType.float32, 4, cache_policy = CacheOperation.GLOBAL](
+    var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.GLOBAL](
         offset
     )
-    buffer.store[DType.float32, 4, cache_policy = CacheOperation.GLOBAL](
+    buffer.store[DType.float32, 4, cache_policy=CacheOperation.GLOBAL](
         offset, v
     )
 
@@ -101,10 +101,10 @@ fn cache_policy_kernel_volatile():
     var dummy_ptr = UnsafePointer[Float32]()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
-    var v = buffer.load[
-        DType.float32, 4, cache_policy = CacheOperation.VOLATILE
-    ](offset)
-    buffer.store[DType.float32, 4, cache_policy = CacheOperation.VOLATILE](
+    var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.VOLATILE](
+        offset
+    )
+    buffer.store[DType.float32, 4, cache_policy=CacheOperation.VOLATILE](
         offset, v
     )
 
@@ -159,28 +159,28 @@ fn _verify_cache_bits_volatile(asm: StringSlice) raises -> None:
 
 def test_cache_policy_assembly_always() raises:
     var asm = _compile_code[
-        cache_policy_kernel_always, target = get_gpu_target["mi300x"]()
+        cache_policy_kernel_always, target=get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_always(asm)
 
 
 def test_cache_policy_assembly_streaming() raises:
     var asm = _compile_code[
-        cache_policy_kernel_streaming, target = get_gpu_target["mi300x"]()
+        cache_policy_kernel_streaming, target=get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_streaming(asm)
 
 
 def test_cache_policy_assembly_global() raises:
     var asm = _compile_code[
-        cache_policy_kernel_global, target = get_gpu_target["mi300x"]()
+        cache_policy_kernel_global, target=get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_global(asm)
 
 
 def test_cache_policy_assembly_volatile() raises:
     var asm = _compile_code[
-        cache_policy_kernel_volatile, target = get_gpu_target["mi300x"]()
+        cache_policy_kernel_volatile, target=get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_volatile(asm)
 

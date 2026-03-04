@@ -296,7 +296,7 @@ fn gemv_split_k[
         b_type,
         Layout.row_major(tile_n, simd_width),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
@@ -305,7 +305,7 @@ fn gemv_split_k[
             s_type,
             Layout.row_major(tile_m, tile_n),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -370,7 +370,7 @@ fn gemv_split_k[
         s_type,
         Layout.row_major(1, tile_m * tile_n * k_warp_num),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Each warp sums across its threads and stages results in shared memory.
@@ -439,7 +439,7 @@ fn gevm_kernel[
     var x_shared = stack_allocation[
         tile_size,
         s_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     comptime if pdl_level > PDLLevel.OFF:
@@ -490,7 +490,7 @@ fn gemv_gpu_dispatch[
     var k = shape.K
 
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
-    comptime simd_width = simd_width_of[a.type, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[a.type, target=get_gpu_target()]()
 
     var c_tensor = from_ndbuffer_row_major(c)
     var b_tensor = from_ndbuffer_row_major(b)
@@ -549,7 +549,7 @@ fn gemv_gpu_dispatch[
                     c_tensor.layout,
                     a_tensor.layout,
                     b_tensor.layout,
-                    simd_width = UInt(simd_width),
+                    simd_width=UInt(simd_width),
                     transpose_b=False,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     pdl_level=pdl_level,
@@ -591,7 +591,7 @@ fn gemv_gpu_dispatch[
                     b.type,
                     b_layout_template,
                     MutAnyOrigin,
-                    address_space = aligned_b.address_space,
+                    address_space=aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
                 comptime kernel = gemv_kernel_vector[
@@ -601,7 +601,7 @@ fn gemv_gpu_dispatch[
                     c_tensor.layout,
                     a_tensor.layout,
                     b_layout_template,
-                    simd_width = UInt(simd_width),
+                    simd_width=UInt(simd_width),
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     pdl_level=pdl_level,
@@ -625,7 +625,7 @@ fn gemv_gpu_dispatch[
                 c_tensor.layout,
                 b_tensor.layout,
                 a_tensor.layout,
-                simd_width = UInt(simd_width),
+                simd_width=UInt(simd_width),
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
@@ -693,7 +693,7 @@ fn gemv_gpu_dispatch[
             c.type,
             a.type,
             b.type,
-            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
@@ -767,7 +767,7 @@ fn gemv_gpu[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    comptime simd_width = simd_width_of[a.type, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[a.type, target=get_gpu_target()]()
 
     comptime has_M = c.shape.has_value[0]()
     comptime has_N = c.shape.has_value[1]()
@@ -877,7 +877,7 @@ fn gemv[
         input_fn,
         output_fn,
         reduce_impl,
-        single_thread_blocking_override = not parallelize,
+        single_thread_blocking_override=not parallelize,
     ](
         Index(M, K),
         init=Scalar[c_type](0),

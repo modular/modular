@@ -46,8 +46,8 @@ def main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            grid_shape = Index(32, 4),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(32, 4),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -66,8 +66,8 @@ def main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
-            grid_shape = Index(10, 13),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(10, 13),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -86,7 +86,7 @@ def main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -105,7 +105,7 @@ def main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -124,7 +124,7 @@ def main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -143,7 +143,7 @@ def main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -162,7 +162,7 @@ def main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,

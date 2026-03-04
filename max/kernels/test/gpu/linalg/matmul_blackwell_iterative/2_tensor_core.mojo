@@ -116,11 +116,11 @@ fn kernel_3[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -131,28 +131,28 @@ fn kernel_3[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime a_size = a_smem_layout.size()
@@ -233,7 +233,7 @@ fn kernel_3[
         accum_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -308,7 +308,7 @@ fn kernel_3[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -486,9 +486,9 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 transpose_b,
                 BK,
                 benchmark=True,
-                M = shape[0],
-                N = shape[1],
-                K = shape[2],
+                M=shape[0],
+                N=shape[1],
+                K=shape[2],
             ](ctx)
         except e:
             print("Error: Failed to run benchmark for this shape")
@@ -641,7 +641,7 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            umma_shape = Index(64, 256, 16),
+            umma_shape=Index(64, 256, 16),
             transpose_b=True,
             BK=64,
             M=4096,

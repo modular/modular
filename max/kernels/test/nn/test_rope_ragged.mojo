@@ -159,7 +159,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
         dtype,
         dtype,
         interleaved=True,
-        target = StaticString("cpu"),
+        target=StaticString("cpu"),
         output_fn=output_fn,
     ](
         x=q_tensor,

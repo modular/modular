@@ -323,7 +323,7 @@ def main() raises:
                             DType.bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape = StaticTuple[Int32, 3](
+                            cluster_shape=StaticTuple[Int32, 3](
                                 Int32(cluster_m), Int32(cluster_n), 1
                             ),
                             cta_group=2,

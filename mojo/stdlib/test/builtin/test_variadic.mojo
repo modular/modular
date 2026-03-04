@@ -104,7 +104,7 @@ comptime _IntToWithValueMapper[
 ] = Variadic.concat_types[Prev, Variadic.types[WithValue[From[idx]]]]
 
 comptime IntToWithValue[*values: Int] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[HasStaticValue],
+    BaseVal=Variadic.empty_of_trait[HasStaticValue],
     VariadicType=values,
     Reducer=_IntToWithValueMapper,
 ]

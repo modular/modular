@@ -447,14 +447,14 @@ fn naive_block_scaled_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
 ](
-    c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[b_type, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[c_type, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: LayoutTensor[
-        a_scales_type, address_space = AddressSpace.GENERIC, ...
+        a_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     b_scales: LayoutTensor[
-        b_scales_type, address_space = AddressSpace.GENERIC, ...
+        b_scales_type, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
@@ -817,11 +817,11 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
     tensor_sf: Float32,  # tensor-wise scale factor
 ):
     var smem_storage = rebind[
-        UnsafePointer[Scalar[input_dtype], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[input_dtype], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[input_dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]()
     )
@@ -860,7 +860,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
         input_dtype,
         input_cta_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         input_smem_ptr,
@@ -871,7 +871,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
         output_dtype,
         output_cta_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         output_smem_ptr,
@@ -881,7 +881,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
         scales_dtype,
         scales_tma_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         scales_smem_ptr,
@@ -953,11 +953,11 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
                         var swizzle_idx = input_swizzle(swizzle_offset)
                         var temp = smem_tile.ptr.load[
                             width=8,
-                            alignment = align_of[SIMD[input_dtype, 8]](),
+                            alignment=align_of[SIMD[input_dtype, 8]](),
                         ](swizzle_idx)
 
                         group_elements = group_elements.insert[
-                            offset = Int(col_idx * 8)
+                            offset=Int(col_idx * 8)
                         ](temp)
 
                     var group_max = (
@@ -983,7 +983,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
 
                     comptime for slice_idx in range(2):
                         var slice_elements = group_elements.slice[
-                            8, offset = slice_idx * 8
+                            8, offset=slice_idx * 8
                         ]()
                         quantized_elements[
                             Int(group_idx) * 2 + slice_idx
@@ -993,7 +993,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
 
                 comptime for idx in range(2):
                     var slice_elements = quantized_elements.slice[
-                        4, offset = idx * 4
+                        4, offset=idx * 4
                     ]()
                     comptime output_swizzle = make_swizzle[
                         output_dtype, output_swizzle_mode
@@ -1003,7 +1003,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
                     ) + idx * Int(SF_VECTOR_SIZE)
                     var output_swizzle_idx = output_swizzle(swizzle_offset)
                     output_smem.ptr.store[
-                        alignment = align_of[
+                        alignment=align_of[
                             SIMD[output_dtype, Int(SF_VECTOR_SIZE)]
                         ]()
                     ](
@@ -1014,7 +1014,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
                     )
 
                 scales_smem.ptr.store[
-                    alignment = align_of[SIMD[scales_dtype, SF_ATOM_K]]()
+                    alignment=align_of[SIMD[scales_dtype, SF_ATOM_K]]()
                 ](
                     (local_row_idx % 32) * 16
                     + (local_row_idx // 32) * SF_ATOM_K,
@@ -1100,14 +1100,14 @@ fn quantize_dynamic_scaled_fp4_async[
     var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
-        __tile_layout = Layout.row_major(input_tma_tile_shape),
+        __tile_layout=Layout.row_major(input_tma_tile_shape),
     ](ctx, input_tensor)
 
     comptime output_tma_tile_shape = Index(128, 32)
     var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
-        __tile_layout = Layout.row_major(output_tma_tile_shape),
+        __tile_layout=Layout.row_major(output_tma_tile_shape),
     ](ctx, output_tensor)
 
     comptime assert scales_tensor.rank == 5, "scales must be 5D tensors"
@@ -1143,7 +1143,7 @@ fn quantize_dynamic_scaled_fp4_async[
     var scales_tma_op = create_tensor_tile[
         scales_tma_tile_shape,
         swizzle_mode=scales_swizzle_mode,
-        __tile_layout = Layout.row_major(scales_tma_tile_shape),
+        __tile_layout=Layout.row_major(scales_tma_tile_shape),
     ](ctx, scales_4d_tensor)
 
     comptime smem_use = (
@@ -1175,7 +1175,7 @@ fn quantize_dynamic_scaled_fp4_async[
         output_swizzle_mode,
         scales_swizzle_mode,
         UInt(SF_VECTOR_SIZE),
-        NUM_PIPELINES_STAGES = UInt(NUM_PIPELINES_STAGES),
+        NUM_PIPELINES_STAGES=UInt(NUM_PIPELINES_STAGES),
     ]
 
     ctx.enqueue_function[kernel, kernel, dump_asm=False](
@@ -1467,7 +1467,7 @@ fn block_scaled_matmul_with_epilogue[
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
         comptime use_32b_simd = True
         comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target = get_gpu_target()]()
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
 
         @parameter

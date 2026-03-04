@@ -268,7 +268,7 @@ fn test_scaled_mxfp8_cublaslt[
 
     var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
     naive_block_scaled_matmul[
-        scaling_kind = UMMAKind.KIND_MXF8F6F4,
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
         SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](

@@ -84,7 +84,7 @@ fn test_distribute_with_swizzle() raises:
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
-    var layout_tensor = TileTensor[dtype = DType.uint32](
+    var layout_tensor = TileTensor[dtype=DType.uint32](
         ptr=ptr,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -142,7 +142,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
 
-    var tensor_no_swizzle = TileTensor[dtype = DType.uint32](
+    var tensor_no_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_no_swizzle,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -150,7 +150,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
         ),
     )
 
-    var tensor_with_swizzle = TileTensor[dtype = DType.uint32](
+    var tensor_with_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_with_swizzle,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),

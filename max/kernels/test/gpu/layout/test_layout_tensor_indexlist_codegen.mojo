@@ -48,12 +48,12 @@ fn test_store_codegen_equivalence() raises:
 
     var variadic_asm = String(
         compile_info[
-            variadic_kernel, emission_kind="asm", target = get_gpu_target()
+            variadic_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
     var indexlist_asm = String(
         compile_info[
-            indexlist_kernel, emission_kind="asm", target = get_gpu_target()
+            indexlist_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
 
@@ -94,12 +94,12 @@ fn test_load_codegen_equivalence() raises:
 
     var variadic_asm = String(
         compile_info[
-            variadic_kernel, emission_kind="asm", target = get_gpu_target()
+            variadic_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
     var indexlist_asm = String(
         compile_info[
-            indexlist_kernel, emission_kind="asm", target = get_gpu_target()
+            indexlist_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
 
@@ -139,12 +139,12 @@ fn test_aligned_load_codegen_equivalence() raises:
 
     var variadic_asm = String(
         compile_info[
-            variadic_kernel, emission_kind="asm", target = get_gpu_target()
+            variadic_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
     var indexlist_asm = String(
         compile_info[
-            indexlist_kernel, emission_kind="asm", target = get_gpu_target()
+            indexlist_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
 

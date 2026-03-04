@@ -41,8 +41,8 @@ def main() raises:
             num_consumer=2,
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            grid_shape = Index(32, 4),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(32, 4),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](ctx, dynamic(512), static[2560](), static[8192]())
 
@@ -55,8 +55,8 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape = Index(10, 13),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(10, 13),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](ctx, dynamic(8192), static[2560](), static[8192]())
 
@@ -69,7 +69,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](ctx, dynamic(4096), static[2560](), static[8192]())
 
@@ -82,8 +82,8 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape = Index(4, 33),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(4, 33),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](ctx, dynamic(8192), static[8192](), static[2048]())
 
@@ -96,7 +96,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](ctx, dynamic(4096), static[8192](), static[2048]())
 
@@ -110,7 +110,7 @@ def main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             use_tma_store=True,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](ctx, dynamic(4096), static[8192](), static[2048]())
 
@@ -123,8 +123,8 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape = Index(8, 16),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(8, 16),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -142,9 +142,9 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape = Index(8, 16),
+            grid_shape=Index(8, 16),
             use_tma_store=True,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -162,7 +162,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -181,7 +181,7 @@ def main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             use_tma_store=True,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -199,8 +199,8 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape = Index(4, 33),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(4, 33),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -218,9 +218,9 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape = Index(4, 33),
+            grid_shape=Index(4, 33),
             use_tma_store=True,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -238,7 +238,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -257,7 +257,7 @@ def main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             use_tma_store=True,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
@@ -275,7 +275,7 @@ def main() raises:
                 block_tile_shape[80, DType.bfloat16],
                 wgmma_shape[80, DType.bfloat16],
                 num_consumer=2,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
                 measure_threshold=0.001,
             ](
                 ctx,
@@ -292,7 +292,7 @@ def main() raises:
                 block_tile_shape[256, DType.bfloat16],
                 wgmma_shape[256, DType.bfloat16],
                 num_consumer=2,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
                 measure_threshold=0.001,
             ](
                 ctx,
@@ -308,7 +308,7 @@ def main() raises:
                 Index(1, 2, 1),
                 block_tile_shape[64, DType.bfloat16],
                 wgmma_shape[64, DType.bfloat16],
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
                 measure_threshold=0.001,
             ](
                 ctx,
@@ -325,7 +325,7 @@ def main() raises:
                 block_tile_shape[256, DType.bfloat16],
                 wgmma_shape[256, DType.bfloat16],
                 num_consumer=2,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
                 measure_threshold=0.001,
             ](
                 ctx,
@@ -341,7 +341,7 @@ def main() raises:
                 Index(2, 1, 1),
                 block_tile_shape[64, DType.bfloat16],
                 wgmma_shape[64, DType.bfloat16],
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
                 measure_threshold=0.001,
             ](
                 ctx,
@@ -357,7 +357,7 @@ def main() raises:
                 Index(2, 2, 1),
                 block_tile_shape[256, DType.bfloat16],
                 wgmma_shape[256, DType.bfloat16],
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
                 measure_threshold=0.001,
             ](
                 ctx,
@@ -374,7 +374,7 @@ def main() raises:
                 block_tile_shape[64, DType.bfloat16],
                 wgmma_shape[64, DType.bfloat16],
                 num_consumer=2,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
                 measure_threshold=0.001,
             ](
                 ctx,

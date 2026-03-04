@@ -231,8 +231,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     fused_qk_rope_ragged[
         kv_collection.CacheType,
         interleaved=False,
-        target = StaticString("cpu"),
-        mrope_types = mrope_section.element_types,
+        target=StaticString("cpu"),
+        mrope_types=mrope_section.element_types,
         mrope_section=mrope_section,
     ](
         q_proj=q,

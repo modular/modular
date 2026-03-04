@@ -41,9 +41,9 @@ fn fa4_correction[
     page_size: Int,
 ](
     mbars: FA4MiscMBars[
-        num_qk_stages = config.num_qk_stages,
-        num_pv_stages = config.num_pv_stages,
-        num_kv_stages = config.num_kv_stages,
+        num_qk_stages=config.num_qk_stages,
+        num_pv_stages=config.num_pv_stages,
+        num_kv_stages=config.num_kv_stages,
         separate_kv=True,
         use_order_barriers=EnableForcedOrdering,
     ],

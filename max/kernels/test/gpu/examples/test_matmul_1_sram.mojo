@@ -53,12 +53,12 @@ fn matmul_sram(
     var a_shared = stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Global index in C.

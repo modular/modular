@@ -49,7 +49,7 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
         #
         # This is further explained in the [boost documentation]
         # (https://www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-        _ = self.refcount.fetch_add[ordering = Consistency.MONOTONIC](1)
+        _ = self.refcount.fetch_add[ordering=Consistency.MONOTONIC](1)
 
     fn drop_ref(mut self) -> Bool:
         """Atomically decrement the refcount and return true if the result
@@ -59,14 +59,14 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
         # decreasing the refcount. `ACQUIRE_RELEASE` is not needed since we
         # don't need the guarantees of `ACQUIRE` on the load portion of
         # fetch_sub if the recount does not reach zero.
-        if self.refcount.fetch_sub[ordering = Consistency.RELEASE](1) != 1:
+        if self.refcount.fetch_sub[ordering=Consistency.RELEASE](1) != 1:
             return False
 
         # However, if the refcount results in zero, this `ACQUIRE` fence is
         # needed to synchronize with the `fetch_sub[RELEASE]` above, ensuring
         # that use of data happens before the fence and therefore before the
         # deletion of the data.
-        fence[ordering = Consistency.ACQUIRE]()
+        fence[ordering=Consistency.ACQUIRE]()
         return True
 
 
@@ -234,7 +234,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         # No synchronization is needed as this is not attempting to free the
         # shared data and it is not possible for the data to be freed until
         # this ArcPointer is destroyed.
-        return self._inner[].refcount.load[ordering = Consistency.MONOTONIC]()
+        return self._inner[].refcount.load[ordering=Consistency.MONOTONIC]()
 
     fn steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
@@ -276,7 +276,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         _constrained_conforms_to[
             conforms_to(Self.T, Writable),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="Writable",
         ]()
         trait_downcast[Writable](self[]).write_to(writer)

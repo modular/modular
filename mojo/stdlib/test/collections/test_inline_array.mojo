@@ -103,8 +103,8 @@ def test_array_int() raises:
     test_init_fill_scalars[
         Int64.dtype,
         Int8.dtype,
-        sizes= [1, 32, 64, 129, 256, 512, 768, 1000],
-        batch_sizes= [1, 8, 32, 64, 128],
+        sizes=[1, 32, 64, 129, 256, 512, 768, 1000],
+        batch_sizes=[1, 8, 32, 64, 128],
     ]()
 
     test_init_fill[2048, 512](Int64.MAX)

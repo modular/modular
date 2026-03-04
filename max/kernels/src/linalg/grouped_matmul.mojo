@@ -324,11 +324,11 @@ fn grouped_matmul_kernel_sm100[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -339,28 +339,28 @@ fn grouped_matmul_kernel_sm100[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime a_size = a_smem_layout.size()
@@ -484,7 +484,7 @@ fn grouped_matmul_kernel_sm100[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -504,8 +504,8 @@ fn grouped_matmul_kernel_sm100[
         c_type,
         c_gmem_layout,
         MutAnyOrigin,
-        layout_int_type = DType.int32,
-        address_space = AddressSpace.GENERIC,
+        layout_int_type=DType.int32,
+        address_space=AddressSpace.GENERIC,
     ]
 
     # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
@@ -622,7 +622,7 @@ fn grouped_matmul_sm100[
         b_type,
         Layout.row_major(num_experts * N, K),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
@@ -716,21 +716,21 @@ fn grouped_matmul_amd_kernel_launcher[
         c_type,
         c_layout,
         MutAnyOrigin,
-        address_space = c_ptr.address_space,
+        address_space=c_ptr.address_space,
     ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
 
     var a = LayoutTensor[
         a_type,
         a_layout,
         MutAnyOrigin,
-        address_space = a_ptr.address_space,
+        address_space=a_ptr.address_space,
     ](a_ptr, RuntimeLayout[a_layout](Index(M, K), Index(K, 1)))
 
     var b = LayoutTensor[
         b_type,
         b_layout,
         MutAnyOrigin,
-        address_space = b_ptr.address_space,
+        address_space=b_ptr.address_space,
     ](b_ptr, RuntimeLayout[b_layout](Index(N, K), Index(K, 1)))
 
     @always_inline
@@ -818,7 +818,7 @@ fn grouped_matmul_amd_kernel_launcher[
                         epilogue[
                             dtype=c_type,
                             width=width,
-                            alignment = align_of[SIMD[c_type, width]](),
+                            alignment=align_of[SIMD[c_type, width]](),
                         ]((Int(local_row), Int(local_col)), zero_vec)
                     else:
                         for i in range(actual_width):
@@ -886,7 +886,7 @@ fn dispatch_amd_matmul_by_block_shape[
                     b_type,
                     transpose_b,
                     K,
-                    pdl_level = PDLLevel(),
+                    pdl_level=PDLLevel(),
                 ](block_shape_list[i])
                 launcher_fn[config]()
                 return
@@ -967,7 +967,7 @@ fn grouped_matmul_amd[
         b_type,
         Layout.row_major(num_experts * N, K),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ](b.data)
     var c_tensor = from_ndbuffer_row_major(c)
 

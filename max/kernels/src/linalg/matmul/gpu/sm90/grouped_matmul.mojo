@@ -149,7 +149,7 @@ fn grouped_matmul_sm90[
         b_type,
         Layout.row_major(num_experts * N, K),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
         ctx, b_tensor
@@ -187,10 +187,10 @@ fn grouped_matmul_sm90[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        partitioned_multicast = config.partitioned_multicast,
+        partitioned_multicast=config.partitioned_multicast,
         use_tma_store=False,
         promotion_frequency=1,
-        pdl_level = config.pdl_level(),
+        pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
     ].run_grouped[
         a_tma_op.layout,

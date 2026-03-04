@@ -46,7 +46,7 @@ fn arg_nonzero[
         output_buffer.flat_rank == 2
     ), "output_buffer must be of rank 2"
 
-    with Trace[TraceLevel.OP, target = StaticString("cpu")]("arg_nonzero"):
+    with Trace[TraceLevel.OP, target=StaticString("cpu")]("arg_nonzero"):
         var numel = input_buffer.numel()
         if numel == 0:
             return

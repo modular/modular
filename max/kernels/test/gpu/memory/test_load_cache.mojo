@@ -80,10 +80,10 @@ def test_load() raises:
         "ld.global.lu.v2.u32 "
         in _compile_code[
             load_value[
-                dtype = DType.uint32,
+                dtype=DType.uint32,
                 width=2,
                 prefetch_size=None,
-                cache_policy = CacheOperation.LAST_USE,
+                cache_policy=CacheOperation.LAST_USE,
             ],
             emission_kind="asm",
         ]()
@@ -92,7 +92,7 @@ def test_load() raises:
     assert_true(
         "ld.global.nc.v2.u32 "
         in _compile_code[
-            load_value[dtype = DType.uint32, width=2, read_only=True],
+            load_value[dtype=DType.uint32, width=2, read_only=True],
             emission_kind="asm",
         ]()
     )

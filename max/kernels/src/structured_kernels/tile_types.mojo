@@ -229,11 +229,11 @@ comptime SMemTile[
 ] = TileTensor[
     dtype,
     Layout[
-        shape_types = layout.shape_types,
-        stride_types = layout.stride_types,
+        shape_types=layout.shape_types,
+        stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ]
 """Shared memory tile using TileTensor with a Layout.
 
@@ -528,8 +528,8 @@ def create_tma_tile[
     return create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        __tile_layout = _to_legacy_layout[tma_tile_layout](),
-        __desc_layout = _to_legacy_layout[tma_desc_layout](),
+        __tile_layout=_to_legacy_layout[tma_tile_layout](),
+        __desc_layout=_to_legacy_layout[tma_desc_layout](),
     ](ctx, tensor)
 
 
@@ -568,8 +568,8 @@ def create_tma_tile[
     return create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        __tile_layout = _to_legacy_layout[tma_tile_layout](),
-        __desc_layout = _to_legacy_layout[tma_desc_layout](),
+        __tile_layout=_to_legacy_layout[tma_tile_layout](),
+        __desc_layout=_to_legacy_layout[tma_desc_layout](),
     ](ctx, tensor)
 
 
@@ -790,7 +790,7 @@ struct SMemTileArrayWithLayout[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -810,7 +810,7 @@ struct SMemTileArrayWithLayout[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -867,8 +867,8 @@ struct SMemTileArrayWithLayout[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -915,17 +915,15 @@ struct SMemTileArray[
     # The TileTensor-based tile type with correct shape/stride types
     comptime Tile = TileTensor[
         Self.dtype,
-        Layout[
-            shape_types = Self.shape_types, stride_types = Self.stride_types
-        ],
+        Layout[shape_types=Self.shape_types, stride_types=Self.stride_types],
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
 
     # Layout type for constructing tiles
     comptime TileLayout = Layout[
-        shape_types = Self.shape_types,
-        stride_types = Self.stride_types,
+        shape_types=Self.shape_types,
+        stride_types=Self.stride_types,
     ]
 
     # Size calculations using static shape product
@@ -938,7 +936,7 @@ struct SMemTileArray[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -958,7 +956,7 @@ struct SMemTileArray[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -1024,8 +1022,8 @@ struct SMemTileArray[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -1090,7 +1088,7 @@ struct SMemTileArray2D[
     comptime Tile = SMemTile[
         Self.dtype,
         internal_k_major[Self.dtype, Self.dim0, Self.dim1, Self.swizzle_bytes],
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
 
     # Size calculations
@@ -1103,7 +1101,7 @@ struct SMemTileArray2D[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1123,7 +1121,7 @@ struct SMemTileArray2D[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -1159,7 +1157,7 @@ struct SMemTileArray2D[
     fn get_with_layout[
         tile_layout: Layout, T: Intable
     ](self, index: T) -> SMemTile[
-        Self.dtype, tile_layout, alignment = Self.alignment
+        Self.dtype, tile_layout, alignment=Self.alignment
     ]:
         """Get tile at the given index with a specified layout.
 
@@ -1178,7 +1176,7 @@ struct SMemTileArray2D[
             A TileTensor with the specified layout at the given index.
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
-        return SMemTile[Self.dtype, tile_layout, alignment = Self.alignment](
+        return SMemTile[Self.dtype, tile_layout, alignment=Self.alignment](
             tile_ptr, tile_layout
         )
 
@@ -1215,8 +1213,8 @@ struct SMemTileArray2D[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -1257,7 +1255,7 @@ struct SMemTileArray2DRowMajor[
     comptime Tile = SMemTile[
         Self.dtype,
         row_major[Self.dim0, Self.dim1](),
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
 
     # The internal layout matching the Tile type
@@ -1273,7 +1271,7 @@ struct SMemTileArray2DRowMajor[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1293,7 +1291,7 @@ struct SMemTileArray2DRowMajor[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -1353,7 +1351,7 @@ struct SMemTileArray2DRowMajor[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)

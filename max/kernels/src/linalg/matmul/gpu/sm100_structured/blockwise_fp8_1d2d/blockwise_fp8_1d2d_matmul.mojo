@@ -155,7 +155,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         config=config,
         static_N=expert_n,
         static_K=K,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -168,7 +168,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         KernelType.ATmaTile.tile_layout,
         KernelType.ATmaTile.desc_layout,
         Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     var b_tma_op = create_tma_tile[
@@ -179,7 +179,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_2d)
 
     var a_scales_tma_op = create_tma_tile[

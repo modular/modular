@@ -16,7 +16,7 @@
 from std.builtin.variadics import _ReduceVariadicAndIdxToValue
 
 comptime AllWritable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=Ts,
     Reducer=_AllWritableReducer,
 ][0]
@@ -33,7 +33,7 @@ comptime _AllWritableReducer[
 ] = Variadic.values[conforms_to(From[idx], Writable) and Prev[0]]
 
 comptime AllMovable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=Ts,
     Reducer=_AllMovableReducer,
 ][0]
@@ -50,7 +50,7 @@ comptime _AllMovableReducer[
 ] = Variadic.values[conforms_to(From[idx], Movable) and Prev[0]]
 
 comptime AllCopyable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=Ts,
     Reducer=_AllCopyableReducer,
 ][0]
@@ -69,7 +69,7 @@ comptime _AllCopyableReducer[
 comptime AllImplicitlyCopyable[
     *Ts: AnyType
 ]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=Ts,
     Reducer=_AllImplicitlyCopyableReducer,
 ][
@@ -88,7 +88,7 @@ comptime _AllImplicitlyCopyableReducer[
 ] = Variadic.values[conforms_to(From[idx], ImplicitlyCopyable) and Prev[0]]
 
 comptime AllDefaultable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=Ts,
     Reducer=_AllDefaultableReducer,
 ][0]
@@ -105,7 +105,7 @@ comptime _AllDefaultableReducer[
 ] = Variadic.values[conforms_to(From[idx], Defaultable) and Prev[0]]
 
 comptime AllEquatable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=Ts,
     Reducer=_AllEquatableReducer,
 ][0]

@@ -63,14 +63,14 @@ fn wgmma_tf32_tf32_f32_kernel[
         DType.float32,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float32,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -94,8 +94,8 @@ fn wgmma_tf32_tf32_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.float32,
-            b_type = DType.float32,
+            a_type=DType.float32,
+            b_type=DType.float32,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -362,14 +362,14 @@ fn wgmma_bf16_bf16_f32_kernel[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -393,8 +393,8 @@ fn wgmma_bf16_bf16_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
             layout_b="row",
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
@@ -654,14 +654,14 @@ fn wgmma_f16_f16_f32_kernel[
         DType.float16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -685,8 +685,8 @@ fn wgmma_f16_f16_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.float16,
-            b_type = DType.float16,
+            a_type=DType.float16,
+            b_type=DType.float16,
             layout_b="row",
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
@@ -946,14 +946,14 @@ fn wgmma_f16_f16_f16_kernel[
         DType.float16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.uint32, 2](0)
@@ -977,9 +977,9 @@ fn wgmma_f16_f16_f16_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.float16,
-            b_type = DType.float16,
-            accum_type = DType.float16,
+            a_type=DType.float16,
+            b_type=DType.float16,
+            accum_type=DType.float16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -1246,14 +1246,14 @@ fn wgmma_kernel[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -1289,8 +1289,8 @@ fn wgmma_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
