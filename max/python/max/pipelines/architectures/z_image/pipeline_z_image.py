@@ -19,7 +19,7 @@ from queue import Queue
 from typing import Any, Literal
 
 import numpy as np
-from max.driver import CPU
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -265,7 +265,7 @@ class ZImagePipeline(DiffusionPipeline):
     @staticmethod
     def _prepare_text_ids(
         seq_len: int,
-        device,
+        device: Device,
     ) -> Tensor:
         text_ids = np.zeros((seq_len, 3), dtype=np.int64)
         text_ids[:, 0] = np.arange(1, seq_len + 1, dtype=np.int64)

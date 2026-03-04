@@ -551,17 +551,10 @@ class PixelGenerationTokenizer(
         attention_mask: Any | None
         if hasattr(tokenizer_output, "__getitem__") and (
             hasattr(tokenizer_output, "keys")
-            and "input_ids" in tokenizer_output.keys()
+            and "input_ids" in tokenizer_output
         ):
             input_ids = tokenizer_output["input_ids"]
-            if hasattr(tokenizer_output, "get"):
-                attention_mask = tokenizer_output.get("attention_mask", None)
-            else:
-                attention_mask = (
-                    tokenizer_output["attention_mask"]
-                    if "attention_mask" in tokenizer_output.keys()
-                    else None
-                )
+            attention_mask = tokenizer_output.get("attention_mask", None)
         elif hasattr(tokenizer_output, "input_ids"):
             input_ids = tokenizer_output.input_ids
             attention_mask = getattr(tokenizer_output, "attention_mask", None)
