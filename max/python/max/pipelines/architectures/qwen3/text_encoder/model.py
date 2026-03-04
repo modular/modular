@@ -23,6 +23,7 @@ from typing import Any
 
 from max.driver import Device
 from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
@@ -36,6 +37,8 @@ from .qwen3 import Qwen3TextEncoderTransformer
 
 class Qwen3TextEncoderModel(ComponentModel):
     """Qwen3 text encoder ComponentModel wrapper."""
+
+    default_hidden_state_layers: tuple[int, ...] | None = None
 
     def __init__(
         self,
@@ -58,7 +61,44 @@ class Qwen3TextEncoderModel(ComponentModel):
             encoding,
             devices,
         )
+        self.config.hidden_state_layers = self._resolve_hidden_state_layers()
         self.load_model()
+
+    def _resolve_hidden_state_layers(self) -> list[int]:
+        raw_layers = list(self.config.hidden_state_layers)
+        if not raw_layers:
+            if self.default_hidden_state_layers is not None:
+                raw_layers = list(self.default_hidden_state_layers)
+            else:
+                raw_layers = list(range(self.config.num_hidden_layers))
+        return self._normalize_hidden_state_layers(
+            raw_layers,
+            self.config.num_hidden_layers,
+        )
+
+    @staticmethod
+    def _normalize_hidden_state_layers(
+        layers: list[int], num_hidden_layers: int
+    ) -> list[int]:
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for layer in layers:
+            idx = int(layer)
+            if idx < 0:
+                idx += num_hidden_layers
+            if idx < 0 or idx >= num_hidden_layers:
+                raise ValueError(
+                    "Invalid `hidden_state_layers` index "
+                    f"{layer} for num_hidden_layers={num_hidden_layers}."
+                )
+            if idx not in seen:
+                normalized.append(idx)
+                seen.add(idx)
+
+        if not normalized:
+            raise ValueError("`hidden_state_layers` cannot be empty.")
+
+        return normalized
 
     def load_model(self) -> Callable[..., Any]:
         """Load and compile the Qwen3 text encoder.
@@ -81,8 +121,59 @@ class Qwen3TextEncoderModel(ComponentModel):
         self.model = model.compile(*model.input_types(), weights=state_dict)
         return self.model
 
-    def __call__(self, *args, **kwargs):
-        outputs = self.model(*args, **kwargs)
+    def __call__(
+        self,
+        tokens: Tensor,
+        attention_mask: Tensor | None = None,
+        *,
+        hidden_state_index: int | None = None,
+    ):
+        if tokens.rank == 2:
+            if int(tokens.shape[0]) != 1:
+                raise ValueError(
+                    "Qwen3TextEncoderModel expects batch_size=1 for 2D token input."
+                )
+            tokens = tokens[0]
+
+        if attention_mask is not None:
+            raise ValueError(
+                "Qwen3TextEncoderModel does not support `attention_mask` in "
+                "the execution path. Compact tokens with the mask before calling "
+                "the encoder."
+            )
+
+        outputs = self.model(tokens)
         if isinstance(outputs, list):
-            return tuple(outputs)
-        return outputs
+            outputs = tuple(outputs)
+
+        if hidden_state_index is None:
+            if isinstance(outputs, tuple) and len(outputs) == 1:
+                return outputs[0]
+            return outputs
+
+        if not isinstance(outputs, tuple):
+            raise ValueError(
+                "`hidden_state_index` requires model outputs to be tuple/list "
+                f"of hidden states, got {type(outputs).__name__}."
+            )
+
+        num_layers = len(outputs)
+        if hidden_state_index < -num_layers or hidden_state_index >= num_layers:
+            raise ValueError(
+                f"`hidden_state_index` out of range: {hidden_state_index}. "
+                f"Valid range is [{-num_layers}, {num_layers - 1}]."
+            )
+
+        return outputs[hidden_state_index]
+
+
+class Qwen3TextEncoderKleinModel(Qwen3TextEncoderModel):
+    """Qwen3 text encoder tuned for Flux2 Klein prompt layers."""
+
+    default_hidden_state_layers = (9, 18, 27)
+
+
+class Qwen3TextEncoderZImageModel(Qwen3TextEncoderModel):
+    """Qwen3 text encoder tuned for Z-Image prompt layers."""
+
+    default_hidden_state_layers = (-2,)

@@ -13,4 +13,14 @@
 
 """Qwen3 text encoder for diffusion pipelines."""
 
-from .model import Qwen3TextEncoderModel
+from .model import (
+    Qwen3TextEncoderKleinModel,
+    Qwen3TextEncoderModel,
+    Qwen3TextEncoderZImageModel,
+)
+
+__all__ = [
+    "Qwen3TextEncoderModel",
+    "Qwen3TextEncoderKleinModel",
+    "Qwen3TextEncoderZImageModel",
+]
