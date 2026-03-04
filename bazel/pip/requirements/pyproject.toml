@@ -84,6 +84,7 @@ dependencies = [
   "sentencepiece",
   "setuptools",
   "slack-sdk",
+  "tiktoken",
   "simpy",
   "sphinx==7.4.7",
   "sse-starlette",

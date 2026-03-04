@@ -157,6 +157,7 @@ PINS = {
     "taskgroup": "taskgroup@0.2.2",
     "termcolor": "termcolor@2.5.0",
     "threadpoolctl": "threadpoolctl@3.5.0",
+    "tiktoken": "tiktoken@0.12.0",
     "timm": "timm@1.0.15",
     "tokenicer": "tokenicer@0.0.4",
     "tomli": "tomli@2.0.1",
