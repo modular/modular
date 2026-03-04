@@ -14,14 +14,14 @@ comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
 comptime ImmutOrigin = Origin[mut=False]
 comptime MutOrigin = Origin[mut=True]
 comptime AnyOrigin[*, mut: Bool] = Origin[
-    _mlir_origin = __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
     ]
 ]()
 comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 comptime MutAnyOrigin = AnyOrigin[mut=True]
 comptime ExternalOrigin[*, mut: Bool] = Origin[
-    _mlir_origin = __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         mut._mlir_value,
         `>`,
@@ -30,7 +30,7 @@ comptime ExternalOrigin[*, mut: Bool] = Origin[
 comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
 comptime MutExternalOrigin = ExternalOrigin[mut=True]
 comptime StaticConstantOrigin = Origin[
-    _mlir_origin = __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<0>`,
         `, "__constants__"> : !lit.origin<0>`,
@@ -55,7 +55,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
 
     @always_inline("builtin")
     @implicit
-    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin = v._mlir_origin]:
+    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
         return {}
 
     @always_inline("builtin")
@@ -63,7 +63,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     fn unsafe_mut_cast[
         dest_mut: Bool
     ]() -> Origin[
-        _mlir_origin = __mlir_attr[
+        _mlir_origin=__mlir_attr[
             `#lit.origin.mutcast<`,
             Self._mlir_origin,
             `> : !lit.origin<`,
@@ -75,7 +75,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
 
 
 comptime _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
-    _mlir_origin = __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.indirect.origin<`,
         base._mlir_origin,
         `> : `,
@@ -362,7 +362,7 @@ struct Int(Intable, Stringable, TrivialRegisterPassable):
     @always_inline("builtin")
     fn __init__(out self):
         self._mlir_value = __mlir_op.`index.constant`[
-            value = __mlir_attr.`0:index`
+            value=__mlir_attr.`0:index`
         ]()
 
     @stable
@@ -441,37 +441,37 @@ struct Int(Intable, Stringable, TrivialRegisterPassable):
     @always_inline("builtin")
     fn __eq__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate eq>`
+            pred=__mlir_attr.`#index<cmp_predicate eq>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __ne__(self, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate ne>`
+            pred=__mlir_attr.`#index<cmp_predicate ne>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __lt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate sgt>`
+            pred=__mlir_attr.`#index<cmp_predicate sgt>`
         ](rhs._mlir_value, lhs._mlir_value)
 
     @always_inline("builtin")
     fn __le__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate sle>`
+            pred=__mlir_attr.`#index<cmp_predicate sle>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __gt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate sgt>`
+            pred=__mlir_attr.`#index<cmp_predicate sgt>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __ge__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate sge>`
+            pred=__mlir_attr.`#index<cmp_predicate sge>`
         ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -925,7 +925,7 @@ struct _VariadicListIter[
     """
 
     comptime variadic_list_type = VariadicList[
-        origin = Self.elt_origin,
+        origin=Self.elt_origin,
         Self.elt_type,
         Self.is_owned,
     ]
@@ -1130,10 +1130,10 @@ struct Pointer[
     fn __merge_with__[
         other_type: type_of(Pointer[Self.type, _, Self.address_space]),
     ](self) -> Pointer[
-        mut = Self.mut & other_type.origin.mut,
-        type = Self.type,
-        origin = origin_of(Self.origin, other_type.origin),
-        address_space = Self.address_space,
+        mut=Self.mut & other_type.origin.mut,
+        type=Self.type,
+        origin=origin_of(Self.origin, other_type.origin),
+        address_space=Self.address_space,
     ]:
         return {self._value}  # allow lit.ref to convert.
 
@@ -1477,9 +1477,9 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
     @always_inline
     fn __init__(out self, value: Int, /):
         var index = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<index>`
+            _type=__mlir_type.`!pop.scalar<index>`
         ](value._mlir_value)
-        var s = __mlir_op.`pop.cast`[_type = SIMD[Self.dtype, 1]._mlir_type](
+        var s = __mlir_op.`pop.cast`[_type=SIMD[Self.dtype, 1]._mlir_type](
             index
         )
 
@@ -1487,7 +1487,7 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
             self._mlir_value = rebind[Self._mlir_type](s)
         else:
             self._mlir_value = __mlir_op.`pop.simd.splat`[
-                _type = Self._mlir_type
+                _type=Self._mlir_type
             ](s)
 
     @implicit

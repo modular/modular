@@ -35,7 +35,7 @@ fn entry_method2():
 @no_inline
 fn foo():
     __mlir_op.`kgen.param.assert`[
-        cond = __mlir_attr.`false`, message = "oops".value
+        cond=__mlir_attr.`false`, message="oops".value
     ]()  # expected-note {{constraint failed}}
 
 
@@ -45,7 +45,7 @@ fn foo():
 @no_inline
 fn bar():
     __mlir_op.`kgen.param.assert`[
-        cond = __mlir_attr.`false`, message = "oops".value
+        cond=__mlir_attr.`false`, message="oops".value
     ]()  # expected-note {{constraint failed}}
 
 
@@ -54,7 +54,7 @@ fn bar():
 @no_inline
 fn baz():
     __mlir_op.`kgen.param.assert`[
-        cond = __mlir_attr.`false`, message = "oops".value
+        cond=__mlir_attr.`false`, message="oops".value
     ]()
 
 

@@ -37,6 +37,6 @@ fn invalid_predicate_passed(x: Int, y: Int) -> Bool:
         return __mlir_deferred_attr[`#index<cmp_predicate `, pred(), `>`]
 
     # expected-note @below {{invalid MLIR attribute: failed to parse IndexCmpPredicateAttr parameter 'value' which is to be a `::mlir::index::IndexCmpPredicate`}}
-    var z = __mlir_op.`index.cmp`[pred = get_pred()](x, y)
+    var z = __mlir_op.`index.cmp`[pred=get_pred()](x, y)
 
     return z

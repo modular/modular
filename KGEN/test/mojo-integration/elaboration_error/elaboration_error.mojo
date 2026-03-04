@@ -31,7 +31,7 @@ fn bar():
 @always_inline("nodebug")
 fn baz():
     __mlir_op.`kgen.param.assert`[
-        cond = __mlir_attr.`false`, message = "oops".value
+        cond=__mlir_attr.`false`, message="oops".value
     ]()  # expected-note {{constraint failed}}
 
 
@@ -59,7 +59,7 @@ fn parametric[param: Int]():  # expected-note {{function instantiation failed}}
 fn constrained[cond: Bool, msg: StaticString]():
     comptime msg_literal = _get_kgen_string[msg]()
     __mlir_op.`kgen.param.assert`[
-        cond = cond.__mlir_i1__(), message=msg_literal
+        cond=cond.__mlir_i1__(), message=msg_literal
     ]()
 
 

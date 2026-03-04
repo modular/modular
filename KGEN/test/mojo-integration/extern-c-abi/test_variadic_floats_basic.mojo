@@ -17,8 +17,8 @@
 # CHECK: variadic_floats: 64.5
 fn test_variadic_floats():
     var result = __mlir_op.`pop.external_call`[
-        func = "c_func_variadic_floats".value,
-        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
+        func="c_func_variadic_floats".value,
+        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
         _type=Float64,
     ](Int(3), Float64(10.5), Float64(20.5), Float64(30.5))
     print("variadic_floats:", result)
@@ -27,8 +27,8 @@ fn test_variadic_floats():
 # CHECK: variadic_doubles: 604.5
 fn test_variadic_doubles():
     var result = __mlir_op.`pop.external_call`[
-        func = "c_func_variadic_doubles".value,
-        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
+        func="c_func_variadic_doubles".value,
+        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
         _type=Float64,
     ](Int(3), Float64(100.5), Float64(200.5), Float64(300.5))
     print("variadic_doubles:", result)
@@ -37,8 +37,8 @@ fn test_variadic_doubles():
 # CHECK: variadic_int_float: 32.5
 fn test_variadic_int_float():
     var result = __mlir_op.`pop.external_call`[
-        func = "c_func_variadic_int_float".value,
-        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
+        func="c_func_variadic_int_float".value,
+        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
         _type=Float64,
     ](Int(999), Int(10), Float64(20.5))
     print("variadic_int_float:", result)

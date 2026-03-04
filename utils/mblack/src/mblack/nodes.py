@@ -269,6 +269,12 @@ def whitespace(
                 }:
                     return NO
 
+                # No space after = in param bindings (colon check excludes slices).
+                if prevp.parent.type == syms.subscript and not any(
+                    child.type == token.COLON for child in prevp.parent.children
+                ):
+                    return NO
+
                 elif prevp.parent.type in (
                     syms.typedargslist,
                     syms.typedparamslist,
@@ -443,11 +449,24 @@ def whitespace(
 
     elif p.type in {syms.subscript, syms.sliceop}:
         # indexing
+        # A subscript without a colon is a pure parameter binding (e.g.,
+        # f[a=g()]).  Suppress spaces around = just like in argument nodes.
+        # Always False for sliceop since sliceop always contains a colon.
+        is_param_binding = not any(
+            child.type == token.COLON for child in p.children
+        )
+
+        if t == token.EQUAL and is_param_binding:
+            return NO
+
         if not prev:
             assert p.parent is not None, "subscripts are always parented"
             if p.parent.type == syms.subscriptlist:
                 return SPACE
 
+            return NO
+
+        elif prev.type == token.EQUAL and is_param_binding:
             return NO
 
         elif not complex_subscript:
