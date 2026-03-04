@@ -16,6 +16,8 @@ from std.collections.string.string_slice import (
     _unsafe_strlen,
     get_static_string,
 )
+from std.math import align_up
+from std.memory import alloc, UnsafePointer
 from std.sys.info import size_of, simd_width_of
 
 from std.testing import assert_equal, assert_false, assert_true, assert_raises
@@ -1159,6 +1161,37 @@ def test_unsafe_strlen():
     unicode_buf.append(0)
     assert_equal(_unsafe_strlen(unicode_buf.unsafe_ptr()), UInt(2))
 
+
+def test_unsafe_strlen_unaligned():
+    # Verify that _unsafe_strlen returns the correct length for every possible
+    # intra-block misalignment offset (0 = aligned, 1..simd_width-1 = unaligned).
+    #
+    # The unbounded fast path uses a scalar prelude to advance the pointer to
+    # a SIMD-width-aligned address before issuing SIMD loads, preventing
+    # unaligned loads from straddling a page boundary. This test exercises all
+    # misalignment cases to confirm correctness of the prelude.
+    comptime simd_width = simd_width_of[DType.bool]()
+
+    # Allocate enough room for the worst-case alignment padding plus the test
+    # string ("hi\0" = 3 bytes) followed by a full SIMD block of non-null bytes
+    # so the unbounded scan always terminates.
+    var capacity = 2 * simd_width + 4
+    var buf = alloc[Byte](capacity)
+    for i in range(capacity):
+        buf[i] = Byte(0xFF)  # non-null sentinel
+
+    # Find the first SIMD-aligned address at or after buf.
+    var aligned_offset = align_up(Int(buf), simd_width) - Int(buf)
+
+    for misalign in range(simd_width):
+        var p = buf + aligned_offset + misalign
+        p[0] = Byte(ord("h"))
+        p[1] = Byte(ord("i"))
+        p[2] = 0
+        assert_equal(_unsafe_strlen(p), UInt(2))
+        p[2] = Byte(0xFF)  # restore non-null for next iteration
+
+    buf.free()
 
 
 def main() raises:
