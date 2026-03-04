@@ -80,57 +80,50 @@ int64_t CabiUtils::getStructSize(mlir::LLVM::LLVMStructType type,
   return dataLayout.getTypeStoreSize(type);
 }
 
+/// Recursively determine the canonical leaf float bit width for a struct.
+///
+/// Traverses all fields (recursing into nested LLVMStructType fields) and
+/// returns the bit width if every leaf field is the same float type.
+/// Returns 0 if any non-float field is found, the struct is empty, or
+/// float types are mixed (e.g., f32 and f64 together).
+static unsigned getLeafFloatBitWidth(mlir::LLVM::LLVMStructType type) {
+  std::optional<unsigned> canonicalBitWidth;
+  for (mlir::Type fieldType : type.getBody()) {
+    unsigned fieldBitWidth = 0;
+    if (auto floatType = dyn_cast<mlir::FloatType>(fieldType)) {
+      fieldBitWidth = floatType.getWidth();
+    } else if (auto vecType = dyn_cast<mlir::VectorType>(fieldType)) {
+      if (auto floatElem = dyn_cast<mlir::FloatType>(vecType.getElementType()))
+        fieldBitWidth = floatElem.getWidth();
+      else
+        return 0; // Non-float vector element
+    } else if (auto nestedStruct =
+                   dyn_cast<mlir::LLVM::LLVMStructType>(fieldType)) {
+      fieldBitWidth = getLeafFloatBitWidth(nestedStruct);
+      if (fieldBitWidth == 0)
+        return 0; // Nested struct contains non-float or mixed floats
+    } else {
+      return 0; // Non-float field (integer, pointer, etc.)
+    }
+    if (!canonicalBitWidth)
+      canonicalBitWidth = fieldBitWidth;
+    else if (*canonicalBitWidth != fieldBitWidth)
+      return 0; // Heterogeneous: mixed float types (e.g., f32 + f64)
+  }
+  return canonicalBitWidth.value_or(0);
+}
+
 bool CabiUtils::isAllFloatStruct(mlir::LLVM::LLVMStructType type) {
   auto fields = type.getBody();
-  if (fields.empty()) {
+  if (fields.empty())
     return false;
-  }
 
-  // ARM64 AAPCS HFA (Homogeneous Floating-point Aggregate) requirements:
-  // 1. All fields must be the SAME float type (f16, f32, or f64)
-  // 2. At most 4 fields
-  // 3. Passed in SIMD registers V0-V3
-
-  // Check field count: HFA has at most 4 fields
-  if (fields.size() > 4) {
+  // ARM64 AAPCS HFA (Homogeneous Floating-point Aggregate) limit: at most 4
+  // top-level fields. Note: this checks top-level fields, not leaf float count.
+  if (fields.size() > 4)
     return false;
-  }
 
-  // Track the canonical float type bit width (must be homogeneous)
-  std::optional<unsigned> canonicalBitWidth;
-
-  for (mlir::Type fieldType : fields) {
-    unsigned bitWidth;
-
-    // MLIR FloatType (f16, f32, f64, etc.)
-    if (auto floatType = dyn_cast<mlir::FloatType>(fieldType)) {
-      bitWidth = floatType.getWidth();
-    }
-    // Vector types with float elements (converted from POP::SIMDType)
-    else if (auto vecType = dyn_cast<mlir::VectorType>(fieldType)) {
-      auto elemType = vecType.getElementType();
-      if (auto floatElem = dyn_cast<mlir::FloatType>(elemType)) {
-        bitWidth = floatElem.getWidth();
-      } else {
-        return false; // Non-float vector
-      }
-    }
-    // TODO: Recursively check nested LLVM struct fields. For now,
-    // conservatively reject nested structs.
-    else {
-      return false; // Non-float field
-    }
-
-    // Check homogeneity: all fields must have the same bit width
-    if (!canonicalBitWidth) {
-      canonicalBitWidth = bitWidth; // First field sets the canonical type
-    } else if (*canonicalBitWidth != bitWidth) {
-      return false; // Heterogeneous: mixed float types (e.g., f32 + f64)
-    }
-  }
-
-  // Must have at least one field, and all fields must be the same float type
-  return canonicalBitWidth.has_value();
+  return getLeafFloatBitWidth(type) != 0;
 }
 
 mlir::IntegerType CabiUtils::getIntegerTypeForSize(int64_t size,

@@ -181,9 +181,6 @@ SystemVABIInfo::classifyEightbyte(mlir::LLVM::LLVMStructType structType,
     // but Mojo currently has no way to declare packed structs that match C's
     // layout, so we cannot write end-to-end tests for this case.
     //
-    // Additional TODO: Nested StructType fields are also not recursively
-    // flattened (they default to Integer classification).
-    //
     // Assert: fail loudly on straddling fields rather than silently
     // misclassifying them. See TODO above for the full explanation.
     assert((fieldOffset / 8) == ((fieldEnd - 1) / 8) &&
@@ -201,6 +198,19 @@ SystemVABIInfo::classifyEightbyte(mlir::LLVM::LLVMStructType structType,
         if (isa<mlir::FloatType>(vecType.getElementType())) {
           fieldClass = EightbyteClass::SSE;
         }
+      } else if (auto nestedStruct =
+                     dyn_cast<mlir::LLVM::LLVMStructType>(fieldType)) {
+        // Recursively classify the nested struct fields that overlap with
+        // this eightbyte region [offset, offset+maxSize).
+        // Translate the eightbyte region into nested-struct coordinates:
+        //   overlap = [max(offset,fieldOffset), min(offset+maxSize, fieldEnd))
+        //   nestedOffset = overlapStart - fieldOffset
+        int64_t overlapStart = std::max(offset, fieldOffset);
+        int64_t overlapEnd = std::min(offset + maxSize, fieldEnd);
+        int64_t nestedOffset = overlapStart - fieldOffset;
+        int64_t nestedMaxSize = overlapEnd - overlapStart;
+        fieldClass =
+            classifyEightbyte(nestedStruct, nestedOffset, nestedMaxSize).first;
       }
 
       // Merge: INTEGER wins over SSE (System V ABI rule)
