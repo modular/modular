@@ -74,6 +74,7 @@ from std.bit import bit_width, byte_swap, pop_count
 from std.builtin._format_float import _write_float
 from std.builtin.device_passable import DevicePassable
 from std.builtin.format_int import _write_int
+from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
 from std.documentation import doc_private
 from std.memory import bitcast, memcpy, pack_bits
@@ -386,6 +387,7 @@ struct SIMD[dtype: DType, size: Int](
     TrivialRegisterPassable,
     Truncable,
     Writable,
+    _FromInt,
 ):
     """Represents a vector type that leverages hardware acceleration to process
     multiple data elements with a single operation.
@@ -642,6 +644,12 @@ struct SIMD[dtype: DType, size: Int](
         var s = __mlir_op.`pop.cast`[_type=Scalar[Self.dtype]._mlir_type](index)
 
         self._mlir_value = __mlir_op.`pop.simd.splat`[_type=Self._mlir_type](s)
+
+    @doc_private
+    @always_inline("builtin")
+    fn __init__(out self, *, from_int: Int):
+        _simd_construction_checks[Self.dtype, Self.size]()
+        self = Self(from_int)
 
     @always_inline
     fn __init__[T: Floatable, //](out self: Float64, value: T, /):

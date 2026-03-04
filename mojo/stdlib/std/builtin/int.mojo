@@ -164,6 +164,11 @@ trait IntableRaising:
         ...
 
 
+trait _FromInt:
+    fn __init__(out self, *, from_int: Int):
+        ...
+
+
 @lldb_formatter_wrapping_type
 struct Int(
     Absable,
@@ -188,6 +193,7 @@ struct Int(
     TrivialRegisterPassable,
     Truncable,
     Writable,
+    _FromInt,
 ):
     """This type represents an integer value."""
 
@@ -298,6 +304,11 @@ struct Int(
             If the type does not have an integral representation.
         """
         self = value.__int__()
+
+    @doc_private
+    @always_inline("nodebug")
+    fn __init__(out self, *, from_int: Int):
+        self = from_int
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
