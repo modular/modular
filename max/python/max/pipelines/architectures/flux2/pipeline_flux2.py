@@ -20,7 +20,8 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
+from max.graph import TensorType
+from max.graph.ops import rebind, shape_to_tensor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
@@ -303,7 +304,6 @@ class Flux2Pipeline(DiffusionPipeline):
                 dtype, shape=["batch", "pred_seq", "channels"], device=device
             ),
             TensorType(DType.float32, shape=[1], device=device),
-            TensorType(DType.int64, shape=[], device=DeviceRef.CPU()),
         ]
         self.__dict__["scheduler_step"] = max_compile(
             self.scheduler_step,
@@ -631,29 +631,26 @@ class Flux2Pipeline(DiffusionPipeline):
         latents: Tensor,
         noise_pred: Tensor,
         dt: Tensor,
-        num_noise_tokens: int,
     ) -> Tensor:
-        """Apply a single Euler update step in sigma space."""
-        latents_sliced = F.slice_tensor(
-            latents,
-            [
-                slice(None),
-                (slice(0, num_noise_tokens), "num_tokens"),
-                slice(None),
-            ],
-        )
+        """Apply a single Euler update step in sigma space.
+
+        Slices ``noise_pred`` to ``latents.shape[1]`` tokens before applying
+        the Euler update, which discards the image-latent predictions in the
+        img2img case where ``noise_pred`` covers a concatenated sequence.
+        """
+        num_tokens = shape_to_tensor([latents.shape[1]])
         noise_pred_sliced = F.slice_tensor(
             noise_pred,
             [
                 slice(None),
-                (slice(0, num_noise_tokens), "num_tokens"),
+                (slice(0, num_tokens), "num_tokens"),
                 slice(None),
             ],
         )
-        latents_dtype = latents_sliced.dtype
-        latents_sliced = latents_sliced.cast(DType.float32)
-        latents_sliced = latents_sliced + dt * noise_pred_sliced
-        return latents_sliced.cast(latents_dtype)
+        latents_dtype = latents.dtype
+        latents_f32 = latents.cast(DType.float32)
+        noise_pred_sliced = rebind(noise_pred_sliced, latents_f32.shape)
+        return (latents_f32 + dt * noise_pred_sliced).cast(latents_dtype)
 
     def prepare_scheduler(self, sigmas: Tensor) -> tuple[Tensor, Tensor]:
         """Precompute timesteps and dt values from sigmas in a single fused graph.
@@ -717,8 +714,6 @@ class Flux2Pipeline(DiffusionPipeline):
                 dts_seq = dts_seq.driver_tensor
 
         # 4) Denoising loop.
-        num_noise_tokens = model_inputs.image_seq_len
-
         is_img2img = image_latents is not None
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
@@ -752,9 +747,7 @@ class Flux2Pipeline(DiffusionPipeline):
                         )[0]
 
                     with Tracer("scheduler_step"):
-                        latents = self.scheduler_step(
-                            latents, noise_pred, dt, num_noise_tokens
-                        )
+                        latents = self.scheduler_step(latents, noise_pred, dt)
 
         # 5) Decode final outputs for all batch elements in a single pass.
         with Tracer("decode_outputs"):
