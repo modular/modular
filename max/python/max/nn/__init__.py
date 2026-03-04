@@ -73,6 +73,7 @@ from .sampling import (
     MinPSampler,
     RejectionSampler,
     RejectionSamplerWithResiduals,
+    TypicalAcceptanceSampler,
 )
 from .sequential import Sequential
 from .transformer import (
@@ -146,6 +147,7 @@ __all__ = [
     "TensorParallelLatentAttentionWithRope",
     "Transformer",
     "TransformerBlock",
+    "TypicalAcceptanceSampler",
     "VocabParallelEmbedding",
     "WeightNormConvTranspose1d",
     "YarnRotaryEmbedding",

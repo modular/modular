@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -50,9 +51,11 @@ from ..pipeline_variants.text_generation import (
     get_weight_paths,
 )
 from ..sampling import (
+    greedy_acceptance_sampler,
     rejection_sampler,
     rejection_sampler_with_residuals,
     token_sampler,
+    typical_acceptance_sampler,
 )
 from ..sampling.sampling_logits_processor import (
     FrequencyData,
@@ -174,6 +177,144 @@ def get_vocab_size(huggingface_config: AutoConfig) -> int:
         raise ValueError(
             "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
         )
+
+
+class _TypicalAcceptanceRunner:
+    """Routes per-batch: temp=0 uses greedy (argmax), temp>0 uses stochastic."""
+
+    def __init__(
+        self,
+        greedy_model: Any,
+        stochastic_model: Any,
+        target_device: Device,
+    ) -> None:
+        self._greedy = greedy_model
+        self._stochastic = stochastic_model
+        self._device = target_device
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        assert context_batch is not None
+        temps = [ctx.sampling_params.temperature for ctx in context_batch]
+        all_greedy = all(t == 0 for t in temps)
+        if all_greedy:
+            a, b, c = self._greedy(
+                draft_tokens,
+                target_logits,
+                target_logit_offsets,
+            )
+        else:
+            top_k_np = np.array(
+                [ctx.sampling_params.top_k for ctx in context_batch],
+                dtype=np.int64,
+            )
+            top_p_np = np.array(
+                [ctx.sampling_params.top_p for ctx in context_batch],
+                dtype=np.float32,
+            )
+            temps_np = np.array(temps, dtype=np.float32)
+            np.clip(temps_np, a_min=1e-6, a_max=None, out=temps_np)
+            a, b, c = self._stochastic(
+                draft_tokens,
+                target_logits,
+                target_logit_offsets,
+                Buffer.from_numpy(temps_np).to(self._device),
+                Buffer.from_numpy(top_k_np).to(self._device),
+                Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
+                Buffer.from_numpy(top_p_np).to(self._device),
+                Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
+            )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
+class _GreedyRunner:
+    """Always argmax acceptance. No draft logits needed."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        a, b, c = self._model(
+            draft_tokens,
+            target_logits,
+            target_logit_offsets,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
+class _LogitComparisonRunner:
+    """draft_logit <= target_logit + eps. No bonus token (returns None)."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, None]:
+        a, b = self._model(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        return a, b, None
+
+
+class _ResidualRunner:
+    """p_target/p_draft ratio acceptance. Needs all_draft_logits."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        a, b, c = self._model(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+            all_draft_logits,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
 
 
 class SpeculativeDecodingPipelineBase(
@@ -363,21 +504,21 @@ class SpeculativeDecodingPipelineBase(
             )
         )
 
-        # Load rejection sampler based on configured strategy
-        self._uses_residual_rejection = (
-            not self._speculative_config.uses_greedy_rejection()
-        )
         strategy = self._speculative_config.rejection_sampling_strategy
+        if strategy is None:
+            if (
+                self._speculative_config.is_eagle()
+                or self._speculative_config.is_mtp()
+            ):
+                strategy = "typical-acceptance"
+            else:
+                strategy = "residual"
         logger.info(f"Using '{strategy}' rejection sampling strategy")
         target_device_ref = DeviceRef.from_device(self.target_devices[0])
-        if self._uses_residual_rejection:
-            self._rejection_sampler = target_session.load(
-                rejection_sampler_with_residuals(device=target_device_ref)
-            )
-        else:
-            self._rejection_sampler = target_session.load(
-                rejection_sampler(device=target_device_ref)
-            )
+        self._run_rejection_sampler = self._build_rejection_runner(
+            strategy, target_session, target_device_ref
+        )
+        self._needs_all_draft_logits = strategy == "residual"
 
         # Initialize metrics tracker
         self._metrics = SpeculativeDecodingMetrics()
@@ -675,42 +816,70 @@ class SpeculativeDecodingPipelineBase(
         ):
             logger.info(f"Speculative decoding metrics: {self._metrics}")
 
+    def _build_rejection_runner(
+        self,
+        strategy: str,
+        target_session: InferenceSession,
+        device_ref: DeviceRef,
+    ) -> Callable[..., Any]:
+        """Loads the compiled rejection sampler graph and returns a runner."""
+        if strategy == "typical-acceptance":
+            return _TypicalAcceptanceRunner(
+                greedy_model=target_session.load(
+                    greedy_acceptance_sampler(device=device_ref)
+                ),
+                stochastic_model=target_session.load(
+                    typical_acceptance_sampler(device=device_ref)
+                ),
+                target_device=self.target_devices[0],
+            )
+        if strategy == "greedy":
+            return _GreedyRunner(
+                target_session.load(
+                    greedy_acceptance_sampler(device=device_ref)
+                )
+            )
+        if strategy == "logit-comparison":
+            return _LogitComparisonRunner(
+                target_session.load(rejection_sampler(device=device_ref))
+            )
+        return _ResidualRunner(
+            target_session.load(
+                rejection_sampler_with_residuals(device=device_ref)
+            )
+        )
+
     def _call_rejection_sampler(
         self,
         draft_tokens: Buffer,
         draft_logits: Buffer,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
-        all_draft_logits: Buffer,
+        all_draft_logits: Buffer | None,
+        context_batch: list[TextContext] | None = None,
     ) -> tuple[Buffer, Buffer, Buffer | None]:
         """Calls the rejection sampler with the appropriate arguments.
 
+        Args:
+            draft_tokens: Draft token ids.
+            draft_logits: Logits for sampled draft tokens.
+            target_logits: Target model logits.
+            target_logit_offsets: Offsets into target_logits per batch element.
+            all_draft_logits: Full draft logits (used by residual sampler).
+            context_batch: Batch contexts for per-request sampling params.
+
         Returns:
             A tuple of (first_rejected_tokens, recovered_tokens, bonus_tokens).
-            bonus_tokens is None when using greedy rejection sampling.
+            bonus_tokens is None when using logit-comparison strategy.
         """
-        if self._uses_residual_rejection:
-            first_rejected, recovered, bonus = self._rejection_sampler(
-                draft_tokens,
-                draft_logits,
-                target_logits,
-                target_logit_offsets,
-                all_draft_logits,
-            )
-            assert isinstance(first_rejected, Buffer)
-            assert isinstance(recovered, Buffer)
-            assert isinstance(bonus, Buffer)
-            return first_rejected, recovered, bonus
-        else:
-            first_rejected, recovered = self._rejection_sampler(
-                draft_tokens,
-                draft_logits,
-                target_logits,
-                target_logit_offsets,
-            )
-            assert isinstance(first_rejected, Buffer)
-            assert isinstance(recovered, Buffer)
-            return first_rejected, recovered, None
+        return self._run_rejection_sampler(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+            all_draft_logits,
+            context_batch,
+        )
 
     def update_contexts(
         self,

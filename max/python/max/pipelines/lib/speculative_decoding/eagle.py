@@ -525,7 +525,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         batch: list[TextContext],
         num_steps: int,
         model_inputs: ModelInputs,
-    ) -> tuple[int, Buffer, Buffer, Buffer, Buffer | list[Buffer]]:
+    ) -> tuple[int, Buffer, Buffer, Buffer | None, Buffer | list[Buffer]]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
         top_k, max_k, temperature, top_p, min_top_p, seed = (
@@ -556,11 +556,14 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         curr_step_inputs = model_inputs
 
-        # num_steps first so that slice indexing is contiguous
-        all_draft_logits = Buffer.zeros(
-            (num_steps, len(batch), self.vocab_size),
-            dtype=DType.float32,
-            device=self.draft_devices[0],
+        all_draft_logits = (
+            Buffer.zeros(
+                (num_steps, len(batch), self.vocab_size),
+                dtype=DType.float32,
+                device=self.draft_devices[0],
+            )
+            if self._needs_all_draft_logits
+            else None
         )
 
         for i in range(num_steps):
@@ -568,7 +571,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 model_inputs=curr_step_inputs
             )
 
-            all_draft_logits[i, :, :].inplace_copy_from(model_outputs.logits)
+            if all_draft_logits is not None:
+                all_draft_logits[i, :, :].inplace_copy_from(
+                    model_outputs.logits
+                )
 
             new_tokens, new_generated_tokens, new_generated_logits = (
                 self.sample_draft_logits(
@@ -619,7 +625,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         num_draft_tokens_generated: int,
         draft_tokens: Buffer,
         draft_logits: Buffer,
-        all_draft_logits: Buffer,
+        all_draft_logits: Buffer | None,
         data_parallel_splits_np: npt.NDArray[np.int64],
         merged_tokens: Buffer | None = None,
         merged_offsets: Buffer | None = None,
@@ -690,6 +696,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 target_outputs.logits,
                 target_outputs.logit_offsets,
                 all_draft_logits,
+                context_batch=context_batch,
             )
         )
 
@@ -999,7 +1006,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         num_draft_tokens_generated: int,
         draft_tokens: Buffer,
         draft_logits: Buffer,
-        all_draft_logits: Buffer,
+        all_draft_logits: Buffer | None,
         draft_input_tokens: Buffer,
         context_batch: list[TextContext],
         replica_batches: list[list[TextContext]],

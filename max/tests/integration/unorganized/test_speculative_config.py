@@ -44,9 +44,9 @@ def test_num_speculative_tokens() -> None:
 
 
 def test_rejection_sampling_strategy_default() -> None:
-    """Verify rejection_sampling_strategy defaults to 'residual'."""
+    """Verify rejection_sampling_strategy defaults to None (resolved later based on method)."""
     config = SpeculativeConfig()
-    assert config.rejection_sampling_strategy == "residual"
+    assert config.rejection_sampling_strategy is None
 
 
 def test_rejection_sampling_strategy_values() -> None:
