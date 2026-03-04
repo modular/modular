@@ -34,7 +34,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     MMASmemDescriptorPair,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
+from structured_kernels.barriers import (
     WarpGroupBarrier,
 )
 from std.gpu.compute.arch.tcgen05 import (

@@ -59,7 +59,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from layout._layout import row_major as new_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8_1d2d import (

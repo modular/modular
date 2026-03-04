@@ -38,8 +38,8 @@ from layout import (
     TileTensor,
 )
 from layout._layout import RowMajorLayout, TensorLayout, row_major
-from ..structured_kernels.tile_types import create_tma_tile
-from ..structured_kernels.kernel_common import _to_batched_3d
+from structured_kernels.tile_types import create_tma_tile
+from structured_kernels.kernel_common import _to_batched_3d
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

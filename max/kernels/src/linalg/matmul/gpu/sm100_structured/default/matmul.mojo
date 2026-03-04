@@ -41,8 +41,8 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout._layout import RowMajorLayout, TensorLayout, row_major
-from ..structured_kernels.tile_types import create_tma_tile
-from ..structured_kernels.kernel_common import _to_batched_3d
+from structured_kernels.tile_types import create_tma_tile
+from structured_kernels.kernel_common import _to_batched_3d
 
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
@@ -430,7 +430,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime enable_profiling = max_profiled_tiles > 0
 
     comptime reduction_layout = LegacyLayout.row_major(UNKNOWN_VALUE, BM, MMA_N)
-    from ..structured_kernels.tile_types import lt_to_tt
+    from structured_kernels.tile_types import lt_to_tt
 
     # Instantiate kernel first -- TMA layouts are computed from config
     comptime matmul_kernel = BlackwellMatmulSM100Kernel[

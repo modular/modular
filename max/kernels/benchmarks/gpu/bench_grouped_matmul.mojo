@@ -59,7 +59,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
 from layout import Coord, Idx, RuntimeInt, TileTensor
 from layout._layout import row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
 from linalg.utils import elementwise_epilogue_type

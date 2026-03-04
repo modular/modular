@@ -120,7 +120,7 @@ from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from std.utils.index import IndexList
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
-from linalg.structuring import SMemArray, SMemPtr
+from .smem_types import SMemArray, SMemPtr
 
 # LayoutTensor-based SMemTileArray for C output tiles (used by epilogue)
 
@@ -131,6 +131,7 @@ from .tile_types import (
     SMemTileArray2D,
     SMemTileArray2DRowMajor,
     SMemTileArrayWithLayout,
+    TilePayload,
     internal_sf_k_major,
 )
 
@@ -140,7 +141,6 @@ from std.builtin.variadics import Variadic
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
 from .pipeline import ProducerConsumerPipeline
-from .tile_pipeline import TilePayload
 
 
 # =============================================================================

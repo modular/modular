@@ -28,7 +28,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from linalg.matmul.gpu.sm100_structured.default.matmul import (

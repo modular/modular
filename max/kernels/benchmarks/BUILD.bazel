@@ -142,6 +142,7 @@ _CPU_TESTS = glob(
             "//max:layout",
             "//max:nn",
             "//max:shmem",
+            "//max:structured_kernels",
             "@mojo//:std",
         ],
     )

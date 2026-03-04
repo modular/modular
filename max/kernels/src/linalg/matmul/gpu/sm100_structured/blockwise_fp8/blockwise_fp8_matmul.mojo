@@ -24,7 +24,7 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout import Layout as LegacyLayout, TileTensor
-from ..structured_kernels.tile_types import create_tma_tile, lt_to_tt
+from structured_kernels.tile_types import create_tma_tile, lt_to_tt
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

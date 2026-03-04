@@ -28,7 +28,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tile_tensor import TileTensor
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from std.logger import Logger

@@ -53,7 +53,7 @@ from layout import (
 )
 from layout.tma_async import TMATensorTileArray
 
-from ..structured_kernels.tile_types import create_tma_tile
+from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

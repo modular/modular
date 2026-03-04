@@ -220,6 +220,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
         ],
     )
@@ -253,6 +254,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -280,6 +282,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -306,6 +309,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -351,6 +355,7 @@ mojo_test(
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],

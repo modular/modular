@@ -87,7 +87,7 @@ from ..structured_kernels.config import (
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Structured kernel imports
-from ..structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
     compute_tma_tile_dims,
@@ -105,7 +105,7 @@ from ..structured_kernels.tile_pipeline import (
     BlockScaledTilePayload,
 )
 from layout._layout import RowMajorLayout, _IntToComptimeInt
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     TMATile,
     internal_k_major_128B,
     tma_desc_layout_3d,
@@ -114,9 +114,9 @@ from ..structured_kernels.tile_types import (
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
-from ..structured_kernels.tmem import TmemAllocation
+from ..structured_kernels.tmem import TmemAllocation, TmemDeallocBarrier
 from ..structured_kernels.tile_pipeline import OutputTilePipeline
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,

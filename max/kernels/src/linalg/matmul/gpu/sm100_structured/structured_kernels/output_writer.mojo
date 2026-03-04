@@ -49,9 +49,9 @@ from linalg.utils import elementwise_compute_lambda_type
 from std.utils.index import IndexList
 
 # TileTensor-based types for C tiles
-from .tile_types import SMemTileArray2DRowMajor
+from structured_kernels.tile_types import SMemTileArray2DRowMajor
 
-from .barriers import WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from .config import OutputPipelineConfig
 from .tile_pipeline import OutputStage
 from .tile_scheduler_splitk import TileScheduler, WorkInfo

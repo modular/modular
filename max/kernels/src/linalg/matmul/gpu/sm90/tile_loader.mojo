@@ -36,7 +36,7 @@ from layout.swizzle import make_swizzle
 from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.sync import async_copy_arrive
-from ..sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from std.sys import simd_width_of

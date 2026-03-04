@@ -51,7 +51,7 @@ from .matmul import matmul
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
-from .matmul.gpu.sm100_structured.structured_kernels.tile_types import lt_to_tt
+from structured_kernels.tile_types import lt_to_tt
 from .utils import elementwise_epilogue_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,

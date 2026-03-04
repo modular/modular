@@ -143,7 +143,7 @@ from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from std.utils.index import IndexList
 from .config import OutputPipelineConfig
-from .pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation, TmemStage
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for pointers
@@ -153,10 +153,11 @@ from linalg.structuring import SMemPtr, SMemArray
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 
 # TileTensor-based tile arrays for most tile storage (A, B)
-from .tile_types import (
+from structured_kernels.tile_types import (
     SMemTileArray2D,
     SMemTileArray2DRowMajor,
     SMemTileArrayWithLayout,
+    TilePayload,
     internal_sf_k_major,
 )
 
@@ -166,12 +167,6 @@ comptime MbarPtr = SMemPtr[SharedMemBarrier]
 # ============================================================================
 # Tile Payloads - Data containers for pipeline tile arrays
 # ============================================================================
-
-
-trait TilePayload(TrivialRegisterPassable):
-    """Trait for tile payload types. Must be extend TrivialRegisterPassable."""
-
-    pass
 
 
 struct StandardTilePayload[

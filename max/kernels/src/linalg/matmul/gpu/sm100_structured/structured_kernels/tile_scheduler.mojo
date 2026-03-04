@@ -28,7 +28,7 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 from std.utils.fast_div import FastDiv
 
 from linalg.structuring import SMemPtr, SMemArray
-from .pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 

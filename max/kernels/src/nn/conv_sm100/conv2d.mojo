@@ -50,7 +50,7 @@ from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import create_tensor_tile_im2col
 
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     create_tma_tile,
 )
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout

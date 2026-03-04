@@ -18,7 +18,11 @@ from layout._layout import TensorLayout, row_major
 from layout import Coord, Idx, TileTensor
 from layout.tma_async import SharedMemBarrier, PipelineState
 from std.utils.static_tuple import StaticTuple
-from .tile_types import static_row_major, _StridedLayout, _strided_layout
+from structured_kernels.tile_types import (
+    static_row_major,
+    _StridedLayout,
+    _strided_layout,
+)
 from std.gpu import (
     grid_dim,
     thread_idx,

@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""SM100 pipeline utilities - re-exports from sm100_structured.
+"""Shared GPU kernel primitives for structured kernel architectures.
 
-This module re-exports pipeline types from sm100_structured for backward
-compatibility. New code should import directly from sm100_structured.pipeline.
+This package provides architecture-agnostic building blocks used by SM90,
+SM100, and other GPU kernel implementations:
+
+- pipeline: Producer-consumer pipeline synchronization
+- pipeline_storage: Barrier pair storage and pipeline factory
+- tile_types: TileTensor-based shared memory tile abstractions
+- kernel_common: Warp role dispatch and kernel context
+- barriers: Composable barrier storage for SMEM structs
 """
-
-from structured_kernels.pipeline import (
-    ProducerConsumerPipeline,
-    MbarPtr,
-)

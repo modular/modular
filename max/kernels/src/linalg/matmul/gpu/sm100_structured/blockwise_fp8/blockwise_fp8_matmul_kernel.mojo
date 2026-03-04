@@ -63,10 +63,10 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
-from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
-from ..structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
     compute_tma_tile_dims,
@@ -82,7 +82,7 @@ from ..structured_kernels.tile_pipeline import (
     InputProducerStage,
     InputConsumerStage,
 )
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     TMATile,
     static_row_major,
 )
@@ -91,8 +91,11 @@ from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
 from ..structured_kernels.tile_loader import TileLoader, ScalesLoader
-from ..structured_kernels.tmem import TmemAllocation, TmemTensor
-from ..structured_kernels.barriers import TmemDeallocBarrier
+from ..structured_kernels.tmem import (
+    TmemAllocation,
+    TmemTensor,
+    TmemDeallocBarrier,
+)
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,

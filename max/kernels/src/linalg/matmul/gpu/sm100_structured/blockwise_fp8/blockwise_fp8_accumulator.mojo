@@ -35,11 +35,11 @@ from layout._layout import TensorLayout, row_major
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
     static_row_major,
 )
-from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.config import OutputPipelineConfig
 from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments

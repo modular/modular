@@ -50,6 +50,7 @@ _SM100_GPU_BENCHMARKS = [
             "//max:internal_utils",
             "//max:layout",
             "//max:nn",
+            "//max:structured_kernels",
             "@mojo//:std",
         ],
     )

@@ -29,7 +29,7 @@ from std.sys import align_of, simd_width_of
 from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from .barriers import WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
     Layout,
     RuntimeLayout,
@@ -52,7 +52,7 @@ from std.utils.fast_div import FastDiv
 from std.utils.static_tuple import StaticTuple
 
 # TileTensor-based types - use TileSMemTile to avoid name collision with old SMemTile
-from .tile_types import (
+from structured_kernels.tile_types import (
     SMemTile as TileSMemTile,
     SMemTileStride,
     SMemTileShape,
@@ -132,7 +132,7 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
 
 
 # Import for AccumBarrier
-from .pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================

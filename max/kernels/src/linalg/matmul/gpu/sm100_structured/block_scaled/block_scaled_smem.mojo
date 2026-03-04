@@ -33,7 +33,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
 )
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from ..structured_kernels.pipeline_storage import (
+from structured_kernels.pipeline_storage import (
     BlockScaledTileStorage,
     SmemPipelineBundle,
     SmemLayouts,

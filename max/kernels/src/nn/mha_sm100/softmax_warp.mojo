@@ -30,7 +30,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_store_wait,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
+from structured_kernels.barriers import (
     WarpGroupBarrier,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (

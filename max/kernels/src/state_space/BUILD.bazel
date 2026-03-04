@@ -15,6 +15,7 @@ mojo_library(
         "//max:linalg",
         "//max:nn",
         "//max:register",
+        "//max:structured_kernels",
         "//max:tensor",
         "@mojo//:std",
     ],

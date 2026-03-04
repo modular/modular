@@ -34,7 +34,7 @@ from std.utils.index import IndexList
 from layout.tensor_core_async import tile_layout_k_major
 
 # Import pipeline storage from matmul structured kernels
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline_storage import (
+from structured_kernels.pipeline_storage import (
     StandardTileStorage,
     OutputTileStorage,
     SourceTileStorage,
