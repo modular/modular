@@ -111,10 +111,10 @@ fn block_reduce_sum_and_max[
             block_sum = sum_shared[lid]
             block_max = max_shared[lid]
 
-        block_sum = warp.lane_group_sum[num_lanes=max_warps_per_block](
+        block_sum = warp.lane_group_sum_and_broadcast[num_lanes=max_warps_per_block](
             block_sum
         )
-        block_max = warp.lane_group_max[num_lanes=max_warps_per_block](
+        block_max = warp.lane_group_max_and_broadcast[num_lanes=max_warps_per_block](
             block_max
         )
 
