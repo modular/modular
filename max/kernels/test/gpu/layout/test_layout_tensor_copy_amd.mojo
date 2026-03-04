@@ -42,7 +42,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
 ](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, masked=True, address_space=AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[
@@ -115,7 +115,7 @@ fn copy_dram_to_local_buffer_load_kernel[
 ](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, masked=True, address_space=AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[

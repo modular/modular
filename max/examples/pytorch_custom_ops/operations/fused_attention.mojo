@@ -83,10 +83,10 @@ struct FusedAttention:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        query: InputTensor[dtype=dtype, rank=rank],
-        key: InputTensor[dtype=dtype, rank=rank],
-        value: InputTensor[dtype=dtype, rank=rank],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        query: InputTensor[dtype=dtype, rank=rank, ...],
+        key: InputTensor[dtype=dtype, rank=rank, ...],
+        value: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert rank == 2, "rank must be 2"
@@ -122,10 +122,10 @@ struct FusedAttentionAlias:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        query: InputTensor[dtype=dtype, rank=rank],
-        key: InputTensor[dtype=dtype, rank=rank],
-        value: InputTensor[dtype=dtype, rank=rank],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        query: InputTensor[dtype=dtype, rank=rank, ...],
+        key: InputTensor[dtype=dtype, rank=rank, ...],
+        value: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         FusedAttention.execute[BN=BN, BD=BD, target=target](

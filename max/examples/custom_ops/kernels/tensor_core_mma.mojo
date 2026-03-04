@@ -84,9 +84,9 @@ struct TensorCoreMMA[algorithm: StaticString]:
         N: Int,
         K: Int,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2],
-        a: InputTensor[dtype=DType.float16, rank=2],
-        b: InputTensor[dtype=DType.float16, rank=2],
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float16, rank=2, ...],
+        b: InputTensor[dtype=DType.float16, rank=2, ...],
         perform_validation: Bool,
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,

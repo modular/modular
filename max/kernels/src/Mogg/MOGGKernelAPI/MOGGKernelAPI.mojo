@@ -10211,7 +10211,7 @@ struct DistributedBroadcast:
         _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],

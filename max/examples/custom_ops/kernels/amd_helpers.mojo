@@ -242,8 +242,8 @@ fn mma[
     swap_a_b: Bool,
     MMAType: type_of(AMD_MMA),
 ](
-    a_tiles: MMATileBuffers[mma_type=MMAType],
-    b_tiles: MMATileBuffers[mma_type=MMAType],
+    a_tiles: MMATileBuffers[mma_type=MMAType, ...],
+    b_tiles: MMATileBuffers[mma_type=MMAType, ...],
     c_reg_tile: LayoutTensor[mut=True, ...],
 ):
     """

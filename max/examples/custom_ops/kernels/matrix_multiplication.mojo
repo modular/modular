@@ -54,8 +54,8 @@ comptime OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
 
 fn naive_matrix_multiplication_cpu(
     output: ManagedTensorSlice,
-    a: ManagedTensorSlice[dtype=output.dtype, rank=output.rank],
-    b: ManagedTensorSlice[dtype=output.dtype, rank=output.rank],
+    a: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    b: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
 ):
     """A naive matrix multiplication used as a fallback on CPU hardware."""
     var M = a.shape()[0]
@@ -880,9 +880,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](
-        output: OutputTensor[rank=2],
-        a: InputTensor[dtype=output.dtype, rank=output.rank],
-        b: InputTensor[dtype=output.dtype, rank=output.rank],
+        output: OutputTensor[rank=2, ...],
+        a: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        b: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:

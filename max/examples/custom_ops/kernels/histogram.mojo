@@ -109,8 +109,8 @@ struct Histogram:
     fn execute[
         target: StaticString
     ](
-        output: OutputTensor[dtype=DType.int64, rank=1],
-        input: InputTensor[dtype=DType.uint8, rank=1],
+        output: OutputTensor[dtype=DType.int64, rank=1, ...],
+        input: InputTensor[dtype=DType.uint8, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime if is_cpu[target]():

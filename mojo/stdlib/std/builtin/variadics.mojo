@@ -1293,7 +1293,7 @@ comptime _ReduceVariadicValueAndIdxToVariadic[
     `,`,
     VariadicType,
     `,`,
-    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer],
+    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
     `> : `,
     type_of(BaseVal),
 ]

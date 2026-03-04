@@ -175,7 +175,7 @@ def reference_attention_bshd_with_sinks[
     k_nd: LayoutTensor[dtype, ...],
     v_nd: LayoutTensor[dtype, ...],
     mask_nd: LayoutTensor[dtype, ...],
-    sink_weights_nd: LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)],
+    sink_weights_nd: LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), _],
     output_nd: LayoutTensor[mut=True, dtype, ...],
     scale: Float32,
 ) raises:
@@ -880,7 +880,7 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         k,
         v,
         mask,
-        LayoutTensor[sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE)](
+        LayoutTensor[sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE), _](
             sink_weights.ptr,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 sink_weights.runtime_layout.shape.value
@@ -899,7 +899,7 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         output_with_sinks,
         scale,
         sink_weights=LayoutTensor[
-            sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE)
+            sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE), _
         ](
             sink_weights.ptr.as_immutable(),
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

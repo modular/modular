@@ -58,9 +58,9 @@ struct TopK:
         K: Int,
         target: StaticString,
     ](
-        out_vals: OutputTensor[dtype=dtype, rank=rank],
-        out_idxs: OutputTensor[dtype=DType.int32, rank=rank],
-        in_vals: InputTensor[dtype=dtype, rank=rank],
+        out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
+        out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
+        in_vals: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert rank == 2, "rank must be 2"
