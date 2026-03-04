@@ -39,7 +39,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flare_mla_decode_ragged
+from max.nn.kernels import (
+    compute_mla_dispatch_args_scalar,
+    flare_mla_decode_ragged,
+)
 from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
@@ -385,6 +388,7 @@ def bench_max(
         page_size=page_size,
         devices=[DeviceRef.GPU()],
         is_mla=True,
+        num_q_heads=num_q_heads,
     )
 
     num_blocks_per_seq = (cache_len + page_size - 1) // page_size
@@ -481,6 +485,18 @@ def bench_max(
         device=DeviceRef.CPU(),
     )
 
+    batch_size_type = TensorType(
+        DType.int64,
+        shape=[1],
+        device=DeviceRef.CPU(),
+    )
+
+    max_cache_valid_length_type = TensorType(
+        DType.int64,
+        shape=[1],
+        device=DeviceRef.CPU(),
+    )
+
     # Build graph with MLA decode
     with Graph(
         "mla_decode_max",
@@ -491,6 +507,8 @@ def bench_max(
             cache_lengths_type,
             lookup_table_type,
             max_lengths_type,
+            batch_size_type,
+            max_cache_valid_length_type,
         ],
     ) as graph:
         (
@@ -500,6 +518,8 @@ def bench_max(
             cache_lengths,
             lookup_table,
             max_lengths,
+            batch_size_input,
+            max_cache_valid_length_input,
         ) = graph.inputs
 
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -511,6 +531,17 @@ def bench_max(
             max_lengths.tensor,
         )
 
+        q_max_seq_len = ops.constant(
+            1, DType.int64, device=DeviceRef.CPU()
+        ).reshape([1])
+        scalar_args = compute_mla_dispatch_args_scalar(
+            batch_size_input.tensor,
+            max_cache_valid_length_input.tensor,
+            q_max_seq_len,
+            num_heads=num_q_heads,
+            device=DeviceRef.GPU(),
+        )
+
         # Use MLA decode kernel
         result = flare_mla_decode_ragged(
             kv_params,
@@ -520,6 +551,7 @@ def bench_max(
             layer_idx,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=1.0 / math.sqrt(qk_nope_head_dim + qk_rope_head_dim),
+            scalar_args=scalar_args,
             qk_rope_dim=qk_rope_head_dim,
         )
 
@@ -555,6 +587,14 @@ def bench_max(
         0, total_tokens + 1, q_len_per_request, dtype=torch.int32, device="cuda"
     ).to(torch.uint32)
 
+    # Dispatch args inputs (batch_size and max_cache_valid_length for scalar_args computation)
+    batch_size_tensor = torch.tensor(
+        [batch_size], dtype=torch.int64, device="cpu"
+    )
+    max_cache_valid_length_tensor = torch.tensor(
+        [cache_len], dtype=torch.int64, device="cpu"
+    )
+
     def run_kernel() -> Any:
         output = model.execute(
             q_input if is_fp8_q else q_input_torch.detach(),
@@ -563,6 +603,8 @@ def bench_max(
             cache_lengths_max,
             lut_max,
             max_lengths_max,
+            batch_size_tensor,
+            max_cache_valid_length_tensor,
         )[0]
         return output
 

@@ -331,7 +331,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     fn _get_function[
         result_type: __TypeOfAllTypes
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -365,7 +365,7 @@ struct OwnedDLHandle(Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -405,7 +405,7 @@ struct OwnedDLHandle(Movable):
 
     fn call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
+    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
         Parameters:
@@ -480,7 +480,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     @staticmethod
     fn _dlopen(
-        file: UnsafePointer[mut=False, c_char], flags: Int
+        file: UnsafePointer[mut=False, c_char, _], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
@@ -571,7 +571,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     @always_inline
     fn _get_function[
         result_type: __TypeOfAllTypes
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -610,7 +610,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -691,7 +691,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     fn call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
+    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
         Parameters:
@@ -986,7 +986,7 @@ fn external_call[
 fn external_call[
     callee: StaticString,
     return_type: __TypeOfAllTypes,
-](args: VariadicPack[element_trait=AnyType]) -> return_type:
+](args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
     """Calls an external function.
 
     Parameters:

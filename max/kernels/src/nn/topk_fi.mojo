@@ -50,7 +50,7 @@ fn get_min_max_value[
     block_size: Int,
     dtype: DType,
 ](
-    in_data: UnsafePointer[Scalar[dtype]],
+    in_data: UnsafePointer[Scalar[dtype], _],
     row_idx: Int,
     d: Int,
 ) -> Tuple[
@@ -338,10 +338,10 @@ fn device_sampling_from_prob[
     prob_vec: SIMD[DType.float32, vec_size],
     aggregate: Float32,
     sampled_id_sram: UnsafePointer[
-        mut=True, Int, address_space = AddressSpace.SHARED
+        mut=True, Int, _, address_space = AddressSpace.SHARED
     ],
     last_valid_id_sram: UnsafePointer[
-        mut=True, Int, address_space = AddressSpace.SHARED
+        mut=True, Int, _, address_space = AddressSpace.SHARED
     ],
 ) -> Float32:
     """Device-level sampling from probability distribution with atomic operations.

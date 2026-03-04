@@ -37,7 +37,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
@@ -219,9 +219,6 @@ class ModelInputs:
 
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
-
-    _MAX_DEFAULT_BATCH_SIZE = 4096
-    _MIN_DEFAULT_BATCH_SIZE = 1
 
     def __init__(
         self,
@@ -527,7 +524,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        return unflatten_ragged_mha_decode_inputs(
+        return unflatten_ragged_attention_inputs(
             kv_inputs_flat, n_devices=self.kv_params.n_devices
         )
 

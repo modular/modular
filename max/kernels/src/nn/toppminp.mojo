@@ -152,7 +152,7 @@ fn _topp_minp_sampling[
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
-        sorted_probs.to_layout_tensor(),
+        sorted_probs,
         axis=input_logits.rank - 1,
     )
 

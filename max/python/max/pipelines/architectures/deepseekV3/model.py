@@ -68,12 +68,11 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
     data_parallel_splits: Buffer = field(kw_only=True)
     """Tensor containing the data parallel splits for the MLA layer."""
 
-    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
-    """EP communication buffers injected at prepare time."""
+    ep_inputs: tuple[Buffer, ...] = field(kw_only=True, default=())
+    """Expert parallel communication buffers (atomic counters and device pointers)."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
         return (
             self.tokens,
             self.input_row_offsets,
@@ -81,7 +80,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *kv_cache_inputs,
+            *(self.kv_cache_inputs or ()),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
@@ -415,7 +414,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
 
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
@@ -743,6 +742,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         next_host_input_row_offsets = self._host_input_row_offsets_prealloc[
             :row_offsets_size
         ]
+
         return DeepseekV3Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,

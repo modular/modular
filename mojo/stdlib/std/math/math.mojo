@@ -1282,7 +1282,7 @@ fn iota[
 fn iota[
     dtype: DType, //
 ](
-    buff: UnsafePointer[mut=True, Scalar[dtype], address_space=_],
+    buff: UnsafePointer[mut=True, Scalar[dtype], _, address_space=_],
     len: Int,
     offset: Int = 0,
 ):
@@ -1494,7 +1494,7 @@ fn acos[
     # splitting to improve accuracy.
 
     # Determine which approximation method to use based on domain.
-    var x_abs = clamp(abs(x), 0, 1)
+    var x_abs = clamp(abs(x), 0.0, 1.0)
     var directed_polynomial_mask = x_abs.lt(0.5)
 
     # Compute x² for polynomial evaluation
@@ -1508,7 +1508,7 @@ fn acos[
     var d = directed_polynomial_mask.select(abs(x), sqrt(x_squared))
 
     # Special case: handle |x| = 1 to avoid numerical instability
-    d = x_abs.eq(1).select(type_of(x)(0.0), d)
+    d = x_abs.eq(1.0).select(type_of(x)(0.0), d)
 
     # Evaluate Remez polynomial using Horner's method
     # Coefficients derived to minimize maximum absolute error
@@ -1532,7 +1532,7 @@ fn acos[
     var d_plus_poly = d + poly
 
     # Select result based on domain
-    var result = directed_polynomial_mask.select(y, 2 * d_plus_poly)
+    var result = directed_polynomial_mask.select(y, 2.0 * d_plus_poly)
 
     # Large domain with negative x: apply π - result transformation.
     return (~directed_polynomial_mask & x.lt(0)).select(pi - result, result)
@@ -1578,7 +1578,7 @@ fn asin[
     # Compute d² for polynomial evaluation:
     #  - For |x| < 0.5: d² = x²
     #  - For |x| >= 0.5: d² = (1 - |x|) / 2  (for identity transformation)
-    var d2 = directed_polynomial_mask.select(x * x, (1 - x_abs) * 0.5)
+    var d2 = directed_polynomial_mask.select(x * x, (1.0 - x_abs) * 0.5)
 
     # Compute d for evaluation:
     # - For |x| < 0.5: d = |x|
@@ -1604,7 +1604,7 @@ fn asin[
     # Compute final result based on domain:
     # - For |x| < 0.5: result = poly  (direct approximation)
     # - For |x| >= 0.5: result = π/2 - 2*poly  (using identity)
-    var result = directed_polynomial_mask.select(poly, pi / 2 - 2 * poly)
+    var result = directed_polynomial_mask.select(poly, pi / 2.0 - 2.0 * poly)
 
     return copysign(result, x)
 
@@ -2171,7 +2171,7 @@ fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
     # Sqrt(2)
     comptime sqrt2 = 1.41421356237309504880
 
-    var z = 1 + x
+    var z = 1.0 + x
     var log1x = log(z)
 
     var in_domain_mask = z.lt(sqrt2_div_2) | z.gt(sqrt2)
@@ -2961,7 +2961,7 @@ fn gcd(m: Int, n: Int, /) -> Int:
     return u << shift
 
 
-fn gcd(s: Span[Int], /) -> Int:
+fn gcd(s: Span[Int, _], /) -> Int:
     """Computes the greatest common divisor of a span of integers.
 
     Args:
@@ -3033,7 +3033,7 @@ fn lcm(m: Int, n: Int, /) -> Int:
     return 0
 
 
-fn lcm(s: Span[Int], /) -> Int:
+fn lcm(s: Span[Int, _], /) -> Int:
     """Computes the least common multiple of a span of integers.
 
     Args:

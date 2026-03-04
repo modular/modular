@@ -20,11 +20,7 @@ from .paged_kv_cache import (
     TransferReqData,
     available_port,
 )
-from .registry import (
-    estimate_kv_cache_size,
-    infer_optimal_batch_size,
-    load_kv_manager,
-)
+from .registry import load_kv_manager
 
 __all__ = [
     "DummyKVCache",
@@ -34,7 +30,5 @@ __all__ = [
     "PagedKVCacheManager",
     "TransferReqData",
     "available_port",
-    "estimate_kv_cache_size",
-    "infer_optimal_batch_size",
     "load_kv_manager",
 ]

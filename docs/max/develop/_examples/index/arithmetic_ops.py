@@ -14,8 +14,8 @@
 
 from max.experimental.tensor import Tensor
 
-a = Tensor.constant([1.0, 2.0, 3.0])
-b = Tensor.constant([4.0, 5.0, 6.0])
+a = Tensor([1.0, 2.0, 3.0])
+b = Tensor([4.0, 5.0, 6.0])
 
 c = a + b  # Addition
 d = a * b  # Element-wise multiplication

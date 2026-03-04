@@ -51,11 +51,11 @@ async def test_kv_cache_multi_gpu() -> None:
 
         batch = [context]
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        list_of_kv_tuples = kv_manager.runtime_inputs([batch])
+        kv_inputs = kv_manager.runtime_inputs([batch])
         for i in range(num_devices):
-            kv_tuple = list_of_kv_tuples[i]
-            assert len(kv_tuple) == 6
-            assert kv_tuple.mha_decode_dispatch_metadata is not None
+            kv_inputs_per_device = kv_inputs.inputs[i]
+            assert len(kv_inputs_per_device.as_list()) == 5
+            assert kv_inputs_per_device.attention_dispatch_metadata is not None
 
 
 def create_kv_cache(
@@ -118,9 +118,9 @@ async def test_swapping_to_host_multi_gpu(
     )
 
     if enable_swapping_to_host:
-        replica_manager = kv_manager._replica_managers[0]
+        replica = kv_manager._replica[0]
         # Evictions should be scheduled on auxiliary stream (via connector)
-        connector = replica_manager.connector
+        connector = replica.connector
         assert isinstance(connector, LocalConnector)
 
     def gen_prompt(length: int) -> np.ndarray:

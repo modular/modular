@@ -42,7 +42,7 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-fn _read_small(data: UnsafePointer[mut=False, UInt8], length: Int) -> U128:
+fn _read_small(data: UnsafePointer[mut=False, UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:

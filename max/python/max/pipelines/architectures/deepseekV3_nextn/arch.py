@@ -33,6 +33,7 @@ deepseekV3_nextn_arch = SupportedArchitecture(
     supported_encodings={
         "bfloat16",
         "float8_e4m3fn",
+        "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3NextNModel,

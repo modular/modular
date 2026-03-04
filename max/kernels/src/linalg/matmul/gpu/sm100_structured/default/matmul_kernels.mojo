@@ -67,7 +67,7 @@ from layout._layout import (
 )
 from std.builtin.variadics import Variadic
 from layout.coord import Coord, Idx, coord
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     TMATile,
     static_row_major,
     tma_desc_layout_3d,
@@ -90,7 +90,7 @@ from linalg.utils import (
     elementwise_epilogue_type,
 )
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
-from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     StandardTilePayload,
@@ -98,14 +98,18 @@ from ..structured_kernels.tile_pipeline import (
     ConsumerTiles,
     OutputTilePipeline,
 )
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
-from ..structured_kernels.pipeline_storage import (
+from structured_kernels.barriers import WarpGroupBarrier
+from structured_kernels.pipeline_storage import (
     StandardTileStorage,
     OutputTileStorage,
     SmemPipelineBundle,
     SmemLayouts,
 )
-from ..structured_kernels.tmem import TmemAllocation, TmemTensor
+from ..structured_kernels.tmem import (
+    TmemAllocation,
+    TmemTensor,
+    TmemDeallocBarrier,
+)
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
@@ -123,7 +127,7 @@ from linalg.structuring import (
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Import shared kernel components from kernel_common
-from ..structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
     compute_clc_barrier_counts,
@@ -292,6 +296,7 @@ struct BlackwellMatmulSM100Kernel[
     # Cluster shape (must match config, needed for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -624,6 +629,7 @@ struct BlackwellMatmulSM100Kernel[
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
         num_output_warps = Self.num_output_warps,
+        elementwise_lambda_fn = Self.elementwise_lambda_fn,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
         batched=True,
@@ -642,6 +648,7 @@ struct BlackwellMatmulSM100Kernel[
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
         num_output_warps = Self.num_output_warps,
+        elementwise_lambda_fn = Self.elementwise_lambda_fn,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
         batched=False,

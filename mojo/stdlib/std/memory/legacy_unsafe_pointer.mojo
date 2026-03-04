@@ -446,8 +446,8 @@ struct LegacyUnsafePointer[
         other_type: type_of(
             LegacyUnsafePointer[
                 Self.type,
+                ...,
                 address_space = Self.address_space,
-                origin=_,
             ]
         ),
     ](self) -> LegacyUnsafePointer[

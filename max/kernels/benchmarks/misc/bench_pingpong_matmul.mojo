@@ -13,9 +13,9 @@
 
 from std.collections import Optional
 from std.sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     has_nvidia_gpu_accelerator,
     align_of,
 )
@@ -62,9 +62,9 @@ fn _get_run_name[
     shape_b_dim: IndexList[2],
 ) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
-    var type_str = String(t"({dtype}) : ")
+    var type_str = String("(", dtype, ") : ")
     # M
-    var m_str = String(t"{shape_c_dim[0]}_dynamic")
+    var m_str = String(shape_c_dim[0], "_dynamic")
     # N
     var n_str = String(
         shape_c_dim[1],
@@ -181,10 +181,12 @@ fn bench_matmul[
                     transpose_b=transpose_b,
                 )
             else:
-                comptime use_ping_pong_matmul = env_get_bool[
+                comptime use_ping_pong_matmul = get_defined_bool[
                     "use_ping_pong_matmul", True
                 ]()
-                comptime enable_swizzle = env_get_bool["enable_swizzle", True]()
+                comptime enable_swizzle = get_defined_bool[
+                    "enable_swizzle", True
+                ]()
 
                 comptime if use_ping_pong_matmul:
                     ping_pong_matmul[enable_swizzle=enable_swizzle](
@@ -275,19 +277,19 @@ fn create_matmul_bench[
 
 
 def main() raises:
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int["K", 1]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
     comptime cache_busting = True
     comptime transpose_b = True
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    comptime epilogue = env_get_bool["epilogue", False]()
-    comptime register_based_epilogue = env_get_bool[
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+    comptime epilogue = get_defined_bool["epilogue", False]()
+    comptime register_based_epilogue = get_defined_bool[
         "register_based_epilogue", True
     ]()
 
