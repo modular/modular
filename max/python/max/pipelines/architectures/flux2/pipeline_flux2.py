@@ -263,7 +263,7 @@ class Flux2Pipeline(DiffusionPipeline):
     def build_prepare_image_latents(self) -> None:
         dtype = self.vae.config.dtype
         device = self.vae.devices[0]
-        num_channels = self.vae.bn.running_mean.shape[0].dim
+        num_channels = int(self.vae.bn.running_mean.shape[0])
 
         c = num_channels // 4
         self.__dict__["_normalize_and_pack_image_latent"] = max_compile(
@@ -332,7 +332,9 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def build_decode_latents(self) -> None:
         device = self.transformer.devices[0]
-        num_channels = self.vae.bn.running_mean.shape[0].dim
+        self._bn_mean: Tensor = self.vae.bn.running_mean
+        self._bn_var: Tensor = self.vae.bn.running_var
+        num_channels = int(self._bn_mean.shape[0])
         self._postprocess_and_decode = self.vae.build_fused_decode(
             device, num_channels
         )
@@ -434,8 +436,8 @@ class Flux2Pipeline(DiffusionPipeline):
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> tuple[Tensor, Tensor]:
-        bn_mean = self.vae.bn.running_mean
-        bn_var = self.vae.bn.running_var
+        bn_mean = self._bn_mean
+        bn_var = self._bn_var
 
         packed_latents = []
         latent_shapes = []
@@ -549,11 +551,7 @@ class Flux2Pipeline(DiffusionPipeline):
         Returns:
             Float32 NumPy array of shape (B, H, W, C).
         """
-        bn_mean = self.vae.bn.running_mean
-        bn_var = self.vae.bn.running_var
-        decoded = self._postprocess_and_decode(
-            latents, h_carrier, w_carrier, bn_mean, bn_var
-        )
+        decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
         return np.from_dlpack(decoded)  # (B, H, W, C)
 

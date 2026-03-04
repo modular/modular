@@ -100,6 +100,8 @@ class PostprocessAndDecode(Module[..., Tensor]):
     def __init__(
         self,
         decoder: Decoder,
+        bn_mean: Tensor,
+        bn_var: Tensor,
         batch_norm_eps: float,
         num_channels: int,
         device: DeviceRef,
@@ -107,6 +109,8 @@ class PostprocessAndDecode(Module[..., Tensor]):
     ) -> None:
         super().__init__()
         self.decoder = decoder
+        self.bn_mean = bn_mean
+        self.bn_var = bn_var
         self.batch_norm_eps = batch_norm_eps
         self._num_channels = num_channels
         self._device = device
@@ -117,8 +121,6 @@ class PostprocessAndDecode(Module[..., Tensor]):
         latents_bsc: Tensor,
         h_carrier: Tensor,
         w_carrier: Tensor,
-        bn_mean: Tensor,
-        bn_var: Tensor,
     ) -> Tensor:
         batch = latents_bsc.shape[0]
         c = latents_bsc.shape[2]
@@ -135,8 +137,8 @@ class PostprocessAndDecode(Module[..., Tensor]):
         latents = F.permute(latents_bhwc, (0, 3, 1, 2))
 
         # BN denormalization
-        bn_mean_r = F.reshape(bn_mean, (1, c, 1, 1))
-        bn_var_r = F.reshape(bn_var, (1, c, 1, 1))
+        bn_mean_r = F.reshape(self.bn_mean, (1, c, 1, 1))
+        bn_var_r = F.reshape(self.bn_var, (1, c, 1, 1))
         bn_std = F.sqrt(bn_var_r + self.batch_norm_eps)
         latents = latents * bn_std + bn_mean_r
 
@@ -167,16 +169,6 @@ class PostprocessAndDecode(Module[..., Tensor]):
             TensorType(
                 DType.float32, shape=["latent_w"], device=DeviceRef.CPU()
             ),
-            TensorType(
-                self._dtype,
-                shape=[self._num_channels],
-                device=self._device,
-            ),
-            TensorType(
-                self._dtype,
-                shape=[self._num_channels],
-                device=self._device,
-            ),
         )
 
 
@@ -187,6 +179,9 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
     handling configuration, weight loading, model compilation, and BatchNorm
     statistics for Flux2's latent patchification.
     """
+
+    bn_running_mean: Tensor
+    bn_running_var: Tensor
 
     def __init__(
         self,
@@ -203,9 +198,6 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             devices: List of devices to use.
             weights: Model weights.
         """
-        self.bn_running_mean: Tensor | None = None
-        self.bn_running_var: Tensor | None = None
-
         super().__init__(
             config=config,
             encoding=encoding,
@@ -239,17 +231,20 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         bn_mean_data = bn_stats.get("bn.running_mean")
         bn_var_data = bn_stats.get("bn.running_var")
 
+        if bn_mean_data is None or bn_var_data is None:
+            raise ValueError(
+                "BatchNorm statistics (running_mean, running_var) not loaded. "
+                "Make sure the model weights contain 'bn.running_mean' and 'bn.running_var'."
+            )
+
         super().load_model()
 
-        if bn_mean_data is not None or bn_var_data is not None:
-            if bn_mean_data is not None:
-                self.bn_running_mean = Tensor.from_dlpack(bn_mean_data).to(
-                    self.devices[0]
-                )
-            if bn_var_data is not None:
-                self.bn_running_var = Tensor.from_dlpack(bn_var_data).to(
-                    self.devices[0]
-                )
+        self.bn_running_mean = Tensor.from_dlpack(bn_mean_data).to(
+            self.devices[0]
+        )
+        self.bn_running_var = Tensor.from_dlpack(bn_var_data).to(
+            self.devices[0]
+        )
 
         return self.model
 
@@ -270,8 +265,8 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             num_channels: Number of latent channels (bn.running_mean shape[0]).
 
         Returns:
-            Compiled callable taking (latents_bsc, h_carrier, w_carrier,
-            bn_mean, bn_var) and returning the decoded image tensor.
+            Compiled callable taking (latents_bsc, h_carrier, w_carrier)
+            and returning the decoded image tensor.
         """
         dtype = self.config.dtype
         device_ref = DeviceRef.from_device(device)
@@ -288,11 +283,17 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             elif key.startswith("post_quant_conv."):
                 # post_quant_conv.X -> decoder.post_quant_conv.X
                 fused_weights[f"decoder.{key}"] = weight_data
+            elif key == "bn.running_mean":
+                fused_weights["bn_mean"] = weight_data
+            elif key == "bn.running_var":
+                fused_weights["bn_var"] = weight_data
 
         with F.lazy():
             autoencoder = AutoencoderKLFlux2(self.config)
             fused = PostprocessAndDecode(
                 decoder=autoencoder.decoder,
+                bn_mean=self.bn_running_mean,
+                bn_var=self.bn_running_var,
                 batch_norm_eps=self.config.batch_norm_eps,
                 num_channels=num_channels,
                 device=device_ref,
@@ -314,16 +315,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
 
         Returns:
             SimpleNamespace: Object containing running_mean and running_var attributes.
-
-        Raises:
-            ValueError: If BatchNorm statistics are not loaded.
         """
-        if self.bn_running_mean is None or self.bn_running_var is None:
-            raise ValueError(
-                "BatchNorm statistics (running_mean, running_var) not loaded. "
-                "Make sure the model weights contain 'bn.running_mean' and 'bn.running_var'."
-            )
-
         return SimpleNamespace(
             running_mean=self.bn_running_mean, running_var=self.bn_running_var
         )
