@@ -85,11 +85,16 @@ class AutoencoderKLFlux2(Module[[Tensor, Tensor | None], Tensor]):
         return self.decoder(z, temb)
 
 
-class PostprocessAndDecode(Module[[Tensor, Tensor, Tensor], Tensor]):
+class PostprocessAndDecode(Module[..., Tensor]):
     """Fused BN-denorm + unpatchify + VAE decode in a single compiled graph.
 
     Eliminates the inter-graph boundary and intermediate tensor materialization
     that previously existed between _postprocess_latents and vae.decode().
+
+    Accepts packed latents in (B, S, C) shape where S = latent_h * latent_w.
+    The spatial dimensions are conveyed via two 1-D shape-carrier tensors whose
+    *lengths* (not values) encode latent_h and latent_w as symbolic graph Dims,
+    so a single compiled graph handles any spatial size without recompilation.
     """
 
     def __init__(
@@ -109,14 +114,22 @@ class PostprocessAndDecode(Module[[Tensor, Tensor, Tensor], Tensor]):
 
     def forward(
         self,
-        latents_bhwc: Tensor,
+        latents_bsc: Tensor,
+        h_carrier: Tensor,
+        w_carrier: Tensor,
         bn_mean: Tensor,
         bn_var: Tensor,
     ) -> Tensor:
-        batch = latents_bhwc.shape[0]
-        h = latents_bhwc.shape[1]
-        w = latents_bhwc.shape[2]
-        c = latents_bhwc.shape[3]
+        batch = latents_bsc.shape[0]
+        c = latents_bsc.shape[2]
+        # Extract spatial dims from carrier shapes (symbolic Dims, not runtime values)
+        h = h_carrier.shape[0]
+        w = w_carrier.shape[0]
+
+        # Assert seq == latent_h * latent_w so the reshape verifier accepts it,
+        # then reshape packed (B, S, C) -> spatial (B, H, W, C).
+        latents_bsc = F.rebind(latents_bsc, [batch, h * w, c])
+        latents_bhwc = F.reshape(latents_bsc, (batch, h, w, c))
 
         # (B, H, W, C) -> (B, C, H, W)
         latents = F.permute(latents_bhwc, (0, 3, 1, 2))
@@ -143,8 +156,16 @@ class PostprocessAndDecode(Module[[Tensor, Tensor, Tensor], Tensor]):
         return (
             TensorType(
                 self._dtype,
-                shape=["batch", "height", "width", self._num_channels],
+                shape=["batch", "seq", self._num_channels],
                 device=self._device,
+            ),
+            # Shape carriers: lengths encode latent_h / latent_w as symbolic dims.
+            # Content is never read; only the shapes matter.
+            TensorType(
+                DType.float32, shape=["latent_h"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.float32, shape=["latent_w"], device=DeviceRef.CPU()
             ),
             TensorType(
                 self._dtype,
@@ -239,15 +260,18 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
 
         Combines BN denormalization, unpatchify, and VAE decoding into a single
         compiled graph, eliminating the intermediate tensor and device sync
-        between the two previously separate compiled graphs.
+        between the two previously separate compiled graphs.  The reshape from
+        packed (B, S, C) to spatial (B, H, W, C) is the first op inside the
+        graph; spatial dims are conveyed via shape-carrier tensors so the same
+        compiled graph handles any image size without recompilation.
 
         Args:
             device: Target device for the compiled graph.
             num_channels: Number of latent channels (bn.running_mean shape[0]).
 
         Returns:
-            Compiled callable taking (latents_bhwc, bn_mean, bn_var) and
-            returning the decoded image tensor.
+            Compiled callable taking (latents_bsc, h_carrier, w_carrier,
+            bn_mean, bn_var) and returning the decoded image tensor.
         """
         dtype = self.config.dtype
         device_ref = DeviceRef.from_device(device)

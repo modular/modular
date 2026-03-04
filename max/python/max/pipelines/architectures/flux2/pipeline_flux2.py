@@ -62,6 +62,14 @@ class Flux2ModelInputs:
     image_seq_len: int
     """Packed image sequence length ((latent_h // 2) * (latent_w // 2))."""
 
+    h_carrier: Tensor
+    """1-D shape-carrier of length latent_h // 2; encodes packed height as a
+    symbolic Dim for the decode graph.  Content is never read."""
+
+    w_carrier: Tensor
+    """1-D shape-carrier of length latent_w // 2; encodes packed width as a
+    symbolic Dim for the decode graph.  Content is never read."""
+
     height: int
     """Output image height in pixels."""
 
@@ -153,6 +161,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
+        self._cached_shape_carriers: dict[int, Tensor] = {}
 
     @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
@@ -200,6 +209,17 @@ class Flux2Pipeline(DiffusionPipeline):
             )
             self._cached_guidance[guidance_key] = guidance
 
+        # Retrieve cached shape carriers, if possible.
+        packed_h = latent_h // 2
+        packed_w = latent_w // 2
+        for n in (packed_h, packed_w):
+            if n not in self._cached_shape_carriers:
+                self._cached_shape_carriers[n] = Tensor.from_dlpack(
+                    np.empty(n, dtype=np.float32)
+                )
+        h_carrier = self._cached_shape_carriers[packed_h]
+        w_carrier = self._cached_shape_carriers[packed_w]
+
         return Flux2ModelInputs(
             tokens=Tensor(
                 storage=Buffer.from_dlpack(context.tokens.array).to(
@@ -217,6 +237,8 @@ class Flux2Pipeline(DiffusionPipeline):
             latent_h=latent_h,
             latent_w=latent_w,
             image_seq_len=image_seq_len,
+            h_carrier=h_carrier,
+            w_carrier=w_carrier,
             height=context.height,
             width=context.width,
             num_inference_steps=context.num_inference_steps,
@@ -514,26 +536,24 @@ class Flux2Pipeline(DiffusionPipeline):
     def decode_latents(
         self,
         latents: Tensor,
-        latent_h: int,
-        latent_w: int,
+        h_carrier: Tensor,
+        w_carrier: Tensor,
     ) -> np.ndarray:
         """Decode Flux2 packed latents into a (B, H, W, C) float32 NumPy array.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
-            latent_h: Latent height after packing (latent_h // 2).
-            latent_w: Latent width after packing (latent_w // 2).
+            h_carrier: 1-D shape carrier of length packed_h (content unused).
+            w_carrier: 1-D shape carrier of length packed_w (content unused).
 
         Returns:
             Float32 NumPy array of shape (B, H, W, C).
         """
-        batch = int(latents.shape[0])
-        c = int(latents.shape[2])
-        latents_bhwc = F.reshape(latents, (batch, latent_h, latent_w, c))
-
         bn_mean = self.vae.bn.running_mean
         bn_var = self.vae.bn.running_var
-        decoded = self._postprocess_and_decode(latents_bhwc, bn_mean, bn_var)
+        decoded = self._postprocess_and_decode(
+            latents, h_carrier, w_carrier, bn_mean, bn_var
+        )
 
         return np.from_dlpack(decoded)  # (B, H, W, C)
 
@@ -742,8 +762,8 @@ class Flux2Pipeline(DiffusionPipeline):
         with Tracer("decode_outputs"):
             images = self.decode_latents(
                 latents,
-                model_inputs.latent_h // 2,
-                model_inputs.latent_w // 2,
+                model_inputs.h_carrier,
+                model_inputs.w_carrier,
             )
 
         return Flux2PipelineOutput(images=images)
