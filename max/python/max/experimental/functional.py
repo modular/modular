@@ -742,6 +742,7 @@ arange = functional(ops.range)
 #: See :func:`max.graph.ops.rebind` for details.
 rebind = functional(ops.rebind)
 
+
 @functional
 def linspace(
     start: float,

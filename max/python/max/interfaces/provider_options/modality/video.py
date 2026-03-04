@@ -29,19 +29,19 @@ class VideoProviderOptions(BaseModel):
     )
 
     width: int | None = Field(
-        None,
+        768,
         description="The width of the generated video in pixels.",
         gt=0,
     )
 
     height: int | None = Field(
-        None,
+        512,
         description="The height of the generated video in pixels.",
         gt=0,
     )
 
     steps: int | None = Field(
-        None,
+        40,
         description=(
             "The number of denoising steps. More steps generally produce higher quality "
             "results but take longer to generate."
@@ -50,7 +50,7 @@ class VideoProviderOptions(BaseModel):
     )
 
     frames_per_second: int | None = Field(
-        None,
+        24.0,
         description=(
             "The frame rate for video generation in frames per second (fps). "
             "Common values are 24, 30, or 60 fps."
@@ -59,7 +59,7 @@ class VideoProviderOptions(BaseModel):
     )
 
     num_frames: int | None = Field(
-        None,
+        121,
         description=(
             "The number of frames to generate for video output. "
             "Total video duration equals num_frames / frames_per_second."
@@ -68,7 +68,7 @@ class VideoProviderOptions(BaseModel):
     )
 
     guidance_scale: float | None = Field(
-        None,
+        4.0,
         description=(
             "The classifier-free guidance scale. Higher values encourage the model to "
             "follow the prompt more closely at the cost of lower image diversity."
@@ -77,7 +77,7 @@ class VideoProviderOptions(BaseModel):
     )
 
     true_cfg_scale: float | None = Field(
-        None,
+        4.0,
         description=(
             "The true classifier-free guidance scale. Higher values encourage the model to "
             "follow the prompt more closely at the cost of lower image diversity. "

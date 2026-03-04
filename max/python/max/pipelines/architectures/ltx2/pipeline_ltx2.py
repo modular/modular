@@ -19,16 +19,13 @@ import max.experimental.functional as F
 import numpy as np
 import numpy.typing as npt
 import torch
-from max.driver import CPU, Device
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.interfaces import TokenBuffer
 from max.pipelines import PixelContext
-from max.pipelines.lib.interfaces import (
-    DiffusionPipeline,
-    PixelModelInputs,
-)
+from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 from tqdm import tqdm
@@ -46,26 +43,80 @@ from .model import (
 
 
 @dataclass(kw_only=True)
-class LTX2ModelInputs(PixelModelInputs):
-    """
-    LTX2-specific PixelModelInputs.
-    """
+class LTX2ModelInputs:
+    """Input container for LTX2 pipeline execution."""
 
-    width: int = 768
-    height: int = 512
-    guidance_scale: float = 4.0
-    num_inference_steps: int = 40
-    num_visuals_per_prompt: int = 1
-    num_frames: int = 121
-    frame_rate: float = 24.0
-    mask: npt.NDArray[np.bool_] | None = None
-    """Attention mask for the text encoder."""
+    tokens: Tensor
+    """Primary encoder token IDs on device."""
+
+    latents: Tensor
+    """Initial latent noise tensor on device."""
+
+    audio_latents: Tensor
+    """Initial audio latent noise tensor on device."""
+
+    sigmas: Tensor
+    """Precomputed sigma schedule for denoising, on device."""
+
+    guidance_scale: float
+    """Guidance scale broadcast tensor on device."""
+
+    latent_h: int
+    """Latent height in patches (height // vae_scale_factor)."""
+
+    latent_w: int
+    """Latent width in patches (width // vae_scale_factor)."""
+
+    latent_f: int
+    """Number of frames in the latent space."""
+
+    video_seq_len: int
+    """Packed video sequence length ((latent_h // 2) * (latent_w // 2) * latent_f)."""
+
+    height: int
+    """Output image height in pixels."""
+
+    width: int
+    """Output image width in pixels."""
+
+    num_inference_steps: int
+    """Number of denoising steps to run."""
+
+    num_visuals_per_prompt: int
+    """Number of images to generate per prompt."""
+
+    num_frames: int
+    """Number of frames to generate."""
+
+    frame_rate: float
+    """Frame rate of the generated video."""
+
     extra_params: dict[str, npt.NDArray[Any]] | None = None
     """LTX2-specific preprocessed arrays."""
 
-    @property
-    def do_true_cfg(self) -> bool:
-        return self.negative_tokens is not None
+    def __post_init__(self) -> None:
+        if not isinstance(self.height, int) or self.height <= 0:
+            raise ValueError(
+                f"height must be a positive int. Got {self.height!r}"
+            )
+        if not isinstance(self.width, int) or self.width <= 0:
+            raise ValueError(
+                f"width must be a positive int. Got {self.width!r}"
+            )
+        if (
+            not isinstance(self.num_inference_steps, int)
+            or self.num_inference_steps <= 0
+        ):
+            raise ValueError(
+                f"num_inference_steps must be a positive int. Got {self.num_inference_steps!r}"
+            )
+        if (
+            not isinstance(self.num_visuals_per_prompt, int)
+            or self.num_visuals_per_prompt <= 0
+        ):
+            raise ValueError(
+                f"num_visuals_per_prompt must be > 0. Got {self.num_visuals_per_prompt!r}"
+            )
 
 
 @dataclass
@@ -105,6 +156,12 @@ class LTX2Pipeline(DiffusionPipeline):
         """Initialize derived attributes that depend on loaded components."""
 
         self.audio_vae_mel_compression_ratio = 4
+        self.vae_spatial_compression_ratio = (
+            self.vae.config.spatial_compression_ratio
+        )
+        self.vae_temporal_compression_ratio = (
+            self.vae.config.temporal_compression_ratio
+        )
 
         model_id = str(self.pipeline_config.model.model_path)
         self.text_encoder = Gemma3ForConditionalGeneration.from_pretrained(
@@ -162,12 +219,59 @@ class LTX2Pipeline(DiffusionPipeline):
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
 
+    @traced
     def prepare_inputs(self, context: PixelContext) -> LTX2ModelInputs:  # type: ignore[override]
-        return LTX2ModelInputs.from_context(context)
+        """Convert a PixelContext into LTX2ModelInputs."""
+        if context.latents.size == 0:
+            raise ValueError(
+                "LTX2Pipeline requires non-empty latents in PixelContext"
+            )
+        if context.sigmas.size == 0:
+            raise ValueError(
+                "LTX2Pipeline requires non-empty sigmas in PixelContext"
+            )
 
-    # -----------------------------------------------------------------------
-    # build_* methods: compile hot-path functions via max_compile (Flux2 style)
-    # -----------------------------------------------------------------------
+        device = self.transformer.devices[0]
+
+        # Retrieve cached sigmas, if possible.
+        latent_h = context.height // self.vae_spatial_compression_ratio
+        latent_w = context.width // self.vae_spatial_compression_ratio
+        latent_f = (
+            context.num_frames - 1
+        ) // self.vae_temporal_compression_ratio + 1
+        video_seq_len = (latent_h // 2) * (latent_w // 2) * latent_f
+        sigmas_key = f"{context.num_inference_steps}_{video_seq_len}"
+        if sigmas_key in self._cached_sigmas:
+            sigmas = self._cached_sigmas[sigmas_key]
+        else:
+            sigmas = Tensor(
+                storage=Buffer.from_dlpack(context.sigmas).to(device)
+            )
+            self._cached_sigmas[sigmas_key] = sigmas
+
+        return LTX2ModelInputs(
+            tokens=Tensor(
+                storage=Buffer.from_dlpack(context.tokens.array).to(
+                    self.text_encoder.devices[0]
+                )
+            ),
+            latents=Tensor(
+                storage=Buffer.from_dlpack(context.latents).to(device)
+            ),
+            audio_latents=Tensor(
+                storage=Buffer.from_dlpack(context.audio_latents).to(device)
+            ),
+            sigmas=sigmas,
+            guidance_scale=context.guidance_scale,
+            latent_h=latent_h,
+            latent_w=latent_w,
+            latent_f=latent_f,
+            video_seq_len=video_seq_len,
+            height=context.height,
+            width=context.width,
+            num_inference_steps=context.num_inference_steps,
+            num_visuals_per_prompt=context.num_visuals_per_prompt,
+        )
 
     def build_pack_latents(self) -> None:
         device = self.transformer.devices[0]
@@ -885,11 +989,10 @@ class LTX2Pipeline(DiffusionPipeline):
         Mirrors Flux2's _postprocess_latents: the compiled inner step of
         decode_video_latents.
         """
-        scaling_factor = getattr(self.vae.config, "scaling_factor", 1.0)
         c = latents_mean.shape[0]
         mean_r = F.reshape(latents_mean.cast(latents.dtype), (1, c, 1, 1, 1))
         std_r = F.reshape(latents_std.cast(latents.dtype), (1, c, 1, 1, 1))
-        return latents * std_r / scaling_factor + mean_r
+        return latents * std_r / self.vae.config.scaling_factor + mean_r
 
     def _postprocess_audio_latents(
         self,
@@ -1164,7 +1267,7 @@ class LTX2Pipeline(DiffusionPipeline):
             token_ids_np, mask, False
         )
         # Reduce [B, seq_len] bool mask → [B] integer counts, matching
-        sequence_lengths = extra_params.get("ltx2_valid_length")[-1]
+        sequence_lengths = extra_params.get("valid_length")[-1]
         prompt_valid_length = (
             Tensor.from_dlpack(
                 sequence_lengths,
@@ -1182,7 +1285,7 @@ class LTX2Pipeline(DiffusionPipeline):
                 if negative_ids_np.ndim == 1:
                     negative_ids_np = np.expand_dims(negative_ids_np, axis=0)
                 mask_neg_np: np.ndarray | None = extra_params.get(
-                    "ltx2_attn_mask_neg"
+                    "attn_mask_neg"
                 )
                 if mask_neg_np is None:
                     mask_neg_np = np.ones_like(negative_ids_np, dtype=np.bool_)
@@ -1193,9 +1296,7 @@ class LTX2Pipeline(DiffusionPipeline):
                 negative_hidden_states = self._encode_tokens(
                     negative_ids_np, mask_neg
                 )
-                negative_sequence_lengths = extra_params.get(
-                    "ltx2_valid_length"
-                )[0]
+                negative_sequence_lengths = extra_params.get("valid_length")[0]
                 negative_prompt_valid_length = (
                     Tensor.from_dlpack(
                         negative_sequence_lengths,
@@ -1246,11 +1347,11 @@ class LTX2Pipeline(DiffusionPipeline):
 
         if audio_latents_np is None:
             raise ValueError(
-                "ltx2_audio_latents is missing from extra_params; "
-                "ensure the tokenizer sets 'ltx2_audio_latents' for LTX-2."
+                "audio_latents is missing from extra_params; "
+                "ensure the tokenizer sets 'audio_latents' for LTX-2."
             )
         if audio_latents_np.ndim != 4:
-            raise ValueError("ltx2_audio_latents must have shape [B, C, L, M]")
+            raise ValueError("audio_latents must have shape [B, C, L, M]")
         (
             batch_size_audio,
             _audio_channels,
@@ -1261,9 +1362,6 @@ class LTX2Pipeline(DiffusionPipeline):
             raise ValueError(
                 "Mismatch between video and audio batch sizes in LTX2 latents"
             )
-        if "ltx2_audio_num_frames" in extra_params:
-            audio_num_frames = int(extra_params["ltx2_audio_num_frames"])
-            latent_mel_bins = int(extra_params["ltx2_latent_mel_bins"])
         audio_latents_arr = audio_latents_np.astype(np.float32)
 
         audio_latents = Tensor.from_dlpack(audio_latents_arr).to(device)

@@ -230,13 +230,11 @@ class PixelGenerationTokenizer(
             ]
             self._patch_size = transformer_config["patch_size"]
             self._patch_size_t = transformer_config["patch_size_t"]
-            self._audio_sampling_rate = transformer_config[
-                "audio_sampling_rate"
-            ]
-            self._audio_hop_length = transformer_config["audio_hop_length"]
             audio_vae_config = components.get("audio_vae", {}).get(
                 "config_dict", {}
             )
+            self._audio_sampling_rate = audio_vae_config["sample_rate"]
+            self._audio_hop_length = audio_vae_config["mel_hop_length"]
             self._mel_bins = audio_vae_config["mel_bins"]
             # LATENT_DOWNSAMPLE_FACTOR = 4
             self._mel_compression_ratio = 4
@@ -1060,20 +1058,16 @@ class PixelGenerationTokenizer(
 
         extra_params: dict[str, npt.NDArray[Any]] = {}
         if self._pipeline_class_name == PipelineClassName.LTX2:
-            frame_rate = getattr(visual_options, "frames_per_second", 24.0)
-            num_frames = getattr(visual_options, "num_frames", 1)
-
             latent_mel_bins = self._mel_bins // self._mel_compression_ratio
-            duration_s = float(num_frames) / float(frame_rate)
+            duration_s = (
+                visual_options.num_frames / visual_options.frames_per_second
+            )
             audio_latents_per_second = (
                 self._audio_sampling_rate
-                / float(self._audio_hop_length)
+                / self._audio_hop_length
                 / float(self._mel_compression_ratio)
             )
             audio_num_frames = round(duration_s * audio_latents_per_second)
-            if audio_num_frames <= 0:
-                audio_num_frames = 1
-
             audio_shape = (
                 visual_options.num_visuals,
                 8,
@@ -1081,79 +1075,41 @@ class PixelGenerationTokenizer(
                 latent_mel_bins,
             )
             audio_latents = self._randn_tensor(audio_shape, request.body.seed)
-            extra_params["ltx2_audio_latents"] = audio_latents
-
-            # Pre-compute positional embedding coordinates on CPU so the
-            # pipeline doesn't need to run tensor ops at inference time.
-            # These are deterministic functions of the resolution/duration
-            # and can be computed once here, avoiding repeated compilation.
-            # Store scalar latent dimensions so the pipeline can skip
-            # recomputing them from scratch.
+            extra_params["audio_latents"] = audio_latents
             latent_num_frames = (
-                num_frames - 1
+                visual_options.num_frames - 1
             ) // self._vae_temporal_compression_ratio + 1
-            extra_params["ltx2_latent_num_frames"] = np.array(
-                latent_num_frames, dtype=np.int64
+            extra_params["latent_mel_bins"] = np.array(
+                latent_mel_bins, dtype=np.int64
             )
-            extra_params["ltx2_latent_height"] = np.array(
-                latent_height, dtype=np.int64
-            )
-            extra_params["ltx2_latent_width"] = np.array(
-                latent_width, dtype=np.int64
-            )
-            extra_params["ltx2_audio_num_frames"] = np.array(
-                audio_num_frames, dtype=np.int64
-            )
-            extra_params["mel_bins"] = np.array(latent_mel_bins, dtype=np.int64)
 
-            # Pre-compute positional embedding coordinates on CPU so the
-            # pipeline doesn't need to run tensor ops at inference time.
-            # These are deterministic functions of the resolution/duration
-            # and can be computed once here, avoiding repeated compilation.
-
-            video_coords = self._prepare_ltx2_video_coords(
+            video_coords = self._prepare_video_coords(
                 visual_options.num_visuals,
                 latent_num_frames,
                 latent_height,
                 latent_width,
-                float(frame_rate),
+                visual_options.frames_per_second,
             )
-            audio_coords = self._prepare_ltx2_audio_coords(
+            audio_coords = self._prepare_audio_coords(
                 visual_options.num_visuals,
                 audio_num_frames,
             )
 
-            # Pre-double for CFG on CPU (guidance_scale is already known here),
-            # avoiding an eager F.concat tensor compilation in the pipeline.
-            if do_true_cfg:
-                video_coords = np.concatenate(
-                    [video_coords, video_coords], axis=0
-                )
-                audio_coords = np.concatenate(
-                    [audio_coords, audio_coords], axis=0
-                )
+            if visual_options.guidance_scale > 1.0:
+                video_coords = np.concatenate([video_coords, video_coords])
+                audio_coords = np.concatenate([audio_coords, audio_coords])
             extra_params["video_coords"] = video_coords
             extra_params["audio_coords"] = audio_coords
 
-            # Number of real (non-padding) text tokens per batch item (uint32).
-            # Pre-doubled for CFG here on CPU, mirroring the coords treatment
-            # above, so the pipeline can wrap it in a Tensor without any
-            # further mask arithmetic.
-            valid_length_np = np.atleast_2d(
-                np.array(attn_mask.sum(axis=-1), dtype=np.uint32)
+            valid_length = np.atleast_2d(
+                np.array(attn_mask.sum(axis=-1), dtype=np.int32)
             )
-
-            if do_true_cfg:
-                extra_params["mask_neg"] = attn_mask_neg
-                valid_length_neg_np = np.atleast_2d(
-                    np.array(attn_mask_neg.sum(axis=-1), dtype=np.uint32)
+            if visual_options.guidance_scale > 1.0:
+                valid_length_neg = np.atleast_2d(
+                    np.array(attn_mask_neg.sum(axis=-1), dtype=np.int32)
                 )
-                valid_length_np = np.concatenate(
-                    [valid_length_neg_np, valid_length_np], axis=0
-                )
-            extra_params["valid_length"] = valid_length_np
-            extra_params["num_frames"] = visual_options.num_frames
-            extra_params["frame_rate"] = visual_options.frames_per_second
+                valid_length = np.concatenate([valid_length_neg, valid_length])
+            extra_params["valid_length"] = valid_length
 
         # 5. Build the context
         context = PixelContext(
@@ -1172,6 +1128,8 @@ class PixelGenerationTokenizer(
             num_inference_steps=visual_options.steps,
             guidance_scale=visual_options.guidance_scale,
             num_visuals_per_prompt=visual_options.num_visuals,
+            num_frames=visual_options.num_frames,
+            frame_rate=visual_options.frames_per_second,
             true_cfg_scale=visual_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
