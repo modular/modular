@@ -19,6 +19,7 @@ from queue import Queue
 from typing import Any, Literal, cast
 
 import numpy as np
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -83,26 +84,34 @@ class Flux2KleinPipeline(Flux2Pipeline):
 
     def prepare_prompt_embeddings(
         self,
-        tokens: TokenBuffer,
+        tokens: Tensor | TokenBuffer,
         num_images_per_prompt: int = 1,
     ) -> tuple[Tensor, Tensor]:
-        token_ids = np.asarray(tokens.array, dtype=np.int64)
-        if token_ids.ndim != 1:
-            raise ValueError(
-                f"Flux2Klein expects 1D tokens, got shape {token_ids.shape}."
+        if isinstance(tokens, Tensor):
+            text_input_ids = tokens.to(self.text_encoder.devices[0]).cast(
+                DType.int64
             )
-
-        text_input_ids = Tensor.constant(
-            token_ids,
-            dtype=DType.int64,
-            device=self.text_encoder.devices[0],
-        )
+        else:
+            token_ids = np.asarray(tokens.array, dtype=np.int64)
+            if token_ids.ndim != 1:
+                raise ValueError(
+                    f"Flux2Klein expects 1D tokens, got shape {token_ids.shape}."
+                )
+            text_input_ids = Tensor.constant(
+                token_ids,
+                dtype=DType.int64,
+                device=self.text_encoder.devices[0],
+            )
+        if text_input_ids.rank == 1:
+            # Ensure (seq_len,) -> (1, seq_len) for batch
+            text_input_ids = F.unsqueeze(text_input_ids, axis=0)
         prompt_embeds = self.text_encoder(text_input_ids)
         if prompt_embeds.rank == 2:
             prompt_embeds = F.unsqueeze(prompt_embeds, axis=0)
         elif prompt_embeds.rank != 3:
             raise ValueError(
-                f"Unexpected prompt_embeds rank={prompt_embeds.rank}; expected 2 or 3."
+                f"Unexpected prompt_embeds rank={prompt_embeds.rank}; "
+                "expected 2 or 3."
             )
 
         prompt_embeds = prompt_embeds.to(self.transformer.devices[0]).cast(
@@ -122,7 +131,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
         if text_ids_key in self._cached_text_ids:
             text_ids = self._cached_text_ids[text_ids_key]
         else:
-            text_ids = self._prepare_text_ids(
+            text_ids = Flux2Pipeline._prepare_text_ids(
                 batch_size=batch_size_final,
                 seq_len=seq_len,
                 device=self.text_encoder.devices[0],
@@ -172,7 +181,10 @@ class Flux2KleinPipeline(Flux2Pipeline):
         image_latents = None
         image_latent_ids = None
         if model_inputs.input_image is not None:
-            image_tensor = self._pil_image_to_tensor(model_inputs.input_image)
+            image_array = np.array(model_inputs.input_image)
+            if image_array.ndim == 2:
+                image_array = np.stack([image_array] * 3, axis=-1)
+            image_tensor = self._numpy_image_to_tensor(image_array)
             image_latents, image_latent_ids = self.prepare_image_latents(
                 images=[image_tensor],
                 batch_size=batch_size,
@@ -180,11 +192,15 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 dtype=self.vae.config.dtype,
             )
 
-        latents, latent_image_ids = self.preprocess_latents(
-            model_inputs.latents, model_inputs.latent_image_ids
-        )
-
         device = self.transformer.devices[0]
+        latents_tensor = Tensor.from_dlpack(
+            np.ascontiguousarray(model_inputs.latents)
+        ).to(device)
+        latent_image_ids = Tensor.from_dlpack(
+            np.ascontiguousarray(model_inputs.latent_image_ids)
+        ).to(device)
+        latents = self.preprocess_latents(latents_tensor)
+
         guidance_key = f"zero_{batch_size}"
         if guidance_key in self._cached_guidance:
             guidance = self._cached_guidance[guidance_key]
@@ -263,28 +279,30 @@ class Flux2KleinPipeline(Flux2Pipeline):
             if callback_queue is not None:
                 if hasattr(device, "synchronize"):
                     device.synchronize()
-                callback_queue.put_nowait(
-                    cast(
-                        np.ndarray,
-                        self.decode_latents(
-                            latents,
-                            model_inputs.height,
-                            model_inputs.width,
-                            output_type=output_type,
-                        ),
+                latent_h = model_inputs.height // (self.vae_scale_factor * 2)
+                latent_w = model_inputs.width // (self.vae_scale_factor * 2)
+                if output_type == "latent":
+                    callback_queue.put_nowait(
+                        cast(np.ndarray, np.from_dlpack(latents.to(CPU())))
                     )
-                )
+                else:
+                    callback_queue.put_nowait(
+                        cast(
+                            np.ndarray,
+                            self.decode_latents(latents, latent_h, latent_w),
+                        )
+                    )
 
+        latent_h = model_inputs.height // (self.vae_scale_factor * 2)
+        latent_w = model_inputs.width // (self.vae_scale_factor * 2)
         image_list = []
         for b in range(batch_size):
             latents_b = latents[b : b + 1]
-            image_list.append(
-                self.decode_latents(
-                    latents_b,
-                    model_inputs.height,
-                    model_inputs.width,
-                    output_type=output_type,
-                )
-            )
+            if output_type == "latent":
+                img = np.from_dlpack(latents_b.to(CPU()))
+                image_list.append(img[0] if img.ndim > 3 else img)
+            else:
+                decoded = self.decode_latents(latents_b, latent_h, latent_w)
+                image_list.append(decoded[0] if decoded.ndim == 4 else decoded)
 
         return Flux2KleinPipelineOutput(images=image_list)  # type: ignore[arg-type]
