@@ -2693,9 +2693,22 @@ fn _unsafe_strlen_impl(ptr: UnsafePointer[mut=False, Byte], max: UInt) -> UInt:
     # UInt.MAX is the sentinel for "no bound" (see _unsafe_strlen docstring).
     if max == UInt.MAX:
         # Unbounded scan: the string is guaranteed to be null-terminated, so
-        # a null byte will always be found. Load SIMD-width blocks until one
-        # containing a null is found.
-        var i = 0
+        # a null byte will always be found.
+        #
+        # Scalar prelude: advance byte-by-byte until the pointer is
+        # SIMD-width-aligned. An unaligned SIMD load can straddle a memory
+        # page boundary and fault if the adjacent page is unmapped.
+        var offset_in_first_block = Int(ptr) & (bool_mask_width - 1)
+        var scalar_end = (bool_mask_width - offset_in_first_block) & (
+            bool_mask_width - 1
+        )
+        for j in range(scalar_end):
+            if not ptr[j]:
+                return UInt(j)
+
+        # ptr + scalar_end is now SIMD-width-aligned; loads are page-safe
+        # because page size is always >= SIMD width.
+        var i = scalar_end
         while True:
             var block = ptr.load[width=bool_mask_width](i)
             var bool_mask = block.eq(zero)
