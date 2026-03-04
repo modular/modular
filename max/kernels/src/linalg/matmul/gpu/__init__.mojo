@@ -496,13 +496,13 @@ fn _matmul_gpu[
     comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
     comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
-    # tcgen05 kernels are only valid on data-center Blackwell (sm_100a/sm_101a).
-    # Consumer Blackwell (sm_120) must not dispatch here.
+    # Keep post-H100 NVIDIA GPUs on the SM100 structured path by default,
+    # but explicitly exclude consumer Blackwell sm_120 where tcgen05 is
+    # not available.
     comptime use_sm100_structured_kernels = (
         has_nvidia_gpu_accelerator()
-        and (
-            "sm_100a" in _accelerator_arch() or "sm_101a" in _accelerator_arch()
-        )
+        and ctx.default_device_info.compute > H100.compute
+        and "sm_120" not in _accelerator_arch()
     )
     comptime if use_sm100_structured_kernels:
         return matmul_dispatch_sm100[
