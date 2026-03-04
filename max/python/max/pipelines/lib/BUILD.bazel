@@ -20,6 +20,8 @@ modular_py_library(
         # Conditional imports at runtime in speculative_decoding/base.py, architectures already depends on lib
         "max.pipelines.architectures.deepseekV3.model.DeepseekV3Model",
         "max.pipelines.architectures.deepseekV3_nextn.model.DeepseekV3NextNModel",
+        # Cyclic import between lib and architectures
+        "max.pipelines.architectures.flux2.system_messages.SYSTEM_MESSAGE",
     ],
     deps = [
         "//max/python/max:_core",

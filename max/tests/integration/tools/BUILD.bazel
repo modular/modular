@@ -79,6 +79,7 @@ modular_py_library(
     ],
     imports = ["."],
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
@@ -113,10 +114,13 @@ modular_py_library(
     imports = ["."],
     deps = [
         ":create_pipelines",
+        "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:evaluate_embeddings",
+        "//max/tests/integration/test_common:torch_utils",
         "//max/tests/integration/test_common:vllm_utils",
         requirement("huggingface-hub"),
         requirement("requests"),
