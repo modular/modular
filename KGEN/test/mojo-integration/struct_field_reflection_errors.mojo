@@ -73,7 +73,7 @@ fn test_offset_negative_index():
     comptime if get_defined_bool["TEST_OFFSET_NEGATIVE_INDEX", False]():
         # CHECK-OFFSET-NEGATIVE: field index -1 is out of bounds for struct with 2 fields
         comptime assert (
-            offset_of[TestStruct, index= -1]() == 0
+            offset_of[TestStruct, index=-1]() == 0
         ), "should not reach here"
 
 

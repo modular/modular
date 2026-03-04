@@ -53,7 +53,7 @@ fn test2[pred: StaticString](x: Int, y: Int) -> Bool:
             `#index<cmp_predicate `, +to_string[pred](), `>`
         ]
 
-    var z = __mlir_op.`index.cmp`[pred = get_pred[pred]()](x, y)
+    var z = __mlir_op.`index.cmp`[pred=get_pred[pred]()](x, y)
 
     return z
 
@@ -80,7 +80,7 @@ fn simd_to_kgen_struct[
     `)>`,
 ]:
     var llvmst = __mlir_op.`llvm.mlir.undef`[
-        _type = __mlir_type[
+        _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -94,7 +94,7 @@ fn simd_to_kgen_struct[
     ]()
 
     var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type[
+        _type=__mlir_type[
             `!kgen.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -110,7 +110,7 @@ fn simd_to_kgen_struct[
     comptime for i in range(n):
         var e = simd[i]
         st = __mlir_op.`kgen.struct.replace`[
-            _type = __mlir_type[
+            _type=__mlir_type[
                 `!kgen.struct<(`,
                 __mlir_type[
                     `!kgen.variadic_splat<`,
@@ -121,7 +121,7 @@ fn simd_to_kgen_struct[
                 ],
                 `)>`,
             ],
-            index = __mlir_attr[i._mlir_value, `:index`],
+            index=__mlir_attr[i._mlir_value, `:index`],
         ](e, st)
 
     return st
@@ -149,8 +149,8 @@ fn kgen_struct_to_simd_reverse[
 
     comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
-            _type = __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
-            index = __mlir_attr[i._mlir_value, `:index`],
+            _type=__mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
+            index=__mlir_attr[i._mlir_value, `:index`],
         ](st)
 
         simd[n - i - 1] = Scalar[dtype](mlir_value=e)

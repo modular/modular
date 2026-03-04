@@ -64,7 +64,7 @@ fn pop_cast_from_builtin_bool(
     x: __mlir_type.i1,
 ) -> __mlir_type.`!pop.scalar<bool>`:
     return __mlir_op.`pop.cast_from_builtin`[
-        _type = __mlir_type.`!pop.scalar<bool>`
+        _type=__mlir_type.`!pop.scalar<bool>`
     ](x)
 
 
@@ -94,7 +94,7 @@ struct UInt8T[x: __mlir_type.ui8](ImplicitlyCopyable):
 
 @always_inline("builtin")
 fn pop_cast_to_builtin_ui8(x: UInt8._mlir_type) -> __mlir_type.ui8:
-    return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](x)
+    return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.ui8](x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_ui8
@@ -108,7 +108,7 @@ fn fold_pop_cast_to_builtin_ui8() -> UInt8T[MLIR_UI8_139]:
 fn pop_cast_to_builtin_bool(
     x: __mlir_type.`!pop.scalar<bool>`,
 ) -> __mlir_type.i1:
-    return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i1](x)
+    return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i1](x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_bool
@@ -155,7 +155,7 @@ fn fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
 fn pop_cast(
     x: __mlir_type.`!pop.scalar<si8>`,
 ) -> __mlir_type.`!pop.scalar<ui8>`:
-    return __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<ui8>`](x)
+    return __mlir_op.`pop.cast`[_type=__mlir_type.`!pop.scalar<ui8>`](x)
 
 
 struct POPUInt8T[x: __mlir_type.`!pop.scalar<ui8>`](ImplicitlyCopyable):
@@ -197,9 +197,7 @@ comptime POP_UI8x4_N1 = __mlir_attr.`#pop.simd<255, 255, 255, 255> : !pop.simd<4
 fn pop_simd_splat(
     x: __mlir_type.`!pop.scalar<ui8>`,
 ) -> __mlir_type.`!pop.simd<4, ui8>`:
-    return __mlir_op.`pop.simd.splat`[_type = __mlir_type.`!pop.simd<4, ui8>`](
-        x
-    )
+    return __mlir_op.`pop.simd.splat`[_type=__mlir_type.`!pop.simd<4, ui8>`](x)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_splat
@@ -320,84 +318,84 @@ comptime POP_Boolx4_EQ_Fold = __mlir_attr.`#pop.simd<false, true, true, false> :
 fn pop_simd_cmp_eq(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred eq>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_eq(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred eq>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_ne(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_ne(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_ult(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred lt>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_slt(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred lt>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_ule(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred le>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_sle(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred le>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_ugt(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred gt>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_sgt(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred gt>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_uge(
     x: __mlir_type.`!pop.simd<4, ui8>`, y: __mlir_type.`!pop.simd<4, ui8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](x, y)
 
 
 @always_inline("builtin")
 fn pop_simd_cmp_sge(
     x: __mlir_type.`!pop.simd<4, si8>`, y: __mlir_type.`!pop.simd<4, si8>`
 ) -> __mlir_type.`!pop.simd<4, bool>`:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](x, y)
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](x, y)
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_simd_cmp
@@ -494,7 +492,7 @@ fn fold_pop_simd_cmp() -> POPBoolx4T[POP_Boolx4_EQ_Fold]:
 fn pop_unresolved_simd_cmp_sge[
     dt: DType, n: Int, m: Int
 ](x: SIMD[dt, n + m], y: SIMD[dt, n + m]) -> SIMD[DType.bool, n + m]._mlir_type:
-    return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
+    return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](
         x._mlir_value, y._mlir_value
     )
 
@@ -506,23 +504,23 @@ fn var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
         `#pop.int_literal_convert<`, value.value, `> : !pop.scalar<si32>`
     ]
     # Convert !pop.simd<si32> to !pop.simd<X>
-    var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si32)
+    var s = __mlir_op.`pop.cast`[_type=Scalar[dtype]._mlir_type](si32)
     # Convert !pop.simd<X> to !pop.simd<ui8>
-    var pop_ui8 = __mlir_op.`pop.cast`[_type = Scalar[DType.uint8]._mlir_type](
+    var pop_ui8 = __mlir_op.`pop.cast`[_type=Scalar[DType.uint8]._mlir_type](
         si32
     )
     # Convert !pop.simd<ui8> to ui8
-    var ui8 = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](pop_ui8)
+    var ui8 = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.ui8](pop_ui8)
     # Convert ui8 to dtype
     var dt = __mlir_op.`pop.dtype.from_ui8`(ui8)
     # Convert dtype to ui8
     var dt_ui8 = __mlir_op.`pop.dtype.to_ui8`(dt)
     # Convert the ui8 back to !pop.simd<ui8>
     var pop_ui8_2 = __mlir_op.`pop.cast_from_builtin`[
-        _type = Scalar[DType.uint8]._mlir_type
+        _type=Scalar[DType.uint8]._mlir_type
     ](dt_ui8)
     # Convert !pop.simd<ui8> back to !pop.simd<X>
-    var t = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](pop_ui8_2)
+    var t = __mlir_op.`pop.cast`[_type=Scalar[dtype]._mlir_type](pop_ui8_2)
     # Combine the two
     var u = __mlir_op.`pop.simd.xor`(s, t)
     return u

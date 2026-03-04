@@ -15,7 +15,7 @@ fn memcpy(
 ):
     var byte_count = count * size_of[Int]()
 
-    if __mlir_op.`kgen.is_compile_time`[_type = __mlir_type.i1]():
+    if __mlir_op.`kgen.is_compile_time`[_type=__mlir_type.i1]():
         llvm_intrinsic["llvm.memcpy", NoneType](
             dst.bitcast[Byte](), src.bitcast[Byte](), byte_count
         )

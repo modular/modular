@@ -1,0 +1,381 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# Tests for consistent spacing of keyword parameter bindings in square brackets,
+# and test for similar patterns in function calls etc to ensure no regressions.
+
+from tests.util import assert_mojo_format
+
+
+def test_call_params_literals():
+    """Spaces around = with literal values should be removed."""
+    source = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a = 1, b = 0]()\n"
+    )
+    expected = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a=1, b=0]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_function():
+    """Spaces around = in parameter bindings should be removed."""
+    source = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a = g(), b = 0]()\n"
+    )
+    expected = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a=g(), b=0]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_two_functions():
+    """Spaces around = in parameter bindings should be removed."""
+    source = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a = g(), b = g()]()\n"
+    )
+    expected = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a=g(), b=g()]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_type_params_literals():
+    """Spaces around = in type parameter bindings should be removed."""
+    source = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x: Foo[a = 1, b = 0]\n"
+    )
+    expected = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x: Foo[a=1, b=0]\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_type_params_function():
+    """Spaces around = in type parameter bindings should be removed."""
+    source = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x: Foo[a = g(), b = 0]\n"
+    )
+    expected = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x: Foo[a=g(), b=0]\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_alias_params_literals():
+    """Spaces around = in alias parameter bindings should be removed."""
+    source = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "comptime MyFoo = Foo[a = 1, b = 0]\n"
+    )
+    expected = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "comptime MyFoo = Foo[a=1, b=0]\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_alias_params_function():
+    """Spaces around = in alias parameter bindings should be removed."""
+    source = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "comptime MyFoo = Foo[a = g(), b = 0]\n"
+    )
+    expected = (
+        "struct Foo[a: Int, b: Int]:\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "comptime MyFoo = Foo[a=g(), b=0]\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_attribute_access():
+    """Spaces around = should be removed when value is an attribute access."""
+    source = (
+        "fn f[a: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x = Foo()\n"
+        "    f[a = x.y]()\n"
+        "    f[a = x._y]()\n"
+    )
+    expected = (
+        "fn f[a: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x = Foo()\n"
+        "    f[a=x.y]()\n"
+        "    f[a=x._y]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_method_call():
+    """Spaces around = should be removed when value is a method call."""
+    source = (
+        "fn f[a: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x = Foo()\n"
+        "    f[a = x.method()]()\n"
+    )
+    expected = (
+        "fn f[a: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x = Foo()\n"
+        "    f[a=x.method()]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_arithmetic():
+    """Spaces around = should be removed when value is arithmetic."""
+    source = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a = 1 + 2, b = 3 * 4]()\n"
+    )
+    expected = (
+        "fn f[a: Int, b: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a=1 + 2, b=3 * 4]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_negation():
+    """Spaces around = should be removed when value is a negation."""
+    source = (
+        "fn f[a: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a = -1]()\n"
+    )
+    expected = (
+        "fn f[a: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[a=-1]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_parameterized_type():
+    """Spaces around = should be removed when value is a parameterized type."""
+    source = (
+        "fn f[T: AnyType]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[T = List[Int]]()\n"
+    )
+    expected = (
+        "fn f[T: AnyType]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f[T=List[Int]]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_call_params_mixed_complex_and_simple():
+    """Spaces around = should be consistently removed across mixed values."""
+    source = (
+        "fn f[a: Int, b: Int, c: Int, d: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x = Foo()\n"
+        "    f[a = g(), b = x.y, c = 1, d = 1 + 2]()\n"
+    )
+    expected = (
+        "fn f[a: Int, b: Int, c: Int, d: Int]():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    var x = Foo()\n"
+        "    f[a=g(), b=x.y, c=1, d=1 + 2]()\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_mixed_param_binding_and_slice():
+    """Parameter bindings get no spaces while slices in the same list keep them."""
+    source = (
+        "struct Foo:\n"
+        "    def __getitem__(self, a: Int, b: Slice):\n"
+        "        pass\n"
+        "\n"
+        "\n"
+        "def main():\n"
+        "    var x = Foo()\n"
+        "    x[a = 1, b = 0:5]\n"
+    )
+    expected = (
+        "struct Foo:\n"
+        "    def __getitem__(self, a: Int, b: Slice):\n"
+        "        pass\n"
+        "\n"
+        "\n"
+        "def main():\n"
+        "    var x = Foo()\n"
+        "    x[a=1, b=0:5]\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_func_args():
+    """Spaces around = in function argument bindings should be removed."""
+    source = (
+        "fn f(a: Int, b: Int):\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f(a = g(), b = 0)\n"
+    )
+    expected = (
+        "fn f(a: Int, b: Int):\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "fn g() -> Int:\n"
+        "    return 42\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "    f(a=g(), b=0)\n"
+    )
+    assert_mojo_format(source, expected)

@@ -23,8 +23,8 @@ struct MixedIntFloat8(TrivialRegisterPassable):
 fn test_variadic_mixed_if_8byte():
     var s = MixedIntFloat8(10, 10.5)
     var result = __mlir_op.`pop.external_call`[
-        func = "c_func_variadic_mixed_if_8byte".value,
-        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        func="c_func_variadic_mixed_if_8byte".value,
+        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
         _type=MixedIntFloat8,
     ](Int(999), s)
     print("variadic_mixed_if_8byte:", result.i, result.f)
@@ -41,8 +41,8 @@ struct MixedDoubleInt16(TrivialRegisterPassable):
 fn test_variadic_mixed_di_16byte():
     var s = MixedDoubleInt16(100.5, 10)
     var result = __mlir_op.`pop.external_call`[
-        func = "c_func_variadic_mixed_di_16byte".value,
-        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        func="c_func_variadic_mixed_di_16byte".value,
+        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
         _type=MixedDoubleInt16,
     ](Int(999), s)
     print("variadic_mixed_di_16byte:", result.d, result.i)

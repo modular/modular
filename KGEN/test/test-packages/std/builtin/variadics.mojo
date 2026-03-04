@@ -101,7 +101,7 @@ comptime MapVariadicAndIdxToType[
     Mapper: MapVariadicIdxToTypeGeneratorTypeGenerator[From, To],
 ] = ReduceVariadicAndIdxToVariadic[
     Variadic=Variadic,
-    Reducer = WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper],
+    Reducer=WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper],
 ]
 
 comptime MapTypeToType[
@@ -112,7 +112,7 @@ comptime MapTypeToType[
     Variadic: __mlir_type[`!kgen.variadic<`, From, `>`],
     Mapper: MapTypeToTypeGeneratorTypeGenerator[From, To],
 ] = MapVariadicAndIdxToType[
-    To=To, Variadic=Variadic, Mapper = TypeToTypeWrap[From, To, Mapper]
+    To=To, Variadic=Variadic, Mapper=TypeToTypeWrap[From, To, Mapper]
 ]
 
 comptime VariadicZip[T: type_of(AnyType), //, *Ts: VariadicOf[T]] = __mlir_attr[

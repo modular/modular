@@ -19,8 +19,8 @@ fn main():
     # C function: sum = sum_of(val + count) for each val, returns sum + count
     # sum = (1+2+...+12) = 78, plus count (12) = 90
     var result = __mlir_op.`pop.external_call`[
-        func = "c_func_variadic_many_floats".value,
-        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
+        func="c_func_variadic_many_floats".value,
+        variadicType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
         _type=Float64,
     ](
         Int(12),

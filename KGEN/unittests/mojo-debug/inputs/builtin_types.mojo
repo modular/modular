@@ -67,9 +67,7 @@ comptime AFloatOrBoolOrSimd = __mlir_type[
 fn main():
     var none = None
 
-    var a_var_index = __mlir_op.`index.constant`[
-        value = __mlir_attr.`48:index`
-    ]()
+    var a_var_index = __mlir_op.`index.constant`[value=__mlir_attr.`48:index`]()
 
     var a_register_passable_struct = ARegisterPassableStruct()
 
@@ -106,7 +104,7 @@ fn main():
 
     var a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
         _type=AFloatOrBoolOrSimd,
-        index = Int(2)._mlir_value,
+        index=Int(2)._mlir_value,
     ](c_simd)
 
     print("breakpoint")  # breakpoint
