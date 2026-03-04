@@ -127,7 +127,7 @@ fn spatial_merge_kernel[
         input_tiled_layout,
     )
 
-    # Create LayoutTensor for output: [T, H_out, W_out, C_out].
+    # Create TileTensor for output: [T, H_out, W_out, C_out].
     # Note: in reality we want 2D flattened to [T * H_out * W_out, C_out], but
     # we use 4D for semantic clarity - internally in memory it is handled correctly.
     var output_runtime_layout = row_major(

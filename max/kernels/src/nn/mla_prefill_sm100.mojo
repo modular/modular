@@ -20,7 +20,6 @@ from nn.mha_utils import (
 from nn.mha_mask import MHAMask
 from std.gpu.host import DeviceContext
 from layout.layout_tensor import LayoutTensor
-from layout.layout import Layout
 from std.gpu.memory import AddressSpace
 from .mla_prefill_sm100_generic import mla_sm100_prefill_generic
 from .mla_prefill_sm100_blockscale import mla_sm100_prefill_blockscale

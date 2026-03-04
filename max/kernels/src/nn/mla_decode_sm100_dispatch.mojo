@@ -17,7 +17,6 @@ from std.sys import size_of
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
-from layout import UNKNOWN_VALUE
 from layout.layout import (
     Layout,
 )
