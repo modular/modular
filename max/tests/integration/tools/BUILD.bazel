@@ -15,6 +15,7 @@ modular_py_library(
         "hf_config_overrides.py",
     ],
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",

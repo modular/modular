@@ -23,12 +23,12 @@ from typing import TYPE_CHECKING
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Embedding, Linear, Module
+from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.experimental.nn.norm import RMSNorm
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.nn.module_v3 import Embedding, Linear, Module
-from max.nn.module_v3.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.module_v3.norm import RMSNorm
-from max.nn.module_v3.sequential import ModuleList
 
 from .attention import EncoderAttention
 

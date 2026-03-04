@@ -20,6 +20,13 @@ from collections.abc import Callable
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.common_layers.attention import AttentionWithRope
+from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.embedding import Embedding
+from max.experimental.nn.linear import Linear
+from max.experimental.nn.norm import LayerNorm, RMSNorm
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.kv_cache import (
@@ -27,13 +34,6 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     unflatten_ragged_attention_inputs,
 )
-from max.nn.module_v3 import Module
-from max.nn.module_v3.common_layers.attention import AttentionWithRope
-from max.nn.module_v3.common_layers.mlp import MLP
-from max.nn.module_v3.embedding import Embedding
-from max.nn.module_v3.linear import Linear
-from max.nn.module_v3.norm import LayerNorm, RMSNorm
-from max.nn.module_v3.sequential import ModuleList
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 
 from .layers.mlp import LlamaStackedMLP

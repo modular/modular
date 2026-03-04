@@ -20,9 +20,9 @@ previously existed between _postprocess_latents and vae.decode().
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn.module_v3 import Module
 
 from .vae import Decoder
 

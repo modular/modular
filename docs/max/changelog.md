@@ -118,6 +118,19 @@ what we publish.
   `max.experimental.tensor`, `max.experimental.functional`,
   `max.experimental.random`). Update imports accordingly.
 
+- **Experimental APIs moved under `max.experimental`**. Two additional packages
+  have moved under the `max.experimental` namespace to co-locate all
+  experimental APIs:
+
+  - `max.torch` is now `max.experimental.torch`. Update imports from
+    `from max.torch import CustomOpLibrary, graph_op` to
+    `from max.experimental.torch import CustomOpLibrary, graph_op`.
+
+  - `max.nn.module_v3` is now `max.experimental.nn` (the `v3` suffix has been
+    dropped). Update imports from
+    `from max.nn.module_v3 import Module, Linear` to
+    `from max.experimental.nn import Module, Linear`.
+
 #### Mojo API {#26-2-max-mojo}
 
 #### Custom ops {#26-2-custom-ops}

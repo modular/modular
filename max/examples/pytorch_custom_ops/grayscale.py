@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from max.torch import CustomOpLibrary
+from max.experimental.torch import CustomOpLibrary
 from PIL import Image
 
 # Load the Mojo custom operations from the `operations` directory.

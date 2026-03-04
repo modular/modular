@@ -16,11 +16,11 @@ from collections.abc import Callable
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.common_layers.activation import (
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.common_layers.activation import (
     activation_function_from_name,
 )
+from max.experimental.tensor import Tensor
 
 
 def get_timestep_embedding(

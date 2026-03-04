@@ -13,4 +13,4 @@ layer's output to the next.
 
 .. note::
    ``ModuleList`` is re-exported here for backward compatibility.
-   Its canonical location is :py:class:`max.nn.module_v3.sequential.ModuleList`.
+   Its canonical location is :py:class:`max.experimental.nn.sequential.ModuleList`.

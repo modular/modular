@@ -13,11 +13,11 @@
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import LayerNorm
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.norm import LayerNorm
-from max.nn.module_v3.sequential import ModuleList
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (

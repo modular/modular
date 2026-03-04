@@ -13,9 +13,9 @@
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Conv2d, GroupNorm, Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
-from max.nn.module_v3 import Conv2d, GroupNorm, Module
 
 
 class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):

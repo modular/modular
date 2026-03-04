@@ -16,11 +16,10 @@ Graph-based API:
     >>> from max.nn import Linear, AttentionWithRope
     >>> from max.nn.kv_cache import KVCacheParams
 
-Eager tensor API (module_v3):
-    >>> from max.nn.module_v3 import Module, Linear, Embedding
+Eager tensor API:
+    >>> from max.experimental.nn import Module, Linear, Embedding
 """
 
-from . import module_v3
 from .attention import (
     AttentionWithRope,
     DistributedAttentionImpl,
@@ -154,7 +153,6 @@ __all__ = [
     "YarnScalingParams",
     "build_max_lengths_tensor",
     "clamp",
-    "module_v3",
     "split_batch",
     "split_batch_replicated",
 ]

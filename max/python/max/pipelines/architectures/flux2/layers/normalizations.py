@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import LayerNorm, RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.norm import LayerNorm, RMSNorm
 
 
 class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):

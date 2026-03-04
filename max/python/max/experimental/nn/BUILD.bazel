@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "nn",
+    srcs = glob(["**/*.py"]),
+    # numpy, engine, and support are used transitively through max.nn,
+    # not directly imported in experimental/nn files.
+    ignore_extra_deps = [
+        requirement("numpy"),
+        "//max/python/max/engine",
+        "//max/python/max/support",
+    ],
+    deps = [
+        requirement("numpy"),
+        requirement("rich"),
+        requirement("typing-extensions"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/support",
+    ],
+)

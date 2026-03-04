@@ -18,10 +18,10 @@ from typing import Any
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn.module_v3 import Module
 from max.pipelines.lib import SupportedEncoding
 
 from .model import BaseAutoencoderModel

@@ -13,15 +13,15 @@
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module, module_dataclass
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
-from max.nn.module_v3 import Linear, Module, module_dataclass
-from max.nn.module_v3.sequential import ModuleList
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 
-from max.nn.module_v3.norm import RMSNorm
+from max.experimental.nn.norm import RMSNorm
 
 from .embeddings import apply_rotary_emb, get_1d_rotary_pos_embed
 
