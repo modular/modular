@@ -10,7 +10,7 @@
 # Test that the default Writable implementation produces a clear error message
 # when a field does not implement Writable.
 
-from std.sys import env_get_int
+from std.sys import get_defined_int
 
 
 @fieldwise_init
@@ -27,9 +27,9 @@ fn main():
     var value = HasBadField(NotWritable(1))
     var string = String()
 
-    comptime if env_get_int["test"]() == 1:
+    comptime if get_defined_int["test"]() == 1:
         # CHECK_1: constraint failed: Could not derive Writable for HasBadField
         value.write_to(string)
-    elif env_get_int["test"]() == 2:
+    elif get_defined_int["test"]() == 2:
         # CHECK_2: constraint failed: Could not derive Writable for HasBadField
         value.write_repr_to(string)

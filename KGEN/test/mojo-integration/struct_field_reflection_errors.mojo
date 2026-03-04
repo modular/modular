@@ -12,7 +12,7 @@
 # RUN: not kgen %s -elaborate -D TEST_OFFSET_OUT_OF_BOUNDS=1 2>&1 | FileCheck %s --check-prefix=CHECK-OFFSET-INDEX
 # RUN: not kgen %s -elaborate -D TEST_OFFSET_NEGATIVE_INDEX=1 2>&1 | FileCheck %s --check-prefix=CHECK-OFFSET-NEGATIVE
 
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 
 from std.reflection import (
     struct_field_index_by_name,
@@ -30,7 +30,7 @@ struct TestStruct:
 # Test that struct_field_index_by_name produces an error for non-existent field.
 # Use `comptime assert` to force compile-time evaluation.
 fn test_nonexistent_field_index():
-    comptime if env_get_bool["TEST_NONEXISTENT_INDEX", False]():
+    comptime if get_defined_bool["TEST_NONEXISTENT_INDEX", False]():
         # CHECK-INDEX: has no field named 'nonexistent'
         comptime assert (
             struct_field_index_by_name[TestStruct, "nonexistent"]() == 0
@@ -39,7 +39,7 @@ fn test_nonexistent_field_index():
 
 # Test that struct_field_type_by_name produces an error for non-existent field.
 fn test_nonexistent_field_type():
-    comptime if env_get_bool["TEST_NONEXISTENT_TYPE", False]():
+    comptime if get_defined_bool["TEST_NONEXISTENT_TYPE", False]():
         # CHECK-TYPE: has no field named 'missing_field'
         comptime field_type = struct_field_type_by_name[
             TestStruct, "missing_field"
@@ -52,7 +52,7 @@ fn test_nonexistent_field_type():
 
 # Test that offset_of[name=] produces an error for non-existent field.
 fn test_offset_nonexistent_field():
-    comptime if env_get_bool["TEST_OFFSET_NONEXISTENT_FIELD", False]():
+    comptime if get_defined_bool["TEST_OFFSET_NONEXISTENT_FIELD", False]():
         # CHECK-OFFSET-NAME: has no field named 'does_not_exist'
         comptime assert (
             offset_of[TestStruct, name="does_not_exist"]() == 0
@@ -61,7 +61,7 @@ fn test_offset_nonexistent_field():
 
 # Test that offset_of[index=] produces an error for out-of-bounds index.
 fn test_offset_out_of_bounds():
-    comptime if env_get_bool["TEST_OFFSET_OUT_OF_BOUNDS", False]():
+    comptime if get_defined_bool["TEST_OFFSET_OUT_OF_BOUNDS", False]():
         # CHECK-OFFSET-INDEX: field index 99 is out of bounds for struct with 2 fields
         comptime assert (
             offset_of[TestStruct, index=99]() == 0
@@ -70,7 +70,7 @@ fn test_offset_out_of_bounds():
 
 # Test that offset_of[index=] produces an error for negative index.
 fn test_offset_negative_index():
-    comptime if env_get_bool["TEST_OFFSET_NEGATIVE_INDEX", False]():
+    comptime if get_defined_bool["TEST_OFFSET_NEGATIVE_INDEX", False]():
         # CHECK-OFFSET-NEGATIVE: field index -1 is out of bounds for struct with 2 fields
         comptime assert (
             offset_of[TestStruct, index= -1]() == 0
