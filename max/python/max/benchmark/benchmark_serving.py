@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import copy
 import hashlib
 import json
 import logging
@@ -34,7 +33,7 @@ import warnings
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
 import numpy as np
@@ -93,6 +92,10 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.request import (
+    BaseRequestFuncInput,
+    BaseRequestFuncOutput,
+    PixelGenerationRequestFuncInput,
+    PixelGenerationRequestFuncOutput,
     ProgressBarRequestDriver,
     RequestCounter,
     RequestDriver,
@@ -117,7 +120,8 @@ logger = logging.getLogger("benchmark_serving")
 
 
 def compute_output_len(
-    tokenizer: PreTrainedTokenizerBase, output: RequestFuncOutput
+    tokenizer: PreTrainedTokenizerBase,
+    output: RequestFuncOutput,
 ) -> int:
     return len(
         tokenizer(
@@ -256,44 +260,50 @@ async def get_request(
         await asyncio.sleep(interval)
 
 
-def build_request_extra_body(
-    base_extra_body: dict[str, Any] | None,
+def build_single_turn_request_input(
+    *,
+    benchmark_task: BenchmarkTask,
     request: SampledRequest,
-) -> dict[str, Any]:
-    """Build request-scoped extra body by merging per-request pixel options."""
-    merged: dict[str, Any] = (
-        copy.deepcopy(base_extra_body) if base_extra_body else {}
-    )
-
-    if not isinstance(request, PixelGenerationSampledRequest):
-        return merged
-    if request.image_options is None:
-        return merged
-
-    provider_options = merged.get("provider_options")
-    if not isinstance(provider_options, dict):
-        provider_options = {}
-        merged["provider_options"] = provider_options
-
-    image_options = provider_options.get("image")
-    if not isinstance(image_options, dict):
-        image_options = {}
-        provider_options["image"] = image_options
-
-    if request.image_options.width is not None:
-        image_options["width"] = request.image_options.width
-    if request.image_options.height is not None:
-        image_options["height"] = request.image_options.height
-    if request.image_options.steps is not None:
-        image_options["steps"] = request.image_options.steps
-    if request.image_options.guidance_scale is not None:
-        image_options["guidance_scale"] = request.image_options.guidance_scale
-    if request.image_options.negative_prompt is not None:
-        image_options["negative_prompt"] = request.image_options.negative_prompt
-    if request.image_options.seed is not None:
-        merged["seed"] = request.image_options.seed
-
-    return merged
+    model_id: str,
+    lora_id: str | None,
+    api_url: str,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+    max_output_len: int | None,
+) -> BaseRequestFuncInput:
+    request_model_id = model_id if lora_id is None else lora_id
+    if benchmark_task == BenchmarkTask.text_generation:
+        max_tokens = min(
+            filter(None, (request.output_len, max_output_len)),
+            default=None,
+        )
+        return RequestFuncInput(
+            model=request_model_id,
+            session_id=None,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            prompt=request.prompt_formatted,
+            images=request.encoded_images,
+            api_url=api_url,
+            prompt_len=request.prompt_len,
+            max_tokens=max_tokens,
+            ignore_eos=request.ignore_eos,
+        )
+    if benchmark_task == BenchmarkTask.text_to_image:
+        if not isinstance(request, PixelGenerationSampledRequest):
+            raise TypeError(
+                "text-to-image benchmark requires PixelGenerationSampledRequest."
+            )
+        return PixelGenerationRequestFuncInput(
+            model=request_model_id,
+            session_id=None,
+            prompt=request.prompt_formatted,
+            api_url=api_url,
+            image_options=request.image_options,
+        )
+    raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
 
 def print_section(title: str, char: str = "-") -> None:
@@ -614,10 +624,10 @@ def print_input_prompts(samples: Samples) -> None:
 
 
 def _warn_on_request_failures(
-    outputs: Sequence[RequestFuncOutput],
+    outputs: Sequence[BaseRequestFuncOutput],
     completed: int,
     failures: int,
-    failed_responses: Sequence[RequestFuncOutput],
+    failed_responses: Sequence[BaseRequestFuncOutput],
 ) -> None:
     if len(outputs) == 0:
         warnings.warn(
@@ -829,7 +839,7 @@ def calculate_metrics(
 
 
 def calculate_pixel_generation_metrics(
-    outputs: list[RequestFuncOutput],
+    outputs: list[PixelGenerationRequestFuncOutput],
     dur_s: float,
     gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: dict[str, Any],
@@ -841,7 +851,7 @@ def calculate_pixel_generation_metrics(
     failures = 0
     latencies: list[float] = []
     total_generated_outputs = 0
-    failed_responses: list[RequestFuncOutput] = []
+    failed_responses: list[PixelGenerationRequestFuncOutput] = []
 
     for output in outputs:
         if output.cancelled:
@@ -953,7 +963,12 @@ async def chat_session_driver(
         ):
             response = RequestFuncOutput(cancelled=True)
         else:
-            response = await request_driver.request(request_func_input)
+            raw_response = await request_driver.request(request_func_input)
+            if not isinstance(raw_response, RequestFuncOutput):
+                raise TypeError(
+                    "Expected RequestFuncOutput in text-generation benchmark flow."
+                )
+            response = raw_response
         if (
             skip_session_count is None
             or chat_session.id is None
@@ -987,6 +1002,7 @@ async def chat_session_driver(
 
 async def run_single_turn_benchmark(
     input_requests: Sequence[SampledRequest],
+    benchmark_task: BenchmarkTask,
     request_rate: float,
     burstiness: float,
     timing_data: dict[str, list[float]] | None,
@@ -1000,15 +1016,14 @@ async def run_single_turn_benchmark(
     top_p: float | None,
     top_k: int | None,
     lora_manager: LoRABenchmarkManager | None,
-    extra_body: dict[str, Any] | None = None,
-) -> list[RequestFuncOutput]:
+) -> list[BaseRequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
         timing_data = {}
 
     async def limited_request_func(
-        request_func_input: RequestFuncInput,
-    ) -> RequestFuncOutput:
+        request_func_input: BaseRequestFuncInput,
+    ) -> BaseRequestFuncOutput:
         if semaphore is None:
             return await request_driver.request(request_func_input)
         async with semaphore:
@@ -1016,10 +1031,10 @@ async def run_single_turn_benchmark(
                 benchmark_should_end_time is not None
                 and time.perf_counter_ns() >= benchmark_should_end_time
             ):
-                return RequestFuncOutput(cancelled=True)
+                return request_func_input.get_output_type()(cancelled=True)
             return await request_driver.request(request_func_input)
 
-    tasks: list[asyncio.Task[RequestFuncOutput]] = []
+    tasks: list[asyncio.Task[BaseRequestFuncOutput]] = []
     request_idx = 0
     async for request in get_request(
         input_requests, request_rate, timing_data, burstiness
@@ -1029,35 +1044,21 @@ async def run_single_turn_benchmark(
             if time.perf_counter_ns() >= benchmark_should_end_time:
                 break
 
-        # Use the ignore_eos setting from the dataset.
-        # Each dataset determines whether to respect EOS based on its own logic.
-        ignore_eos = request.ignore_eos
-        max_tokens = min(
-            filter(None, (request.output_len, max_output_len)), default=None
-        )
-
         # Determine which LoRA to use for this request
         lora_id = None
         if lora_manager:
             lora_id = lora_manager.get_lora_for_request(request_idx)
 
-        request_extra_body = build_request_extra_body(
-            base_extra_body=extra_body,
+        request_func_input = build_single_turn_request_input(
+            benchmark_task=benchmark_task,
             request=request,
-        )
-        request_func_input = RequestFuncInput(
-            model=model_id if lora_id is None else lora_id,
-            session_id=None,
+            model_id=model_id,
+            lora_id=lora_id,
+            api_url=api_url,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
-            prompt=request.prompt_formatted,
-            images=request.encoded_images,
-            api_url=api_url,
-            prompt_len=request.prompt_len,
-            max_tokens=max_tokens,
-            ignore_eos=ignore_eos,
-            extra_body=request_extra_body,
+            max_output_len=max_output_len,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
@@ -1181,6 +1182,7 @@ def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
 
 
 async def run_single_test_prompt(
+    benchmark_task: BenchmarkTask,
     model_id: str,
     api_url: str,
     samples: Samples,
@@ -1189,55 +1191,41 @@ async def run_single_test_prompt(
     top_p: float | None,
     top_k: int | None,
     max_output_len: int | None,
-    extra_body: dict[str, Any] | None = None,
 ) -> None:
     logger.info("Starting initial single prompt test run...")
-    test_prompt: str | list[dict[str, Any]]
-
     if isinstance(samples, ChatSamples):
-        # multi-turn chat scenario
         test_question = samples.chat_sessions[0].messages[0]
         test_answer = samples.chat_sessions[0].messages[1]
-        test_prompt = [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": test_question.content}],
-            }
-        ]
-        test_prompt_len = test_question.num_tokens
-        test_max_tokens: int | None = test_answer.num_tokens
-        test_ignore_eos = True
-        test_images = []
-        test_extra_body: dict[str, Any] = {}
+        test_request = SampledRequest(
+            prompt_formatted=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": test_question.content}
+                    ],
+                }
+            ],
+            prompt_len=test_question.num_tokens,
+            output_len=test_answer.num_tokens,
+            encoded_images=[],
+            ignore_eos=True,
+        )
+        # Chat samples define their own target output length per turn.
+        test_max_output_len = None
     else:
-        # single-turn chat scenario
         test_request = samples.requests[0]
-        test_prompt = test_request.prompt_formatted
-        test_prompt_len = test_request.prompt_len
-        test_max_tokens = min(
-            filter(None, (test_request.output_len, max_output_len)),
-            default=None,
-        )
-        test_ignore_eos = test_request.ignore_eos
-        test_images = test_request.encoded_images
-        test_extra_body = build_request_extra_body(
-            base_extra_body=extra_body,
-            request=test_request,
-        )
+        test_max_output_len = max_output_len
 
-    test_input = RequestFuncInput(
-        model=model_id,
-        session_id=None,
+    test_input = build_single_turn_request_input(
+        benchmark_task=benchmark_task,
+        request=test_request,
+        model_id=model_id,
+        lora_id=None,
+        api_url=api_url,
         temperature=temperature,
         top_p=top_p,
         top_k=top_k,
-        prompt=test_prompt,
-        images=test_images,
-        api_url=api_url,
-        prompt_len=test_prompt_len,
-        max_tokens=test_max_tokens,
-        ignore_eos=test_ignore_eos,
-        extra_body=test_extra_body,
+        max_output_len=test_max_output_len,
     )
     test_output = await request_driver.request(test_input)
     if not test_output.success:
@@ -1281,7 +1269,6 @@ async def benchmark(
     ignore_first_turn_stats: bool,
     timing_data: dict[str, list[float]] | None,
     lora_manager: LoRABenchmarkManager | None,
-    extra_body: dict[str, Any] | None = None,
     trace_path: str | None = None,
     trace_session: str | None = None,
 ) -> tuple[dict[str, Any], BenchmarkMetrics | PixelGenerationBenchmarkMetrics]:
@@ -1301,7 +1288,7 @@ async def benchmark(
         )
 
     request_driver_class: type[RequestDriver] = get_request_driver_class(
-        api_url
+        api_url, task=benchmark_task
     )
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
@@ -1311,6 +1298,7 @@ async def benchmark(
 
     if do_test_prompt:
         await run_single_test_prompt(
+            benchmark_task=benchmark_task,
             model_id=model_id,
             api_url=api_url,
             samples=samples,
@@ -1319,7 +1307,6 @@ async def benchmark(
             top_p=top_p,
             top_k=top_k,
             max_output_len=max_output_len,
-            extra_body=extra_body,
         )
 
     if burstiness == 1.0:
@@ -1412,6 +1399,7 @@ async def benchmark(
                 # single-turn chat scenario
                 outputs = await run_single_turn_benchmark(
                     input_requests=samples.requests,
+                    benchmark_task=benchmark_task,
                     request_rate=request_rate,
                     burstiness=burstiness,
                     timing_data=timing_data,
@@ -1425,11 +1413,10 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     lora_manager=lora_manager,
-                    extra_body=extra_body,
                 )
             else:
                 # multi-turn chat scenario
-                outputs = await run_multiturn_benchmark(
+                outputs = await run_multiturn_benchmark(  # type: ignore[assignment]
                     chat_sessions=samples.chat_sessions,
                     max_requests=max_requests,
                     semaphore=semaphore,
@@ -1466,6 +1453,7 @@ async def benchmark(
             assert tokenizer is not None
             print("Generated output text:")
             for req_id, output in enumerate(outputs):
+                assert isinstance(output, RequestFuncOutput)
                 output_len = compute_output_len(tokenizer, output)
                 print(
                     {
@@ -1477,6 +1465,7 @@ async def benchmark(
         elif benchmark_task == BenchmarkTask.text_to_image:
             print("Generated pixel generation outputs:")
             for req_id, output in enumerate(outputs):
+                assert isinstance(output, PixelGenerationRequestFuncOutput)
                 print(
                     {
                         "req_id": req_id,
@@ -1486,8 +1475,6 @@ async def benchmark(
                         "error": output.error,
                     }
                 )
-        else:
-            raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
     if lora_manager:
         await lora_manager.benchmark_unloading(
@@ -1538,8 +1525,16 @@ async def benchmark(
         )
 
     if benchmark_task == BenchmarkTask.text_to_image:
+        assert all(
+            isinstance(output, PixelGenerationRequestFuncOutput)
+            for output in outputs
+        )
+        pixel_generation_outputs = cast(
+            list[PixelGenerationRequestFuncOutput], outputs
+        )
+
         pixel_metrics = calculate_pixel_generation_metrics(
-            outputs=outputs,
+            outputs=pixel_generation_outputs,
             dur_s=benchmark_duration,
             gpu_metrics=gpu_metrics,
             cpu_metrics=cpu_metrics,
@@ -1572,11 +1567,14 @@ async def benchmark(
             "p90_latency_ms": pixel_metrics.latency_ms.p90,
             "p95_latency_ms": pixel_metrics.latency_ms.p95,
             "p99_latency_ms": pixel_metrics.latency_ms.p99,
-            "latencies": [output.latency for output in outputs],
-            "num_generated_outputs": [
-                output.num_generated_outputs for output in outputs
+            "latencies": [
+                output.latency for output in pixel_generation_outputs
             ],
-            "errors": [output.error for output in outputs],
+            "num_generated_outputs": [
+                output.num_generated_outputs
+                for output in pixel_generation_outputs
+            ],
+            "errors": [output.error for output in pixel_generation_outputs],
             "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
             "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
             "gpu_utilization": pixel_metrics.gpu_utilization,
@@ -1590,8 +1588,11 @@ async def benchmark(
 
         return result, pixel_metrics
 
+    assert all(isinstance(output, RequestFuncOutput) for output in outputs)
+    text_outputs = cast(list[RequestFuncOutput], outputs)
+
     text_metrics, actual_output_lens = calculate_metrics(
-        outputs=outputs,
+        outputs=text_outputs,
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
         gpu_metrics=gpu_metrics,
@@ -1657,12 +1658,12 @@ async def benchmark(
         "p90_latency_ms": text_metrics.latency_ms.p90,
         "p95_latency_ms": text_metrics.latency_ms.p95,
         "p99_latency_ms": text_metrics.latency_ms.p99,
-        "input_lens": [output.prompt_len for output in outputs],
+        "input_lens": [output.prompt_len for output in text_outputs],
         "output_lens": actual_output_lens,
-        "ttfts": [output.ttft for output in outputs],
-        "itls": [output.itl for output in outputs],
-        "generated_texts": [output.generated_text for output in outputs],
-        "errors": [output.error for output in outputs],
+        "ttfts": [output.ttft for output in text_outputs],
+        "itls": [output.itl for output in text_outputs],
+        "generated_texts": [output.generated_text for output in text_outputs],
+        "errors": [output.error for output in text_outputs],
         "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
         "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
         "gpu_utilization": text_metrics.gpu_utilization,
@@ -2008,20 +2009,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
         logger.info(f"Tracing enabled, output: {trace_path}")
 
-    image_extra_body: dict[str, Any] | None = None
-    if benchmark_task == BenchmarkTask.text_to_image:
-        image_options: dict[str, Any] = {
-            "width": args.image_width,
-            "height": args.image_height,
-            "steps": args.image_steps,
-            "guidance_scale": args.image_guidance_scale,
-        }
-        if args.image_negative_prompt is not None:
-            image_options["negative_prompt"] = args.image_negative_prompt
-        image_extra_body = {"provider_options": {"image": image_options}}
-        if args.image_seed is not None:
-            image_extra_body["seed"] = args.image_seed
-
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
     benchmark_result, benchmark_metrics = asyncio.run(
@@ -2056,7 +2043,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             ignore_first_turn_stats=args.ignore_first_turn_stats,
             timing_data=None,
             lora_manager=lora_manager,
-            extra_body=image_extra_body,
             trace_path=trace_path,
             trace_session=args.trace_session,
         )
