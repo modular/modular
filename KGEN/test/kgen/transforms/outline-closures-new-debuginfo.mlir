@@ -132,3 +132,63 @@ module {
 #loc11 = loc(fused<#lexical_block>[#loc1])
 #loc12 = loc(fused<#lexical_block1>[#loc6])
 #loc13 = loc(fused<#lexical_block1>[#loc7])
+
+// -----
+
+// COM: Use of 'C' appears only in the kgen.closure.init op's own location,
+// COM: not in any body op. This tests the region.getParentOp()->getLoc()
+// COM: scanning path added to collectCapturedParams.
+
+// Provide a struct generator for the escaping closure.
+kgen.struct.generator @"bar::fn"<CAPTURES: !kgen.param_closure<@"bar" "fn">> = !kgen.closure<@"bar", "fn" escaping> {
+  kgen.conformance @"Movable" {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@bar, "fn" escaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@bar, "fn" escaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"bar", "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@"bar" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"AnyType" {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@bar, "fn" escaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"bar", "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@"bar" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"closure_trait" {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@bar, "fn" escaping>> read_mem) -> () = #kgen.closure.symbol<@"bar", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"bar" "fn"> CAPTURES>>
+  }
+}
+
+// CHECK: kgen.generator @bar_fn<C>(%arg0: !kgen.pointer<none> loc({{.*}}) read_mem)
+kgen.generator @bar<C>() {
+  %3 = kgen.closure.init()() -> () {
+    kgen.return
+  } : (), !kgen.pointer<!kgen.closure<@bar, "fn" escaping>> loc(fused<#kgen.param.decl.ref<"C"> : index>["bar.mlir":1:1])
+  kgen.return
+}
+
+// -----
+
+// COM: Use of 'D' appears only in the kgen.closure.init subprogram scope's
+// COM: subroutine arg type, not in the op's own loc or body ops.
+// COM: This tests the getSubprogramScope() scanning path added to
+// COM: collectCapturedParams.
+
+!ti_D = !debuginfo.ti.ptr<!kgen.param<D>>
+!subroutine_D = !debuginfo.subroutine<(!ti_D) -> (): DW_CC_normal>
+#baz_file = #debuginfo.file<"baz.mojo" in "">
+#baz_compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #baz_file, producer = "Mojo", isOptimized = true, emissionKind = Full, nameTableKind = None>
+#subprogram_D = #debuginfo.subprogram<compileUnit = #baz_compile_unit, scope = #baz_file, sourceName = <(fn)"baz_closure">, linkageName = "baz_closure", file = #baz_file, line = 1, scopeLine = 1, subprogramFlags = "Definition|Optimized"> : !subroutine_D
+
+kgen.struct.generator @"baz::fn"<CAPTURES: !kgen.param_closure<@"baz" "fn">> = !kgen.closure<@"baz", "fn" escaping> {
+  kgen.conformance @"Movable" {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@baz, "fn" escaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@baz, "fn" escaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"baz", "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@"baz" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"AnyType" {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@baz, "fn" escaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"baz", "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@"baz" "fn"> CAPTURES>>
+  }
+  kgen.conformance @"closure_trait" {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@baz, "fn" escaping>> read_mem) -> () = #kgen.closure.symbol<@"baz", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"baz" "fn"> CAPTURES>>
+  }
+}
+
+// CHECK: kgen.generator @baz_fn<D: type>(%arg0: !kgen.pointer<none> loc({{.*}}) read_mem)
+kgen.generator @baz<D: type>() {
+  %3 = kgen.closure.init()() -> () {
+    kgen.return
+  } : (), !kgen.pointer<!kgen.closure<@baz, "fn" escaping>>, #subprogram_D loc("baz.mojo":0:0)
+  kgen.return
+}

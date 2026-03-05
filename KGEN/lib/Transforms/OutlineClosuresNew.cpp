@@ -787,6 +787,15 @@ ClosureLifter::collectCapturedParams(DenseMap<Value, Attribute> const &captures,
       collector.collectUsesFromAttr(op->getLoc(), capturedUses, unused);
       return WalkResult::advance();
     });
+
+    // Collect parameter captures from closure location.
+    bool unused = false;
+    collector.collectUsesFromAttr(region.getParentOp()->getLoc(), capturedUses,
+                                  unused);
+    if (auto closureInit = dyn_cast<ClosureInitOp>(region.getParentOp())) {
+      if (DebugInfo::DISubprogramAttr scope = closureInit.getSubprogramScope())
+        collector.collectUsesFromAttr(scope, capturedUses, unused);
+    }
   }
 
   Operation *regionDecl = region.getParentOp();
