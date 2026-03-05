@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import isclose
 from std.random import rand
 
@@ -25,9 +22,9 @@ from std.utils.index import Index
 fn winograd_1d_convolution_3[
     dtype: DType, //, filter_len: Int
 ](
-    input: UnsafePointer[Scalar[dtype]],
-    filter: UnsafePointer[Scalar[dtype]],
-    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype], _],
+    filter: UnsafePointer[Scalar[dtype], _],
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
     input_len: Int,
 ):
     # TODO: Current implementation requires input_len >= 4
@@ -65,10 +62,10 @@ fn test[dtype: DType](C: Int):  # Input Len
     comptime S: Int = 3  # Filter len
 
     var O: Int = C - S + 1  # Output len (method="same")
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(S)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(O)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(O)
+    var input_ptr = alloc[Scalar[dtype]](C)
+    var filter_ptr = alloc[Scalar[dtype]](S)
+    var output_ptr = alloc[Scalar[dtype]](O)
+    var output_ref_ptr = alloc[Scalar[dtype]](O)
 
     rand[dtype](input_ptr, C)
     rand[dtype](filter_ptr, S)

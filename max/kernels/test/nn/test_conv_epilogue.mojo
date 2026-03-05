@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import ceildiv, isclose
 from std.random import rand
 from std.sys.info import simd_width_of
@@ -99,18 +96,18 @@ fn test[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var input_ptr = alloc[Scalar[dtype]](input_size)
     rand(input_ptr, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var filter_ptr = alloc[Scalar[dtype]](filter_size)
     rand(filter_ptr, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
 
-    var bias_ptr = UnsafePointer[Scalar[dtype]].alloc(F)
+    var bias_ptr = alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -136,7 +133,7 @@ fn test[
     )
 
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
     var packed_filter = LayoutTensor[dtype, layout_p3](

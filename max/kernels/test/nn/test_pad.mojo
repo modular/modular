@@ -11,10 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from layout import TileTensor, row_major
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 from std.testing import assert_equal
@@ -534,7 +530,7 @@ fn test_pad_reflect_4d_big_input() raises:
     comptime out_size = 2 * 3 * 1024 * 1024
 
     # create a big input matrix and fill it with ones
-    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input_ptr = alloc[Scalar[DType.int]](in_size)
     var input = TileTensor(input_ptr, row_major[1, 1, 512, 512]()).fill(1)
 
     # create a padding array of the form
@@ -552,7 +548,7 @@ fn test_pad_reflect_4d_big_input() raises:
     var paddings = TileTensor(paddings_stack, row_major[8]())
 
     # create an even bigger output matrix and fill it with zeros
-    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output_ptr = alloc[Scalar[DType.int]](out_size)
     var output = TileTensor(output_ptr, row_major[2, 3, 1024, 1024]()).fill(0)
 
     # pad

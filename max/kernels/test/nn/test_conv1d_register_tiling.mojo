@@ -13,9 +13,6 @@
 
 # Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import simd_width_of
 
 from buffer import NDBuffer
@@ -61,9 +58,9 @@ comptime filter_shape = DimList(num_micro_tile, S, C, micro_kernel_f_size)
 
 @export(ABI="C")
 fn conv1d_register_tiling(
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
-    filter: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[type], MutAnyOrigin],
+    input: UnsafePointer[Scalar[type], MutAnyOrigin],
+    filter: UnsafePointer[Scalar[type], MutAnyOrigin],
     c_tile_size: Int,
     f_tile_offset: Int,
     f_tile_size: Int,

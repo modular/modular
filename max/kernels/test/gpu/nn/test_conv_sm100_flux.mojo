@@ -24,9 +24,6 @@ FLUX VAE decoder uses block_out_channels=[128, 256, 512, 512] with:
 - BF16 data type
 """
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.random import rand
 from std.testing import assert_false
 
@@ -92,11 +89,11 @@ fn test_flux_conv_layer[
     )
 
     # Host memory
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var out_sm100_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
-    var out_cudnn_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    var input_host_ptr = alloc[Scalar[dtype]](in_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var out_sm100_host_ptr = alloc[Scalar[dtype]](out_size)
+    var out_cudnn_host_ptr = alloc[Scalar[dtype]](out_size)
 
     rand(input_host_ptr, in_size)
     rand(filter_host_ptr, filter_size)

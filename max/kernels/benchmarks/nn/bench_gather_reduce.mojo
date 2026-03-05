@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.random import random_si64
 from std.sys import simd_width_of, size_of
 
@@ -43,15 +40,9 @@ fn bench_gather_reduce(mut b: Bencher):
     var input_shape = IndexList[2](num_rows, embedding_dim)
     var output_shape = IndexList[2](num_indices, embedding_dim)
     var indices_shape = IndexList[2](num_indices, multi_hot_dim)
-    var input_storage = UnsafePointer[Scalar[type]].alloc(
-        input_shape.flattened_length()
-    )
-    var output_storage = UnsafePointer[Scalar[type]].alloc(
-        output_shape.flattened_length()
-    )
-    var indices_storage = UnsafePointer[Int32].alloc(
-        indices_shape.flattened_length()
-    )
+    var input_storage = alloc[Scalar[type]](input_shape.flattened_length())
+    var output_storage = alloc[Scalar[type]](output_shape.flattened_length())
+    var indices_storage = alloc[Int32](indices_shape.flattened_length())
     var input = TileTensor(input_storage, row_major(Coord(input_shape))).fill(1)
     var output = TileTensor(
         output_storage, row_major(Coord(output_shape))

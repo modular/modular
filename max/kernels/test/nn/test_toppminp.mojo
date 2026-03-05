@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import iota
 from std.random import random_float64
 
@@ -89,7 +86,7 @@ fn test_is_sorted_descending[
 ](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
     comptime assert buf.rank == 2, "rank must be 2"
     var batch_size = buf.numel() // vocab_size
-    var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
+    var sorted_flag = alloc[Bool](batch_size)
 
     # Initialize all flags to True
     for i in range(batch_size):
@@ -170,21 +167,17 @@ fn test_case_sampling[
     var m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
+    var in_logits_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
     var in_logits = TileTensor(
         in_logits_ptr,
         row_major(Coord(Idx(batch_size), Idx(vocab_size))),
     )
-    var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
-        batch_size * 1
-    )
+    var token_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * 1)
     var token_ids = TileTensor(
         token_ids_ptr,
         row_major(Coord(Idx(batch_size), Idx(1))),
     )
-    var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
+    var p_thresholds_ptr = alloc[Scalar[dtype]](batch_size)
     var p_thresholds = TileTensor(
         p_thresholds_ptr,
         row_major(Idx(batch_size)),

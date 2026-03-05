@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.random import rand
 
 from std.benchmark import *
@@ -57,15 +54,11 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     var kv_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
 
-    var q_ptr = UnsafePointer[Scalar[dtype]].alloc(q_shape.flattened_length())
-    var k_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_shape.flattened_length())
-    var v_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_shape.flattened_length())
-    var mask_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        mask_shape.flattened_length()
-    )
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        q_shape.flattened_length()
-    )
+    var q_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
+    var k_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
+    var v_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
+    var mask_ptr = alloc[Scalar[dtype]](mask_shape.flattened_length())
+    var output_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
 
     rand(q_ptr, q_shape.flattened_length())
     rand(k_ptr, kv_shape.flattened_length())

@@ -26,9 +26,6 @@ from std.gpu.host import DeviceContext
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -80,10 +77,8 @@ fn run_mha[
     )
 
     # Allocate host memory for verification.
-    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
-        cb_o.alloc_size()
-    )
+    var output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[qkv_type]](cb_o.alloc_size())
 
     # Initialize data on the device.
     comptime random_distribution = InitializationType.uniform_distribution
@@ -232,7 +227,7 @@ fn run_mha[
         ctx.enqueue_copy(flash_output_ptr, cb_o.device_buffer())
         # Allocate and initialize mask for verification
         var mask_size = batch_size * num_heads * seq_len * num_keys
-        var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
+        var mask_ptr = alloc[Scalar[mask_type]](mask_size)
 
         comptime layout_4d = Layout.row_major[4]()
         var mask = LayoutTensor[mask_type, layout_4d](
