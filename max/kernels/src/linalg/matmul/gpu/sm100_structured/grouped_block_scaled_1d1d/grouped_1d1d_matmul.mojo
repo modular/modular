@@ -32,7 +32,7 @@ Usage:
 """
 
 from std.collections import Optional
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
@@ -159,6 +159,7 @@ fn grouped_matmul_1d1d_nvfp4[
 
     comptime if config.cta_group == 2:
         comptime assert MMA_M == 256 and MMA_N in (
+            64,
             128,
             256,
         ), "Only support cta_group == 2 with MMA_M == 256"
@@ -166,9 +167,9 @@ fn grouped_matmul_1d1d_nvfp4[
             config.AB_swapped
         ), "cta_group == 2 requires AB_swapped for scheduler alignment"
     else:
-        comptime assert MMA_M == 128 and MMA_N in (128, 256), (
-            "Only support MMA_M == 128 and MMA_N in (128, 256) when"
-            " cta_group == 1"
+        comptime assert MMA_M == 128 and MMA_N in (64, 128, 256), (
+            "Only support MMA_M == 128 and MMA_N in (64, 128, 256)"
+            " when cta_group == 1"
         )
 
     comptime cluster_shape = config.cluster_shape
@@ -222,7 +223,7 @@ fn grouped_matmul_1d1d_nvfp4[
     )
 
     comptime sfb_tma_tile_shape = Index(
-        MMA_N // SF_MN_GROUP_SIZE,
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,

@@ -678,6 +678,7 @@ struct BlockScaledTmem[
     cta_group: Int = 1,
     total_cols: Int = 512,
     num_sf_k_tiles: Int = 1,
+    SFB_N: Int = MMA_N,
 ](TrivialRegisterPassable):
     """TMEM region for block-scaled matmul with typed tile accessors.
 
@@ -706,6 +707,11 @@ struct BlockScaledTmem[
         num_sf_k_tiles: Scaling factor tiles per K-iteration.
             MXFP8 uses 1 (one SF vector per K-tile).
             NVFP4 uses 4 (multiple SF vectors per K-tile).
+        SFB_N: SFB N dimension for TMEM layout. Defaults to MMA_N.
+            Set to align_up(MMA_N, SF_MN_GROUP_SIZE) when
+            MMA_N < SF_MN_GROUP_SIZE so the TMEM tile is wide enough
+            for the SMEM-to-TMEM copy (which always writes a full
+            SF_MN_GROUP_SIZE group).
     """
 
     # Tile layouts (stride derived automatically from layout.size())
@@ -716,7 +722,7 @@ struct BlockScaledTmem[
         1, Self.num_sf_k_tiles * (Self.BM // 32)
     )
     comptime sfb_layout = Layout.row_major(
-        1, Self.num_sf_k_tiles * (Self.MMA_N // 32)
+        1, Self.num_sf_k_tiles * (Self.SFB_N // 32)
     )
 
     # Array types for each TMEM region
