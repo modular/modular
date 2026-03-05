@@ -1451,6 +1451,24 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
 // invoked after both parameter list and argument list has been scanned).
 LogicalResult ParamInf::inferFromDefaults() {
 
+  auto setDefault = [&](TypedAttr value, size_t idx) -> LogicalResult {
+    value = evaluator.getReboundAttribute(value);
+
+    // Don't try to infer from default values that have unresolved references
+    // to other parameters.
+    if (paramFinder.hasReferences(value))
+      return success();
+
+    auto argType = evaluator.getReboundType(declaredParamTypes[idx]);
+    FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
+        {value, getGivenBindings().getExpr()}, argType, idx);
+    if (failed(paramVal))
+      return failure();
+    if (*paramVal && !evaluator.getIndexBindings()[idx])
+      return setInferredValue(idx, *paramVal);
+    return success();
+  };
+
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
@@ -1458,31 +1476,13 @@ LogicalResult ParamInf::inferFromDefaults() {
     if (evaluator.getIndexBindings()[idx])
       continue;
 
-    auto setDefault = [&](TypedAttr value) -> LogicalResult {
-      value = evaluator.getReboundAttribute(value);
-
-      // Don't try to infer from default values that have unresolved references
-      // to other parameters.
-      if (paramFinder.hasReferences(value))
-        return success();
-
-      auto argType = evaluator.getReboundType(declaredParamTypes[idx]);
-      FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
-          {value, getGivenBindings().getExpr()}, argType, idx);
-      if (failed(paramVal))
-        return failure();
-      if (*paramVal && !evaluator.getIndexBindings()[idx])
-        return setInferredValue(idx, *paramVal);
-      return success();
-    };
-
     // If available, we use a default parameter value.
     if (TypedAttr defaultParam = declaredParamPogs.getDefault(idx)) {
       // Default parameter values may reference other parameter values, so we
       // need to evaluate these.
       // If the default value is dependent, and we can not fully resolve all its
       // dependencies, do not try to set the value of it.
-      if (failed(setDefault(defaultParam)))
+      if (failed(setDefault(defaultParam, idx)))
         return failure();
       continue;
     }
@@ -1494,28 +1494,11 @@ LogicalResult ParamInf::inferFromDefaults() {
               paramBindings.ctadPogs[idx].getDefaultValue()) {
         defaultCTAD = evaluator.getReboundAttribute(defaultCTAD);
         if (!paramFinder.hasReferences(defaultCTAD)) {
-          if (failed(setDefault(defaultCTAD)))
+          if (failed(setDefault(defaultCTAD, idx)))
             return failure();
           continue;
         }
       }
-    }
-
-    // If not specified/inferrable, variadic always have a default empty value.
-    bool isInferableVA = [&]() -> bool {
-      return declaredParamPogs.isPosVarArg(idx) ||
-             (declaredParamPogs.getPogs()[idx].getPassingKind() ==
-                  PassingKind::Inferred &&
-              isa<VariadicType>(declaredParamTypes[idx]));
-    }();
-
-    if (isInferableVA) {
-      // FIXME: This isn't rewriting the variadic list for dependent types.
-      auto type = declaredParamTypes[idx];
-      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
-      if (failed(setInferredValue(idx, empty)))
-        return failure();
-      continue;
     }
 
     // TODO: move the special handling of Origin outside the default parameter
@@ -1549,6 +1532,37 @@ LogicalResult ParamInf::inferFromDefaults() {
           return failure();
         continue;
       }
+    }
+  }
+
+  // Do another pass to fill in empty variadic, we need to do it after user
+  // provided default value is installed, the variadic might be dependent by
+  // those value in cases like:
+  //
+  // struct HasParamList[*values: Int]:
+  //     fn __init__(out self):
+  //         pass
+  //
+  // struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
+  //     pass
+  for (size_t idx = 0, e = declaredParamTypes.size(); idx != e; ++idx) {
+    if (evaluator.getIndexBindings()[idx])
+      continue;
+
+    // If not specified/inferrable, variadic always have a default empty value.
+    bool isInferableVA = [&]() -> bool {
+      return declaredParamPogs.isPosVarArg(idx) ||
+             (declaredParamPogs.getPogs()[idx].getPassingKind() ==
+                  PassingKind::Inferred &&
+              isa<VariadicType>(declaredParamTypes[idx]));
+    }();
+
+    if (isInferableVA) {
+      // FIXME: This isn't rewriting the variadic list for dependent types.
+      auto type = declaredParamTypes[idx];
+      auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
+      if (failed(setInferredValue(idx, empty)))
+        return failure();
     }
   }
 

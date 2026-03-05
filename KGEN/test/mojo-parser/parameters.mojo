@@ -1776,3 +1776,16 @@ fn test_non_materializable_target_of_meta_type():
     # CHECK:      lit.call tail {{.*}}"infer_non_materializable_target_of_meta_type{{.*}}"
     # CHECK-SAME: <:!alias___TypeOfAllTypes1 #kgen.type<meta<!lit.struct<#IntLiteral <:!pop.int_literal 0>>>>
     infer_non_materializable_target_of_meta_type[type_of(0)]()
+
+
+struct HasParamList[*values: Int]:
+    fn __init__(out self):
+        pass
+
+
+struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
+    pass
+
+
+# CHECK-LABEL: lit.alias.decl *"WithDefaultParam{{.*}}": meta<!lit.struct<#HasDefaultParam <:variadic<!Int> [{4}], :!lit.struct<#HasParamList <:variadic<!Int> [{4}]>>
+comptime WithDefaultParam = HasDefaultParam[]
