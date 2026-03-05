@@ -733,13 +733,45 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       // Finally, also print any operands.
       return printOperands(operandsToPrint);
     }
+    case POC::And:
+      llvm::interleave(
+          operands, [&](TypedAttr op) { printParam(os, op, diagShared); },
+          [&] { os << " and "; });
+      return;
+    case POC::Or:
+      llvm::interleave(
+          operands, [&](TypedAttr op) { printParam(os, op, diagShared); },
+          [&] { os << " or "; });
+      return;
     case POC::Cond: {
-      printParam(os, operands[1], diagShared);
-      os << " if ";
       auto cond = operands[0];
-      // Don't print extracts of Bool.value.
+      // Strip _mlir_value extraction for pattern matching.
       if (auto extract = dyn_cast<LIT::StructExtractAttr>(cond))
         cond = extract.getStructValue();
+
+      // Detect and/or patterns from compiler lowering:
+      //   A and B  ->  cond(A._mlir_value, B, A)
+      //   A or B   ->  cond(A._mlir_value, A, B)
+      if (diagShared) {
+        if (cond == operands[2]) {
+          // "A and B" pattern: condition (stripped) matches else-branch.
+          printParam(os, cond, diagShared);
+          os << " and ";
+          printParam(os, operands[1], diagShared);
+          return;
+        }
+        if (cond == operands[1]) {
+          // "A or B" pattern: condition (stripped) matches then-branch.
+          printParam(os, cond, diagShared);
+          os << " or ";
+          printParam(os, operands[2], diagShared);
+          return;
+        }
+      }
+
+      // Regular ternary (not a lowered and/or).
+      printParam(os, operands[1], diagShared);
+      os << " if ";
       printParam(os, cond, diagShared);
       os << " else ";
       printParam(os, operands[2], diagShared);
