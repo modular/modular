@@ -299,15 +299,6 @@ LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
                                  StringRef argOrParam);
 
 //===----------------------------------------------------------------------===//
-// Attribute Utilities
-//===----------------------------------------------------------------------===//
-
-/// Strips the struct extract of the `_mlir_value` field from a Bool type,
-/// recursively handling sugared attributes. This is useful for normalizing
-/// boolean constraint propositions.
-TypedAttr stripStructExtractFromBool(TypedAttr prop);
-
-//===----------------------------------------------------------------------===//
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 

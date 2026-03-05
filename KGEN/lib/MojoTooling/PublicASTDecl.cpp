@@ -118,7 +118,6 @@ static std::string constraintsToString(ArrayRef<ConstraintAttr> constraints,
   llvm::raw_string_ostream os(result);
   for (const ConstraintAttr &c : constraints) {
     TypedAttr proposition = c.getProposition();
-    proposition = LIT::stripStructExtractFromBool(proposition);
     if (evaluator)
       proposition = evaluator->getReboundAttribute(proposition);
     os << " where ";

@@ -839,7 +839,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {
     printParam(os, extractAttr.getStructValue(), diagShared);
-    os << '.' << extractAttr.getField().getValue();
+    // Don't print ._mlir_value in user-facing output; it is an internal
+    // implementation detail for accessing the underlying MLIR type.
+    if (!diagShared || extractAttr.getField() != "_mlir_value")
+      os << '.' << extractAttr.getField().getValue();
     return;
   }
 
