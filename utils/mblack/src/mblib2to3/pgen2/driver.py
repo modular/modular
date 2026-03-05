@@ -150,6 +150,32 @@ def _join_trailing_operator(prev: str, line: str) -> str | None:
     return None
 
 
+# Matches a line whose first non-whitespace character starts a string literal.
+_LEADING_STRING = re.compile(r"""^\s+["']""")
+
+
+def _join_string_continuation(prev: str, line: str) -> str | None:
+    """Join an implicit string concatenation from a continuation line.
+
+    In Mojo, adjacent string literals on a further-indented continuation
+    line are concatenated::
+
+        var s = "hello"
+                 " world"
+
+    The lib2to3-based parser requires them on the same logical line.
+    Only joins when the previous line ends with a closing quote — this
+    avoids swallowing docstrings or standalone string literals.
+    """
+    if not _LEADING_STRING.match(line):
+        return None
+    if not prev.rstrip() or prev.rstrip()[-1] not in ('"', "'"):
+        return None
+    if len(line) - len(line.lstrip()) > len(prev) - len(prev.lstrip()):
+        return prev + " " + line.lstrip()
+    return None
+
+
 # Normalizers are applied in order; each receives the previous result line
 # (with any trailing comment already stripped) and the current raw line,
 # and returns a replacement for the previous line or None to skip.
@@ -157,6 +183,7 @@ _MOJO_LINE_NORMALIZERS = [
     _join_colon_next_line,
     _join_multiline_ternary,
     _join_trailing_operator,
+    _join_string_continuation,
 ]
 
 # Matches the trailing comment portion of a line: optional whitespace then #
