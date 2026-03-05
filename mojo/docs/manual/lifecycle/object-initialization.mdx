@@ -276,7 +276,7 @@ destructor. As a destructor, you can use this `consume` method for
 
 The `__del__()` method is the core of implicit destruction types. It's
 Mojo's default destructor and works hand in hand with
-`ImplicitlyDestructible`, a trait that all structs inherit by default.
+`ImplicitlyDestructible`, a trait that all structs conform to by default.
 The compiler calls `__del__()` automatically when it detects the final
 use of an implicitly destructible struct value.
 

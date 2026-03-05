@@ -344,9 +344,9 @@ def write_to[StrElementType: Writable & Movable, //](
 ```
 
 The trait bound on `StrElementType` must include `ElementType`'s original trait
-(`Movable` in this case), either by composition or by inheritance. The trait
+(`Movable` in this case), either by composition or by refinement. The trait
 composition `Writable & Movable` includes the original trait. You could also use
-a trait that inherits from `Movable`.
+a trait that refines `Movable`.
 
 Note that the `main()` function calls the `write_to()` method directly,
 rather than calling `String(float_container)`. One current limitation of
