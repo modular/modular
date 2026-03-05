@@ -195,10 +195,10 @@ class _TypicalAcceptanceRunner:
     def __call__(
         self,
         draft_tokens: Buffer,
-        draft_logits: Buffer,
+        draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
-        all_draft_logits: Buffer,
+        all_draft_logits: Buffer | None,
         context_batch: list[TextContext] | None,
     ) -> tuple[Buffer, Buffer, Buffer]:
         assert context_batch is not None
@@ -246,10 +246,10 @@ class _GreedyRunner:
     def __call__(
         self,
         draft_tokens: Buffer,
-        draft_logits: Buffer,
+        draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
-        all_draft_logits: Buffer,
+        all_draft_logits: Buffer | None,
         context_batch: list[TextContext] | None,
     ) -> tuple[Buffer, Buffer, Buffer]:
         a, b, c = self._model(
@@ -272,10 +272,10 @@ class _LogitComparisonRunner:
     def __call__(
         self,
         draft_tokens: Buffer,
-        draft_logits: Buffer,
+        draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
-        all_draft_logits: Buffer,
+        all_draft_logits: Buffer | None,
         context_batch: list[TextContext] | None,
     ) -> tuple[Buffer, Buffer, None]:
         a, b = self._model(
@@ -505,14 +505,21 @@ class SpeculativeDecodingPipelineBase(
         )
 
         strategy = self._speculative_config.rejection_sampling_strategy
+        is_eagle_or_mtp = (
+            self._speculative_config.is_eagle()
+            or self._speculative_config.is_mtp()
+        )
         if strategy is None:
-            if (
-                self._speculative_config.is_eagle()
-                or self._speculative_config.is_mtp()
-            ):
+            if is_eagle_or_mtp:
                 strategy = "typical-acceptance"
             else:
                 strategy = "residual"
+        if strategy == "residual" and is_eagle_or_mtp:
+            raise ValueError(
+                "EAGLE/MTP speculative decoding does not support 'residual'"
+                " rejection sampling strategy. Use 'greedy',"
+                " 'typical-acceptance', or 'logit-comparison' instead."
+            )
         logger.info(f"Using '{strategy}' rejection sampling strategy")
         target_device_ref = DeviceRef.from_device(self.target_devices[0])
         self._run_rejection_sampler = self._build_rejection_runner(
@@ -852,7 +859,7 @@ class SpeculativeDecodingPipelineBase(
     def _call_rejection_sampler(
         self,
         draft_tokens: Buffer,
-        draft_logits: Buffer,
+        draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
         all_draft_logits: Buffer | None,
@@ -862,7 +869,8 @@ class SpeculativeDecodingPipelineBase(
 
         Args:
             draft_tokens: Draft token ids.
-            draft_logits: Logits for sampled draft tokens.
+            draft_logits: Logits for sampled draft tokens. None when draft
+                logits are unavailable.
             target_logits: Target model logits.
             target_logit_offsets: Offsets into target_logits per batch element.
             all_draft_logits: Full draft logits (used by residual sampler).
