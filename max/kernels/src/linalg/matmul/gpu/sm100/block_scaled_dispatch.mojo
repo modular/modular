@@ -43,7 +43,10 @@ from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from std.memory import bitcast
+from layout import TileTensor
+from layout.tile_layout import RowMajorLayout, row_major as tt_row_major
+from layout.coord import RuntimeInt
+from std.memory import UnsafePointer, bitcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import barrier
 from std.sys import size_of, align_of, simd_width_of
@@ -227,6 +230,35 @@ fn heuristic_and_outliers_dispatch[
 ########################################################
 
 
+# Local helper to convert 2D LayoutTensor to TileTensor. Needed because
+# this function still accepts LayoutTensor parameters. Will be removed
+# when all callers migrate to TileTensor (MSTDL-2359).
+@always_inline
+fn _to_tt[
+    dtype: DType,
+](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
+    dtype,
+    RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+    lt.origin,
+]:
+    var layout = tt_row_major(
+        (
+            RuntimeInt(Scalar[DType.int64](lt.dim(0))),
+            RuntimeInt(Scalar[DType.int64](lt.dim(1))),
+        )
+    )
+    return TileTensor[
+        dtype,
+        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        lt.origin,
+    ](
+        ptr=UnsafePointer[Scalar[dtype], lt.origin](
+            unsafe_from_address=Int(lt.ptr)
+        ),
+        layout=layout,
+    )
+
+
 fn _block_scaled_matmul_with_epilogue[
     c_type: DType,
     a_type: DType,
@@ -270,14 +302,16 @@ fn _block_scaled_matmul_with_epilogue[
         if not c.ptr:
             raise "c must be allocated!"
 
+        comptime K_phys = a_layout.shape[1].value()
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
+            K=K_phys,
             config=config,
             pdl_level=pdl_level,
         ](
-            c,
-            a,
-            b,
+            _to_tt(c),
+            _to_tt(a),
+            _to_tt(b),
             a_scales,
             b_scales,
             ctx,
@@ -307,14 +341,16 @@ fn _block_scaled_matmul_with_epilogue[
             var m = c.dim[0]()
             var n = c.dim[1]()
 
+            comptime K_phys = a_layout.shape[1].value()
             blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
+                K=K_phys,
                 config=config,
                 pdl_level=pdl_level,
             ](
-                c,
-                a,
-                b,
+                _to_tt(c),
+                _to_tt(a),
+                _to_tt(b),
                 a_scales,
                 b_scales,
                 ctx,
