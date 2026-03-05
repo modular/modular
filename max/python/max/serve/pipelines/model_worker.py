@@ -193,10 +193,16 @@ class ModelWorker:
             ModelWorker._configure_metrics(settings, metric_client)
 
             # Prime the pinned memory cache in the model worker process.
-            # Since we only alloc pinned memory on gpu0, we only try to prime it
-            # for the first device.
-            device = load_device(pipeline_config.model.device_specs[0])
-            _prime_pinned_memory_cache(device)
+            # The first DevicePinnedBuffer allocation per GPU triggers
+            # heavyweight driver context initialization that can take
+            # seconds. Doing it here at startup avoids that latency
+            # hitting the first real request.
+            first_device = load_device(pipeline_config.model.device_specs[0])
+            _prime_pinned_memory_cache(first_device)
+            # This crashes on 8xMI355. TODO(GEX-3321)
+            if first_device.api == "cuda":
+                for spec in pipeline_config.model.device_specs[1:]:
+                    _prime_pinned_memory_cache(load_device(spec))
 
             # Initialize token generator.
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
