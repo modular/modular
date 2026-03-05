@@ -943,12 +943,12 @@ class PixelGenerationTokenizer(
             # for non-distilled models, CFG is enabled
             # whenever guidance_scale > 1.0; negative prompt defaults to "".
             do_true_cfg = (
-                image_options.guidance_scale > 1.0 and not is_distilled_klein
+                visual_options.guidance_scale > 1.0 and not is_distilled_klein
             )
         else:
             do_true_cfg = (
-                image_options.true_cfg_scale > 1.0
-                and image_options.negative_prompt is not None
+                visual_options.true_cfg_scale > 1.0
+                and visual_options.negative_prompt is not None
             )
         import PIL.Image
 
@@ -1007,17 +1007,19 @@ class PixelGenerationTokenizer(
         preprocessed_image_array = None
         if input_image is not None:
             preprocessed_image = self._preprocess_input_image(input_image)
-            height = image_options.height or preprocessed_image.height
-            width = image_options.width or preprocessed_image.width
+            height = visual_options.height or preprocessed_image.height
+            width = visual_options.width or preprocessed_image.width
             preprocessed_image_array = np.array(
                 preprocessed_image, dtype=np.uint8
             ).copy()
         else:
             height = (
-                image_options.height or default_sample_size * vae_scale_factor
+                visual_options.height
+                or default_sample_size * vae_spatial_compression_ratio
             )
             width = (
-                image_options.width or default_sample_size * vae_scale_factor
+                visual_options.width
+                or default_sample_size * vae_spatial_compression_ratio
             )
 
         # 3. Resolve image dimensions using cached static values
