@@ -43,6 +43,7 @@ dependencies = [
   "logbar",
   "markupsafe",
   "matplotlib",
+  "microbench",
   "msgspec",
   "munch",
   "mypy",

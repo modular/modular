@@ -85,6 +85,7 @@ PINS = {
     "logbar": "logbar@0.0.3",
     "markupsafe": "markupsafe@3.0.3",
     "matplotlib": "matplotlib@3.10.7",
+    "microbench": "microbench@0.9.1",
     "ml-dtypes": "ml-dtypes@0.5.4",
     "msgspec": "msgspec@0.20.0",
     "mteb": "mteb@1.29.12",
@@ -1263,22 +1264,22 @@ def targets():
         name = "_wheel_caio@0.9.25",
         actual = select({
             ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_caio_0.9.25_cp310_cp310_macosx_10_9_universal2//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp310_cp310_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp310_cp310_manylinux_2_34_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp310_cp310_manylinux_2_34_x86_64//file",
             ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_caio_0.9.25_cp311_cp311_macosx_10_9_universal2//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp311_cp311_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp311_cp311_manylinux_2_34_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp311_cp311_manylinux_2_34_x86_64//file",
             ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_caio_0.9.25_cp312_cp312_macosx_10_13_universal2//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp312_cp312_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp312_cp312_manylinux_2_34_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp312_cp312_manylinux_2_34_x86_64//file",
             ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_caio_0.9.25_cp313_cp313_macosx_10_13_universal2//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp313_cp313_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp313_cp313_manylinux_2_34_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp313_cp313_manylinux_2_34_x86_64//file",
             ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_caio_0.9.25_cp314_cp314_macosx_10_15_universal2//file",
             ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp314_cp314_manylinux_2_34_aarch64//file",
             ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp314_cp314_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_caio_0.9.25_cp314_cp314_manylinux_2_34_x86_64//file",
             ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_caio_0.9.25_py3_none_any//file",
         }),
     )
@@ -4912,6 +4913,36 @@ def targets():
         name = "mdurl@0.1.2",
         wheel = ":_wheel_mdurl@0.1.2",
         testonly = "mdurl" in _TESTONLY_DEPS,
+    )
+
+    _microbench_0_9_1_build_deps = [
+        ":setuptools",
+        ":wheel",
+    ]
+
+    native.alias(
+        name = "_sdist_microbench@0.9.1",
+        actual = "@pycross_lock_file_sdist_microbench_0.9.1//file",
+    )
+
+    pycross_wheel_build(
+        name = "_build_microbench@0.9.1",
+        sdist = ":_sdist_microbench@0.9.1",
+        target_environment = _target,
+        deps = _microbench_0_9_1_build_deps,
+        testonly = "microbench" in _TESTONLY_DEPS,
+        **extra_build_args
+    )
+
+    native.alias(
+        name = "_wheel_microbench@0.9.1",
+        actual = ":_build_microbench@0.9.1",
+    )
+
+    pycross_wheel_library(
+        name = "microbench@0.9.1",
+        wheel = ":_wheel_microbench@0.9.1",
+        testonly = "microbench" in _TESTONLY_DEPS,
     )
 
     _mistral_common_1_8_8_deps = [
@@ -12410,6 +12441,16 @@ def repositories():
 
     maybe(
         http_file,
+        name = "pycross_lock_file_sdist_microbench_0.9.1",
+        urls = [
+            "https://files.pythonhosted.org/packages/95/45/14b404d377c5af66a20069427dcf9a306c3783de8afb9a7655604b929eb9/microbench-0.9.1.tar.gz",
+        ],
+        sha256 = "0548a68a37f554bed83e8f6092fffa116c2ec7fe64ed44150e41903c28beb658",
+        downloaded_file_path = "microbench-0.9.1.tar.gz",
+    )
+
+    maybe(
+        http_file,
         name = "pycross_lock_file_sdist_numba_0.63.1",
         urls = [
             "https://files.pythonhosted.org/packages/dc/60/0145d479b2209bd8fdae5f44201eceb8ce5a23e0ed54c71f57db24618665/numba-0.63.1.tar.gz",
@@ -13840,12 +13881,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_caio_0.9.25_cp310_cp310_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64",
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp310_cp310_manylinux_2_34_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/17/b9/36715c97c873649d1029001578f901b50250916295e3dddf20c865438865/caio-0.9.25-cp310-cp310-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+            "https://files.pythonhosted.org/packages/0b/ab/07080ecb1adb55a02cbd8ec0126aa8e43af343ffabb6a71125b42670e9a1/caio-0.9.25-cp310-cp310-manylinux_2_34_aarch64.whl",
         ],
-        sha256 = "db9b5681e4af8176159f0d6598e73b2279bb661e718c7ac23342c550bd78c241",
-        downloaded_file_path = "caio-0.9.25-cp310-cp310-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+        sha256 = "bf61d7d0c4fd10ffdd98ca47f7e8db4d7408e74649ffaf4bef40b029ada3c21b",
+        downloaded_file_path = "caio-0.9.25-cp310-cp310-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp310_cp310_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/88/95/dd55757bb671eb4c376e006c04e83beb413486821f517792ea603ef216e9/caio-0.9.25-cp310-cp310-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "ab52e5b643f8bbd64a0605d9412796cd3464cb8ca88593b13e95a0f0b10508ae",
+        downloaded_file_path = "caio-0.9.25-cp310-cp310-manylinux_2_34_x86_64.whl",
     )
 
     maybe(
@@ -13860,12 +13911,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_caio_0.9.25_cp311_cp311_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64",
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp311_cp311_manylinux_2_34_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/51/3b/36f3e8ec38dafe8de4831decd2e44c69303d2a3892d16ceda42afed44e1b/caio-0.9.25-cp311-cp311-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+            "https://files.pythonhosted.org/packages/df/ce/65e64867d928e6aff1b4f0e12dba0ef6d5bf412c240dc1df9d421ac10573/caio-0.9.25-cp311-cp311-manylinux_2_34_aarch64.whl",
         ],
-        sha256 = "bf84bfa039f25ad91f4f52944452a5f6f405e8afab4d445450978cd6241d1478",
-        downloaded_file_path = "caio-0.9.25-cp311-cp311-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+        sha256 = "ae3d62587332bce600f861a8de6256b1014d6485cfd25d68c15caf1611dd1f7c",
+        downloaded_file_path = "caio-0.9.25-cp311-cp311-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp311_cp311_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/46/90/e278863c47e14ec58309aa2e38a45882fbe67b4cc29ec9bc8f65852d3e45/caio-0.9.25-cp311-cp311-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "fc220b8533dcf0f238a6b1a4a937f92024c71e7b10b5a2dfc1c73604a25709bc",
+        downloaded_file_path = "caio-0.9.25-cp311-cp311-manylinux_2_34_x86_64.whl",
     )
 
     maybe(
@@ -13880,12 +13941,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_caio_0.9.25_cp312_cp312_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64",
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp312_cp312_manylinux_2_34_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/a3/2b/21288691f16d479945968a0a4f2856818c1c5be56881d51d4dac9b255d26/caio-0.9.25-cp312-cp312-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+            "https://files.pythonhosted.org/packages/03/c4/8a1b580875303500a9c12b9e0af58cb82e47f5bcf888c2457742a138273c/caio-0.9.25-cp312-cp312-manylinux_2_34_aarch64.whl",
         ],
-        sha256 = "97084e4e30dfa598449d874c4d8e0c8d5ea17d2f752ef5e48e150ff9d240cd64",
-        downloaded_file_path = "caio-0.9.25-cp312-cp312-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+        sha256 = "4fa69eba47e0f041b9d4f336e2ad40740681c43e686b18b191b6c5f4c5544bfb",
+        downloaded_file_path = "caio-0.9.25-cp312-cp312-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp312_cp312_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d1/1c/0fe770b8ffc8362c48134d1592d653a81a3d8748d764bec33864db36319d/caio-0.9.25-cp312-cp312-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "6bebf6f079f1341d19f7386db9b8b1f07e8cc15ae13bfdaff573371ba0575d69",
+        downloaded_file_path = "caio-0.9.25-cp312-cp312-manylinux_2_34_x86_64.whl",
     )
 
     maybe(
@@ -13900,12 +13971,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_caio_0.9.25_cp313_cp313_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64",
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp313_cp313_manylinux_2_34_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/a3/9f/f21af50e72117eb528c422d4276cbac11fb941b1b812b182e0a9c70d19c5/caio-0.9.25-cp313-cp313-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+            "https://files.pythonhosted.org/packages/9c/12/c39ae2a4037cb10ad5eb3578eb4d5f8c1a2575c62bba675f3406b7ef0824/caio-0.9.25-cp313-cp313-manylinux_2_34_aarch64.whl",
         ],
-        sha256 = "0998210a4d5cd5cb565b32ccfe4e53d67303f868a76f212e002a8554692870e6",
-        downloaded_file_path = "caio-0.9.25-cp313-cp313-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+        sha256 = "1a177d4777141b96f175fe2c37a3d96dec7911ed9ad5f02bac38aaa1c936611f",
+        downloaded_file_path = "caio-0.9.25-cp313-cp313-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp313_cp313_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/22/59/f8f2e950eb4f1a5a3883e198dca514b9d475415cb6cd7b78b9213a0dd45a/caio-0.9.25-cp313-cp313-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "9ed3cfb28c0e99fec5e208c934e5c157d0866aa9c32aa4dc5e9b6034af6286b7",
+        downloaded_file_path = "caio-0.9.25-cp313-cp313-manylinux_2_34_x86_64.whl",
     )
 
     maybe(
@@ -13920,12 +14001,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_caio_0.9.25_cp314_cp314_manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64",
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp314_cp314_manylinux_2_34_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/5e/6c/d4d24f65e690213c097174d26eda6831f45f4734d9d036d81790a27e7b78/caio-0.9.25-cp314-cp314-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+            "https://files.pythonhosted.org/packages/87/a4/e534cf7d2d0e8d880e25dd61e8d921ffcfe15bd696734589826f5a2df727/caio-0.9.25-cp314-cp314-manylinux_2_34_aarch64.whl",
         ],
-        sha256 = "44a6b58e52d488c75cfaa5ecaa404b2b41cc965e6c417e03251e868ecd5b6d77",
-        downloaded_file_path = "caio-0.9.25-cp314-cp314-manylinux2010_x86_64.manylinux2014_x86_64.manylinux_2_12_x86_64.manylinux_2_17_x86_64.whl",
+        sha256 = "628a630eb7fb22381dd8e3c8ab7f59e854b9c806639811fc3f4310c6bd711d79",
+        downloaded_file_path = "caio-0.9.25-cp314-cp314-manylinux_2_34_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_caio_0.9.25_cp314_cp314_manylinux_2_34_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/3f/ed/bf81aeac1d290017e5e5ac3e880fd56ee15e50a6d0353986799d1bc5cfd5/caio-0.9.25-cp314-cp314-manylinux_2_34_x86_64.whl",
+        ],
+        sha256 = "0ba16aa605ccb174665357fc729cf500679c2d94d5f1458a6f0d5ca48f2060a7",
+        downloaded_file_path = "caio-0.9.25-cp314-cp314-manylinux_2_34_x86_64.whl",
     )
 
     maybe(
