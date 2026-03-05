@@ -469,7 +469,7 @@ fn test_getitem_raises() raises:
         _ = with_2d[3]
 
 
-def test_setitem_raises():
+def test_setitem_raises() raises:
     custom_indexable = Python.import_module("custom_indexable")
     t = Python.evaluate("(1,2,3)")
     with assert_raises(

@@ -21,7 +21,7 @@ fn run_on_cpu():
     pass
 
 
-def main():
+def main() raises:
     comptime if has_accelerator():
         run_on_gpu()
     else:

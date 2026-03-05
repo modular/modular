@@ -849,7 +849,7 @@ fn test_decoding[
     ](seq_len, num_keys, ctx)
 
 
-def main():
+def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:

@@ -15,7 +15,7 @@ from std.testing import assert_equal, assert_raises, TestSuite
 from never_type import panic, get_value_or_panic, safe_add
 
 
-def test_panic_always_raises():
+def test_panic_always_raises() raises:
     with assert_raises(contains="boom"):
         panic("boom")
 

@@ -70,7 +70,7 @@ def test_rng_rand_scalar() raises:
             test_dtype[dtype](scalar(10), scalar(20))
 
 
-def test_rng_rand_scalar_raises():
+def test_rng_rand_scalar_raises() raises:
     with assert_raises(contains="invalid min/max"):
         var rng = Rng(seed=1234)
         var _ = rng.rand_scalar[DType.int32](min=10, max=5)

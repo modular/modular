@@ -52,7 +52,7 @@ fn template_1() raises:
     assert_true(String(t"{list[0] + list[1]}") == "3")
 
 
-def main():
+def main() raises:
     construct_1()
     construct_2()
     format_1()

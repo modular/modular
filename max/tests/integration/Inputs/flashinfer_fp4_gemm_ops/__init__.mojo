@@ -41,7 +41,7 @@ struct Module:
         out_tensor: DLTensor[dtype=DType.bfloat16, rank=2],
         workspace: DLTensor[dtype=DType.int8, rank=1],
         tactic: Int = 0,  # auto
-    ) -> None:
+    ) raises -> None:
         safe_call = self.lib.get_function[SafeFunction]("__tvm_ffi_fp4_gemm")
 
         # `def` params are already mutable local copies, and
@@ -107,7 +107,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         global_scale: InputTensor[dtype=DType.float32, rank=1, ...],
         workspace: InputTensor[dtype=DType.int8, rank=1, ...],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
         comptime assert [target == "gpu"]
 

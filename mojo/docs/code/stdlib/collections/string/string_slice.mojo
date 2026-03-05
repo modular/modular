@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def string_slice_summary():
+def string_slice_summary() raises:
     from std.testing import assert_equal, assert_raises
 
     # Create a string slice

@@ -19,12 +19,12 @@ def test_valid_username() raises:
     assert_equal(validate_username("alice"), "alice")
 
 
-def test_empty_username_raises():
+def test_empty_username_raises() raises:
     with assert_raises(contains="cannot be empty"):
         _ = validate_username("")
 
 
-def test_short_username_raises():
+def test_short_username_raises() raises:
     with assert_raises(contains="must be at least 3 characters"):
         _ = validate_username("ab")
 

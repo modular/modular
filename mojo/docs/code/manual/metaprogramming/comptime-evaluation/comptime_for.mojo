@@ -19,7 +19,7 @@ fn elementwise_max(lhs: SIMD, rhs: type_of(lhs), out result: type_of(lhs)):
         result[i] = lhs[i] if lhs[i] >= rhs[i] else rhs[i]
 
 
-def main():
+def main() raises:
     comptime simd_type = SIMD[DType.int64, 4]
     v1 = simd_type(12, 0, 99, 77)
     v2 = simd_type(0, 92, 11, 4)
