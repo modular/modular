@@ -75,7 +75,7 @@ with randomly initialized weights before loading weights
 
 .. code-block:: python
 
-    from max.nn.module_v3 import Linear
+    from max.experimental.nn import Linear
 
     with F.lazy():
         model = Linear(2, 3)

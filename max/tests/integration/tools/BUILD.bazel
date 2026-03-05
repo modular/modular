@@ -15,6 +15,7 @@ modular_py_library(
         "hf_config_overrides.py",
     ],
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
@@ -43,7 +44,9 @@ modular_py_library(
         "//max/tests/integration/architectures/internvl:torch_utils",
         "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
         "//max/tests/integration/architectures/qwen3vl:generate_utils",
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:github_utils",
+        "//max/tests/integration/test_common:test_data",
+        "//max/tests/integration/test_common:torch_hooks",
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         requirement("diffusers"),  # Required for image generation pipelines
         requirement("einops"),  # Req'd by replit
@@ -78,6 +81,7 @@ modular_py_library(
     ],
     imports = ["."],
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
@@ -112,10 +116,13 @@ modular_py_library(
     imports = ["."],
     deps = [
         ":create_pipelines",
+        "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:evaluate_embeddings",
+        "//max/tests/integration/test_common:torch_utils",
         "//max/tests/integration/test_common:vllm_utils",
         requirement("huggingface-hub"),
         requirement("requests"),
@@ -154,7 +161,10 @@ modular_py_binary(
         "//max/tests/integration/architectures/internvl:torch_utils",
         "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
         "//max/tests/integration/architectures/qwen3vl:generate_utils",
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:github_utils",
+        "//max/tests/integration/test_common:numpy_encoder",
+        "//max/tests/integration/test_common:torch_utils",
         requirement("click"),
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         requirement("diffusers"),  # Required for image generation pipelines

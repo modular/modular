@@ -34,33 +34,33 @@ def test_cast() raises:
         "(1, 2)",
     )
     assert_equal(
-        String(IndexList[2, element_type = DType.int32](1, 2)),
+        String(IndexList[2, element_type=DType.int32](1, 2)),
         "(1, 2)",
     )
     assert_equal(
-        String(IndexList[2, element_type = DType.int64](1, 2)),
+        String(IndexList[2, element_type=DType.int64](1, 2)),
         "(1, 2)",
     )
     assert_equal(
         String(
-            IndexList[2, element_type = DType.int32](1, -2).cast[DType.int64]()
+            IndexList[2, element_type=DType.int32](1, -2).cast[DType.int64]()
         ),
         "(1, -2)",
     )
     assert_equal(
-        String(IndexList[2, element_type = DType.int32](1, 2)),
+        String(IndexList[2, element_type=DType.int32](1, 2)),
         "(1, 2)",
     )
     comptime s = String(
-        IndexList[2, element_type = DType.int32](1, 2).cast[DType.int64]()
+        IndexList[2, element_type=DType.int32](1, 2).cast[DType.int64]()
     )
     assert_equal(s, "(1, 2)")
 
 
 def test_index() raises:
-    assert_equal(String(Index[dtype = DType.int64](1, 2, 3)), "(1, 2, 3)")
-    assert_equal(String(Index[dtype = DType.int32](1, 2, 3)), "(1, 2, 3)")
-    assert_equal(String(Index[dtype = DType.uint32](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[dtype=DType.int64](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[dtype=DType.int32](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[dtype=DType.uint32](1, 2, 3)), "(1, 2, 3)")
 
 
 def test_list_literal() raises:
@@ -74,7 +74,7 @@ def test_write_to() raises:
     check_write_to(IndexList[3](1, 2, 3), expected="(1, 2, 3)", is_repr=False)
     check_write_to(IndexList[1](42), expected="(42,)", is_repr=False)
     check_write_to(
-        IndexList[2, element_type = DType.int32](1, 2),
+        IndexList[2, element_type=DType.int32](1, 2),
         expected="(1, 2)",
         is_repr=False,
     )
@@ -92,7 +92,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        IndexList[2, element_type = DType.int32](1, 2),
+        IndexList[2, element_type=DType.int32](1, 2),
         expected="IndexList[2, int32]((1, 2))",
         is_repr=True,
     )

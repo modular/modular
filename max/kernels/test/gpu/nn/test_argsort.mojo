@@ -13,8 +13,7 @@
 
 
 from std.gpu.host import DeviceContext
-from layout import Idx, TileTensor
-from layout._layout import row_major
+from layout import Idx, TileTensor, row_major
 
 from nn.argsort import argsort
 from std.testing import assert_equal
@@ -115,14 +114,14 @@ fn test_argsort_helper[
 def main() raises:
     with DeviceContext() as ctx:  # argmax tests
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=True
+            dtype=DType.float32, filler=linear_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=False
+            dtype=DType.float32, filler=linear_filler, ascending=False
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=True
+            dtype=DType.float32, filler=reverse_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=False
+            dtype=DType.float32, filler=reverse_filler, ascending=False
         ](ctx)

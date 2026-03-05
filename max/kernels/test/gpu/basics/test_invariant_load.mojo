@@ -36,7 +36,7 @@ def test_ldg_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         ldg_kernel,
         emission_kind=emission_kind,
-        target = get_gpu_target["sm_90a"](),
+        target=get_gpu_target["sm_90a"](),
     ]().asm
 
 
@@ -51,7 +51,7 @@ def test_layout_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         layout_kernel,
         emission_kind=emission_kind,
-        target = get_gpu_target["sm_90a"](),
+        target=get_gpu_target["sm_90a"](),
     ]().asm
 
 

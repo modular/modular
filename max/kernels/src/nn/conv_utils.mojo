@@ -15,7 +15,7 @@ from std.math import align_down, ceildiv, sqrt
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
-from layout import IntTuple, Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout import IntTuple, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from linalg.utils import partition_work
 
 from std.utils.index import Index, IndexList
@@ -337,54 +337,6 @@ fn get_conv_shape[
         stride=stride,
         dilation=dilation,
         pad_d=pad_d,
-        pad_h=pad_h,
-        pad_w=pad_w,
-        num_groups=num_groups,
-    )
-
-
-fn get_conv2d_shape[
-    output_layout: Layout,
-    input_layout: Layout,
-    filter_layout_param: Layout,
-    dtype: DType,
-    data_layout: Image2DLayout,
-    filter_layout: Image2DLayout,
-](
-    output: LayoutTensor[mut=True, dtype, output_layout, ...],
-    input: LayoutTensor[dtype, input_layout, ...],
-    filter: LayoutTensor[dtype, filter_layout_param, ...],
-    pad_h: IndexList[2],
-    pad_w: IndexList[2],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    num_groups: Int,
-) -> ConvShape[2]:
-    comptime assert (
-        input.rank == 4 and output.rank == 4
-    ), "Input and output must be rank 4"
-    comptime assert data_layout == Image2DLayout.NHWC
-    comptime assert (
-        filter.rank == 4 and filter_layout == Image2DLayout.RSCF
-    ) or (filter.rank == 5 and filter_layout == Image2DLayout.FRSCf)
-
-    var filter_dims: IndexList[2]
-
-    comptime if filter_layout == Image2DLayout.RSCF:
-        filter_dims = Index(filter.dim[0](), filter.dim[1]())
-    else:
-        filter_dims = Index(filter.dim[1](), filter.dim[2]())
-
-    return ConvShape[2](
-        n=input.dim[0](),
-        input_dims=Index(input.dim[1](), input.dim[2]()),
-        output_dims=Index(output.dim[1](), output.dim[2]()),
-        filter_dims=filter_dims,
-        c=input.dim[3](),
-        f=output.dim[3](),
-        stride=stride,
-        dilation=dilation,
-        pad_d=Index(0, 0),
         pad_h=pad_h,
         pad_w=pad_w,
         num_groups=num_groups,

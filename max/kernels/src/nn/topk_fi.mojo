@@ -35,8 +35,8 @@ from layout.coord import (
     ComptimeInt,
     coord_to_index_list,
 )
-from layout._layout import row_major, TensorLayout, Layout
-from layout import TileTensor
+from layout.tile_layout import TensorLayout, Layout
+from layout import TileTensor, row_major
 from std.math import ceildiv, gcd, exp
 from std.memory import stack_allocation
 from std.os import Atomic
@@ -260,8 +260,8 @@ fn topk_mask_logits[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
 ](
     ctx: DeviceContext,
@@ -302,10 +302,10 @@ fn topk_mask_logits[
             vec_size,
             dtype,
             out_idx_type,
-            LogitsLayoutType = logits.LayoutType,
-            logits_origin = ImmutOrigin(logits.origin),
-            MaskedLogitsLayoutType = masked_logits.LayoutType,
-            masked_logits_origin = masked_logits.origin,
+            LogitsLayoutType=logits.LayoutType,
+            logits_origin=ImmutOrigin(logits.origin),
+            MaskedLogitsLayoutType=masked_logits.LayoutType,
+            masked_logits_origin=masked_logits.origin,
         ]
         ctx.enqueue_function[kernel, kernel](
             logits.as_immut(),
@@ -338,10 +338,10 @@ fn device_sampling_from_prob[
     prob_vec: SIMD[DType.float32, vec_size],
     aggregate: Float32,
     sampled_id_sram: UnsafePointer[
-        mut=True, Int, _, address_space = AddressSpace.SHARED
+        mut=True, Int, _, address_space=AddressSpace.SHARED
     ],
     last_valid_id_sram: UnsafePointer[
-        mut=True, Int, _, address_space = AddressSpace.SHARED
+        mut=True, Int, _, address_space=AddressSpace.SHARED
     ],
 ) -> Float32:
     """Device-level sampling from probability distribution with atomic operations.
@@ -381,7 +381,7 @@ fn device_sampling_from_prob[
         # Step 5: Block-level exclusive scan.
         var thread_total = local_inclusive_cdf[vec_size - 1]
         var prefix_from_prev_threads = block.prefix_sum[
-            dtype = DType.float32,
+            dtype=DType.float32,
             block_size=block_size,
             exclusive=True,
         ](thread_total)
@@ -516,12 +516,12 @@ fn _block_reduce_value_count[
     var value_sram = stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * value_width,
         Scalar[T],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var count_sram = stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * count_width,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     var warp = warp_id()
@@ -614,10 +614,10 @@ fn TopKSamplingFromProbKernel[
     var tx = Int(thread_idx.x)
 
     var sampled_id_sram = stack_allocation[
-        1, Int, address_space = AddressSpace.SHARED
+        1, Int, address_space=AddressSpace.SHARED
     ]()
     var last_valid_id_sram = stack_allocation[
-        1, Int, address_space = AddressSpace.SHARED
+        1, Int, address_space=AddressSpace.SHARED
     ]()
 
     var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
@@ -767,12 +767,12 @@ fn topk_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
 ](
     ctx: DeviceContext,
@@ -932,10 +932,10 @@ fn TopKTopPSamplingFromProbKernel[
         row_idx = Int(indices.load(bx))
 
     var sampled_id_sram = stack_allocation[
-        1, Int, address_space = AddressSpace.SHARED
+        1, Int, address_space=AddressSpace.SHARED
     ]()
     var last_valid_id_sram = stack_allocation[
-        1, Int, address_space = AddressSpace.SHARED
+        1, Int, address_space=AddressSpace.SHARED
     ]()
 
     var seed_val = UInt64(0)
@@ -1088,20 +1088,20 @@ fn topk_topp_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
     TopPArrLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
 ](
     ctx: DeviceContext,
@@ -1268,13 +1268,11 @@ fn TopKSoftmaxSampleKernel[
 
     var s_vals = external_memory[
         Float32,
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[Float32](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[Float32](),
     ]()
     var s_idxs = (s_vals + k_rounded).bitcast[Int]()
-    var s_count = stack_allocation[
-        1, Int, address_space = AddressSpace.SHARED
-    ]()
+    var s_count = stack_allocation[1, Int, address_space=AddressSpace.SHARED]()
     if tx == 0:
         s_count[0] = 0
 
@@ -1378,7 +1376,7 @@ fn TopKSoftmaxSampleKernel[
 
     # Use atomic counter in shared memory for write position.
     var s_write_idx = stack_allocation[
-        1, Int32, address_space = AddressSpace.SHARED
+        1, Int32, address_space=AddressSpace.SHARED
     ]()
     if tx == 0:
         s_write_idx[0] = Int32(0)
@@ -1432,22 +1430,22 @@ fn topk_softmax_sample[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
     TemperatureLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types = Variadic.types[RuntimeInt[DType.int64]],
-        stride_types = Variadic.types[ComptimeInt[1]],
+        shape_types=Variadic.types[RuntimeInt[DType.int64]],
+        stride_types=Variadic.types[ComptimeInt[1]],
     ],
 ](
     ctx: DeviceContext,
-    logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     sampled_indices: TileTensor[
-        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
     top_k_val: Int,
     temperature_val: Float32 = 1.0,
@@ -1541,10 +1539,10 @@ fn topk_softmax_sample[
             vec_size,
             dtype,
             out_idx_type,
-            LogitsLayoutType = logits.LayoutType,
-            logits_origin = ImmutOrigin(logits.origin),
-            SampledLayoutType = sampled_indices.LayoutType,
-            sampled_origin = sampled_indices.origin,
+            LogitsLayoutType=logits.LayoutType,
+            logits_origin=ImmutOrigin(logits.origin),
+            SampledLayoutType=sampled_indices.LayoutType,
+            sampled_origin=sampled_indices.origin,
         ]
         ctx.enqueue_function[kernel, kernel](
             logits.as_immut(),

@@ -25,8 +25,8 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import row_major
 from std.memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -177,7 +177,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
     )
 
     fused_qk_rope[
-        kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
+        kv_collection.CacheType, interleaved=True, target=StaticString("cpu")
     ](
         q_proj=q,
         kv_collection=kv_collection,

@@ -176,12 +176,12 @@ def test_comparisons() raises:
 
 def test_unsafepointer_address_space() raises:
     var p1 = LegacyUnsafePointer[
-        mut=True, Int, address_space = AddressSpace(0)
+        mut=True, Int, address_space=AddressSpace(0)
     ].alloc(1)
     p1.free()
 
     var p2 = LegacyUnsafePointer[
-        mut=True, Int, address_space = AddressSpace.GENERIC
+        mut=True, Int, address_space=AddressSpace.GENERIC
     ].alloc(1)
     p2.free()
 

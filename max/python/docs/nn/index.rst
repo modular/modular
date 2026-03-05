@@ -13,7 +13,7 @@ APIs to build neural network components for deep learning models with Python.
 The MAX neural network API provides two namespaces:
 
 - **max.nn**: Graph-based API for building computational graphs.
-- **max.nn.module_v3**: Eager-style execution with PyTorch-style syntax.
+- **max.experimental.nn**: Eager-style execution with PyTorch-style syntax.
 
 For functional operations like relu, softmax, and more, see the
 :code_link:`/max/api/python/experimental/functional|functional` module.
@@ -45,23 +45,17 @@ Use these modules for building graph-based neural networks.
 * :code_link:`/max/api/python/nn/sequential|sequential`: Container for sequential layer composition.
 * :code_link:`/max/api/python/nn/transformer|transformer`: Transformer building blocks and layers.
 
-Eager API (module_v3)
-=====================
+Eager API
+=========
 
 .. note::
-   The eager API provides PyTorch-style execution. Import from ``max.nn.module_v3``
-   directly — no server flag required.
+   The eager API provides PyTorch-style execution. Import from
+   ``max.experimental.nn`` — see
+   :code_link:`/max/api/python/experimental/nn|max.experimental.nn` for
+   the full reference.
 
    To load the eager architecture variant in the inference server, pass
    ``--prefer-module-v3`` to ``max serve`` or ``max generate``.
-
-* :code_link:`/max/api/python/nn/module_v3/module|module`: Base class for all neural network modules.
-* :code_link:`/max/api/python/nn/module_v3/Conv2d|Conv2d`: 2D convolution layer.
-* :code_link:`/max/api/python/nn/module_v3/Embedding|Embedding`: Vector embedding layer for token representation.
-* :code_link:`/max/api/python/nn/module_v3/Linear|Linear`: Linear transformation layer with weights and bias.
-* :code_link:`/max/api/python/nn/module_v3/sequential|sequential`: Containers for composing modules sequentially.
-* :code_link:`/max/api/python/nn/module_v3/norm|norm`: Normalization layers (GemmaRMSNorm, RMSNorm, LayerNorm, GroupNorm).
-* :code_link:`/max/api/python/nn/module_v3/rope|rope`: Rotary position embeddings (RotaryEmbedding, TransposedRotaryEmbedding).
 
 
 .. toctree::
@@ -88,11 +82,3 @@ Eager API (module_v3)
    sequential
    transformer/index
    attention/index
-   module_v3/index
-   module_v3/module
-   module_v3/Conv2d
-   module_v3/Linear
-   module_v3/Embedding
-   module_v3/sequential
-   module_v3/norm/index
-   module_v3/rope/index

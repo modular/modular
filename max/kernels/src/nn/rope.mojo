@@ -28,7 +28,7 @@ from layout import (
     TileTensor,
     coord,
 )
-from layout._layout import Layout, _RowMajor
+from layout.tile_layout import Layout, _RowMajor
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList

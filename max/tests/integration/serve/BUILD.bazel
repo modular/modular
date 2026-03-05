@@ -62,7 +62,6 @@ modular_py_test(
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
     tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
@@ -72,14 +71,23 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
         "//max/python/max/serve/schemas",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
         "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
+        requirement("fastapi"),
         requirement("pytest-asyncio"),
+        requirement("requests"),
         requirement("sse-starlette"),
     ],
 )

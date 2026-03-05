@@ -28,7 +28,7 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from layout.tma_async import SharedMemBarrier, TMATensorTile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
 from std.memory import stack_allocation
 from nn.mha_operand import (
     KVCacheMHAOperand,
@@ -45,21 +45,25 @@ from std.utils import IndexList
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
 @__llvm_arg_metadata(dst_tma_tile, `nvvm.grid_constant`)
 fn mha_operand_tma_copy_kernel[
-    layout: Layout,
-    desc_layout: Layout,
+    rank: Int,
+    tile_shape: IndexList[rank],
+    desc_shape: IndexList[rank],
+    smem_layout: Layout,
     kv_t: MHAOperand,
     swizzle_mode: TensorMapSwizzle,
     head_size: Int,
 ](
     src_tma_tile: TMATensorTile[
         kv_t.dtype,
-        layout,
-        desc_layout,
+        rank,
+        tile_shape,
+        desc_shape,
     ],
     dst_tma_tile: TMATensorTile[
         kv_t.dtype,
-        layout,
-        desc_layout,
+        rank,
+        tile_shape,
+        desc_shape,
     ],
     src_operand: kv_t,
     dst_operand: kv_t,
@@ -73,9 +77,9 @@ fn mha_operand_tma_copy_kernel[
     # Allocate shared memory tile
     smem_tile = LayoutTensor[
         kv_t.dtype,
-        layout,
+        smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -83,7 +87,7 @@ fn mha_operand_tma_copy_kernel[
     ref mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()[0]
 
@@ -95,8 +99,8 @@ fn mha_operand_tma_copy_kernel[
     # Calculate col coordinates
     # Declare row coordinates
 
-    comptime tile_m = layout.shape[0].size()
-    comptime elements = layout.size()
+    comptime tile_m = tile_shape[0]
+    comptime elements = _idx_product[rank, tile_shape]()
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[kv_t.dtype]()
     # Loop over columns to copy full head size
     for kv_tile_start_row in range(0, num_keys, tile_m):
@@ -154,10 +158,10 @@ fn mha_operand_copy[
 
     # Create TMA tiles
     src_tma = src.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth = Int(head_size)
+        swizzle_mode, BN=tile_m, depth=Int(head_size)
     ](ctx)
     dst_tma = dst.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth = Int(head_size)
+        swizzle_mode, BN=tile_m, depth=Int(head_size)
     ](ctx)
 
     # Calculate grid dimensions
@@ -169,8 +173,10 @@ fn mha_operand_copy[
     grid_z = batch_size
 
     comptime kernel = mha_operand_tma_copy_kernel[
-        src_tma.layout,
-        src_tma.desc_layout,
+        type_of(src_tma).rank,
+        type_of(src_tma).tile_shape,
+        type_of(src_tma).desc_shape,
+        Layout.row_major(type_of(src_tma).tile_shape),
         kv_t,
         swizzle_mode,
         Int(head_size),

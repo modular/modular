@@ -209,7 +209,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     else:
         return CompilationTarget.unsupported_target_error[
             Int32,
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="lop() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -254,7 +254,7 @@ fn _byte_permute_inst() -> StaticString:
     else:
         return CompilationTarget.unsupported_target_error[
             StaticString,
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -752,8 +752,8 @@ fn store_release[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.RELEASE.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     elif is_apple_gpu():
         comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
@@ -777,7 +777,7 @@ fn store_release[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -823,12 +823,12 @@ fn store_relaxed[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.MONOTONIC.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](value, ptr.address)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -884,8 +884,8 @@ fn load_acquire[
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.ACQUIRE.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     elif is_apple_gpu():
         comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
@@ -910,7 +910,7 @@ fn load_acquire[
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -958,13 +958,13 @@ fn load_relaxed[
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.MONOTONIC.__mlir_attr(),
+            alignment=alignment._mlir_value,
+            ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](ptr.address)
     else:
         return CompilationTarget.unsupported_target_error[
             Scalar[dtype],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -1181,7 +1181,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         self,
         vector_offset: Int32,
         shared_ptr: UnsafePointer[
-            mut=True, Scalar[dtype], _, address_space = AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         *,
         scalar_offset: Int32 = 0,
@@ -1344,7 +1344,7 @@ fn ds_read_tr16_b64[
     //,
 ](
     shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], _, address_space = AddressSpace.SHARED
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.

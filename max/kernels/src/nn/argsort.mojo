@@ -21,8 +21,7 @@ from std.bit import next_power_of_two
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
-from layout import Coord, Idx, TileTensor
-from layout._layout import row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.index import IndexList, StaticTuple
@@ -32,7 +31,7 @@ fn _argsort_cpu[
     *,
     ascending: Bool = True,
 ](
-    indices: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    indices: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor,
 ) raises:
     """
@@ -226,9 +225,7 @@ fn _argsort_gpu[
 
         elementwise[
             fill_indices_iota_no_padding,
-            simd_width = simd_width_of[
-                indices.dtype, target = get_gpu_target()
-            ](),
+            simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
             target="gpu",
         ](n, ctx)
 
@@ -265,7 +262,7 @@ fn _argsort_gpu[
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
             )
             padded_input.ptr.store[
-                alignment = simd_width_of[padded_input.dtype]()
+                alignment=simd_width_of[padded_input.dtype]()
             ](i, input.ptr.load[width=width](i))
             return
 
@@ -303,7 +300,7 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     elementwise[
         extract_indices,
-        simd_width = simd_width_of[indices.dtype, target = get_gpu_target()](),
+        simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
         target="gpu",
     ](n, ctx)
 
@@ -333,7 +330,7 @@ fn argsort[
     ascending: Bool = True,
     target: StaticString = "cpu",
 ](
-    output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor[mut=True, ...],
     ctx: DeviceContext,
 ) raises:
@@ -366,7 +363,7 @@ fn argsort[
 fn argsort[
     ascending: Bool = True
 ](
-    output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor,
 ) raises:
     """

@@ -38,6 +38,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
@@ -55,11 +56,13 @@ fn tma_umma_kernel_pair_cta[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
+    a_tma_rank: Int,
+    b_tma_rank: Int,
+    a_tile_shape: IndexList[a_tma_rank],
+    b_tile_shape: IndexList[b_tma_rank],
     c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
+    a_desc_shape: IndexList[a_tma_rank],
+    b_desc_shape: IndexList[b_tma_rank],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -68,8 +71,8 @@ fn tma_umma_kernel_pair_cta[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
@@ -89,10 +92,10 @@ fn tma_umma_kernel_pair_cta[
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_tma_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_tma_rank, b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
 
     comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
@@ -104,7 +107,7 @@ fn tma_umma_kernel_pair_cta[
     ]()
 
     var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
     ]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
@@ -119,7 +122,7 @@ fn tma_umma_kernel_pair_cta[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem)
 
@@ -127,7 +130,7 @@ fn tma_umma_kernel_pair_cta[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem)
 
@@ -203,7 +206,7 @@ fn tma_umma_kernel_pair_cta[
         accum_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -308,7 +311,7 @@ fn tma_umma_kernel_pair_cta[
     c_frag = tcgen05_ld[
         datapaths=32,
         bits=32,
-        repeat = BN if MMA_M == 128 else MMA_N,
+        repeat=BN if MMA_M == 128 else MMA_N,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -447,11 +450,13 @@ def test_tma_umma_pair_cta[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(b_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(b_tma_op).tile_shape,
         Layout.row_major(M, N),
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).desc_shape,
         block_tile_shape,
         mma_shape,
         transpose_b=transpose_b,
@@ -547,7 +552,7 @@ def main() raises:
                     Index(256, 512, 2 * BK),
                     Index(64, 64, BK),
                     Index(128, 128, MMA_K),
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     cta_group=2,
@@ -560,7 +565,7 @@ def main() raises:
                     Index(256, 1024, 2 * BK),
                     Index(64, 128, BK),
                     Index(128, 256, MMA_K),
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     cta_group=2,
@@ -573,7 +578,7 @@ def main() raises:
                     Index(128, 512, 2 * BK),
                     Index(64, 128, BK),
                     Index(128, 256, MMA_K),
-                    cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     cta_group=2,
@@ -586,7 +591,7 @@ def main() raises:
                     Index(128, 256, 2 * BK),
                     Index(64, 128, BK),
                     Index(128, 256, MMA_K),
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     cta_group=2,
@@ -599,7 +604,7 @@ def main() raises:
                     Index(256, 128, 2 * BK),
                     Index(128, 64, BK),
                     Index(256, 128, MMA_K),
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     cta_group=2,
@@ -612,7 +617,7 @@ def main() raises:
                     Index(256, 256, 2 * BK),
                     Index(128, 64, BK),
                     Index(256, 128, MMA_K),
-                    cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     cta_group=2,
@@ -625,7 +630,7 @@ def main() raises:
                     Index(512, 512, 2 * BK),
                     Index(128, 64, BK),
                     Index(256, 128, MMA_K),
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     cta_group=2,

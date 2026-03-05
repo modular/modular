@@ -48,20 +48,20 @@ fn test_stmatrix(
         Int(mma_m * mma_k),
         DType.float32,
         alignment=32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         Int(mma_n * mma_k),
         DType.float32,
         alignment=32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     var c_shared = stack_allocation[
         Int(mma_m * mma_n),
         DType.float32,
         alignment=32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     for i in range(tid, mma_m * mma_k, WARP_SIZE):
@@ -122,17 +122,17 @@ fn test_stmatrix_gen[
     var d_reg = SIMD[accum_type, c_frag_size](0)
 
     var a_shared = stack_allocation[
-        M * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
     var b_shared = stack_allocation[
-        N * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
     var c_shared = stack_allocation[
         M * N,
         accum_type,
         alignment=32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     for i in range(lane, M * K, WARP_SIZE):

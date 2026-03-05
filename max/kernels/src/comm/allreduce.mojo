@@ -96,8 +96,7 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
-from layout import Coord, Idx, TileTensor
-from layout._layout import row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -181,7 +180,7 @@ fn _naive_reduce_kernel_with_lambda[
     """Naive reduction kernel with elementwise lambda support."""
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
@@ -255,7 +254,7 @@ fn _allreduce_naive_single[
     - Each op instance only writes to its own temporary buffer and its own
       output buffer (`out_r`).
     """
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime BLOCK_SIZE = 256
     var num_elements = list_of_in_bufs[0].num_elements()
 
@@ -313,7 +312,7 @@ fn _allreduce_naive_single[
         dtype,
         rank,
         width=simd_width,
-        alignment = align_of[SIMD[dtype, simd_width]](),
+        alignment=align_of[SIMD[dtype, simd_width]](),
         output_lambda=output_lambda,
     ]
     ctx.enqueue_function[
@@ -543,7 +542,7 @@ fn _allreduce_1stage_kernel[
     Synchronizes using _multi_gpu_barrier before and after reduction.
     """
     comptime accum_type = get_accum_type[dtype]()
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
@@ -621,7 +620,7 @@ fn _allreduce_p2p[
     Launches P2P reduction kernel on the current GPU to perform direct reduction.
     """
     comptime num_buffers = 1 if use_multimem else ngpus
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
 
     # Do nothing if there are no elements to reduce.

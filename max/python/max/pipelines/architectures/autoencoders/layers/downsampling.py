@@ -15,10 +15,10 @@
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Conv2d, Module
+from max.experimental.nn.norm import LayerNorm, RMSNorm
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
-from max.nn.module_v3 import Conv2d, Module
-from max.nn.module_v3.norm import LayerNorm, RMSNorm
 
 
 class Downsample2D(Module[[Tensor], Tensor]):

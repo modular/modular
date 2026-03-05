@@ -289,7 +289,7 @@ fn _block_scaled_matmul_with_epilogue[
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
         comptime use_32b_simd = True
         comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target = get_gpu_target()]()
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
 
         @parameter
@@ -428,7 +428,7 @@ fn _vendor_blas_block_scaled_matmul_with_epilogue[
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
         comptime use_32b_simd = True
         comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target = get_gpu_target()]()
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
 
         @parameter
