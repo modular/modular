@@ -1644,6 +1644,15 @@ fn mla_prefill_branch_bf16[
             row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
         )
 
+        # create a dummy buffer to instruct the matmul kernel to output values
+        # in the correct dtype
+        var k_dummy_flat = TileTensor(
+            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+            row_major(
+                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
+            ),
+        )
+
         # Lambda function to convert K matmul output to FP8
         @always_inline
         @parameter
@@ -1661,7 +1670,7 @@ fn mla_prefill_branch_bf16[
             transpose_b=True,
             elementwise_lambda_fn=k_elementwise_convert,
         ](
-            k_fp8_flat.to_layout_tensor(),
+            k_dummy_flat.to_layout_tensor(),
             k_latent.to_layout_tensor(),
             w_k.to_layout_tensor(),
             Optional(ctx),
@@ -1670,6 +1679,13 @@ fn mla_prefill_branch_bf16[
         var w_v = TileTensor(
             w_uv.ptr,
             row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
+        )
+
+        # create a dummy buffer to instruct the matmul kernel to output values
+        # in the correct dtype
+        var v_dummy_flat = TileTensor(
+            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+            row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
         )
 
         # Lambda function to convert V matmul output to FP8
@@ -1689,7 +1705,7 @@ fn mla_prefill_branch_bf16[
             transpose_b=True,
             elementwise_lambda_fn=v_elementwise_convert,
         ](
-            v_fp8_flat.to_layout_tensor(),
+            v_dummy_flat.to_layout_tensor(),
             k_latent.to_layout_tensor(),
             w_v.to_layout_tensor(),
             Optional(ctx),
@@ -1699,7 +1715,7 @@ fn mla_prefill_branch_bf16[
         var k_fp8 = TileTensor(
             k_fp8_buf,
             row_major(
-                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
+                (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
             ),
         )
         var v_fp8 = TileTensor(
