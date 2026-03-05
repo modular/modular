@@ -305,6 +305,13 @@ what we publish.
 
 ### Library changes
 
+- `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
+  `std.gpu.primitives.warp` now always broadcast the reduction result to all
+  participating lanes, using optimized hardware-specific paths (AMD DPP,
+  Blackwell redux, or butterfly shuffle pattern). The previous
+  `lane_group_sum_and_broadcast()`, `lane_group_max_and_broadcast()` functions
+  are deprecated — use the short names instead.
+
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly

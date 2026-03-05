@@ -594,9 +594,7 @@ struct BlockwiseFP8TokenFormat[
                 width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width).cast[Self.scales_dtype]()
             var thread_max = abs(loaded_vec).reduce_max()
-            var group_max = warp.lane_group_max_and_broadcast[
-                n_threads_per_group
-            ](thread_max)
+            var group_max = warp.lane_group_max[n_threads_per_group](thread_max)
 
             # 1e-4 is taken from DeepEP.
             var scale_factor = max(group_max, 1e-4) / fp8_max_t
@@ -3283,9 +3281,7 @@ fn fused_silu_fp8_kernel[
 
             # Quantization logic.
             var thread_max = abs(output_val).reduce_max()
-            var group_max = warp.lane_group_max_and_broadcast[
-                n_threads_per_group
-            ](thread_max)
+            var group_max = warp.lane_group_max[n_threads_per_group](thread_max)
             var scale_factor = max(group_max, 1e-4) / fp8_max_t
             output_val = (output_val / scale_factor).clamp(
                 -fp8_max_t, fp8_max_t

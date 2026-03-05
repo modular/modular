@@ -4594,7 +4594,7 @@ fn mha_splitk_reduce[
     if partition_idx < UInt(num_partitions):
         l = qk_max_ptr[qk_max_offset]
 
-    var qk_max = warp.lane_group_max_and_broadcast[WARP_SIZE](l)
+    var qk_max = warp.lane_group_max[WARP_SIZE](l)
 
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = LayoutTensor[

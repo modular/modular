@@ -851,9 +851,7 @@ fn _rms_norm_warp_tiling_subkernel[
 
     comptime if rows_per_warp == 2:
         # Each half warp handles reduction for one row.
-        row_m2 = warp.lane_group_sum_and_broadcast[num_lanes=WARP_SIZE // 2](
-            thread_m2
-        )
+        row_m2 = warp.lane_group_sum[num_lanes=WARP_SIZE // 2](thread_m2)
     else:
         row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
             thread_m2

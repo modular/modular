@@ -146,14 +146,10 @@ struct Softmax[
             # Reduce max for T0-T3, T4-T7, etc for nvidia
             #                T0-T15, T16-T31, etc for amd
             comptime for row in range(Self.frag_num_rows):
-                self.score_frag_rowmax[
-                    col_tile, row
-                ] = warp.lane_group_max_and_broadcast[
+                self.score_frag_rowmax[col_tile, row] = warp.lane_group_max[
                     Int(Self.num_rowwise_lanes),
                     stride=Int(Self.rowwise_lanes_stride),
-                ](
-                    self.score_frag_rowmax[col_tile, row]
-                )
+                ](self.score_frag_rowmax[col_tile, row])
 
         var coords = idx2crd[Self.warp_layout](Int(lane_id()))
         var lane_contains_first_column = coords[1] == 0
@@ -210,14 +206,10 @@ struct Softmax[
             # Broadcast to 4 threads in the same row.
             comptime if Self.num_rowwise_warps > 1:
                 comptime for row in range(Self.frag_num_rows):
-                    self.score_frag_rowmax[
-                        col_tile, row
-                    ] = warp.lane_group_max_and_broadcast[
+                    self.score_frag_rowmax[col_tile, row] = warp.lane_group_max[
                         Int(Self.num_rowwise_lanes),
                         stride=Int(Self.rowwise_lanes_stride),
-                    ](
-                        self.score_frag_rowmax[col_tile, row]
-                    )
+                    ](self.score_frag_rowmax[col_tile, row])
 
     @always_inline
     fn calculate_qk_sum(
@@ -251,14 +243,10 @@ struct Softmax[
                         ]
 
             comptime for row in range(Self.frag_num_rows):
-                self.score_frag_rowsum[
-                    col_tile, row
-                ] = warp.lane_group_sum_and_broadcast[
+                self.score_frag_rowsum[col_tile, row] = warp.lane_group_sum[
                     Int(Self.num_rowwise_lanes),
                     stride=Int(Self.rowwise_lanes_stride),
-                ](
-                    self.score_frag_rowsum[col_tile, row]
-                )
+                ](self.score_frag_rowsum[col_tile, row])
 
         # Reduce rowsum via shared memory.
 
@@ -314,14 +302,10 @@ struct Softmax[
             comptime for col_tile in range(Self.num_colwise_tiles):
                 comptime for row in range(Self.frag_num_rows):
                     # Broadcast to 4 threads in the same row.
-                    self.score_frag_rowsum[
-                        col_tile, row
-                    ] = warp.lane_group_max_and_broadcast[
+                    self.score_frag_rowsum[col_tile, row] = warp.lane_group_max[
                         Int(Self.num_rowwise_lanes),
                         stride=Int(Self.rowwise_lanes_stride),
-                    ](
-                        self.score_frag_rowsum[col_tile, row]
-                    )
+                    ](self.score_frag_rowsum[col_tile, row])
 
     @always_inline
     fn exp[

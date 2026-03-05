@@ -1011,9 +1011,9 @@ fn group_limited_router_kernel[
                     ).cast[scores_type]()
                 )
 
-            weights_sum = warp.lane_group_sum_and_broadcast[
-                num_lanes=n_experts_per_tok
-            ](original_weight)
+            weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+                original_weight
+            )
 
             comptime if norm_weights:
                 original_weight /= weights_sum
