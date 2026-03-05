@@ -1494,6 +1494,7 @@ fn matmul_dispatch_sm100_bf16[
     ]
 
     comptime FLUX2_NK = [
+        # Flux2-dev
         Index(6144, 24576),
         Index(55296, 6144),
         Index(6144, 6144),
@@ -1501,6 +1502,15 @@ fn matmul_dispatch_sm100_bf16[
         Index(6144, 18432),
         Index(1024, 5120),
         Index(32768, 5120),
+        # Flux2-Klein-4B
+        Index(3072, 3072),
+        Index(18432, 3072),
+        Index(3072, 9216),
+        Index(9216, 3072),
+        Index(27648, 3072),
+        Index(3072, 12288),
+        Index(3072, 7680),
+        Index(6144, 3072),
     ]
 
     comptime static_NK = Index(static_N, static_K)
