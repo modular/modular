@@ -867,6 +867,7 @@ def test_erfc() raises:
 
 
 def test_cbrt() raises:
+    # Float32 scalar path: range [-10, 10]
     comptime n = 1_0000
     for i in range(n):
         var val = Float32(i) / (n * Float32(2) / 10) - 10
@@ -875,6 +876,48 @@ def test_cbrt() raises:
             _call_libm["cbrt"](val),
             msg=String("mismatch for the value = ", val, " at index = ", i),
         )
+
+    # Float64 scalar path: range [-10, 10]
+    for i in range(n):
+        var val = Float64(i) / (n * Float64(2) / 10) - 10
+        assert_almost_equal(
+            cbrt(val),
+            _call_libm["cbrt"](val),
+            msg=String("f64 mismatch for the value = ", val, " at index = ", i),
+        )
+
+    # SIMD vector paths (exercises the vectorized path added for float32)
+    var v4 = SIMD[DType.float32, 4](0.0, 1.0, 8.0, 27.0)
+    var v4_expected = SIMD[DType.float32, 4](0.0, 1.0, 2.0, 3.0)
+    assert_almost_equal(cbrt(v4), v4_expected, msg="SIMD float32 width=4")
+
+    var v4_neg = SIMD[DType.float32, 4](-1.0, -8.0, -27.0, -64.0)
+    var v4_neg_expected = SIMD[DType.float32, 4](-1.0, -2.0, -3.0, -4.0)
+    assert_almost_equal(cbrt(v4_neg), v4_neg_expected, msg="SIMD float32 negative width=4")
+
+    # Exact integer cube roots (Float32)
+    assert_almost_equal(cbrt(Float32(0.0)), Float32(0.0), msg="cbrt(0)")
+    assert_almost_equal(cbrt(Float32(1.0)), Float32(1.0), msg="cbrt(1)")
+    assert_almost_equal(cbrt(Float32(-1.0)), Float32(-1.0), msg="cbrt(-1)")
+    assert_almost_equal(cbrt(Float32(8.0)), Float32(2.0), msg="cbrt(8)")
+    assert_almost_equal(cbrt(Float32(-8.0)), Float32(-2.0), msg="cbrt(-8)")
+    assert_almost_equal(cbrt(Float32(27.0)), Float32(3.0), msg="cbrt(27)")
+    assert_almost_equal(cbrt(Float32(64.0)), Float32(4.0), msg="cbrt(64)")
+
+    # Exact integer cube roots (Float64)
+    assert_almost_equal(cbrt(Float64(0.0)), Float64(0.0), msg="f64 cbrt(0)")
+    assert_almost_equal(cbrt(Float64(1.0)), Float64(1.0), msg="f64 cbrt(1)")
+    assert_almost_equal(cbrt(Float64(-1.0)), Float64(-1.0), msg="f64 cbrt(-1)")
+    assert_almost_equal(cbrt(Float64(8.0)), Float64(2.0), msg="f64 cbrt(8)")
+    assert_almost_equal(cbrt(Float64(-8.0)), Float64(-2.0), msg="f64 cbrt(-8)")
+
+    # Special values
+    assert_true(isnan(cbrt(nan[DType.float32]())), msg="cbrt(nan) should be nan")
+    assert_true(isnan(cbrt(nan[DType.float64]())), msg="f64 cbrt(nan) should be nan")
+    assert_true(isinf(cbrt(inf[DType.float32]())), msg="cbrt(inf) should be inf")
+    assert_true(isinf(cbrt(-inf[DType.float32]())), msg="cbrt(-inf) should be -inf")
+    assert_true(isinf(cbrt(inf[DType.float64]())), msg="f64 cbrt(inf) should be inf")
+    assert_true(isinf(cbrt(-inf[DType.float64]())), msg="f64 cbrt(-inf) should be -inf")
 
 
 def test_acos() raises:
