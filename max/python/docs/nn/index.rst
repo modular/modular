@@ -51,7 +51,7 @@ Eager API
 .. note::
    The eager API provides PyTorch-style execution. Import from
    ``max.experimental.nn`` — see
-   :code_link:`/max/api/python/experimental/nn/index|max.experimental.nn` for
+   :code_link:`/max/api/python/experimental/nn|max.experimental.nn` for
    the full reference.
 
    To load the eager architecture variant in the inference server, pass
