@@ -6,6 +6,7 @@
 
 #include "Support/Configuration.h"
 #include "Support/BazelRunfiles.h"
+#include "Support/CacheLog.h"
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
@@ -294,6 +295,9 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
                            FolderType type) {
   // If MODULAR_HOME is defined, use that and only that.
   auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
+  MODULAR_CACHE_LOG("config")
+      << "getSearchPaths: MODULAR_HOME="
+      << (modularHome ? *modularHome : "<unset>") << "\n";
   if (modularHome) {
     // Cache folder is a subdirectory in this case.
     if (type == FolderType::Cache) {
@@ -306,6 +310,9 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
 
   // If MODULAR_DERIVED_PATH is defined, use that and only that.
   auto derivedPath = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
+  MODULAR_CACHE_LOG("config")
+      << "getSearchPaths: MODULAR_DERIVED_PATH="
+      << (derivedPath ? *derivedPath : "<unset>") << "\n";
   if (derivedPath) {
     // Cache folder is a subdirectory in this case.
     if (type == FolderType::Cache) {
@@ -319,6 +326,9 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   // To work well in test environments, check for a standardized test
   // environment variable. This is always the last option, if available.
   auto testTempdir = llvm::sys::Process::GetEnv("TEST_TMPDIR");
+  MODULAR_CACHE_LOG("config")
+      << "getSearchPaths: TEST_TMPDIR="
+      << (testTempdir ? *testTempdir : "<unset>") << "\n";
   if (testTempdir) {
     paths.push_back(std::filesystem::path(*testTempdir) / ".modular");
     return;
@@ -384,6 +394,13 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   assert(defaultRoot.has_value() && "Must have APPDATA");
   paths.push_back(std::filesystem::path(*defaultRoot) / "Local" / "Modular");
 #endif // _WIN32
+
+  if (isCacheLogEnabled()) {
+    MODULAR_CACHE_LOG("config")
+        << "getSearchPaths: " << paths.size() << " candidate paths\n";
+    for (const auto &p : paths)
+      MODULAR_CACHE_LOG("config") << "  " << p.string() << "\n";
+  }
 }
 
 static ErrorOr<std::filesystem::path> findBestPathForType(FolderType type,
@@ -401,8 +418,11 @@ static ErrorOr<std::filesystem::path> findBestPathForType(FolderType type,
         assert(!ec && "error checking for path existence");
         return exists;
       });
-  if (found != searchPaths.end())
+  if (found != searchPaths.end()) {
+    MODULAR_CACHE_LOG("config")
+        << "findBestPathForType: found existing: " << found->string() << "\n";
     return *found;
+  }
 
   // If we aren't supposed to create the directory, then just return the path
   // directly. It is still our "best choice", even if we can't use it. The
@@ -425,11 +445,15 @@ static ErrorOr<std::filesystem::path> findBestPathForType(FolderType type,
     }
     return true;
   });
-  if (found != searchPaths.end())
+  if (found != searchPaths.end()) {
+    MODULAR_CACHE_LOG("config")
+        << "findBestPathForType: created new: " << found->string() << "\n";
     return *found;
+  }
 
   // Nothing could be created. Return the first error encountered (which is the
   // directory we'd want to use with the highest priority).
+  MODULAR_CACHE_LOG("config") << "findBestPathForType: all candidates failed\n";
   return firstErr;
 }
 
@@ -443,12 +467,18 @@ ErrorOr<std::filesystem::path> Config::getModularDataFolderPath(bool create) {
 
 ErrorOr<std::filesystem::path> Config::getModularCacheFolderPath(bool create) {
   auto cacheDir = getValue("cache_dir");
-  if (!cacheDir.empty())
+  if (!cacheDir.empty()) {
+    MODULAR_CACHE_LOG("config")
+        << "getModularCacheFolderPath: explicit cache_dir=" << cacheDir << "\n";
     return std::filesystem::path(cacheDir.str());
+  }
 
   auto defaultCacheDir = findBestPathForType(FolderType::Cache, create);
   if (defaultCacheDir.isError())
     return defaultCacheDir.takeError();
+  MODULAR_CACHE_LOG("config")
+      << "getModularCacheFolderPath: default path=" << defaultCacheDir->string()
+      << "\n";
   return defaultCacheDir.takeValue();
 }
 
