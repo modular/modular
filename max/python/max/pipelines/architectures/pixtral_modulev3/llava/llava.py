@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from max.experimental import functional as F
+from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue, ops
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.kv_cache.input_types import unflatten_ragged_attention_inputs
-from max.nn.module_v3 import Module
 from max.pipelines.architectures.pixtral_modulev3.vision_encoder.vision_encoder import (
     VisionEncoder,
 )

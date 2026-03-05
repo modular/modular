@@ -16,11 +16,11 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.linear import Linear
+from max.experimental.nn.norm import RMSNorm
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Module
-from max.nn.module_v3.linear import Linear
-from max.nn.module_v3.norm import RMSNorm
-from max.nn.module_v3.sequential import ModuleList
 
 from .attention import Attention
 

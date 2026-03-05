@@ -13,13 +13,13 @@
 
 from __future__ import annotations
 
-from max.nn.module_v3.common_layers.attention import AttentionWithRope
-from max.nn.module_v3.common_layers.mlp import MLP
-from max.nn.module_v3.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.module_v3.conv import Conv2d
-from max.nn.module_v3.embedding import Embedding
-from max.nn.module_v3.linear import Linear
-from max.nn.module_v3.norm import RMSNorm
+from max.experimental.nn.common_layers.attention import AttentionWithRope
+from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.experimental.nn.conv import Conv2d
+from max.experimental.nn.embedding import Embedding
+from max.experimental.nn.linear import Linear
+from max.experimental.nn.norm import RMSNorm
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 from .llava.llava import LlavaConditionalGeneration

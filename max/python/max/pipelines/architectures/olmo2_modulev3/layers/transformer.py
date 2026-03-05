@@ -16,11 +16,11 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import PagedCacheValues
-from max.nn.module_v3 import Module
-from max.nn.module_v3.common_layers.mlp import MLP
-from max.nn.module_v3.norm import RMSNorm
 
 from .attention import Olmo2Attention
 

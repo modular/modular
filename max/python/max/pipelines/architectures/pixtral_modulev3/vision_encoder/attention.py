@@ -15,10 +15,10 @@
 import math
 
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.module_v3 import Module
-from max.nn.module_v3.linear import Linear
 
 from .attention_utils import rotate_half
 

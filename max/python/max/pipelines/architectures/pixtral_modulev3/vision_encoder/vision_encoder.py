@@ -17,11 +17,11 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.conv import Conv2d
+from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.module_v3 import Module
-from max.nn.module_v3.conv import Conv2d
-from max.nn.module_v3.norm import RMSNorm
 
 from .rotary_embedding_2d import RotaryEmbedding2D, patch_position_ids
 from .transformer import Transformer
