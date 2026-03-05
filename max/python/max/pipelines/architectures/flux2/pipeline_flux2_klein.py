@@ -95,22 +95,6 @@ class Flux2KleinPipeline(Flux2Pipeline):
         fused = F.concat(hidden_states, axis=-1)
         return fused.reshape((1, int(fused.shape[0]), int(fused.shape[1])))
 
-    def _get_shape_carriers(
-        self, height: int, width: int
-    ) -> tuple[Tensor, Tensor]:
-        """Compute h/w shape-carrier tensors for ``decode_latents``."""
-        packed_h = height // (self.vae_scale_factor * 2)
-        packed_w = width // (self.vae_scale_factor * 2)
-        for n in (packed_h, packed_w):
-            if n not in self._cached_shape_carriers:
-                self._cached_shape_carriers[n] = Tensor.from_dlpack(
-                    np.empty(n, dtype=np.float32)
-                )
-        return (
-            self._cached_shape_carriers[packed_h],
-            self._cached_shape_carriers[packed_w],
-        )
-
     def encode_prompt(
         self,
         tokens: TokenBuffer,
@@ -338,21 +322,21 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 if output_type == "latent":
                     callback_queue.put_nowait(cast(np.ndarray, latents))
                 else:
-                    h_c, w_c = self._get_shape_carriers(
-                        model_inputs.height, model_inputs.width
+                    packed_h = model_inputs.height // (
+                        self.vae_scale_factor * 2
                     )
+                    packed_w = model_inputs.width // (self.vae_scale_factor * 2)
                     callback_queue.put_nowait(
                         cast(
                             np.ndarray,
-                            self.decode_latents(latents, h_c, w_c),
+                            self.decode_latents(latents, packed_h, packed_w),
                         )
                     )
 
         if output_type == "latent":
             return Flux2KleinPipelineOutput(images=latents)
 
-        h_carrier, w_carrier = self._get_shape_carriers(
-            model_inputs.height, model_inputs.width
-        )
-        images = self.decode_latents(latents, h_carrier, w_carrier)
+        packed_h = model_inputs.height // (self.vae_scale_factor * 2)
+        packed_w = model_inputs.width // (self.vae_scale_factor * 2)
+        images = self.decode_latents(latents, packed_h, packed_w)
         return Flux2KleinPipelineOutput(images=images)

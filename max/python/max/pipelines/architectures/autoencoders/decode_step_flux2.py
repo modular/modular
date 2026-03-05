@@ -18,11 +18,10 @@ pass into a single compiled graph, eliminating the inter-graph boundary that
 previously existed between _postprocess_latents and vae.decode().
 """
 
-from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
+from max.graph import Dim, TensorType
 
 from .vae import Decoder
 
@@ -52,12 +51,15 @@ class Flux2DecodeStep(Module[..., Tensor]):
         self.decoder = decoder
         self.batch_norm_eps = batch_norm_eps
 
-    def input_types(self) -> tuple[TensorType, ...]:
-        """Return input TensorTypes for compilation.
+    def input_types(self) -> tuple[TensorType | Dim, ...]:
+        """Return input types for compilation.
 
         Returns:
-            Tuple of TensorType objects corresponding to the forward() signature:
+            Tuple corresponding to the forward() signature:
             (latents_bsc, h_carrier, w_carrier, bn_mean, bn_var).
+            Dim entries declare variable scalar dimensions; Module.compile()
+            expands them to shape-carrier TensorTypes and the compiled callable
+            accepts plain ints at those positions.
         """
         num_channels = self.decoder.in_channels * 4  # e.g. 32*4 = 128
         dtype = self.decoder.dtype
@@ -70,14 +72,8 @@ class Flux2DecodeStep(Module[..., Tensor]):
             TensorType(
                 dtype, shape=["batch", "seq", num_channels], device=device
             ),
-            # Shape carriers: lengths encode latent_h / latent_w as symbolic dims.
-            # Content is never read; only the shapes matter.
-            TensorType(
-                DType.float32, shape=["latent_h"], device=DeviceRef.CPU()
-            ),
-            TensorType(
-                DType.float32, shape=["latent_w"], device=DeviceRef.CPU()
-            ),
+            Dim("latent_h"),
+            Dim("latent_w"),
             TensorType(dtype, shape=[num_channels], device=device),
             TensorType(dtype, shape=[num_channels], device=device),
         )
