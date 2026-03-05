@@ -67,6 +67,7 @@ async def run_with_default_executor(
 class PipelineClassName(str, Enum):
     FLUX = "FluxPipeline"
     FLUX2 = "Flux2Pipeline"
+    FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
 
     @classmethod
@@ -214,8 +215,9 @@ class PixelGenerationTokenizer(
             "class_name", None
         )
         scheduler_cfg = components.get("scheduler", {}).get("config_dict", {})
-        scheduler_cfg["use_empirical_mu"] = (
-            self._pipeline_class_name == PipelineClassName.FLUX2
+        scheduler_cfg["use_empirical_mu"] = self._pipeline_class_name in (
+            PipelineClassName.FLUX2,
+            PipelineClassName.FLUX2_KLEIN,
         )
         self._scheduler = SchedulerFactory.create(
             class_name=scheduler_class_name,
@@ -223,13 +225,19 @@ class PixelGenerationTokenizer(
         )
 
         self._max_pixel_size = None
-        if self._pipeline_class_name == PipelineClassName.FLUX2:
+        if self._pipeline_class_name in (
+            PipelineClassName.FLUX2,
+            PipelineClassName.FLUX2_KLEIN,
+        ):
             self._max_pixel_size = 1024 * 1024
 
     def _prepare_latent_image_ids(
         self, height: int, width: int, batch_size: int = 1
     ) -> npt.NDArray[np.float32]:
-        if self._pipeline_class_name == PipelineClassName.FLUX2:
+        if self._pipeline_class_name in (
+            PipelineClassName.FLUX2,
+            PipelineClassName.FLUX2_KLEIN,
+        ):
             # Create 4D coordinates using numpy (T=0, H, W, L=0)
             t_coords, h_coords, w_coords, l_coords = np.meshgrid(
                 np.array([0]),  # T dimension
@@ -355,7 +363,9 @@ class PixelGenerationTokenizer(
         npt.NDArray[np.int64],
         npt.NDArray[np.bool_],
         npt.NDArray[np.int64] | None,
+        npt.NDArray[np.bool_] | None,
         npt.NDArray[np.int64] | None,
+        npt.NDArray[np.bool_] | None,
         npt.NDArray[np.int64] | None,
     ]:
         """Tokenize prompt(s) with encoder model(s).
@@ -369,26 +379,36 @@ class PixelGenerationTokenizer(
             images: Optional list of images for image-to-image generation (Flux2 only).
 
         Returns:
-            Tuple of (token_ids, attn_mask, token_ids_2, negative_token_ids, negative_token_ids_2).
+            Tuple of (
+                token_ids,
+                attn_mask,
+                token_ids_2,
+                attn_mask_2,
+                negative_token_ids,
+                negative_attn_mask,
+                negative_token_ids_2,
+            ).
             token_ids_2 and negative_token_ids_2 are None if no secondary tokenizer is configured.
         """
         token_ids, attn_mask = await self.encode(prompt, images=images)
 
         token_ids_2: npt.NDArray[np.int64] | None = None
+        attn_mask_2: npt.NDArray[np.bool_] | None = None
         if self.delegate_2 is not None:
-            token_ids_2, _attn_mask_2 = await self.encode(
+            token_ids_2, attn_mask_2 = await self.encode(
                 prompt_2 or prompt,
                 use_secondary=True,
             )
 
         negative_token_ids: npt.NDArray[np.int64] | None = None
+        negative_attn_mask: npt.NDArray[np.bool_] | None = None
         negative_token_ids_2: npt.NDArray[np.int64] | None = None
         if do_true_cfg:
-            negative_token_ids, _attn_mask_neg = await self.encode(
+            negative_token_ids, negative_attn_mask = await self.encode(
                 negative_prompt or ""
             )
             if self.delegate_2 is not None:
-                negative_token_ids_2, _attn_mask_neg_2 = await self.encode(
+                negative_token_ids_2, _negative_attn_mask_2 = await self.encode(
                     negative_prompt_2 or negative_prompt or "",
                     use_secondary=True,
                 )
@@ -397,7 +417,9 @@ class PixelGenerationTokenizer(
             token_ids,
             attn_mask,
             token_ids_2,
+            attn_mask_2,
             negative_token_ids,
+            negative_attn_mask,
             negative_token_ids_2,
         )
 
@@ -427,13 +449,9 @@ class PixelGenerationTokenizer(
 
         tokenizer_output: Any
 
-        # Check if this is Flux2 pipeline (uses Mistral3Tokenizer with chat_template)
-        # Flux2 requires apply_chat_template for proper tokenization
-
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
 
-            # For Flux2, use apply_chat_template with format_input
             if self._pipeline_class_name == PipelineClassName.FLUX2:
                 from max.pipelines.architectures.flux2.system_messages import (
                     SYSTEM_MESSAGE,
@@ -457,6 +475,38 @@ class PixelGenerationTokenizer(
                     return_length=False,
                     return_overflowing_tokens=False,
                 )
+            elif self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
+                from max.pipelines.architectures.flux2.system_messages import (
+                    format_input_klein,
+                )
+
+                messages_batch = format_input_klein(
+                    prompts=[prompt_str],
+                    images=None,
+                )
+                kwargs = dict(
+                    add_generation_prompt=True,
+                    tokenize=False,
+                )
+                try:
+                    prompt_text = delegate.apply_chat_template(
+                        messages_batch[0],
+                        enable_thinking=False,
+                        **kwargs,
+                    )
+                except TypeError:
+                    prompt_text = delegate.apply_chat_template(
+                        messages_batch[0],
+                        **kwargs,
+                    )
+                return delegate(
+                    prompt_text,
+                    padding="max_length",
+                    max_length=max_sequence_length,
+                    truncation=True,
+                    add_special_tokens=add_special_tokens,
+                    return_attention_mask=True,
+                )
             else:
                 return delegate(
                     prompt_str,
@@ -470,38 +520,71 @@ class PixelGenerationTokenizer(
         # Add a standard (non-async) lock in the executor thread if needed.
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
-        # Extract input_ids and attention_mask
+        # Extract input_ids and attention_mask.
         if isinstance(tokenizer_output, dict):
-            # apply_chat_template returns a dict
             input_ids = tokenizer_output["input_ids"]
             attention_mask = tokenizer_output.get("attention_mask", None)
-            if attention_mask is None:
-                attention_mask = [1] * len(input_ids)
-
-            # Extract real tokens only (using attention mask) for Flux2
-            if self._pipeline_class_name == PipelineClassName.FLUX2:
-                # Filter to keep only real tokens (where mask == 1)
-                real_token_ids = [
-                    token_id
-                    for token_id, mask in zip(
-                        input_ids[0], attention_mask[0], strict=False
-                    )
-                    if mask == 1
-                ]
-                input_ids = [real_token_ids]
-                attention_mask = [[1] * len(real_token_ids)]
         else:
-            # Standard tokenizer output
             input_ids = tokenizer_output.input_ids
             attention_mask = tokenizer_output.attention_mask
 
-        if max_sequence_length and len(input_ids) > max_sequence_length:
+        input_ids_array = np.asarray(input_ids, dtype=np.int64)
+        if attention_mask is None:
+            attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
+        else:
+            attention_mask_array = np.asarray(attention_mask, dtype=np.bool_)
+
+        # Tokenizers can return a batch dimension for a single prompt.
+        if input_ids_array.ndim == 2:
+            if input_ids_array.shape[0] != 1:
+                raise ValueError(
+                    "Expected one prompt during tokenization, got "
+                    f"batch size {input_ids_array.shape[0]}."
+                )
+            input_ids_array = input_ids_array[0]
+        elif input_ids_array.ndim != 1:
             raise ValueError(
-                f"Input string is larger than tokenizer's max length ({len(input_ids)} > {max_sequence_length})."
+                "Expected rank-1 or rank-2 input_ids, got "
+                f"shape {input_ids_array.shape}."
             )
 
-        encoded_prompt = np.array(input_ids)
-        attention_mask_array = np.array(attention_mask).astype(np.bool_)
+        if attention_mask_array.ndim == 2:
+            if attention_mask_array.shape[0] != 1:
+                raise ValueError(
+                    "Expected one prompt attention_mask, got "
+                    f"batch size {attention_mask_array.shape[0]}."
+                )
+            attention_mask_array = attention_mask_array[0]
+        elif attention_mask_array.ndim != 1:
+            raise ValueError(
+                "Expected rank-1 or rank-2 attention_mask, got "
+                f"shape {attention_mask_array.shape}."
+            )
+
+        if attention_mask_array.shape[0] != input_ids_array.shape[0]:
+            raise ValueError(
+                "input_ids and attention_mask must have the same sequence "
+                f"length ({input_ids_array.shape[0]} != {attention_mask_array.shape[0]})."
+            )
+
+        # FLUX.2 uses compact token IDs; FLUX.2-Klein keeps full tokenizer output.
+        if self._pipeline_class_name == PipelineClassName.FLUX2:
+            input_ids_array = input_ids_array[attention_mask_array]
+            attention_mask_array = np.ones(
+                input_ids_array.shape[0], dtype=np.bool_
+            )
+
+        if (
+            max_sequence_length
+            and input_ids_array.shape[0] > max_sequence_length
+        ):
+            raise ValueError(
+                "Input string is larger than tokenizer's max length "
+                f"({input_ids_array.shape[0]} > {max_sequence_length})."
+            )
+
+        encoded_prompt = input_ids_array.astype(np.int64, copy=False)
+        attention_mask_array = attention_mask_array.astype(np.bool_, copy=False)
 
         return encoded_prompt, attention_mask_array
 
@@ -675,10 +758,20 @@ class PixelGenerationTokenizer(
                 "falling back to standard generation."
             )
 
-        do_true_cfg = (
-            image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is not None
-        )
+        if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
+            is_distilled_klein = bool(
+                self.diffusers_config.get("is_distilled", False)
+            )
+            # for non-distilled models, CFG is enabled
+            # whenever guidance_scale > 1.0; negative prompt defaults to "".
+            do_true_cfg = (
+                image_options.guidance_scale > 1.0 and not is_distilled_klein
+            )
+        else:
+            do_true_cfg = (
+                image_options.true_cfg_scale > 1.0
+                and image_options.negative_prompt is not None
+            )
         import PIL.Image
 
         # 1. Tokenize prompts
@@ -696,7 +789,9 @@ class PixelGenerationTokenizer(
             token_ids,
             attn_mask,
             token_ids_2,
+            _attn_mask_2,
             negative_token_ids,
+            _negative_attn_mask,
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
             prompt,

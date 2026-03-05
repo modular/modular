@@ -553,7 +553,7 @@ class Flux2Pipeline(DiffusionPipeline):
         """
         decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
-        return decoded.driver_buffer.to_numpy()  # (B, H, W, C)
+        return decoded.driver_tensor.to_numpy()  # (B, H, W, C)
 
     @staticmethod
     def _prepare_text_ids(
