@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 
 @final
 class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
+    """A text-to-speech token generation pipeline for TTS models."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,

@@ -437,6 +437,8 @@ class PixelModelInputs:
 
 
 class CompileWrapper:
+    """Wraps a compile target with optional input type annotations."""
+
     def __init__(
         self,
         compile_target: CompileTarget,

@@ -49,6 +49,8 @@ def ragged_token_merger(device: DeviceRef) -> Graph:
 
 
 class RaggedTokenMerger(Module):
+    """Merges prompt and draft token sequences into a single ragged batch."""
+
     def __init__(self, device: DeviceRef) -> None:
         self.device = device
 
