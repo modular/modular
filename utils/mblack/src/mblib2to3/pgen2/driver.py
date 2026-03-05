@@ -124,10 +124,40 @@ def _join_multiline_ternary(prev: str, line: str) -> str | None:
     return None
 
 
+# Matches a line that ends with a binary or assignment operator.  Every
+# multi-char symbol operator (``==``, ``+=``, ``>>=``, …) ends with one of
+# these characters, so matching the last character is sufficient.
+_TRAILING_OP_RE = re.compile(r"[-+*/%&|^<>=]\s*$|\b(?:and|or)\s*$")
+
+
+def _join_trailing_operator(prev: str, line: str) -> str | None:
+    """Join a continuation line when the previous line ends with an operator.
+
+    In Mojo, implicit line continuation is allowed when a line ends with
+    a binary or assignment operator::
+
+        var result = a == b and
+                     c == d
+        x[0] =
+            x[0] + 1
+
+    The lib2to3-based parser requires these on the same logical line.
+    """
+    cur_indent = len(line) - len(line.lstrip())
+    prev_indent = len(prev) - len(prev.lstrip())
+    if cur_indent > prev_indent and _TRAILING_OP_RE.search(prev):
+        return prev + " " + line.lstrip()
+    return None
+
+
 # Normalizers are applied in order; each receives the previous result line
 # (with any trailing comment already stripped) and the current raw line,
 # and returns a replacement for the previous line or None to skip.
-_MOJO_LINE_NORMALIZERS = [_join_colon_next_line, _join_multiline_ternary]
+_MOJO_LINE_NORMALIZERS = [
+    _join_colon_next_line,
+    _join_multiline_ternary,
+    _join_trailing_operator,
+]
 
 # Matches the trailing comment portion of a line: optional whitespace then #
 # to end-of-string, but only when # is not inside a quoted string.  The
