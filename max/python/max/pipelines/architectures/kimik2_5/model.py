@@ -177,13 +177,13 @@ class KimiK2_5Model(
                 key: value.data() for key, value in self.weights.items()
             }
 
-        # Split state dict into vision and language model components
+        # Split state dict into vision and language model components.
+        # After weight adaptation, vision tower and patch merger weights
+        # are both under the ``vision_encoder.`` prefix.
         vision_state_dict: dict[str, WeightData] = {}
         llm_state_dict: dict[str, WeightData] = {}
         for key, value in state_dict.items():
-            if key.startswith("vision_tower.") or key.startswith(
-                "mm_projector."
-            ):
+            if key.startswith("vision_encoder."):
                 vision_state_dict[key] = value
             elif key.startswith("language_"):
                 llm_state_dict[key] = value
@@ -265,7 +265,6 @@ class KimiK2_5Model(
         """Build the vision model graph for processing images."""
         assert isinstance(self.model, KimiK2_5)
         vision_encoder = self.model.vision_encoder
-        multimodal_projector = self.model.multimodal_projector
 
         # Define vision graph input types - one per device
         pixel_values_types = [
@@ -367,7 +366,7 @@ class KimiK2_5Model(
             max_grid_size_list = [inp.tensor for inp in all_inputs[:n_devices]]
             all_inputs = all_inputs[n_devices:]
 
-            # Execute vision transformer
+            # Execute vision transformer (includes patch merger projection).
             image_embeddings = vision_encoder(
                 pixel_values=pixel_values_list,
                 grid_thw=grid_thw_list,
@@ -377,11 +376,9 @@ class KimiK2_5Model(
                 signal_buffers=signal_buffers,
                 max_grid_size=max_grid_size_list,
             )
-            # Ensure we have a valid output
             assert image_embeddings is not None, (
                 "Vision encoder must return a valid output"
             )
-            image_embeddings = multimodal_projector(image_embeddings)
 
             graph.output(image_embeddings)
 

@@ -26,9 +26,12 @@ from max.nn.norm import LayerNorm
 class PatchMergerMLP(Module, Shardable):
     """Two-layer MLP with LayerNorm that merges spatially adjacent patches.
 
-    Expects ragged input of shape ``(total_patches, N_k, mm_hidden_size)``.
-    Applies layer normalization, reshapes to merge adjacent patches,
-    then projects through a two-layer MLP with GELU activation.
+    Expects input of shape ``(total_patches, N_k, mm_hidden_size)`` with
+    ``N_k = merge_kernel_size[0] * merge_kernel_size[1]``. Applies layer
+    normalization, reshapes to ``(total_patches, N_k * mm_hidden_size)``,
+    then projects through a two-layer MLP with GELU activation. Math matches
+    the HuggingFace reference (nvidia/Kimi-K2.5-NVFP4 modeling_kimi_k25.py
+    PatchMergerMLP).
     """
 
     def __init__(

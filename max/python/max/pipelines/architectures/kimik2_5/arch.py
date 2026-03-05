@@ -26,6 +26,7 @@ kimik2_5_arch = SupportedArchitecture(
     example_repo_ids=[
         "moonshotai/Kimi-K2.5",
         "moonshotai/Kimi-VL-A3B-Instruct",
+        "nvidia/Kimi-K2.5-NVFP4",
     ],
     default_encoding="bfloat16",
     supported_encodings={

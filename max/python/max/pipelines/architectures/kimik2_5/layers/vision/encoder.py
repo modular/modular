@@ -283,7 +283,8 @@ class Encoder(Module, Shardable):
         rope_freqs_cis = self.rope_2d(position_ids)
         for block in self.blocks:
             x = block(x, input_row_offsets, max_seq_len, rope_freqs_cis)
-        return self.norm(x)
+        x = self.norm(x)
+        return x
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:

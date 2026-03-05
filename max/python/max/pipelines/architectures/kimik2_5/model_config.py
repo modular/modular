@@ -150,8 +150,6 @@ class VisionConfig:
 
     dtype: DType
     """DType of the Kimi-K2.5 vision model weights."""
-    llm_dtype: DType
-    """DType of the Kimi-K2.5 language model weights."""
     devices: list[DeviceRef]
     """Devices that the Kimi-K2.5 vision encoder model is parallelized over."""
 
@@ -163,26 +161,14 @@ class VisionConfig:
     """Width of the initial position embedding."""
     merge_kernel_size: list[int]
     """Kernel size for the merge operation."""
-    merge_type: str
-    """Type of the merge operation."""
     mm_hidden_size: int
-    """Hidden size of the multi-modal hidden layer."""
-    mm_projector_type: str
-    """Type of the multi-modal projector."""
-    model_type: str
-    """Type of the model."""
+    """Input hidden size for the patch merger projection."""
     patch_size: int
     """Size of the patch."""
-    pos_emb_type: str
-    """Type of the position embedding."""
-    projector_hidden_act: str
-    """Activation function for the projector."""
     projector_ln_eps: float
     """Epsilon for the layer normalization."""
     text_hidden_size: int
     """Hidden size of the text hidden layer."""
-    video_attn_type: str
-    """Type of the video attention."""
     vt_hidden_size: int
     """Hidden size of the video hidden layer."""
     vt_intermediate_size: int
@@ -191,6 +177,22 @@ class VisionConfig:
     """Number of attention heads of the video hidden layer."""
     vt_num_hidden_layers: int
     """Number of hidden layers of the video hidden layer."""
+
+    # Fields with hardcoded defaults (not present in HF config.json).
+    has_bias: bool = True
+    """Whether linear projections in the vision transformer include bias terms."""
+    in_channels: int = 3
+    """Number of input image channels (3 for RGB).
+    """
+    rope_max_height: int = 512
+    """Maximum grid height for RoPE frequency precomputation.
+    """
+    rope_max_width: int = 512
+    """Maximum grid width for RoPE frequency precomputation.
+    """
+    rope_theta: float = 10000.0
+    """Base for the RoPE inverse-frequency exponent.
+    """
 
     @classmethod
     def initialize_from_config(
@@ -207,7 +209,6 @@ class VisionConfig:
 
         return cls(
             dtype=MaxDType.bfloat16,
-            llm_dtype=MaxDType.bfloat16,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model.device_specs
@@ -216,30 +217,19 @@ class VisionConfig:
             init_pos_emb_time=hf_vision_config.init_pos_emb_time,
             init_pos_emb_width=hf_vision_config.init_pos_emb_width,
             merge_kernel_size=hf_vision_config.merge_kernel_size,
-            merge_type=hf_vision_config.merge_type,
             mm_hidden_size=hf_vision_config.mm_hidden_size,
-            mm_projector_type=hf_vision_config.mm_projector_type,
-            model_type=hf_vision_config.model_type,
             patch_size=hf_vision_config.patch_size,
-            pos_emb_type=hf_vision_config.pos_emb_type,
-            projector_hidden_act=hf_vision_config.projector_hidden_act,
             projector_ln_eps=hf_vision_config.projector_ln_eps,
             text_hidden_size=hf_vision_config.text_hidden_size,
-            video_attn_type=hf_vision_config.video_attn_type,
             vt_hidden_size=hf_vision_config.vt_hidden_size,
             vt_intermediate_size=hf_vision_config.vt_intermediate_size,
             vt_num_attention_heads=hf_vision_config.vt_num_attention_heads,
             vt_num_hidden_layers=hf_vision_config.vt_num_hidden_layers,
         )
 
-    def finalize(
-        self,
-        vision_dtype: DType,
-        llm_dtype: DType,
-    ) -> None:
+    def finalize(self, vision_dtype: DType) -> None:
         """Finalize VisionConfig with state_dict dependent fields."""
         self.dtype = vision_dtype
-        self.llm_dtype = llm_dtype
 
 
 @dataclass(kw_only=True)
