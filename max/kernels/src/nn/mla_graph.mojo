@@ -1624,71 +1624,83 @@ fn mla_prefill_branch_bf16[
         ctx,
     )
 
-    var k_buf = ctx.enqueue_create_buffer[DType.bfloat16](
-        buffer_length * num_heads * qk_nope_head_dim
-    )
-    var k_flat = TileTensor(
-        k_buf,
-        row_major((Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())),
-    )
-    matmul[target=target, transpose_b=True](
-        k_flat.to_layout_tensor(),
-        k_latent.to_layout_tensor(),
-        w_k.to_layout_tensor(),
-        Optional(ctx),
-    )
-
-    var w_v = TileTensor(
-        w_uv.ptr,
-        row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
-    )
-    var v_buf = ctx.enqueue_create_buffer[DType.bfloat16](
-        buffer_length * num_heads * v_head_dim
-    )
-    var v_flat = TileTensor(
-        v_buf,
-        row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
-    )
-    matmul[target=target, transpose_b=True](
-        v_flat.to_layout_tensor(),
-        k_latent.to_layout_tensor(),
-        w_v.to_layout_tensor(),
-        Optional(ctx),
-    )
-
-    var k = TileTensor(
-        k_buf,
-        row_major(
-            (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
-        ),
-    )
-    var v = TileTensor(
-        v_buf,
-        row_major((Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())),
-    )
-
     comptime if collection_t.CacheType.dtype.is_float8():
-        # Allocate FP8 buffers
-        var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-            seq_len * num_heads * q_head_dim
-        )
-        var q_fp8 = TileTensor(
-            q_fp8_buf,
-            row_major((Idx(seq_len), Idx[num_heads](), Idx[q_head_dim]())),
-        )
-
+        # Allocate FP8 buffers for K and V
         var k_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
             buffer_length * num_heads * qk_nope_head_dim
         )
-        var k_fp8 = TileTensor(
+        var k_fp8_flat = TileTensor(
             k_fp8_buf,
             row_major(
-                (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
+                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
             ),
         )
 
         var v_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
             buffer_length * num_heads * v_head_dim
+        )
+        var v_fp8_flat = TileTensor(
+            v_fp8_buf,
+            row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
+        )
+
+        # Lambda function to convert K matmul output to FP8
+        @always_inline
+        @parameter
+        @__copy_capture(k_fp8_flat)
+        fn k_elementwise_convert[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
+            k_fp8_flat.store[width=width](
+                (Idx(idx[0]), Idx(idx[1])), val.cast[DType.float8_e4m3fn]()
+            )
+
+        # K matmul with FP8 conversion
+        matmul[
+            target=target,
+            transpose_b=True,
+            elementwise_lambda_fn=k_elementwise_convert,
+        ](
+            k_fp8_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_k.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        var w_v = TileTensor(
+            w_uv.ptr,
+            row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
+        )
+
+        # Lambda function to convert V matmul output to FP8
+        @always_inline
+        @parameter
+        @__copy_capture(v_fp8_flat)
+        fn v_elementwise_convert[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
+            v_fp8_flat.store[width=width](
+                (Idx(idx[0]), Idx(idx[1])), val.cast[DType.float8_e4m3fn]()
+            )
+
+        # V matmul with FP8 conversion
+        matmul[
+            target=target,
+            transpose_b=True,
+            elementwise_lambda_fn=v_elementwise_convert,
+        ](
+            v_fp8_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_v.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        # Create 3D views for attention kernel
+        var k_fp8 = TileTensor(
+            k_fp8_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
+            ),
         )
         var v_fp8 = TileTensor(
             v_fp8_buf,
@@ -1697,10 +1709,15 @@ fn mla_prefill_branch_bf16[
             ),
         )
 
-        # Convert to FP8
+        # Allocate FP8 buffer for Q and convert
+        var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            seq_len * num_heads * q_head_dim
+        )
+        var q_fp8 = TileTensor(
+            q_fp8_buf,
+            row_major((Idx(seq_len), Idx[num_heads](), Idx[q_head_dim]())),
+        )
         convert_bf16_to_fp8_e4m3fn(q, q_fp8, ctx)
-        convert_bf16_to_fp8_e4m3fn(k, k_fp8, ctx)
-        convert_bf16_to_fp8_e4m3fn(v, v_fp8, ctx)
 
         # Pass FP8 tensors to attention kernel
         generic_flare_mla_prefill_kv_cache_ragged[
@@ -1720,6 +1737,54 @@ fn mla_prefill_branch_bf16[
             ctx,
         )
     else:
+        # Standard BF16 path
+        var k_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+            buffer_length * num_heads * qk_nope_head_dim
+        )
+        var k_flat = TileTensor(
+            k_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
+            ),
+        )
+        matmul[target=target, transpose_b=True](
+            k_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_k.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        var w_v = TileTensor(
+            w_uv.ptr,
+            row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
+        )
+        var v_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+            buffer_length * num_heads * v_head_dim
+        )
+        var v_flat = TileTensor(
+            v_buf,
+            row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
+        )
+        matmul[target=target, transpose_b=True](
+            v_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_v.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        var k = TileTensor(
+            k_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
+            ),
+        )
+        var v = TileTensor(
+            v_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())
+            ),
+        )
+
         generic_flare_mla_prefill_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
