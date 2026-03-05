@@ -173,6 +173,9 @@ class MockPixelGenerationRequest:
     seed: int | None = None
     """Random seed for reproducibility."""
 
+    input_image: str | None = None
+    """Optional input image URI for image-to-image generation."""
+
     model_name: str = ""
     """Model name for the request."""
 
@@ -190,6 +193,7 @@ class MockPixelGenerationRequest:
         guidance_scale: float = 3.5,
         true_cfg_scale: float = 1.0,
         seed: int | None = None,
+        input_image: str | None = None,
         model_name: str = "",
     ) -> MockPixelGenerationRequest:
         """Creates a pixel generation request from a prompt."""
@@ -204,6 +208,7 @@ class MockPixelGenerationRequest:
             guidance_scale=guidance_scale,
             true_cfg_scale=true_cfg_scale,
             seed=seed,
+            input_image=input_image,
             model_name=model_name,
         )
 
@@ -358,4 +363,21 @@ DEFAULT_PIXEL_GENERATION_PROMPTS = [
 DEFAULT_PIXEL_GENERATION = [
     MockPixelGenerationRequest.from_prompt(prompt=prompt, seed=42)
     for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
+]
+
+FLUX2_PIXEL_GENERATION_I2I = [
+    MockPixelGenerationRequest.from_prompt(
+        prompt="Transform this image into a cinematic nighttime scene with neon reflections, wet streets, and dramatic contrast.",
+        seed=42,
+        input_image=MULTIMODAL_IMAGE,
+        height=1024,
+        width=1024,
+    ),
+    MockPixelGenerationRequest.from_prompt(
+        prompt="Restyle this image as a watercolor painting with soft edges, visible brush texture, and warm afternoon light.",
+        seed=42,
+        input_image=MULTIMODAL_IMAGE,
+        height=1024,
+        width=1024,
+    ),
 ]

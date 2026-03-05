@@ -87,6 +87,7 @@ modular_py_library(
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/support",
     ],
 )
 
@@ -182,6 +183,7 @@ modular_py_library(
         requirement("requests"),
         requirement("torch"),
         requirement("transformers"),
+        "//max/python/max/support",
     ],
 )
 
