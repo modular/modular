@@ -23,14 +23,13 @@ from typing import TYPE_CHECKING, Any, Generic
 
 from max import graph
 from max.driver import CPU, Device, DLPackArray
-from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.realization_context import (
     GraphRealizationContext,
     _session,
 )
 from max.experimental.tensor import Tensor, realization_context
-from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from rich.pretty import pretty_repr
 from typing_extensions import ParamSpec, Self, TypeVar, dataclass_transform
 
@@ -637,7 +636,7 @@ class Module(Generic[_P, _R]):
 
     def compile(
         self,
-        *input_types: graph.Type[Any] | Dim,
+        *input_types: graph.Type[Any],
         weights: Mapping[str, DLPackArray] | None = None,
     ) -> Callable[..., Any]:
         """Compiles the module to an optimized executable through graph tracing.
@@ -707,61 +706,14 @@ class Module(Generic[_P, _R]):
             result = model(input_data)
             print(result)
 
-        Passing variable scalar dimensions:
-
-        ``ops.reshape`` and similar ops require symbolic
-        :obj:`~max.graph.Dim` arguments — they cannot accept a runtime
-        integer value (e.g. from the contents of a rank-0 tensor).
-        To pass a variable integer (e.g. a spatial height or width) into a
-        compiled graph for use in a reshape, pass a :obj:`~max.graph.Dim` in
-        the corresponding position of ``input_types``.
-
-        :obj:`~max.graph.Dim` is the graph API's own concept for a named
-        symbolic dimension — the same object used inside ``TensorType`` shapes.
-        The compiled callable will accept a plain :class:`int` at that position
-        and create a zero-element rank-2 shape-carrier tensor automatically
-        (shape ``(n, 0)``, dtype ``uint8`` — no memory allocated).
-        Inside ``forward``, use ``carrier.shape[0]`` to obtain the
-        :obj:`~max.graph.SymbolicDim` for use in :func:`~max.experimental.functional.reshape`.
-
-        .. code-block:: python
-
-            from max.dtype import DType
-            from max.experimental import functional as F
-            from max.experimental.tensor import Tensor, TensorType, defaults
-            from max.experimental.nn import Module, module_dataclass
-            from max.graph import Dim
-
-            @module_dataclass
-            class SpatialReshape(Module):
-                def forward(
-                    self, x: Tensor, h_carrier: Tensor, w_carrier: Tensor
-                ) -> Tensor:
-                    b, c = x.shape[0], x.shape[2]
-                    h = h_carrier.shape[0]  # SymbolicDim("h")
-                    w = w_carrier.shape[0]  # SymbolicDim("w")
-                    return F.reshape(x, (b, h, w, c))
-
-            _, device = defaults()
-            compiled = SpatialReshape().compile(
-                TensorType(DType.float32, ["batch", "seq", 64], device),
-                Dim("h"),
-                Dim("w"),
-            )
-
-            # Pass plain ints; no carrier tensors needed at the call site
-            result = compiled(data, 32, 48)
-
         Args:
             *input_types: Type specifications for each positional argument to
                 ``forward``. Must match the number and order of arguments.
                 Each should be a :obj:`max.graph.Type` (typically
-                :obj:`TensorType`) describing the shape and dtype, or a
-                :obj:`~max.graph.Dim` naming a variable scalar dimension
-                (see above). The ``device`` field on each
-                :obj:`~max.graph.TensorType` determines where activations are
-                computed; use :meth:`to` to set this consistently across
-                weights and inputs.
+                :obj:`TensorType`) describing the shape and dtype. The
+                ``device`` field on each :obj:`~max.graph.TensorType`
+                determines where activations are computed; use :meth:`to` to
+                set this consistently across weights and inputs.
             weights: Mapping of parameter names to weight data. Weights should
                 be on CPU and will be transferred to the target device as part
                 of model initialization. If not passed, the model's parameters
@@ -780,31 +732,10 @@ class Module(Generic[_P, _R]):
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-        # Expand SymbolicDim entries to shape-carrier TensorTypes and record
-        # their positions so the compiled callable can accept plain ints there.
-        # The carrier has shape (name, 0): the symbolic dim is in shape[0] and
-        # the static 0 makes the total element count zero — no memory allocated.
-        dim_positions: dict[int, SymbolicDim] = {}
-        resolved_types: list[graph.Type[Any]] = []
-        for i, t in enumerate(input_types):
-            if isinstance(t, SymbolicDim):
-                dim_positions[i] = t
-                resolved_types.append(
-                    TensorType(DType.uint8, [t.name, 0], CPU())
-                )
-            elif isinstance(t, Dim):
-                raise TypeError(
-                    f"Input type at position {i} must be a named SymbolicDim"
-                    f" (e.g. Dim('name')), not {type(t).__name__}. Only"
-                    " symbolic dims created via Dim('name') are supported."
-                )
-            else:
-                resolved_types.append(t)
-
-        graph = Graph(type(self).__qualname__, input_types=resolved_types)
+        graph = Graph(type(self).__qualname__, input_types=input_types)
         with realization_context(GraphRealizationContext(graph)) as ctx, ctx:
             # Wrap the graph inputs in Tensors
-            inputs = [Tensor.from_graph_value(inp) for inp in graph.inputs]
+            inputs = [Tensor.from_graph_value(input) for input in graph.inputs]
 
             def as_weight(name: str, tensor: Tensor):  # noqa: ANN202
                 # Weights are always on host and then moved to the device in init
@@ -870,30 +801,9 @@ class Module(Generic[_P, _R]):
 
         if unary:
             # Return the single result for a unary module
-            compiled_fn: Callable[..., Any] = functools.wraps(self)(
-                lambda *inputs: _compiled(*inputs)[0]
-            )
-        else:
-            compiled_fn = _compiled
+            return functools.wraps(self)(lambda *inputs: _compiled(*inputs)[0])
 
-        if not dim_positions:
-            return compiled_fn
-
-        # Wrap to convert plain int values at scalar-dim positions into the
-        # zero-element shape-carrier tensors required by the compiled graph.
-        base_fn = compiled_fn
-
-        @functools.wraps(self)
-        def _with_dim_carriers(*args: Any) -> Any:
-            args_list = list(args)
-            for i in dim_positions:
-                if i < len(args_list) and isinstance(args_list[i], int):
-                    args_list[i] = Tensor.zeros(
-                        [args_list[i], 0], dtype=DType.uint8
-                    )
-            return base_fn(*args_list)
-
-        return _with_dim_carriers
+        return _compiled
 
     def __rich_repr__(self):
         yield from self.children

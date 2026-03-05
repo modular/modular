@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, Dim, TensorType
+from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 
@@ -154,18 +154,21 @@ class PostprocessAndDecode(Module[..., Tensor]):
         )  # (B, C, H, W) -> (B, H, W, C)
         return F.transfer_to(decoded, DeviceRef.CPU())
 
-    def input_types(self) -> tuple[TensorType | Dim, ...]:
+    def input_types(self) -> tuple[TensorType, ...]:
         return (
             TensorType(
                 self._dtype,
                 shape=["batch", "seq", self._num_channels],
                 device=self._device,
             ),
-            # Dim declares a variable scalar dimension. Module.compile()
-            # expands each to a shape-carrier TensorType and the compiled
-            # callable accepts plain ints at those positions.
-            Dim("latent_h"),
-            Dim("latent_w"),
+            # Shape carriers: lengths encode latent_h / latent_w as symbolic dims.
+            # Content is never read; only the shapes matter.
+            TensorType(
+                DType.float32, shape=["latent_h"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.float32, shape=["latent_w"], device=DeviceRef.CPU()
+            ),
         )
 
 
