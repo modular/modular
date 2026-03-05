@@ -131,7 +131,7 @@ project
 
 Loading `mojo.importer` loads our Python Mojo [import
 hook](https://docs.python.org/3/reference/import.html#import-hooks), which
-behind the scenes looks for a `.mojo` (or `.🔥`) file that matches the imported
+behind the scenes looks for a `.mojo` file that matches the imported
 module name, and if found, compiles it using
 [`mojo build --emit shared-lib`](/mojo/cli/build#--emit-file_type) to generate a
 dynamic library. The resulting file is stored in `__mojocache__`, and is rebuilt
