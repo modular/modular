@@ -88,11 +88,6 @@ def test_kv_cache_ragged_attention(
     kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
     dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
     assert dispatch_metadata_symbol is not None
-    blocks_type = kv_symbolic_inputs.kv_blocks
-    cache_lengths_type = kv_symbolic_inputs.cache_lengths
-    lookup_table_type = kv_symbolic_inputs.lookup_table
-    max_lengths_type = kv_symbolic_inputs.max_lengths
-    attention_dispatch_metadata_type = dispatch_metadata_symbol.tensor
 
     def construct() -> Graph:
         with Graph(
@@ -100,11 +95,7 @@ def test_kv_cache_ragged_attention(
             input_types=[
                 input_type,
                 input_row_offsets_type,
-                blocks_type,
-                cache_lengths_type,
-                lookup_table_type,
-                max_lengths_type,
-                attention_dispatch_metadata_type,
+                *kv_symbolic_inputs,
             ],
         ) as g:
             (

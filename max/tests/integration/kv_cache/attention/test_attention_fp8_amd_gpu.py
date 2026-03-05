@@ -185,13 +185,8 @@ def _build_and_execute_attention_graph(
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
     kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    blocks_type = kv_symbolic_inputs.kv_blocks
-    cache_lengths_type = kv_symbolic_inputs.cache_lengths
-    lookup_table_type = kv_symbolic_inputs.lookup_table
-    max_lengths_type = kv_symbolic_inputs.max_lengths
     dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
     assert dispatch_metadata_symbol is not None
-    attention_dispatch_metadata_type = dispatch_metadata_symbol.tensor
 
     # Prepare input data
     np.random.seed(42)
@@ -219,11 +214,7 @@ def _build_and_execute_attention_graph(
                 shape=["row_offsets_length"],
                 device=DeviceRef.GPU(),
             ),
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            max_lengths_type,
-            attention_dispatch_metadata_type,
+            *kv_symbolic_inputs,
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -281,11 +272,7 @@ def _build_and_execute_attention_graph(
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        kv_runtime_inputs.blocks,
-        kv_runtime_inputs.cache_lengths,
-        kv_runtime_inputs.lookup_table,
-        kv_runtime_inputs.max_lengths,
-        kv_runtime_inputs.attention_dispatch_metadata,
+        *kv_runtime_inputs,
     )[0]
 
     return torch.from_dlpack(result)

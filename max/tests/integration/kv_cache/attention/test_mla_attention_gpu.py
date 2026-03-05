@@ -71,12 +71,6 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         max_batch_size=128,
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    blocks_type = kv_symbolic_inputs.kv_blocks
-    cache_lengths_type = kv_symbolic_inputs.cache_lengths
-    lookup_table_type = kv_symbolic_inputs.lookup_table
-    is_cache_empty_type = kv_symbolic_inputs.max_lengths
-
     def construct() -> Graph:
         with Graph(
             "call_mla_prefill",
@@ -85,10 +79,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 input_row_offsets_type,
                 k_buffer_type,
                 v_buffer_type,
-                blocks_type,
-                cache_lengths_type,
-                lookup_table_type,
-                is_cache_empty_type,
+                *kv_params.get_symbolic_inputs()[0],
             ],
         ) as g:
             (
@@ -100,6 +91,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 cache_lengths,
                 lookup_table,
                 is_cache_empty,
+                _attention_dispatch_metadata,
             ) = g.inputs
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -164,7 +156,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets.to(cuda),
         k_buffer_tensor.to(cuda),
         v_buffer_tensor.to(cuda),
-        *(kv_runtime_inputs.inputs[0].as_list()[:4]),
+        *(kv_runtime_inputs.inputs[0].as_list()),
     )[0]
     assert isinstance(result, Buffer)
 

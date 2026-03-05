@@ -112,7 +112,7 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     dispatch_metadata: AttentionDispatchMetadata[TensorValue] | None = None
 
     def __iter__(self) -> Iterator[BufferValue | TensorValue]:
-        # Canonical paged KV ABI order.
+        # Canonical paged KV ABI order. (intentionally skip AttentionDispatchMetadata)
         yield self.kv_blocks
         yield self.cache_lengths
         yield self.lookup_table

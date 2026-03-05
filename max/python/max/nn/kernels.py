@@ -1664,11 +1664,7 @@ def mla_fp8_index_top_k(
             q,
             q_s,
             input_row_offsets,
-            k_collection.blocks,
-            k_collection.cache_lengths,
-            k_collection.lookup_table,
-            k_collection.max_lengths,
-            k_collection.kv_scales,
+            *k_collection,
             layer_idx,
         ],
         out_types=[
@@ -1855,10 +1851,7 @@ def flash_attention_ragged(
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        kv_collection.kv_blocks,
-        kv_collection.cache_lengths,
-        kv_collection.lookup_table,
-        kv_collection.max_lengths,
+        *kv_collection,
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2202,10 +2195,7 @@ def flare_mla_prefill_plan(
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            kv_collection.kv_blocks,
-            kv_collection.cache_lengths,
-            kv_collection.lookup_table,
-            kv_collection.max_lengths,
+            *kv_collection,
             layer_idx,
             buffer_size_tensor,
         ],
