@@ -20,9 +20,6 @@ All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 """
 
 from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, FuncAttribute

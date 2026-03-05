@@ -962,7 +962,9 @@ fn _matmul_qint4_m_1[
     b: LayoutTensor[
         DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime assert a_quant.rank == 2
     comptime assert a_scale.rank == 2
@@ -1045,7 +1047,9 @@ fn _matmul_qint4_m_any[
     b: LayoutTensor[
         DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
@@ -1204,7 +1208,9 @@ fn _matmul_qint4[
     b: LayoutTensor[
         DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
@@ -1251,7 +1257,9 @@ fn matmul_qint4[
     b: LayoutTensor[
         DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     @parameter
     fn kernel_dispatch[kernel: _MatmulQInt4Kernel]():

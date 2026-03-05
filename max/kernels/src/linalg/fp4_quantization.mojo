@@ -66,7 +66,6 @@ from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu import barrier
 from std.sys import size_of, align_of, simd_width_of
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from std.memory import LegacyUnsafePointer
 from layout.swizzle import make_swizzle
 from std.algorithm import elementwise
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -88,7 +87,6 @@ from std.collections import OptionalReg
 # Dynamic scaled NVFP4 quantization
 ########################################################
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime logger = Logger()
 
 
@@ -825,7 +823,11 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
     tensor_sf: Float32,  # tensor-wise scale factor
 ):
     var smem_storage = rebind[
-        UnsafePointer[Scalar[input_dtype], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[input_dtype],
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ]
     ](
         external_memory[
             Scalar[input_dtype],

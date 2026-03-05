@@ -32,9 +32,7 @@ from layout.int_tuple import (
 )
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 
 
 struct ScatterGatherAmd[
@@ -175,7 +173,9 @@ trait SharedMemoryBasePtr:
 
     @always_inline
     @staticmethod
-    fn ptr() -> UnsafePointer[Int8, address_space=AddressSpace.SHARED]:
+    fn ptr() -> (
+        UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+    ):
         ...
 
 
@@ -187,7 +187,9 @@ struct NVIDIASharedMemoryBasePtr[
 
     @always_inline
     @staticmethod
-    fn ptr() -> UnsafePointer[Int8, address_space=AddressSpace.SHARED]:
+    fn ptr() -> (
+        UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+    ):
         return external_memory[
             Int8,
             address_space=AddressSpace.SHARED,
@@ -207,7 +209,9 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
     comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArray[type, size]
 
-    var base_ptr: UnsafePointer[Int8, address_space=AddressSpace.SHARED]
+    var base_ptr: UnsafePointer[
+        Int8, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ]
     var offset: Int
 
     @always_inline

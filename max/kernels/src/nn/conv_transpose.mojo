@@ -998,7 +998,7 @@ fn update_w_tile_2d[
     input_dt: DType,
     filter_dt: DType,
 ](
-    output: UnsafePointer[Scalar[output_dt], _],
+    output: UnsafePointer[mut=True, Scalar[output_dt], _],
     input: UnsafePointer[Scalar[input_dt], _],
     filter: UnsafePointer[Scalar[filter_dt], _],
     _init_output: Bool,
@@ -1179,7 +1179,7 @@ fn accumulate_wo_tile[
     filter_dt: DType,
 ](
     c_tile_size: Int,
-    output: UnsafePointer[Scalar[output_dt], _],
+    output: UnsafePointer[mut=True, Scalar[output_dt], _],
     output_stride: Int,
     input: UnsafePointer[Scalar[input_dt], _],
     input_stride: Int,

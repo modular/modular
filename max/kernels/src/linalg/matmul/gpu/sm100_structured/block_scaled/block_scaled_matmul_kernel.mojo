@@ -40,9 +40,7 @@ Key structured patterns:
 
 from std.collections import Optional
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer, Pointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import Pointer
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE, thread_idx

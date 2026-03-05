@@ -110,7 +110,7 @@ trait QuantizedGemm:
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         ...
 
@@ -171,7 +171,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         matmul_qint4[_block_Q4_0.group_size](a, b, c)
 
@@ -269,7 +269,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         matmul_Q4_K(a, b, c)
 
@@ -402,7 +402,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         matmul_Q6_K(a, b, c)
 

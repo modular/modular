@@ -34,9 +34,6 @@ from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import *
 from std.gpu.sync import named_barrier
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
 
 from linalg.structuring import SMemPtr
@@ -395,7 +392,7 @@ struct TileScheduler[
     comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
-    var locks_ptr: UnsafePointer[Int32]
+    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
     var k_tiles_per_split: UInt32
@@ -422,7 +419,7 @@ struct TileScheduler[
         clc_full: Self.ClcBarrierArray,
         clc_empty: Self.ClcBarrierArray,
         clc_throttle: Self.ThrottleBarrierArray,
-        locks_ptr: UnsafePointer[UInt8],
+        locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
     ):
         """Initialize from typed barrier arrays."""
         self.scheduler = Self.UnderlyingScheduler(
@@ -860,7 +857,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn wait_eq(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -874,7 +871,7 @@ struct TileScheduler[
     @staticmethod
     @always_inline
     fn wait_lt(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -885,7 +882,7 @@ struct TileScheduler[
     @staticmethod
     @always_inline
     fn arrive_set(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,

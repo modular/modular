@@ -30,10 +30,6 @@ from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from std.utils.index import Index, IndexList
 
 from .config import MatmulConfig as MatmulConfigSM90
@@ -98,10 +94,10 @@ fn test_matmul_sm90_swapAB_comparison[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_normal_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_swapAB_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
 
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
@@ -527,10 +523,10 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_normal_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_swapAB_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
 
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape

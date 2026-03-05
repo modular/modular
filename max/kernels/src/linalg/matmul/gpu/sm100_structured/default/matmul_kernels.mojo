@@ -30,9 +30,6 @@ The kernel implements a warp-specialized architecture:
 """
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE, barrier, warp_id
@@ -1208,7 +1205,7 @@ struct BlackwellMatmulSM100Kernel[
         reduction_tensor: TileTensor[
             Self.config.accum_type, reduction_layout, MutAnyOrigin
         ],
-        lock_ptr: UnsafePointer[UInt8],
+        lock_ptr: UnsafePointer[UInt8, AnyOrigin[mut=True]],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
