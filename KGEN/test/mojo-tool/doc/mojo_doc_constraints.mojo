@@ -45,10 +45,8 @@ fn fn_with_single_where_clause[N: Int]() where is_positive(N):
     pass
 
 
-# Note: Compound 'and' constraints are rendered using conditional form due to
-# internal representation.
 # CHECK-LABEL: "name": "fn_with_compound_where_clause",
-# CHECK: "signature": "fn_with_compound_where_clause[N: Int, M: Int]() where
+# CHECK: "signature": "fn_with_compound_where_clause[N: Int, M: Int]() where is_positive(N) and is_even(M)"
 fn fn_with_compound_where_clause[
     N: Int, M: Int
 ]() where is_positive(N) and is_even(M):
@@ -142,15 +140,51 @@ fn fn_with_multi_param_pred[A: Int, B: Int]() where complex_pred(A, B):
     pass
 
 
-# Note: 'or' constraints are rendered using conditional form due to internal
-# representation.
 # CHECK-LABEL: "name": "fn_with_or_constraint",
-# CHECK: "signature": "fn_with_or_constraint[N: Int]() where
+# CHECK: "signature": "fn_with_or_constraint[N: Int]() where is_positive(N) or is_even(N)"
 fn fn_with_or_constraint[N: Int]() where is_positive(N) or is_even(N):
     """Function with an 'or' constraint.
 
     Parameters:
         N: An integer that is either positive or even.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Ternary 'if' vs recovered 'and'/'or'
+# Verifies that a genuine ternary 'if' expression (where all three operands
+# differ) is preserved, while lowered 'and'/'or' patterns are reconstructed.
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_ternary_if_constraint",
+# CHECK: "signature": "fn_with_ternary_if_constraint[N: Int, M: Int]() where is_even(M) if is_positive(N) else is_even(N)"
+fn fn_with_ternary_if_constraint[
+    N: Int, M: Int
+]() where is_even(M) if is_positive(N) else is_even(N):
+    """Function with a genuine ternary 'if' in the where clause.
+
+    The condition, then-branch, and else-branch are all distinct, so this
+    must NOT be collapsed into 'and' or 'or'.
+
+    Parameters:
+        N: Controls which branch is taken.
+        M: Used in the then-branch constraint.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_recovered_and",
+# CHECK: "signature": "fn_with_recovered_and[N: Int, M: Int]() where is_positive(N) and is_even(M)"
+fn fn_with_recovered_and[N: Int, M: Int]() where is_positive(N) and is_even(M):
+    """Function whose 'and' is lowered to a ternary by the compiler.
+
+    The doc printer must reconstruct 'and' from the lowered form.
+
+    Parameters:
+        N: A positive integer parameter.
+        M: An even integer parameter.
     """
     pass
 
@@ -262,7 +296,7 @@ fn fn_with_neg_constraint[N: Int]() where -N == 1:
 # CHECK-LABEL: "name": "fn_with_both_constraint_types",
 # CHECK: "constraints": " where is_positive(X)"
 # CHECK: "name": "X",
-# CHECK: "signature": "fn_with_both_constraint_types[X: Int where is_positive(X), Y: Int]() where
+# CHECK: "signature": "fn_with_both_constraint_types[X: Int where is_positive(X), Y: Int]() where is_even(Y)"
 fn fn_with_both_constraint_types[
     X: Int where is_positive(X), Y: Int
 ]() where is_even(Y):
