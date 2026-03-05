@@ -59,6 +59,8 @@ if TYPE_CHECKING:
 
 @dataclass
 class ProcessorInputs:
+    """Inputs passed to a logits processor callback."""
+
     logits: md.Buffer
     context: TextGenerationContext
 
