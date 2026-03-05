@@ -543,6 +543,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 7.0e-02
     kl_div_threshold: 8.0e-01
 
+  Qwen/Qwen3-30B-A3B-Instruct-2507-FP8:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_1x]
+    pipeline: "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-only, no-h100, float8-support]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden/1/51490a4ac6612bf0a3af0f6953d5a1bff2b12683ca4c134dba9a13ea5c44f2bb/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden.tar.gz"
+      json_file: "vllm_Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 7.3e-05
+    kl_div_threshold: 1.1e-01
+
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
