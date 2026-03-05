@@ -32,8 +32,7 @@ from transformers.configuration_utils import PretrainedConfig
 
 # Maps from Safetensor to MAX weight names.
 DEEPSEEK_SAFETENSOR_MAP = {
-    "language_": "",
-    "model.": "",  # Removes the "model" prefix.
+    "language_model.model.": "language_model.",
     "gate.weight": "gate.gate_score.weight",
     "weight_scale_inv": "weight_scale",
 }
@@ -60,11 +59,46 @@ def convert_kimik2_5_language_state_dict(
     llm_config = getattr(huggingface_config, "text_config", huggingface_config)
     mtp_layer_idx = llm_config.num_hidden_layers
     for key in list(language_state_dict.keys()):
-        if key.startswith(f"layers.{mtp_layer_idx}."):
+        if key.startswith(f"language_model.layers.{mtp_layer_idx}."):
+            del language_state_dict[key]
+        if key.startswith("vision_tower."):
+            del language_state_dict[key]
+        if key.startswith("mm_projector."):
             del language_state_dict[key]
         if key.endswith(".self_attn.rotary_emb.inv_freq"):  # TODO:!!!
             del language_state_dict[key]
         if key.endswith(".k_scale") or key.endswith(".v_scale"):
+            del language_state_dict[key]
+
+    return language_state_dict
+
+
+def convert_kimivl_language_state_dict(
+    state_dict: dict[str, Weights],
+    huggingface_config: PretrainedConfig,
+    **unused_kwargs,
+) -> dict[str, WeightData]:
+    language_state_dict: dict[str, WeightData] = {}
+
+    # Map the weight names.
+    for name, value in state_dict.items():
+        max_name = name
+        for before, after in DEEPSEEK_SAFETENSOR_MAP.items():
+            max_name = max_name.replace(before, after)
+        language_state_dict[max_name] = value.data()
+
+    # TODO(E2EOPT-673): Support MTP. We currently delete the MTP weights
+    # This is also done in the official DeepSeek HF checkpoint converter:
+    # https://github.com/deepseek-ai/DeepSeek-V3/blob/4592be48c07f036b32ef971474068aebc489e3e7/inference/convert.py#L53-L54
+    mtp_layer_idx = huggingface_config.num_hidden_layers
+    for key in list(language_state_dict.keys()):
+        if key.startswith(f"language_model.layers.{mtp_layer_idx}."):
+            del language_state_dict[key]
+        if key.startswith("vision_tower."):
+            del language_state_dict[key]
+        if key.startswith("multi_modal_projector."):
+            del language_state_dict[key]
+        if key.endswith(".self_attn.rotary_emb.inv_freq"):
             del language_state_dict[key]
 
     return language_state_dict
@@ -186,4 +220,8 @@ def convert_safetensor_state_dict(
     )
     vision = convert_kimik2_5_vision_state_dict(state_dict, **kwargs)
 
-    return {f"language_model.{k}": v for k, v in language.items()} | vision
+    return language | {
+        k.replace("vision_encoder.encoder.", "vision_encoder."): v
+        for k, v in vision.items()
+        if not ("patch_embed" in k or "patch_merger" in k)
+    }

@@ -148,6 +148,7 @@ class KimiK2_5TextConfig(DeepseekV3Config):
 class VisionConfig:
     """Vision configuration for Kimi-K2.5 models with required fields."""
 
+    # Required fields (no defaults); order must precede any field with a default.
     dtype: DType
     """DType of the Kimi-K2.5 vision model weights."""
     devices: list[DeviceRef]
@@ -162,7 +163,7 @@ class VisionConfig:
     merge_kernel_size: list[int]
     """Kernel size for the merge operation."""
     mm_hidden_size: int
-    """Input hidden size for the patch merger projection."""
+    """Hidden size of the multi-modal hidden layer."""
     patch_size: int
     """Size of the patch."""
     projector_ln_eps: float
@@ -177,6 +178,20 @@ class VisionConfig:
     """Number of attention heads of the video hidden layer."""
     vt_num_hidden_layers: int
     """Number of hidden layers of the video hidden layer."""
+
+    # Optional fields (from HF config or defaults).
+    merge_type: str | None = None
+    """Type of the merge operation."""
+    mm_projector_type: str | None = None
+    """Type of the multi-modal projector."""
+    model_type: str = ""
+    """Type of the model."""
+    pos_emb_type: str | None = None
+    """Type of the position embedding."""
+    projector_hidden_act: str | None = None
+    """Activation function for the projector."""
+    video_attn_type: str | None = None
+    """Type of the video attention."""
 
     # Fields with hardcoded defaults (not present in HF config.json).
     has_bias: bool = True
@@ -214,17 +229,39 @@ class VisionConfig:
                 for spec in pipeline_config.model.device_specs
             ],
             init_pos_emb_height=hf_vision_config.init_pos_emb_height,
-            init_pos_emb_time=hf_vision_config.init_pos_emb_time,
+            init_pos_emb_time=getattr(hf_vision_config, "init_pos_emb_time", 4),
             init_pos_emb_width=hf_vision_config.init_pos_emb_width,
             merge_kernel_size=hf_vision_config.merge_kernel_size,
-            mm_hidden_size=hf_vision_config.mm_hidden_size,
+            merge_type=getattr(hf_vision_config, "merge_type", None),
+            mm_hidden_size=getattr(hf_vision_config, "mm_hidden_size", 1152),
+            mm_projector_type=getattr(
+                hf_vision_config, "mm_projector_type", None
+            ),
+            model_type=hf_vision_config.model_type,
             patch_size=hf_vision_config.patch_size,
-            projector_ln_eps=hf_vision_config.projector_ln_eps,
-            text_hidden_size=hf_vision_config.text_hidden_size,
-            vt_hidden_size=hf_vision_config.vt_hidden_size,
-            vt_intermediate_size=hf_vision_config.vt_intermediate_size,
-            vt_num_attention_heads=hf_vision_config.vt_num_attention_heads,
-            vt_num_hidden_layers=hf_vision_config.vt_num_hidden_layers,
+            pos_emb_type=getattr(hf_vision_config, "pos_emb_type", None),
+            projector_hidden_act=getattr(
+                hf_vision_config, "projector_hidden_act", None
+            ),
+            projector_ln_eps=getattr(
+                hf_vision_config, "projector_ln_eps", 1e-05
+            ),
+            text_hidden_size=getattr(
+                hf_vision_config, "text_hidden_size", 7168
+            ),
+            video_attn_type=getattr(hf_vision_config, "video_attn_type", None),
+            vt_hidden_size=hf_vision_config.vt_hidden_size
+            if hasattr(hf_vision_config, "vt_hidden_size")
+            else hf_vision_config.hidden_size,
+            vt_intermediate_size=hf_vision_config.vt_intermediate_size
+            if hasattr(hf_vision_config, "vt_intermediate_size")
+            else hf_vision_config.intermediate_size,
+            vt_num_attention_heads=hf_vision_config.vt_num_attention_heads
+            if hasattr(hf_vision_config, "vt_num_attention_heads")
+            else hf_vision_config.num_attention_heads,
+            vt_num_hidden_layers=hf_vision_config.vt_num_hidden_layers
+            if hasattr(hf_vision_config, "vt_num_hidden_layers")
+            else hf_vision_config.num_hidden_layers,
         )
 
     def finalize(self, vision_dtype: DType) -> None:
@@ -260,10 +297,10 @@ class KimiK2_5Config(ArchConfigWithKVCache):
     tie_word_embeddings: bool
     """Whether to share (tie) the input and output word embeddings in the language model."""
 
-    use_unified_vision_chunk: bool
+    use_unified_vision_chunk: bool | None
     """Whether to use a unified chunk for vision inputs."""
 
-    video_placeholder: str
+    video_placeholder: str | None
     """Placeholder string used to represent video segments in input text."""
 
     # Vision encoder configuration.
@@ -427,8 +464,12 @@ class KimiK2_5Config(ArchConfigWithKVCache):
             media_placeholder_token_id=huggingface_config.media_placeholder_token_id,
             pad_token_id=huggingface_config.pad_token_id,
             tie_word_embeddings=huggingface_config.tie_word_embeddings,
-            use_unified_vision_chunk=huggingface_config.use_unified_vision_chunk,
-            video_placeholder=huggingface_config.video_placeholder,
+            use_unified_vision_chunk=getattr(
+                huggingface_config, "use_unified_vision_chunk", None
+            ),
+            video_placeholder=getattr(
+                huggingface_config, "video_placeholder", None
+            ),
             # Vision configuration
             vision_config=vision_config,
             # Composed language model configuration

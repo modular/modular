@@ -93,6 +93,7 @@ dependencies = [
   "taskgroup",
   "termcolor",
   "threadpoolctl",
+  "tiktoken",
   "tokenicer",
   "tomli",
   "tqdm",
