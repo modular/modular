@@ -327,7 +327,7 @@ class Graph:
 
         import numpy as np
         from max.dtype import DType
-        from max.graph import Graph, TensorType, TensorValue, ops
+        from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
         @dataclass
         class Linear:
@@ -341,21 +341,19 @@ class Graph:
 
         linear_graph = Graph(
             "linear",
-            Linear(np.ones((2, 2)), np.ones((2,))),
-            input_types=[TensorType(DType.float32, (2,))]
+            Linear(np.ones((2, 2), dtype=np.float32), np.ones((2,), dtype=np.float32)),
+            input_types=[TensorType(DType.float32, (2,), DeviceRef.CPU())]
         )
 
     You can't call a :class:`Graph` directly from Python. You must compile it and
     execute it with MAX. For more detail, see the
     `build a graph with MAX Graph tutorial </max/develop/get-started-with-max-graph-in-python>`_.
 
-    When creating a graph, a global sequence of chains is initialized and stored
-    in ``Graph._current_chain``. Every side-effecting op, such as
+    When creating a graph, a global sequence of chains is initialized to
+    sequence side-effecting ops. Every side-effecting op, such as
     ``buffer_load()``, ``buffer_store()``, and
-    ``buffer_store_slice()``, will use the current chain to perform the op
-    and update ``Graph._current_chain`` with a new chain. Currently, the
-    input/output chains for mutable ops can be used at most once. The goal of
-    this design choice is to prevent data races.
+    ``buffer_store_slice()``, consumes the current chain and produces a new
+    one. Each chain can be used at most once, which prevents data races.
 
     Args:
         name: A name for the graph.
@@ -499,7 +497,13 @@ class Graph:
 
     @functools.cached_property
     def inputs(self) -> Sequence[Value[Any]]:
-        """The input values of the graph."""
+        """The input values of the graph.
+
+        Returns:
+            A sequence of :class:`~max.graph.Value` objects corresponding to
+            the ``input_types`` passed at construction, excluding internal
+            chain values.
+        """
         body_args = self._graph_body.arguments
         chain_count = 0
         if self._has_chain_input:
@@ -927,7 +931,27 @@ class Graph:
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
-        """Sets the output nodes of the :class:`Graph`.
+        """Sets the output values of the graph and finalizes construction.
+
+        Call this once after building all ops. The graph can't be executed
+        until ``output()`` has been called. Subsequent calls to
+        :attr:`output_types` read back the types of the values passed here.
+
+        Examples:
+            Build a graph that doubles its input and set the output:
+
+            .. code-block:: python
+
+                from max.dtype import DType
+                from max.graph import DeviceRef, Graph, ops
+                from max.graph.type import TensorType
+
+                input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
+
+                with Graph("double", input_types=[input_type]) as graph:
+                    x = graph.inputs[0].tensor
+                    two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
+                    graph.output(ops.elementwise.mul(x, two))
 
         Args:
             outputs: The output values of the graph. Each value may be a
@@ -1001,6 +1025,10 @@ class Graph:
     @property
     def output_types(self) -> list[Type[Any]]:
         """The types of the graph output values.
+
+        Returns:
+            A list of :class:`~max.graph.type.Type` objects corresponding to
+            the values passed to :meth:`output()`, in the same order.
 
         Raises:
             TypeError: If the graph has not yet been terminated by a call to
