@@ -210,51 +210,69 @@ struct Interval[T: IntervalElement](
         """
         return self.start <= other.start and self.end >= other.end
 
-    fn __le__(self, other: Self) -> Bool:
-        """Returns whether this interval is less than or equal to another
-        interval.
+    fn __lt__(self, other: Self) -> Bool:
+        """Returns whether this interval is less than another interval using
+        lexicographic ordering: compare `start` first, then `end` as a
+        tiebreaker.
 
         Args:
             other: The interval to compare with.
 
         Returns:
-            True if this interval's start is less than or equal to the other interval's start.
+            True if this interval's start is less than the other interval's
+            start, or if the starts are equal and this interval's end is less
+            than the other interval's end.
         """
-        return self.start <= other.start
+        if self.start != other.start:
+            return self.start < other.start
+        return self.end < other.end
+
+    fn __le__(self, other: Self) -> Bool:
+        """Returns whether this interval is less than or equal to another
+        interval using lexicographic ordering.
+
+        Args:
+            other: The interval to compare with.
+
+        Returns:
+            True if this interval is less than the other interval, or if they
+            are equal.
+        """
+        if self.start != other.start:
+            return self.start < other.start
+        return self.end <= other.end
+
+    fn __gt__(self, other: Self) -> Bool:
+        """Returns whether this interval is greater than another interval using
+        lexicographic ordering: compare `start` first, then `end` as a
+        tiebreaker.
+
+        Args:
+            other: The interval to compare with.
+
+        Returns:
+            True if this interval's start is greater than the other interval's
+            start, or if the starts are equal and this interval's end is
+            greater than the other interval's end.
+        """
+        if self.start != other.start:
+            return self.start > other.start
+        return self.end > other.end
 
     fn __ge__(self, other: Self) -> Bool:
         """Returns whether this interval is greater than or equal to another
-        interval.
+        interval using lexicographic ordering.
 
         Args:
             other: The interval to compare with.
 
         Returns:
-            True if this interval's end is greater than or equal to the other interval's end.
+            True if this interval is greater than the other interval, or if
+            they are equal.
         """
+        if self.start != other.start:
+            return self.start > other.start
         return self.end >= other.end
-
-    fn __lt__(self, other: Self) -> Bool:
-        """Returns whether this interval is less than another interval.
-
-        Args:
-            other: The interval to compare with.
-
-        Returns:
-            True if this interval's start is less than the other interval's start.
-        """
-        return self.start < other.start
-
-    fn __gt__(self, other: Self) -> Bool:
-        """Returns whether this interval is greater than another interval.
-
-        Args:
-            other: The interval to compare with.
-
-        Returns:
-            True if this interval's end is greater than the other interval's end.
-        """
-        return self.end > other.end
 
     fn __len__(self) -> Int:
         """Returns the length of this interval.

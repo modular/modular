@@ -41,20 +41,38 @@ def test_interval() raises:
     assert_equal(interval, Interval(1, 10))
     assert_not_equal(interval, Interval(1, 11))
 
-    # Test less than comparisons
+    # Test less than comparisons (lexicographic: start first, end as tiebreaker)
     assert_true(
         interval < Interval(2, 11), msg=String(interval, " < Interval(2, 11)")
     )
-    assert_false(
+    assert_true(
         interval < Interval(1, 11), msg=String(interval, " < Interval(1, 11)")
     )
+    assert_false(
+        interval < Interval(1, 10), msg=String(interval, " < Interval(1, 10)")
+    )
+    assert_false(
+        interval < Interval(1, 9), msg=String(interval, " < Interval(1, 9)")
+    )
+    assert_false(
+        interval < Interval(0, 9), msg=String(interval, " < Interval(0, 9)")
+    )
 
-    # Test greater than comparisons
+    # Test greater than comparisons (lexicographic: start first, end as tiebreaker)
     assert_true(
         interval > Interval(0, 9), msg=String(interval, " > Interval(0, 9)")
     )
+    assert_true(
+        interval > Interval(1, 9), msg=String(interval, " > Interval(1, 9)")
+    )
+    assert_false(
+        interval > Interval(1, 10), msg=String(interval, " > Interval(1, 10)")
+    )
     assert_false(
         interval > Interval(1, 11), msg=String(interval, " > Interval(1, 11)")
+    )
+    assert_false(
+        interval > Interval(2, 9), msg=String(interval, " > Interval(2, 9)")
     )
 
     # Test less than or equal comparisons
@@ -67,17 +85,33 @@ def test_interval() raises:
     assert_false(
         interval <= Interval(0, 9), msg=String(interval, " <= Interval(0, 9)")
     )
+    assert_false(
+        interval <= Interval(1, 9), msg=String(interval, " <= Interval(1, 9)")
+    )
 
     # Test greater than or equal comparisons
     assert_true(
         interval >= Interval(1, 10), msg=String(interval, " >= Interval(1, 10)")
     )
     assert_true(
+        interval >= Interval(1, 9), msg=String(interval, " >= Interval(1, 9)")
+    )
+    assert_false(
         interval >= Interval(2, 9), msg=String(interval, " >= Interval(2, 9)")
     )
     assert_false(
         interval >= Interval(1, 11), msg=String(interval, " >= Interval(1, 11)")
     )
+
+    # Test transitivity: A < B and B < C implies A < C
+    var a = Interval(1, 10)
+    var b = Interval(2, 5)
+    var c = Interval(3, 8)
+    assert_true(a < b, msg="transitivity: a < b")
+    assert_true(b < c, msg="transitivity: b < c")
+    assert_true(a < c, msg="transitivity: a < c")
+    assert_false(a > b, msg="transitivity: not (a > b)")
+    assert_false(b > c, msg="transitivity: not (b > c)")
 
     # Test interval containment
     assert_true(
