@@ -13,6 +13,8 @@
 """LTX2 Audio Autoencoder Architecture."""
 
 from typing import Any
+from collections.abc import Callable
+from types import SimpleNamespace
 
 import max.experimental.functional as F
 import max.nn.module_v3 as nn
@@ -705,7 +707,7 @@ class AutoencoderKLLTX2Audio(nn.Module[[Tensor], Tensor]):
         return self.decoder(z)
 
 
-class PostprocessAndDecode(Module[[Tensor, Tensor, Tensor], Tensor]):
+class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
     """Fused BN-denorm + unpatchify + VAE decode in a single compiled graph.
 
     Eliminates the inter-graph boundary and intermediate tensor materialization
@@ -714,7 +716,7 @@ class PostprocessAndDecode(Module[[Tensor, Tensor, Tensor], Tensor]):
 
     def __init__(
         self,
-        decoder: Decoder,
+        decoder: LTX2AudioDecoder,
         batch_norm_eps: float,
         num_channels: int,
         device: DeviceRef,
@@ -729,41 +731,22 @@ class PostprocessAndDecode(Module[[Tensor, Tensor, Tensor], Tensor]):
 
     def forward(
         self,
-        latents_bhwc: Tensor,
+        latents_bclm: Tensor,
         latents_mean: Tensor,
         latents_std: Tensor,
     ) -> Tensor:
-        batch = latents_bhwc.shape[0]
-        h = latents_bhwc.shape[1]
-        w = latents_bhwc.shape[2]
-        c = latents_bhwc.shape[3]
+        # Denormalization
+        latents = latents_bclm * latents_std + latents_mean
 
-        # (B, H, W, C) -> (B, C, H, W)
-        latents = F.permute(latents_bhwc, (0, 3, 1, 2))
-
-        # BN denormalization
-        latents_mean_r = F.reshape(latents_mean, (1, c, 1, 1))
-        latents_std_r = F.reshape(latents_std, (1, c, 1, 1))
-        latents_std = F.sqrt(latents_std_r + self.batch_norm_eps)
-        latents = latents * latents_std + latents_mean_r
-
-        # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)
-        latents = F.reshape(latents, (batch, c // 4, 2, 2, h, w))
-        latents = F.permute(latents, (0, 1, 4, 2, 5, 3))
-        latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
-
-        decoded = self.decoder(latents, None)
-        decoded = F.cast(decoded, DType.float32)
-        decoded = F.permute(
-            decoded, (0, 2, 3, 1)
-        )  # (B, C, H, W) -> (B, H, W, C)
-        return F.transfer_to(decoded, DeviceRef.CPU())
+        decoded = self.decoder(latents)
+        # TODO: Add vocoder here too?
+        return decoded
 
     def input_types(self) -> tuple[TensorType, ...]:
         return (
             TensorType(
                 self._dtype,
-                shape=["batch", "height", "width", self._num_channels],
+                shape=["batch", "channels", "audio_num_frames", "num_mel_bins"],
                 device=self._device,
             ),
             TensorType(
