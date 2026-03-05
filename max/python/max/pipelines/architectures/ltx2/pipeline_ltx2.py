@@ -1084,6 +1084,7 @@ class LTX2Pipeline(DiffusionPipeline):
     def decode_audio_latents(
         self,
         latents: Tensor,
+        audio_num_frames: int,
         latent_mel_bins: int,
     ) -> Tensor | np.ndarray:
         """Decode packed audio latents into a waveform Tensor (or return latents).
@@ -1097,14 +1098,13 @@ class LTX2Pipeline(DiffusionPipeline):
         Returns:
             Waveform Tensor or raw latent Tensor.
         """
-
-        # Unpack audio latents
         # Assume [B, S, D] = [B, L, C * M], which implies that patch_size = M and patch_size_t = 1.
-        latents_bclm = latents.unflatten(2, (-1, latent_mel_bins)).transpose(
-            1, 2
-        )
+        batch = int(latents.shape[0])
+        D = int(latents.shape[2])
+        latents_bclm = F.reshape(
+            latents, (batch, audio_num_frames, D // latent_mel_bins, latent_mel_bins)
+        ).permute((0, 2, 1, 3))
 
-        # mel_spectrograms = self.audio_vae.decode(latents.cast(DType.bfloat16))
         mel_spectrograms = self._postprocess_and_decode_audio_latents(
             latents_bclm,
             self.audio_vae.bn.running_mean,

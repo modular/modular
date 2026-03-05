@@ -705,6 +705,80 @@ class AutoencoderKLLTX2Audio(nn.Module[[Tensor], Tensor]):
         return self.decoder(z)
 
 
+class PostprocessAndDecode(Module[[Tensor, Tensor, Tensor], Tensor]):
+    """Fused BN-denorm + unpatchify + VAE decode in a single compiled graph.
+
+    Eliminates the inter-graph boundary and intermediate tensor materialization
+    that previously existed between _postprocess_latents and vae.decode().
+    """
+
+    def __init__(
+        self,
+        decoder: Decoder,
+        batch_norm_eps: float,
+        num_channels: int,
+        device: DeviceRef,
+        dtype: DType,
+    ) -> None:
+        super().__init__()
+        self.decoder = decoder
+        self.batch_norm_eps = batch_norm_eps
+        self._num_channels = num_channels
+        self._device = device
+        self._dtype = dtype
+
+    def forward(
+        self,
+        latents_bhwc: Tensor,
+        latents_mean: Tensor,
+        latents_std: Tensor,
+    ) -> Tensor:
+        batch = latents_bhwc.shape[0]
+        h = latents_bhwc.shape[1]
+        w = latents_bhwc.shape[2]
+        c = latents_bhwc.shape[3]
+
+        # (B, H, W, C) -> (B, C, H, W)
+        latents = F.permute(latents_bhwc, (0, 3, 1, 2))
+
+        # BN denormalization
+        latents_mean_r = F.reshape(latents_mean, (1, c, 1, 1))
+        latents_std_r = F.reshape(latents_std, (1, c, 1, 1))
+        latents_std = F.sqrt(latents_std_r + self.batch_norm_eps)
+        latents = latents * latents_std + latents_mean_r
+
+        # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)
+        latents = F.reshape(latents, (batch, c // 4, 2, 2, h, w))
+        latents = F.permute(latents, (0, 1, 4, 2, 5, 3))
+        latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
+
+        decoded = self.decoder(latents, None)
+        decoded = F.cast(decoded, DType.float32)
+        decoded = F.permute(
+            decoded, (0, 2, 3, 1)
+        )  # (B, C, H, W) -> (B, H, W, C)
+        return F.transfer_to(decoded, DeviceRef.CPU())
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        return (
+            TensorType(
+                self._dtype,
+                shape=["batch", "height", "width", self._num_channels],
+                device=self._device,
+            ),
+            TensorType(
+                self._dtype,
+                shape=[self._num_channels],
+                device=self._device,
+            ),
+            TensorType(
+                self._dtype,
+                shape=[self._num_channels],
+                device=self._device,
+            ),
+        )
+
+
 class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
     """ComponentModel wrapper for LTX2 Audio Autoencoder."""
 
@@ -715,6 +789,9 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
         devices: list[Device],
         weights: Weights,
     ) -> None:
+        self.latents_mean: Tensor | None = None
+        self.latents_std: Tensor | None = None
+
         super().__init__(
             config=config,
             encoding=encoding,
@@ -722,4 +799,111 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
             weights=weights,
             config_class=AutoencoderKLLTX2AudioConfig,
             autoencoder_class=AutoencoderKLLTX2Audio,
+        )
+
+    def load_model(self) -> Any:
+        """Load and compile the decoder and encoder models with BatchNorm statistics.
+
+        Extracts BatchNorm statistics (bn.*) which are specific to Flux2, then
+        delegates to base class for weight loading and model compilation.
+
+        Returns:
+            Compiled decoder model callable.
+        """
+        bn_stats = {}
+
+        for key, value in self.weights.items():
+            if key in ("latents_mean", "latents_std"):
+                weight_data = value.data()
+                target_dtype = self.config.dtype
+                if weight_data.dtype != target_dtype:
+                    if weight_data.dtype.is_float() and target_dtype.is_float():
+                        weight_data = weight_data.astype(target_dtype)
+                    # Non-float left as-is; running_mean/var are typically float.
+                bn_stats[key] = weight_data.data
+
+        bn_mean_data = bn_stats.get("latents_mean")
+        bn_var_data = bn_stats.get("latents_std")
+
+        super().load_model()
+
+        if bn_mean_data is not None or bn_var_data is not None:
+            if bn_mean_data is not None:
+                self.latents_mean = Tensor.from_dlpack(bn_mean_data).to(
+                    self.devices[0]
+                )
+            if bn_var_data is not None:
+                self.latents_std = Tensor.from_dlpack(bn_var_data).to(
+                    self.devices[0]
+                )
+
+        return self.model
+
+    def build_fused_decode(
+        self, device: Device, num_channels: int
+    ) -> Callable[..., Any]:
+        """Build a fused postprocess + VAE decode compiled graph.
+
+        Combines BN denormalization, unpatchify, and VAE decoding into a single
+        compiled graph, eliminating the intermediate tensor and device sync
+        between the two previously separate compiled graphs.
+
+        Args:
+            device: Target device for the compiled graph.
+            num_channels: Number of latent channels (bn.running_mean shape[0]).
+
+        Returns:
+            Compiled callable taking (latents_bhwc, bn_mean, bn_var) and
+            returning the decoded image tensor.
+        """
+        dtype = self.config.dtype
+        device_ref = DeviceRef.from_device(device)
+
+        fused_weights: dict[str, Any] = {}
+        for key, value in self.weights.items():
+            weight_data = value.data()
+            if weight_data.dtype != dtype:
+                if weight_data.dtype.is_float() and dtype.is_float():
+                    weight_data = weight_data.astype(dtype)
+            if key.startswith("decoder."):
+                # decoder.X -> decoder.X (PostprocessAndDecode.decoder.X)
+                fused_weights[key] = weight_data
+
+        with F.lazy():
+            autoencoder = AutoencoderKLLTX2Audio(self.config)
+            fused = PostprocessAndDecode(
+                decoder=autoencoder.decoder,
+                batch_norm_eps=self.config.batch_norm_eps,
+                num_channels=num_channels,
+                device=device_ref,
+                dtype=dtype,
+            )
+            fused.to(device)
+            self._fused_model = fused.compile(
+                *fused.input_types(), weights=fused_weights
+            )
+
+        return self._fused_model
+
+    @property
+    def bn(self) -> SimpleNamespace:
+        """Property to access BatchNorm statistics, compatible with diffusers API.
+
+        Returns a SimpleNamespace with running_mean and running_var attributes
+        for compatibility with pipeline code that accesses self.vae.bn.running_mean.
+
+        Returns:
+            SimpleNamespace: Object containing running_mean and running_var attributes.
+
+        Raises:
+            ValueError: If BatchNorm statistics are not loaded.
+        """
+        if self.latents_mean is None or self.latents_std is None:
+            raise ValueError(
+                "BatchNorm statistics (running_mean, running_var) not loaded. "
+                "Make sure the model weights contain 'latents_mean' and 'latents_std'."
+            )
+
+        return SimpleNamespace(
+            running_mean=self.latents_mean, running_var=self.latents_std
         )
