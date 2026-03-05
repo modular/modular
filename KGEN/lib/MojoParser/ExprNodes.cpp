@@ -4402,36 +4402,6 @@ MagicFunctionNode::getValidatedStructTypeArg(IREmitter &emitter,
   return typeArg;
 }
 
-/// Normalize an index attribute to IndexType for use with variadic operations.
-/// Handles concrete integers, int literals, Int struct wrappers, and parametric
-/// expressions (using Rebind for the latter).
-static TypedAttr normalizeToIndexType(TypedAttr attr, MLIRContext *ctx) {
-  if (attr.getType().isIndex())
-    return attr;
-
-  // For concrete IntegerAttr, convert directly to index type.
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
-    return IntegerAttr::get(IndexType::get(ctx), intAttr.getInt());
-
-  // For IntLiteralAttr, extract the value and convert.
-  if (auto intLitAttr = dyn_cast<POP::IntLiteralAttr>(attr))
-    return IntegerAttr::get(IndexType::get(ctx),
-                            intLitAttr.getValue().getAPInt().getSExtValue());
-
-  // Handle Int struct wrapper - extract the value field.
-  if (auto litStruct = dyn_cast<LIT::LITStructAttr>(attr)) {
-    auto values = litStruct.getValues();
-    if (!values.empty()) {
-      auto [_, valueAttr] = values.front();
-      if (auto innerInt = dyn_cast<IntegerAttr>(valueAttr))
-        return IntegerAttr::get(IndexType::get(ctx), innerInt.getInt());
-    }
-  }
-
-  // For parametric types (like ParamDeclRefAttr), use Rebind to cast.
-  return ParamOperatorAttr::get(POC::Rebind, attr, IndexType::get(ctx));
-}
-
 AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
                                                  IREmitter &emitter) const {
   auto typeArg = getValidatedStructTypeArg(emitter, "struct_field_types");
@@ -4488,7 +4458,11 @@ MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
   }
 
   // Second argument: the index (can be parametric)
-  PValue indexPValue = emitter.emitExprPValue(subExprs[1], EC_MLIRMagic);
+  CValue indexCValue = emitter.emitIndex(subExprs[1], EC_MLIRMagic);
+  if (!indexCValue)
+    return {};
+
+  PValue indexPValue = indexCValue.getIfPValue();
   if (!indexPValue) {
     emitter.emitError(
         subExprs[1]->getLoc(),
@@ -4504,12 +4478,9 @@ MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
       emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
           ctx, structTypeAttr, variadicType);
 
-  // Normalize index to IndexType for VariadicGet.
-  TypedAttr indexAttr = normalizeToIndexType(indexPValue.get(), ctx);
-
   // Compute element type as VariadicGet(fieldTypes, index)
-  auto elementTypeAttr =
-      ParamOperatorAttr::get(POC::VariadicGet, fieldTypesAttr, indexAttr);
+  auto elementTypeAttr = ParamOperatorAttr::get(
+      POC::VariadicGet, fieldTypesAttr, indexPValue.get());
 
   // Return the type as a PValue (can be used in type position)
   return emitter.emitResult(PValue(elementTypeAttr), this, dest);
