@@ -11,22 +11,25 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: bench_broadcast
-file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_broadcast.mojo
+name: bench_scatter
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_scatter.mojo
 
-commons: &commons
-  dtype: [DType.bfloat16, DType.float32]
-  num_gpus: [2, 4, 8]
-  rank: [1]
-  root: [0]
-  $num_bytes: "[4, 8, 256, 4096, 32768, 2**18, 2**22]"
-  TUNE_MAX_NUM_BLOCKS: [0]
-
+# Focus on small sizes typical of row_offsets distribution.
 params:
-- <<: *commons
-  use_multimem: [False, True]
-  use_vendor_ccl: [False]
+- dtype: [DType.uint32]
+  num_gpus: [2]
+  dp_size: [2]
+  rank: [1]
+  $num_elems: "[1, 3, 8, 16, 64, 256, 1024, 4096, 16384]"
 
-- <<: *commons
-  use_multimem: [False]
-  use_vendor_ccl: [True]
+- dtype: [DType.uint32]
+  num_gpus: [4]
+  dp_size: [2, 4]
+  rank: [1]
+  $num_elems: "[1, 3, 8, 16, 64, 256, 1024, 4096, 16384]"
+
+- dtype: [DType.uint32]
+  num_gpus: [8]
+  dp_size: [2, 4, 8]
+  rank: [1]
+  $num_elems: "[1, 3, 8, 16, 64, 256, 1024, 4096, 16384]"
