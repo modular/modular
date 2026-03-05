@@ -44,6 +44,16 @@ CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
 
 
+@dataclass
+class SpecDecodingState:
+    """Per-request state for speculative decoding."""
+
+    draft_kv_start_idx: int = 0
+    saved_draft_tokens: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+
+
 @dataclass(kw_only=True)
 class TextContext:
     """A base class for model context, specifically for Text model variants.
@@ -68,6 +78,7 @@ class TextContext:
         _log_probabilities_data: Token log probabilities data
         _is_initial_prompt: Whether this is the initial prompt encoding
         _draft_offset: Offset for draft decoding
+        _spec_decoding_state: Optional per-request speculative decoding state
     """
 
     max_length: int
@@ -89,6 +100,7 @@ class TextContext:
 
     _is_initial_prompt: bool = field(default=True)
     _draft_offset: int = field(default=0)
+    _spec_decoding_state: SpecDecodingState | None = field(default=None)
 
     target_endpoint: str | None = field(default=None)
 
@@ -124,6 +136,13 @@ class TextContext:
     def min_tokens(self) -> int:
         """The minimum number of new tokens to generate."""
         return self.sampling_params.min_new_tokens
+
+    @property
+    def spec_decoding_state(self) -> SpecDecodingState:
+        """Gets or creates the per-request speculative decoding state."""
+        if self._spec_decoding_state is None:
+            self._spec_decoding_state = SpecDecodingState()
+        return self._spec_decoding_state
 
     def apply_processing_offset(self, offset: int) -> None:
         """Applies a processing offset to the token buffer."""
@@ -352,6 +371,7 @@ class TextContext:
         """Resets the context's state by combining all tokens into a new prompt."""
         self.tokens.reset_as_new_prompt()
         self._is_initial_prompt = True
+        self._spec_decoding_state = None
 
     def compute_num_available_steps(
         self,

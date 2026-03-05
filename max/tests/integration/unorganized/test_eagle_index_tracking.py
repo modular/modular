@@ -35,7 +35,6 @@ from max.pipelines.lib.speculative_decoding.base import (
     SpeculativeDecodingMetrics,
 )
 from max.pipelines.lib.speculative_decoding.eagle import (
-    EAGLERequestState,
     EAGLESpeculativeDecodingPipeline,
 )
 
@@ -67,17 +66,9 @@ class EAGLEIndexTracker:
     """Minimal mock so we can call real EAGLE methods as unbound."""
 
     def __init__(self) -> None:
-        self._request_state: dict[RequestID, EAGLERequestState] = {}
         self._metrics = SpeculativeDecodingMetrics()
         self._draft_kv_manager = MagicMock()
         self._target_kv_manager = MagicMock()
-
-    def _get_state(self, request_id: RequestID) -> EAGLERequestState:
-        state = self._request_state.get(request_id)
-        if state is None:
-            state = EAGLERequestState()
-            self._request_state[request_id] = state
-        return state
 
     def update_contexts(
         self,
@@ -178,8 +169,8 @@ def setup_single_context() -> tuple[TextContext, EAGLEIndexTracker]:
     Sets draft_kv_start_idx=4."""
     ctx = make_context([10, 11, 12, 13])
     ctx.update(50)
+    ctx.spec_decoding_state.draft_kv_start_idx = 4
     tracker = EAGLEIndexTracker()
-    tracker._get_state(ctx.request_id).draft_kv_start_idx = 4
     return ctx, tracker
 
 
@@ -259,14 +250,8 @@ class TestUpdateContextsSingle:
             position=expected["position"],
             generated=expected["generated"],
         )
-        assert (
-            tracker._get_state(ctx.request_id).draft_kv_start_idx
-            == expected["kv"]
-        )
-        assert (
-            tracker._get_state(ctx.request_id).last_verified_token
-            == expected["last"]
-        )
+        assert ctx.spec_decoding_state.draft_kv_start_idx == expected["kv"]
+        assert ctx.tokens[-1] == expected["last"]
 
 
 # ---------------------------------------------------------------------------
@@ -277,8 +262,6 @@ class TestUpdateContextsMixedBatch:
         ctx0, _ = setup_single_context()
         ctx1, _ = setup_single_context()
         tracker = EAGLEIndexTracker()
-        tracker._get_state(ctx0.request_id).draft_kv_start_idx = 4
-        tracker._get_state(ctx1.request_id).draft_kv_start_idx = 4
 
         tracker.update_contexts(
             context_batch=[ctx0, ctx1],
@@ -294,9 +277,9 @@ class TestUpdateContextsMixedBatch:
         )
 
         assert_state(ctx0, processed=8, active=4, position=12, generated=5)
-        assert tracker._get_state(ctx0.request_id).last_verified_token == 300
+        assert ctx0.tokens[-1] == 300
         assert_state(ctx1, processed=5, active=1, position=6, generated=2)
-        assert tracker._get_state(ctx1.request_id).last_verified_token == 800
+        assert ctx1.tokens[-1] == 800
 
 
 # ---------------------------------------------------------------------------
@@ -306,8 +289,8 @@ class TestDraftKVStartIndexCapping:
     def test_capped_to_processed(self) -> None:
         """Artificially high kv_idx (10) is capped to processed (7)."""
         ctx, _ = setup_single_context()
+        ctx.spec_decoding_state.draft_kv_start_idx = 10
         tracker = EAGLEIndexTracker()
-        tracker._get_state(ctx.request_id).draft_kv_start_idx = 10
 
         tracker.update_contexts(
             context_batch=[ctx],
@@ -317,7 +300,7 @@ class TestDraftKVStartIndexCapping:
             draft_tokens=np.array([[100, 101, 102]], dtype=np.int64),
             num_draft_tokens_generated=3,
         )
-        assert tracker._get_state(ctx.request_id).draft_kv_start_idx == 7
+        assert ctx.spec_decoding_state.draft_kv_start_idx == 7
 
     def test_not_capped_when_below(self) -> None:
         ctx, tracker = setup_single_context()
@@ -330,7 +313,7 @@ class TestDraftKVStartIndexCapping:
             num_draft_tokens_generated=3,
         )
         # processed=8, kv_idx=min(4,8)=4 → unchanged
-        assert tracker._get_state(ctx.request_id).draft_kv_start_idx == 4
+        assert ctx.spec_decoding_state.draft_kv_start_idx == 4
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +367,7 @@ class TestPrepareDraftBatchFullCycle:
         # --- prepare_draft_batch (new request, not in _draft_kv_start_idx) ---
         tracker.prepare_draft_batch(batch=[ctx])
         assert_state(ctx, processed=4, active=1, position=5, generated=1)
-        assert tracker._get_state(ctx.request_id).draft_kv_start_idx == 4
+        assert ctx.spec_decoding_state.draft_kv_start_idx == 4
 
         # --- update_contexts: all accepted + bonus ---
         tracker.update_contexts(
@@ -396,12 +379,12 @@ class TestPrepareDraftBatchFullCycle:
             num_draft_tokens_generated=3,
         )
         assert_state(ctx, processed=8, active=4, position=12, generated=5)
-        assert tracker._get_state(ctx.request_id).draft_kv_start_idx == 4
+        assert ctx.spec_decoding_state.draft_kv_start_idx == 4
 
         # --- prepare_draft_batch (existing request) ---
         tracker.prepare_draft_batch(batch=[ctx])
         assert_state(ctx, processed=8, active=1, position=9, generated=5)
-        assert tracker._get_state(ctx.request_id).draft_kv_start_idx == 8
+        assert ctx.spec_decoding_state.draft_kv_start_idx == 8
 
         # --- update_contexts: partial acceptance (1 of 3) ---
         tracker.update_contexts(
@@ -413,8 +396,8 @@ class TestPrepareDraftBatchFullCycle:
             num_draft_tokens_generated=3,
         )
         assert_state(ctx, processed=10, active=2, position=12, generated=7)
-        assert tracker._get_state(ctx.request_id).draft_kv_start_idx == 8
-        assert tracker._get_state(ctx.request_id).last_verified_token == 501
+        assert ctx.spec_decoding_state.draft_kv_start_idx == 8
+        assert ctx.tokens[-1] == 501
 
 
 class TestPrepareDraftBatchMixedBatch:
@@ -425,8 +408,6 @@ class TestPrepareDraftBatchMixedBatch:
         ctx0, _ = setup_single_context()
         ctx1, _ = setup_single_context()
         tracker = EAGLEIndexTracker()
-        tracker._get_state(ctx0.request_id).draft_kv_start_idx = 4
-        tracker._get_state(ctx1.request_id).draft_kv_start_idx = 4
 
         # ctx0: all accepted + bonus → kv_idx stays 4, offset=-3
         tracker.update_contexts(
@@ -452,11 +433,11 @@ class TestPrepareDraftBatchMixedBatch:
 
         # ctx0: kv_idx += active(4) → 8, offset reset → active=1
         assert_state(ctx0, processed=8, active=1, position=9, generated=5)
-        assert tracker._get_state(ctx0.request_id).draft_kv_start_idx == 8
+        assert ctx0.spec_decoding_state.draft_kv_start_idx == 8
 
         # ctx1: kv_idx += active(3) → 7, offset reset → active=1
         assert_state(ctx1, processed=7, active=1, position=8, generated=4)
-        assert tracker._get_state(ctx1.request_id).draft_kv_start_idx == 7
+        assert ctx1.spec_decoding_state.draft_kv_start_idx == 7
 
 
 # ===========================================================================
