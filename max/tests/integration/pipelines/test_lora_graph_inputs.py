@@ -38,9 +38,9 @@ class MockLoRAModel:
     def __init__(self, name: str, rank: int):
         self.name = name
         self.rank = rank
-        self._lora_A: dict = {}
-        self._lora_B: dict = {}
-        self._lora_bias: dict = {}
+        self._lora_A: dict = {}  # type: ignore[type-arg]
+        self._lora_B: dict = {}  # type: ignore[type-arg]
+        self._lora_bias: dict = {}  # type: ignore[type-arg]
 
     def get(self, key: str) -> None:
         return None

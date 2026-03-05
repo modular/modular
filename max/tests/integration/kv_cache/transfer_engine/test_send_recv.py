@@ -32,7 +32,7 @@ from max.kv_cache import (
 def transfer_routine_sender(
     engine: KVTransferEngine,
     remote: KVTransferEngineMetadata,
-    queue: Queue,
+    queue: Queue,  # type: ignore[type-arg]
     src_idxs: list[int],
     dst_idxs: list[int],
     src_replica_idx: int,
@@ -45,7 +45,7 @@ def transfer_routine_sender(
     engine.sync_and_release(transfer_req)
 
 
-def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue) -> None:
+def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue) -> None:  # type: ignore[type-arg]
     transfer_req = queue.get()
     engine.sync_and_release(transfer_req)
 

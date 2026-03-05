@@ -27,7 +27,7 @@ from max.pipelines import EmbeddingsPipeline
 
 def encode(  # noqa: ANN201
     pipeline: EmbeddingsPipeline,
-    tokenizer: PipelineTokenizer,
+    tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
     prompts: Iterable[str],
     batch_size: int = 1,
 ):
@@ -41,7 +41,7 @@ def encode(  # noqa: ANN201
 
 async def encode_async(
     pipeline: EmbeddingsPipeline,
-    tokenizer: PipelineTokenizer,
+    tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
     prompts: Iterable[str],
     batch_size: int,
 ) -> list[dict[str, Any]]:

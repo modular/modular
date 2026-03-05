@@ -273,7 +273,7 @@ def vision_tower_hf_weights() -> dict[str, torch.Tensor]:
 
 
 @pytest.fixture(scope="session")
-def imagenet_images() -> list:
+def imagenet_images() -> list:  # type: ignore[type-arg]
     """Loads images from the ImageNet-1k validation split via streaming.
 
     Returns a list of PIL Images. Skips the test if the dataset is
@@ -472,7 +472,7 @@ def test_vision_transformer_eval_torch_ref(
     image_index: int,
     vision_config: _VisionConfig,
     vision_tower_hf_weights: dict[str, torch.Tensor],
-    imagenet_images: list,
+    imagenet_images: list,  # type: ignore[type-arg]
     torch_reference_model: TorchTransformer,
 ) -> None:
     """Test 27-layer vision transformer against hand-written torch reference."""

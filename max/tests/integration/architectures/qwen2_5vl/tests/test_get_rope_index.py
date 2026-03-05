@@ -50,7 +50,7 @@ def get_rope_index_torch(
     video_grid_thw: torch.LongTensor | None = None,
     second_per_grid_ts: torch.Tensor | None = None,
     attention_mask: torch.Tensor | None = None,
-    config: dict | None = None,
+    config: dict | None = None,  # type: ignore[type-arg]
 ) -> tuple[torch.Tensor, torch.Tensor]:
     assert config is not None
     vision_config = config["vision_config"]
@@ -87,7 +87,7 @@ def get_rope_index_torch(
             image_nums = (vision_tokens == image_token_id).sum()
             video_nums = (vision_tokens == video_token_id).sum()
             input_tokens = input_ids.tolist()
-            llm_pos_ids_list: list = []
+            llm_pos_ids_list: list = []  # type: ignore[type-arg]
             st = 0
             remain_images, remain_videos = image_nums, video_nums
             second_per_grid_t: float = 0.0

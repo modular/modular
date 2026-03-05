@@ -64,7 +64,7 @@ async def create_worker_proxy(
     request_queue: queue.Queue[BaseContext],
     response_queue: queue.Queue[dict[RequestID, SchedulerResult[FakeOutput]]],
     cancel_queue: queue.Queue[list[RequestID]],
-) -> AsyncGenerator[ZmqModelWorkerProxy, None]:
+) -> AsyncGenerator[ZmqModelWorkerProxy, None]:  # type: ignore[type-arg]
     proxy = ZmqModelWorkerProxy(request_queue, response_queue, cancel_queue)
     response_worker_task = asyncio.create_task(proxy.response_worker())
     try:

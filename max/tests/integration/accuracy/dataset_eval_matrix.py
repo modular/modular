@@ -148,7 +148,7 @@ def generate_matrix(
     event_name: str,
     selected_pipeline: str,
     base_ref: str | None,
-) -> list[dict]:
+) -> list[dict]:  # type: ignore[type-arg]
     """Return the filtered list of pipeline dicts for the GH Actions matrix."""
     if event_name == "pull_request":
         assert base_ref is not None

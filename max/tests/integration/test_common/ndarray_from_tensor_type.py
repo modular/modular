@@ -38,14 +38,14 @@ def _static_dim_from_dim(
 
 def ndarray_from_tensor_type(
     *tensor_types: TensorType, max_dim_size: int = 128
-) -> list[npt.NDArray]:
+) -> list[npt.NDArray]:  # type: ignore[type-arg]
     """Creates a list of ndarrays from a variadic list of graph tensor types.
 
     This respects the static dimensions of dims that are already StaticDims.
     For SymbolicDims, this generates a random dimension for each unique symbolic dimension name.
     """
     name_to_static_dim: dict[str, int] = {}
-    ndarrays: list[npt.NDArray] = []
+    ndarrays: list[npt.NDArray] = []  # type: ignore[type-arg]
     for tens_type in tensor_types:
         # Staticize the dims in the tensor type, updating the symbolic dim map.
         static_dims = [

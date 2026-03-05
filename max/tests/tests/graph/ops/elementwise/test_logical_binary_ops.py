@@ -38,7 +38,7 @@ LOGICAL_BINARY_OPS = [logical_or, logical_and, logical_xor]
     tensor_type=tensor_types(dtypes=st.just(DType.bool)),
 )
 def test_logical_and__same_type(
-    logical_op: Callable[[Value, Value], TensorValue],
+    logical_op: Callable[[Value, Value], TensorValue],  # type: ignore[type-arg]
     graph_builder: GraphBuilder,
     tensor_type: TensorType,
 ) -> None:
@@ -51,7 +51,7 @@ def test_logical_and__same_type(
 @pytest.mark.parametrize("logical_op", LOGICAL_BINARY_OPS)
 @given(tensor_type=...)
 def test_logical_and__invalid_dtype(
-    logical_op: Callable[[Value, Value], TensorValue],
+    logical_op: Callable[[Value, Value], TensorValue],  # type: ignore[type-arg]
     graph_builder: GraphBuilder,
     tensor_type: TensorType,
 ) -> None:
@@ -65,7 +65,7 @@ def test_logical_and__invalid_dtype(
 @pytest.mark.parametrize("logical_op", LOGICAL_BINARY_OPS)
 @given(shapes=broadcastable_shapes(2))
 def test_logical_and__broadcast(
-    logical_op: Callable[[Value, Value], TensorValue],
+    logical_op: Callable[[Value, Value], TensorValue],  # type: ignore[type-arg]
     graph_builder: GraphBuilder,
     shapes: list[Shape],
 ) -> None:
@@ -86,7 +86,7 @@ def test_logical_and__broadcast(
 @pytest.mark.parametrize("logical_op", LOGICAL_BINARY_OPS)
 @given(s1=..., s2=...)
 def test_logical_and__invalid_broadcast(
-    logical_op: Callable[[Value, Value], TensorValue],
+    logical_op: Callable[[Value, Value], TensorValue],  # type: ignore[type-arg]
     graph_builder: GraphBuilder,
     s1: Shape,
     s2: Shape,
@@ -114,7 +114,7 @@ def test_logical_and__invalid_broadcast(
 @pytest.mark.parametrize("logical_op", LOGICAL_BINARY_OPS)
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)), b=...)
 def test_logical_and__python_bool(
-    logical_op: Callable[[Value | Numeric, Value | Numeric], TensorValue],
+    logical_op: Callable[[Value | Numeric, Value | Numeric], TensorValue],  # type: ignore[type-arg]
     graph_builder: GraphBuilder,
     tensor_type: TensorType,
     b: bool,
@@ -128,7 +128,7 @@ def test_logical_and__python_bool(
 @pytest.mark.parametrize("logical_op", LOGICAL_BINARY_OPS)
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
 def test_div__mismatched_devices(
-    logical_op: Callable[[Value | Numeric, Value | Numeric], TensorValue],
+    logical_op: Callable[[Value | Numeric, Value | Numeric], TensorValue],  # type: ignore[type-arg]
     graph_builder: GraphBuilder,
     tensor_type: TensorType,
 ) -> None:

@@ -77,7 +77,7 @@ def run_text_generation(
     num_steps: int = 10,
     print_outputs: bool = False,
     generate_logprobs: bool = False,
-) -> list[dict]:
+) -> list[dict]:  # type: ignore[type-arg]
     """Run text generation for InternVL using InternVLProcessor for text formatting."""
 
     data_processor = processor.tokenizer

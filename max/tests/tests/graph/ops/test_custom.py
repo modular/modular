@@ -667,7 +667,7 @@ class TestCustomPropertyBased:
         graph_builder: GraphBuilder,
         input_type: TensorType,
         kernel_name: str,
-        parameters: dict,
+        parameters: dict,  # type: ignore[type-arg]
     ) -> None:
         """Property test: custom operations should construct consistently with valid inputs."""
         # Generate matching output type with same shape and dtype
@@ -855,7 +855,7 @@ class TestInplaceCustomPropertyBased:
         graph_builder: GraphBuilder,
         buffer_type: BufferType,
         kernel_name: str,
-        parameters: dict,
+        parameters: dict,  # type: ignore[type-arg]
     ) -> None:
         """Property test: inplace custom operations should construct consistently with valid buffer inputs."""
         with graph_builder(input_types=[buffer_type]) as graph:
@@ -1019,7 +1019,7 @@ class TestCustomParameterPropertyBased:
         self,
         graph_builder: GraphBuilder,
         input_type: TensorType,
-        empty_params: dict,
+        empty_params: dict,  # type: ignore[type-arg]
         none_params,  # noqa: ANN001
     ) -> None:
         """Property test: custom operations should handle parameter edge cases consistently."""

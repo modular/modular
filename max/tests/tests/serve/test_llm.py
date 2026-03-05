@@ -106,7 +106,7 @@ class MockTokenizer(IdentityPipelineTokenizer[str]):
 
 
 @pytest.fixture
-def model_factory(request: pytest.FixtureRequest) -> PipelinesFactory:
+def model_factory(request: pytest.FixtureRequest) -> PipelinesFactory:  # type: ignore[type-arg]
     """Fixture for a pipeline's generator
     This is bound indirectly - hence the request.param pattern.
     See https://docs.pytest.org/en/7.1.x/example/parametrize.html
@@ -116,7 +116,7 @@ def model_factory(request: pytest.FixtureRequest) -> PipelinesFactory:
 
 @pytest.fixture(scope="function")
 def app(
-    model_factory: PipelinesFactory,
+    model_factory: PipelinesFactory,  # type: ignore[type-arg]
     mock_pipeline_config: PipelineConfig,
 ) -> Generator[FastAPI, None, None]:
     """Fixture for a FastAPI app using a given pipeline."""

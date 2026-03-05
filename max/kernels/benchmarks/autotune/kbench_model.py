@@ -106,7 +106,8 @@ def _run_cmdline(
 
 
 def _init_gpu_worker(
-    gpu_queue: multiprocessing.Queue, visible_device_prefix: str
+    gpu_queue: multiprocessing.Queue,  # type: ignore[type-arg]
+    visible_device_prefix: str,
 ) -> None:
     """Worker initializer that assigns a dedicated GPU to each pool worker."""
     gpu_id = gpu_queue.get()
@@ -516,7 +517,7 @@ class Spec:
         Returns:
             Spec: Dictionary of with extra param names as keys and param values.
         """
-        d: dict[str, list] = {}
+        d: dict[str, list] = {}  # type: ignore[type-arg]
         IFS = ":"
         for p in param_list:
             name = ""
@@ -712,7 +713,7 @@ class Spec:
         return new_mesh
 
     def filter(self, filter_list: list[str]) -> None:
-        filters: dict[str, list] = {}
+        filters: dict[str, list] = {}  # type: ignore[type-arg]
         for f in filter_list:
             if "=" in f:
                 name, val = f.split("=")
@@ -790,7 +791,7 @@ class BuildItem:
     idx: int
     spec_instance: SpecInstance
     output_dir: Path
-    build_opts: list
+    build_opts: list  # type: ignore[type-arg]
     dryrun: bool = False
     output_path: Path = Path()
     bin_path: Path | None = None
@@ -945,7 +946,7 @@ class Scheduler:
             "Created directories for all instances in spec." + utils.LINE
         )
 
-    def schedule_unique_build_items(self) -> list[dict]:
+    def schedule_unique_build_items(self) -> list[dict]:  # type: ignore[type-arg]
         # Stores items that need to be build (i.e. not in cache)
         unique_build_items: dict[str, int] = {}
         # Stores paths to real binaries that have been cached beforehand
@@ -1150,7 +1151,7 @@ class Scheduler:
         use_mpirun: bool = False,
     ) -> None:
         if visible_device_prefix and self.num_gpu > 1 and not use_mpirun:
-            gpu_queue: multiprocessing.Queue = multiprocessing.Queue()
+            gpu_queue: multiprocessing.Queue = multiprocessing.Queue()  # type: ignore[type-arg]
             # Respect any pre-set device visibility env var
             existing = os.environ.get(visible_device_prefix, "")
             if existing.strip():

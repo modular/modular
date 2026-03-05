@@ -48,7 +48,7 @@ def load_pickle(path: Path | str) -> Any:
         return pickle.load(handle)
 
 
-def flatten(value: int | object | Iterable) -> list[Any]:
+def flatten(value: int | object | Iterable) -> list[Any]:  # type: ignore[type-arg]
     """Flatten nested iterables into a single list."""
     if not isinstance(value, Iterable) or isinstance(value, str):
         return [value]

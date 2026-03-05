@@ -44,7 +44,7 @@ MOE_ATOL = 3e-2
 def generate_torch_moe_outputs(
     hidden_states: torch.Tensor,
     moe_weights: dict[str, torch.Tensor],
-    text_config: dict,
+    text_config: dict,  # type: ignore[type-arg]
     device: torch.device,
 ) -> torch.Tensor:
     """Generate reference outputs using HF Qwen3VL-MoE MoE implementation."""
@@ -77,7 +77,7 @@ def generate_torch_moe_outputs(
 def generate_max_moe_outputs(
     hidden_states: torch.Tensor,
     moe_weights: dict[str, torch.Tensor],
-    text_config: dict,
+    text_config: dict,  # type: ignore[type-arg]
     dtype: DType,
     device: Device,
 ) -> torch.Tensor:

@@ -265,7 +265,7 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
     )
 
 
-def create_pipeline_with_lora(lora_paths: list[str]) -> TextGenerationPipeline:
+def create_pipeline_with_lora(lora_paths: list[str]) -> TextGenerationPipeline:  # type: ignore[type-arg]
     """Create a text generation pipeline with LoRA enabled.
 
     Args:

@@ -44,12 +44,12 @@ def paged(
 
 
 def transfer_routine_sender(
-    sender_md_queue: mp.Queue,
-    receiver_md_queue: mp.Queue,
-    transfer_queue_0: mp.Queue,
-    transfer_queue_1: mp.Queue,
-    sender_done_queue: mp.Queue,
-    receiver_done_queue: mp.Queue,
+    sender_md_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue_0: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue_1: mp.Queue,  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue,  # type: ignore[type-arg]
     total_num_pages: int,
     total_bytes: int,
     GB: float,
@@ -146,12 +146,12 @@ def transfer_routine_sender(
 
 
 def transfer_routine_receiver(
-    sender_md_queue: mp.Queue,
-    receiver_md_queue: mp.Queue,
-    transfer_queue_0: mp.Queue,
-    transfer_queue_1: mp.Queue,
-    sender_done_queue: mp.Queue,
-    receiver_done_queue: mp.Queue,
+    sender_md_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue_0: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue_1: mp.Queue,  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue,  # type: ignore[type-arg]
     total_num_pages: int,
     total_bytes: int,
 ) -> None:
@@ -225,12 +225,12 @@ def test_dp2_tp2_transfer_multiprocessing() -> None:
     """
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
-    sender_md_queue: mp.Queue = ctx.Queue()
-    receiver_md_queue: mp.Queue = ctx.Queue()
-    transfer_queue_0: mp.Queue = ctx.Queue()  # For replica 0
-    transfer_queue_1: mp.Queue = ctx.Queue()  # For replica 1
-    sender_done_queue: mp.Queue = ctx.Queue()
-    receiver_done_queue: mp.Queue = ctx.Queue()
+    sender_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    transfer_queue_0: mp.Queue = ctx.Queue()  # type: ignore[type-arg]  # For replica 0
+    transfer_queue_1: mp.Queue = ctx.Queue()  # type: ignore[type-arg]  # For replica 1
+    sender_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
 
     GB = 1024 * 1024 * 1024
     total_bytes = int(0.5 * GB)

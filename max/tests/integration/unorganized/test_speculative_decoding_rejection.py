@@ -39,7 +39,7 @@ from max.pipelines.lib.speculative_decoding import (
 @dataclass
 class SpeculativeDecodingSetup:
     model_name: str
-    tokenizer: PipelineTokenizer
+    tokenizer: PipelineTokenizer  # type: ignore[type-arg]
     pipeline: StandaloneSpeculativeDecodingPipeline
     context1: TextContext
     context2: TextContext

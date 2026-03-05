@@ -56,7 +56,9 @@ class PrecompileJob:
 
 
 def pin_worker_to_cpus(
-    counter: Synchronized, cpus_per_worker: int, num_workers: int
+    counter: Synchronized,  # type: ignore[type-arg]
+    cpus_per_worker: int,
+    num_workers: int,
 ) -> None:
     """Pin this worker process to a dedicated CPU slice."""
     with counter.get_lock():

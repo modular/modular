@@ -34,7 +34,7 @@ _MODULE = "max.pipelines.lib.interfaces.pipeline_model"
 class _AlwaysSignalModel(AlwaysSignalBuffersMixin):
     """Minimal concrete class with AlwaysSignalBuffersMixin for testing."""
 
-    def __init__(self, devices: list) -> None:
+    def __init__(self, devices: list) -> None:  # type: ignore[type-arg]
         self.devices = devices
 
 

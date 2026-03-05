@@ -38,7 +38,8 @@ class InnerLayer(Layer):
 
 
 def test_unnamed_print_hook(
-    session: InferenceSession, capfd: pytest.CaptureFixture
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     print_hook = PrintHook()
     layer = OuterLayer()
@@ -69,7 +70,8 @@ def test_unnamed_print_hook(
 
 
 def test_named_print_hook(
-    session: InferenceSession, capfd: pytest.CaptureFixture
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     print_hook = PrintHook()
     layer = OuterLayer()

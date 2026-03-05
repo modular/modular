@@ -53,7 +53,7 @@ HEADER = """##===---------------------------------------------------------------
 """
 
 
-def spec_to_dict(spec: str) -> dict:
+def spec_to_dict(spec: str) -> dict:  # type: ignore[type-arg]
     """Convert kbench spec to dictionary"""
     # TODO: move this method to `kbench`
     spec_split = spec.split("/")
@@ -178,7 +178,7 @@ def df_to_console_table(
 class TuningSpec:
     name: str = ""
     file: Path = Path("")
-    params: list[dict] = field(default_factory=list)
+    params: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
     src_path: Path = Path()
     git_sha: str = ""
     datetime: str = ""
@@ -188,7 +188,7 @@ class TuningSpec:
 class KbenchPKL:
     merged_df: pd.DataFrame
     tune_df: pd.DataFrame
-    pkl_data: dict
+    pkl_data: dict  # type: ignore[type-arg]
     metric: str
 
     def __init__(self, pickle_path, metric: str) -> None:  # noqa: ANN001
@@ -229,7 +229,7 @@ class KbenchPKL:
         self.tune_df = tune_df
 
     @staticmethod
-    def load(path) -> dict:  # noqa: ANN001
+    def load(path) -> dict:  # type: ignore[type-arg]  # noqa: ANN001
         f = load_pickle(path)
         for k in ["merged_df", "build_df"]:
             assert k in f
@@ -373,7 +373,7 @@ def spec_to_tuning_spec(spec: Spec) -> list[TuningSpec]:
 def diff_baseline(
     files,  # noqa: ANN001
     metric: str,
-    pivots: list = [],  # noqa: B006
+    pivots: list = [],  # type: ignore[type-arg]  # noqa: B006
     head: int = -1,
     verbose: bool = False,
 ) -> None:
@@ -569,7 +569,7 @@ def check_specs(
         )
 
 
-def list_intersection(a: list, b: list) -> list:
+def list_intersection(a: list, b: list) -> list:  # type: ignore[type-arg]
     return [x for x in a if x in b]
 
 
@@ -645,7 +645,7 @@ class ComplexParamList(click.Option):
         return p
 
     @staticmethod
-    def parse(value) -> list:  # noqa: ANN001
+    def parse(value) -> list:  # type: ignore[type-arg]  # noqa: ANN001
         try:
             return ast.literal_eval(value)
         except:

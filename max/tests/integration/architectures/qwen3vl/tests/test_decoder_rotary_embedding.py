@@ -44,7 +44,7 @@ ATOL = 8e-3
 def generate_torch_outputs(
     position_ids: torch.Tensor,
     input_tensor: torch.Tensor,
-    hf_text_config: dict,
+    hf_text_config: dict,  # type: ignore[type-arg]
     dtype: torch.dtype = torch.bfloat16,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate reference outputs using the HuggingFace implementation."""
@@ -66,7 +66,7 @@ def generate_torch_outputs(
 
 def generate_max_outputs(
     position_ids: torch.Tensor,
-    qwen3vl_config: dict,
+    qwen3vl_config: dict,  # type: ignore[type-arg]
     dtype: DType,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate outputs using MAX Qwen3VLTextRotaryEmbedding implementation."""

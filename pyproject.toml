@@ -122,6 +122,7 @@ python_version = "3.10"
 
 check_untyped_defs = true
 warn_unused_ignores = true
+disallow_any_generics = true
 
 follow_imports = "silent"
 follow_imports_for_stubs = true
@@ -143,14 +144,6 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = "lmcache.*"
 follow_imports = "skip"
-
-[[tool.mypy.overrides]]
-module = "max.*"
-disallow_any_generics = true
-
-[[tool.mypy.overrides]]
-module = "utils.benchmarking.results_publication.*"
-disallow_any_generics = true
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

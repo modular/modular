@@ -52,7 +52,7 @@ def _should_ignore(package: dict[str, Any]) -> bool:
     )
 
 
-def _get_direct_deps(data: dict) -> set[str]:
+def _get_direct_deps(data: dict) -> set[str]:  # type: ignore[type-arg]
     direct_deps = set()
 
     for package in data["package"]:

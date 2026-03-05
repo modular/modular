@@ -244,7 +244,8 @@ def test_hook_many_args_kwargs(mocker: MockerFixture) -> None:
 
 
 def test_print_hook_filter(
-    session: InferenceSession, capfd: pytest.CaptureFixture
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     # Create a model with two inner layers and name them.
     print_hook = PrintHook(filter=["model.inner_layer_2"])

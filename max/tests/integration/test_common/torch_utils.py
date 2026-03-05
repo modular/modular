@@ -42,7 +42,7 @@ from transformers import (
 
 def _create_logits_store(
     generate_logprobs: bool = False,
-) -> tuple[list[dict], Callable]:
+) -> tuple[list[dict], Callable]:  # type: ignore[type-arg]
     """Create a logits storage function and container.
 
     The `saved_logits` is captured into the `store_logits` closure, which is
@@ -362,7 +362,7 @@ def run_image_generation(
     requests: list[MockPixelGenerationRequest],
     num_steps: int,
     print_outputs: bool = False,
-) -> list[dict]:
+) -> list[dict]:  # type: ignore[type-arg]
     """Run image generation using a diffusers pipeline.
 
     Args:

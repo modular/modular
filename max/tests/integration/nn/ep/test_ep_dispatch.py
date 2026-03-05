@@ -31,7 +31,7 @@ MAX_GPUS_PER_NODE = 8
 
 
 def verify_ep_dispatch_results(
-    results: list,
+    results: list,  # type: ignore[type-arg]
     per_device_inputs_torch: list[torch.Tensor],
     all_topk_ids_torch: list[torch.Tensor],
     atomic_counters: list[Buffer],
