@@ -6,6 +6,7 @@
 
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/Compiler/SaveAsmOutput.h"
+#include "Support/CacheLog.h"
 
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
@@ -86,15 +87,25 @@ ErrorOr<std::unique_ptr<ObjectCompiler>>
 ObjectCompiler::create(StringRef basePath, CompilationOptions options,
                        bool isJIT, MLIRContext &context,
                        PassManagerConfigOptions pmOptions) {
+  MODULAR_CACHE_LOG("mojo")
+      << "ObjectCompiler::create: basePath=" << basePath << "\n";
   std::filesystem::path cachePath(basePath.str());
   if (!options.cacheBaseExtra.empty())
     cachePath = cachePath / options.cacheBaseExtra;
   cachePath = cachePath / "transform";
+  MODULAR_CACHE_LOG("mojo")
+      << "ObjectCompiler::create: cachePath=" << cachePath.string()
+      << " cacheBaseExtra=" << options.cacheBaseExtra << "\n";
 
   auto transformCache =
       Cache::getLocalDefaultBackendChain(cachePath, getVersionString());
-  if (failed(transformCache))
+  if (failed(transformCache)) {
+    MODULAR_CACHE_LOG("mojo")
+        << "ObjectCompiler::create: backend creation failed\n";
     return transformCache.takeError();
+  }
+  MODULAR_CACHE_LOG("mojo")
+      << "ObjectCompiler::create: transform cache created\n";
 
   // Read the mojo configuration.
   ErrorOr<MojoConfig> configOr = MojoConfig::open();

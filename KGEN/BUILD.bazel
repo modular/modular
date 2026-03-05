@@ -1154,6 +1154,7 @@ modular_cc_library(
         ":ObjectCompiler.BitcodeWriter",
         ":Pipeline",
         "//MLRT:AsyncRT/CompilerSupport",
+        "//Support:CacheLog",
         "//Support:Context",
         "@llvm-project//mlir:BytecodeWriter",
     ],

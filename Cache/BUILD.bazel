@@ -32,6 +32,7 @@ modular_cc_library(
         "//Support:Base",
         "//Support:Base64",
         "//Support:Buffer",
+        "//Support:CacheLog",
         "//Support:Compiler",
         "//Support:Configuration",
         "//Support:Context",

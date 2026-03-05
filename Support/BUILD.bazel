@@ -283,9 +283,16 @@ modular_cc_library(
     deps = [
         ":Base",
         ":BazelRunfiles",
+        ":CacheLog",
         ":Filesystem",
         "@llvm-project//llvm:Support",
     ],
+)
+
+modular_cc_library(
+    name = "CacheLog",
+    hdrs = ["include/Support/CacheLog.h"],
+    deps = ["@llvm-project//llvm:Support"],
 )
 
 modular_cc_library(

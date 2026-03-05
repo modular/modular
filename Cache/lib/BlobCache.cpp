@@ -10,6 +10,7 @@
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/Base64.h"
+#include "Support/CacheLog.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/DiskUsage.h"
@@ -46,17 +47,32 @@ static bool checkOrCreateWriteableDirectory(const std::filesystem::path &path) {
   [[maybe_unused]] std::error_code existsErr;
   if (std::filesystem::exists(path, existsErr)) {
     // If the path exists but is not a directory, return false.
-    if (!std::filesystem::is_directory(path, existsErr))
+    if (!std::filesystem::is_directory(path, existsErr)) {
+      MODULAR_CACHE_LOG("fs")
+          << path.string() << " exists but is not a directory\n";
       return false;
+    }
     // Otherwise, check the write access permissions for the existing directory.
-    return !llvm::sys::fs::access(path.string(),
-                                  llvm::sys::fs::AccessMode::Write);
+    bool writable =
+        !llvm::sys::fs::access(path.string(), llvm::sys::fs::AccessMode::Write);
+    MODULAR_CACHE_LOG("fs")
+        << path.string()
+        << " exists, writable=" << (writable ? "true" : "false") << "\n";
+    return writable;
   }
 
   // If the path doesn't exist, create it. If creation was successful, we must
   // have write access.
   std::error_code createErr;
   std::filesystem::create_directories(path, createErr);
+  if (createErr) {
+    MODULAR_CACHE_LOG("fs")
+        << path.string()
+        << " does not exist, creation failed: " << createErr.message() << "\n";
+  } else {
+    MODULAR_CACHE_LOG("fs")
+        << path.string() << " does not exist, created successfully\n";
+  }
   return !createErr;
 }
 
@@ -347,13 +363,18 @@ struct FilesystemBackend : public BlobCacheBackend {
     // Check if we already have the object in the filesystem cache - if we do,
     // then don't bother writing it again.
     ErrorOr<bool> containsOr = containsSync(keyHash);
-    if (!containsOr.isError() && *containsOr)
+    if (!containsOr.isError() && *containsOr) {
+      MODULAR_CACHE_LOG("fs") << "insertSyncImpl: already cached, skipping: "
+                              << encodeURLSafeBase64(keyHash) << "\n";
       return success();
+    }
 
     // Otherwise, if the filesystem is read-only, we cannot write to it for
     // insertion.
-    if (readOnly)
+    if (readOnly) {
+      MODULAR_CACHE_LOG("fs") << "insertSyncImpl: read-only, skipping write\n";
       return success();
+    }
 
     // Get the absolute path and create any directories we need to create.
     ErrorOr<std::filesystem::path> filePathOr = getAbsolutePathForKey(keyHash);
@@ -369,6 +390,9 @@ struct FilesystemBackend : public BlobCacheBackend {
     if (availableSizeOr.isError())
       return availableSizeOr.takeError();
 
+    MODULAR_CACHE_LOG("fs")
+        << "insertSyncImpl: disk available=" << *availableSizeOr
+        << " needed=" << obj->getBufferSize() << "\n";
     if (*availableSizeOr < obj->getBufferSize())
       return Error("cannot write to file to filesystem cache since available "
                    "space(" +
@@ -389,9 +413,15 @@ struct FilesystemBackend : public BlobCacheBackend {
 
     // Safely process creating the file, taking into account that we may
     // have different processes trying to produce this file in parallel.
-    if (auto err = writeFileUnderLock(*filePathOr, writeContent); err.isError())
+    if (auto err = writeFileUnderLock(*filePathOr, writeContent);
+        err.isError()) {
+      MODULAR_CACHE_LOG("fs")
+          << "insertSyncImpl: write failed: " << filePathOr->string() << "\n";
       return err.takeError();
+    }
 
+    MODULAR_CACHE_LOG("fs")
+        << "insertSyncImpl: write success: " << filePathOr->string() << "\n";
     return success();
   }
 
@@ -420,8 +450,12 @@ struct FilesystemBackend : public BlobCacheBackend {
 
     // No such file, return nullopt (not error).
     std::error_code ec;
-    if (!std::filesystem::exists(*filePath, ec) || ec)
+    if (!std::filesystem::exists(*filePath, ec) || ec) {
+      MODULAR_CACHE_LOG("fs")
+          << "findSyncImpl: miss, file not found: " << filePath->string()
+          << "\n";
       return std::nullopt;
+    }
 
     // If the cache file for this key exists, then it will never be written
     // again. We can safely read it without a lock.
@@ -431,9 +465,13 @@ struct FilesystemBackend : public BlobCacheBackend {
       return bufOr.takeError();
 
     BufferRef buffer = std::move(*bufOr);
-    if (buffer->getBufferSize() == 0)
+    if (buffer->getBufferSize() == 0) {
+      MODULAR_CACHE_LOG("fs")
+          << "findSyncImpl: CORRUPTED (empty file): " << filePath->string()
+          << "\n";
       return Error("file '" + Twine(filePath->string()) +
                    "' exists, but is empty");
+    }
 
     StringRef contentsAndHash = buffer->getBuffer();
 
@@ -447,6 +485,9 @@ struct FilesystemBackend : public BlobCacheBackend {
     // Check the computed hash against the hash in the file.
     if (memcmp(llvm::bit_cast<char *>(&computedHash), storedHash.data(),
                sizeof(llvm::XXH128_hash_t)) != 0) {
+      MODULAR_CACHE_LOG("fs")
+          << "findSyncImpl: CORRUPTED (hash mismatch): " << filePath->string()
+          << "\n";
       return Error("corrupted file: stored hash and computed hash did not "
                    "match for file '" +
                    Twine(filePath->string()) + "'");
@@ -457,6 +498,8 @@ struct FilesystemBackend : public BlobCacheBackend {
     bufOr = Buffer::getFile(*filePath, contents.size(), /*offset=*/0);
     if (failed(bufOr))
       return bufOr.takeError();
+    MODULAR_CACHE_LOG("fs") << "findSyncImpl: cache hit: " << contents.size()
+                            << " bytes from " << filePath->string() << "\n";
     return BufferRef::take(bufOr->release());
   }
 
@@ -499,6 +542,8 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
   if (version.empty())
     version = getModularVersionString();
 
+  MODULAR_CACHE_LOG("fs") << "version=" << std::string_view(version) << "\n";
+
   std::error_code ec;
   std::filesystem::path base = cacheDir;
   if (!base.is_absolute()) {
@@ -509,10 +554,15 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
     if (cacheFolderPath.isError())
       return Error(cacheFolderPath.getError());
     base = std::filesystem::absolute(*cacheFolderPath) / cacheDir;
+    MODULAR_CACHE_LOG("fs")
+        << "resolved relative path to: " << base.string() << "\n";
   }
 
   assert(base.is_absolute() && "must default to non-empty absolute path");
   bool readOnly = !checkOrCreateWriteableDirectory(base);
+  MODULAR_CACHE_LOG("fs") << "basePath=" << base.string()
+                          << " readOnly=" << (readOnly ? "true" : "false")
+                          << "\n";
 
   // If we have write access, do a little cache pruning on the host system in
   // order to keep disk usage down: iterate the base path and remove
@@ -543,14 +593,19 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
           std::string dirName = dirEntry.path().filename().string();
           // Remove if dirName is not the same as current version (outdated
           // cache) and has the same build type as the current one.
-          if (dirName != version && dirName.ends_with(suffix))
+          if (dirName != version && dirName.ends_with(suffix)) {
+            MODULAR_CACHE_LOG("fs")
+                << "pruning old cache dir: " << dirEntry.path().string()
+                << "\n";
             std::filesystem::remove_all(dirEntry, ec);
+          }
         }
       }
     }
   }
 
   base = base / version;
+  MODULAR_CACHE_LOG("fs") << "final cache path=" << base.string() << "\n";
   return RCRef<FilesystemBackend>::create(base, readOnly);
 }
 
@@ -568,6 +623,7 @@ M::Cache::getLocalDefaultBackendChain(const std::filesystem::path &cacheDir,
     return filesystemOr.takeError();
   auto memory = getInMemoryBackend();
   memory->appendDelegate(std::move(*filesystemOr));
+  MODULAR_CACHE_LOG("fs") << "backend chain created (memory + filesystem)\n";
   return std::move(memory);
 }
 
