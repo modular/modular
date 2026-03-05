@@ -91,7 +91,7 @@ def _load_function():  # noqa: ANN202
     return func
 
 
-def _parse_options(line: str) -> dict:
+def _parse_options(line: str) -> dict:  # type: ignore[type-arg]
     """Parse string of the form:
     key1=value key2=value ...
     parses value to bool(True) if lowercase value is true, 1, on, yes
