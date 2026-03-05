@@ -25,9 +25,6 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from std.memory import stack_allocation
 
-from structured_kernels.tile_types import (
-    lt_to_tt,
-)
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul_kernel import (
     _ProblemSizesTile,
 )

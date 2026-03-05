@@ -28,9 +28,6 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tile_tensor import TileTensor
-from structured_kernels.tile_types import (
-    lt_to_tt,
-)
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
@@ -93,9 +90,9 @@ fn matmul_dispatch_sm100[
     comptime static_K = a.shape.get[1]()
 
     comptime if get_defined_bool["AUTOTUNING_MODE", False]():
-        var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
-        var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
-        var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
+        var c_tensor = TileTensor(c)
+        var a_tensor = TileTensor(a)
+        var b_tensor = TileTensor(b)
 
         comptime BM = get_defined_int["TUNE_BM", 128]()
         comptime BN = get_defined_int["TUNE_BN", 64]()
@@ -2109,9 +2106,9 @@ fn _matmul_dispatch_sm100[
     operations if there is any.
     """
 
-    var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
-    var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
-    var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
+    var c_tensor = TileTensor(c)
+    var a_tensor = TileTensor(a)
+    var b_tensor = TileTensor(b)
 
     comptime assert (
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None

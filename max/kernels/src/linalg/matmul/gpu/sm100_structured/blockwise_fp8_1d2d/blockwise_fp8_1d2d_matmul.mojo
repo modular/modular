@@ -49,7 +49,6 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
-from structured_kernels.tile_types import lt_to_tt
 from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from .blockwise_fp8_1d2d_matmul_kernel import BlockwiseFP8_1D2DMatmulKernel
 

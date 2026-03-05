@@ -35,9 +35,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
@@ -284,11 +282,11 @@ fn test_existing_kernel_single_group[
         transpose_b=transpose_b,
         config=config,
     ](
-        lt_to_tt(c_tensor),
-        lt_to_tt(a_tensor),
-        lt_to_tt(b_tensor),
-        lt_to_tt(a_scales_tensor),
-        lt_to_tt(b_scales_tensor),
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
+        TileTensor(a_scales_device_nd),
+        TileTensor(b_scales_device_nd),
         ctx,
     )
     ctx.synchronize()

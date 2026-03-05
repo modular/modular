@@ -27,8 +27,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from structured_kernels.tile_types import lt_to_tt
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -210,9 +209,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         config=matmul_config,
         elementwise_lambda_fn=epi,
     ](
-        lt_to_tt(from_ndbuffer_row_major(c_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(a_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(b_device_nd)),
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
         ctx,
     )
 

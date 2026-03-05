@@ -35,10 +35,8 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    Layout as LegacyLayout,
     LayoutTensor,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.int_tuple import IntTuple
@@ -49,14 +47,12 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 from std.builtin.variadics import Variadic
-from buffer import Dim, DimList
 from layout.coord import (
     ComptimeInt,
     Coord,
     CoordLike,
     Idx,
     RuntimeInt,
-    _DimsToCoordLike,
 )
 from layout.tile_layout import Layout, TensorLayout
 from .smem_types import SMemTileArray as LTSMemTileArray
@@ -249,14 +245,6 @@ Parameters:
 """
 
 from layout.tile_layout import TensorLayout
-
-
-@parameter
-fn _int_to_dim(value: Int) -> Dim:
-    """Convert IntTuple value to Dim: UNKNOWN_VALUE -> Dim(), else Dim(N)."""
-    if value != UNKNOWN_VALUE:
-        return Dim(value)
-    return Dim()
 
 
 # ============================================================================
@@ -582,131 +570,6 @@ def create_tma_tile[
         __tile_shape=_to_index_list[tma_tile_layout](),
         __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
     ](ctx, tensor)
-
-
-# ============================================================================
-# GMEMTile -- TileTensor type for global memory kernel parameters
-# ============================================================================
-
-comptime GMEMTile[
-    dtype: DType,
-    lt_layout: LegacyLayout,
-] = TileTensor[
-    dtype,
-    Layout[
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.shape[0].value()),
-                _int_to_dim(lt_layout.shape[1].value()),
-            ),
-        ],
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.stride[0].value()),
-                _int_to_dim(lt_layout.stride[1].value()),
-            ),
-        ],
-    ],
-    MutAnyOrigin,
-]
-"""Global memory 2D TileTensor derived from a legacy Layout.
-
-Used for kernel parameter types, replacing LayoutTensor parameters.
-"""
-
-
-@always_inline
-fn lt_to_tt[
-    dtype: DType,
-    lt_layout: LegacyLayout,
-](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
-    dtype,
-    Layout[
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.shape[0].value()),
-                _int_to_dim(lt_layout.shape[1].value()),
-            ),
-        ],
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.stride[0].value()),
-                _int_to_dim(lt_layout.stride[1].value()),
-            ),
-        ],
-    ],
-    lt.origin,
-]:
-    """Convert a 2D LayoutTensor to a TileTensor.
-
-    Static dimensions are preserved as ComptimeInt, dynamic dimensions
-    (UNKNOWN_VALUE) become RuntimeInt. Uses _DimsToCoordLike via DimList
-    to avoid the _IntTupleToCoordLike compiler crash.
-    """
-    comptime ShapeTypes = _DimsToCoordLike[
-        DType.int64,
-        DimList(
-            _int_to_dim(lt_layout.shape[0].value()),
-            _int_to_dim(lt_layout.shape[1].value()),
-        ),
-    ]
-    comptime StrideTypes = _DimsToCoordLike[
-        DType.int64,
-        DimList(
-            _int_to_dim(lt_layout.stride[0].value()),
-            _int_to_dim(lt_layout.stride[1].value()),
-        ),
-    ]
-    var shape = Coord[*ShapeTypes]()
-    var stride = Coord[*StrideTypes]()
-
-    comptime for i in range(2):
-        comptime if not shape.element_types[i].is_static_value:
-            shape[i] = rebind[shape.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
-            )
-
-        comptime if not stride.element_types[i].is_static_value:
-            stride[i] = rebind[stride.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
-            )
-
-    comptime ResultLayout = Layout[ShapeTypes, StrideTypes]
-    from std.memory import UnsafePointer as Ptr
-
-    var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
-    return TileTensor[dtype, ResultLayout, lt.origin](
-        ptr=ptr,
-        layout=ResultLayout(shape, stride),
-    )
-
-
-@always_inline
-fn lt_to_tt_1d[
-    dtype: DType,
-    lt_layout: LegacyLayout,
-](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
-    dtype, GMEMLayout1D, lt.origin
-]:
-    """Convert a 1D LayoutTensor to a TileTensor with GMEMLayout1D."""
-    var shape = Coord(
-        RuntimeInt[DType.int64](
-            Scalar[DType.int64](lt.runtime_layout.shape.value[0])
-        )
-    )
-    var stride = Coord(Idx[1]())
-
-    from std.memory import UnsafePointer as Ptr
-
-    var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
-    return TileTensor[dtype, GMEMLayout1D, lt.origin](
-        ptr=ptr,
-        layout=GMEMLayout1D(shape, stride),
-    )
 
 
 # ============================================================================

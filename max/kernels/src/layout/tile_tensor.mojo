@@ -243,10 +243,7 @@ struct TileTensor[
         buffer: NDBuffer[...],
         out self: TileTensor[
             buffer.dtype,
-            Layout[
-                shape_types=_DimsToCoordLike[DType.int64, buffer.shape],
-                stride_types=_DimsToCoordLike[DType.int64, buffer.strides],
-            ],
+            RowMajorLayout[*_DimsToCoordLike[DType.int64, buffer.shape]],
             buffer.origin,
             address_space=buffer.address_space,
         ],
@@ -255,14 +252,20 @@ struct TileTensor[
 
         Converts an NDBuffer to a TileTensor, preserving shape and stride
         information. Static dimensions in the NDBuffer become ComptimeInt,
-        dynamic dimensions become RuntimeInt.
+        dynamic dimensions become RuntimeInt. Strides are computed as
+        row-major from the shape types via `RowMajorLayout`, recovering
+        static stride info that NDBuffer's default all-unknown strides
+        would lose.
 
         Args:
             buffer: The NDBuffer to convert.
         """
         self.ptr = buffer.data
         var shape = Coord[*_DimsToCoordLike[DType.int64, buffer.shape]]()
-        var stride = Coord[*_DimsToCoordLike[DType.int64, buffer.strides]]()
+        comptime _stride_types = _RowMajor[
+            *_DimsToCoordLike[DType.int64, buffer.shape]
+        ]
+        var stride = Coord[*_stride_types]()
 
         comptime for i in range(buffer.rank):
             comptime if not shape.element_types[i].is_static_value:
