@@ -29,9 +29,13 @@ from max.interfaces import (
     RequestID,
 )
 from max.interfaces.generation import GenerationOutput
-from max.interfaces.request.open_responses import OutputImageContent
+from max.interfaces.request.open_responses import (
+    OutputAudioContent,
+    OutputImageContent,
+    OutputVideoContent,
+)
 
-from ..interfaces.diffusion_pipeline import (
+from ..interfaces.diffusion_pipeline import (  # type: ignore[import-not-found]
     DiffusionPipeline,
     PixelModelInputs,
 )
@@ -105,60 +109,124 @@ class PixelGenerationPipeline(
             batch_size = len(flat_batch)
             logger.error(
                 "Encountered an exception while executing pixel batch: "
-                "batch_size=%d, num_images_per_prompt=%s, height=%s, width=%s, "
+                "batch_size=%d, num_visuals_per_prompt=%s, height=%s, width=%s, "
                 "num_inference_steps=%s",
                 batch_size,
-                model_inputs.num_images_per_prompt,
+                model_inputs.num_visuals_per_prompt,
                 model_inputs.height,
                 model_inputs.width,
                 model_inputs.num_inference_steps,
             )
             raise
 
-        images = model_outputs.images
-        num_images_per_prompt = model_inputs.num_images_per_prompt
-        expected_images = len(flat_batch) * num_images_per_prompt
+        image_list = getattr(model_outputs, "images", None)
+        num_visuals_per_prompt = model_inputs.num_visuals_per_prompt
 
-        # Handle both numpy array (NHWC) and list of images
-        if isinstance(images, np.ndarray):
-            # images shape: (batch_size, H, W, C) or (batch_size, C, H, W)
-            # Convert NCHW to NHWC if needed
-            if images.ndim == 4 and images.shape[1] in (1, 3, 4):
-                # Likely NCHW format, convert to NHWC
-                images = np.transpose(images, (0, 2, 3, 1))
-            # Denormalize from [-1, 1] to [0, 1] range
-            images = (images * 0.5 + 0.5).clip(min=0.0, max=1.0)
-            image_list = [images[i] for i in range(images.shape[0])]
-        else:
-            # Denormalize each image from [-1, 1] to [0, 1] range
-            image_list = [
-                (np.asarray(img, dtype=np.float32) * 0.5 + 0.5).clip(
-                    min=0.0, max=1.0
+        # Handle image outputs (image-generation models) - gate on None to
+        # avoid a NameError from the old `images` reference.
+        if image_list is not None:
+            if isinstance(image_list, np.ndarray):
+                # images shape: (batch_size, H, W, C) or (batch_size, C, H, W)
+                # Convert NCHW to NHWC if needed
+                if image_list.ndim == 4 and image_list.shape[1] in (1, 3, 4):
+                    image_list = np.transpose(image_list, (0, 2, 3, 1))
+                # Denormalize from [-1, 1] to [0, 1] range
+                image_list = (image_list * 0.5 + 0.5).clip(min=0.0, max=1.0)
+                image_list = [image_list[i] for i in range(image_list.shape[0])]
+            else:
+                image_list = [
+                    (np.asarray(img, dtype=np.float32) * 0.5 + 0.5).clip(
+                        min=0.0, max=1.0
+                    )
+                    for img in image_list
+                ]
+
+            expected_images = len(flat_batch) * num_visuals_per_prompt
+            if len(image_list) != expected_images:
+                raise ValueError(
+                    "Unexpected number of images returned from pipeline: "
+                    f"expected {expected_images}, got {len(image_list)}."
                 )
-                for img in images
-            ]
 
-        if len(image_list) != expected_images:
-            raise ValueError(
-                "Unexpected number of images returned from pipeline: "
-                f"expected {expected_images}, got {len(image_list)}."
-            )
+        video_output = getattr(model_outputs, "frames", None)
+
+        # Convert MAX Tensor → numpy if the pipeline returned a Tensor.
+        def _tensor_to_numpy(t: object) -> np.ndarray | None:
+            if t is None or isinstance(t, np.ndarray):
+                return t  # type: ignore[return-value]
+            try:
+                # MAX Tensor supports __dlpack__ / np.from_dlpack.
+                from max.driver import CPU
+                from max.dtype import DType
+
+                return np.from_dlpack(t.cast(DType.float32).to(CPU()))  # type: ignore[union-attr]
+            except Exception:
+                pass
+            try:
+                return t.to_numpy()  # type: ignore[union-attr]
+            except Exception:
+                logger.warning(
+                    "Could not convert pipeline tensor output to numpy; skipping."
+                )
+                return None
+
+        video_output = _tensor_to_numpy(video_output)
+        audio_output = _tensor_to_numpy(getattr(model_outputs, "audio", None))
+
+        frame_rate = int(getattr(model_inputs, "frame_rate", 24) or 24)
+        audio_sample_rate = int(
+            getattr(model_inputs, "audio_sampling_rate", 16000) or 16000
+        )
 
         responses: dict[RequestID, GenerationOutput] = {}
         for index, (request_id, _context) in enumerate(flat_batch):
-            offset = index * num_images_per_prompt
+            offset = index * num_visuals_per_prompt
             # Select images for this request (already in NHWC format)
-            pixel_data = np.stack(
-                image_list[offset : offset + num_images_per_prompt], axis=0
-            ).astype(np.float32, copy=False)
+            output_content = []
+            if image_list is not None and len(image_list) > 0:
+                pixel_data = image_list[
+                    offset : offset + num_visuals_per_prompt
+                ]
+                pixel_data = pixel_data.astype(np.float32, copy=False)
+                output_content.extend(
+                    [
+                        OutputImageContent.from_numpy(img, format="png")
+                        for img in pixel_data
+                    ]
+                )
+
+            # Video output - [batch, frames, height, width, channels] in [0,1].
+            # Store as lossless numpy so the consumer can call encode_video
+            # directly (mirrors the diffusers encode_video pattern).
+            if video_output is not None:
+                for i in range(num_visuals_per_prompt):
+                    idx = offset + i
+                    if idx < len(video_output):
+                        output_content.append(
+                            OutputVideoContent.from_numpy(
+                                video_output[idx],
+                                fps=frame_rate,
+                                format="numpy",
+                            )
+                        )
+
+            # Audio output - [batch, channels, samples] or [batch, samples].
+            if audio_output is not None:
+                for i in range(num_visuals_per_prompt):
+                    idx = offset + i
+                    if idx < len(audio_output):
+                        output_content.append(
+                            OutputAudioContent.from_numpy(
+                                audio_output[idx],
+                                sample_rate=audio_sample_rate,
+                                format="wav",
+                            )
+                        )
 
             responses[request_id] = GenerationOutput(
                 request_id=request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
-                output=[
-                    OutputImageContent.from_numpy(img, format="png")
-                    for img in pixel_data
-                ],
+                output=output_content,
             )
 
         return responses

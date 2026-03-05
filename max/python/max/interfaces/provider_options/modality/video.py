@@ -29,19 +29,19 @@ class VideoProviderOptions(BaseModel):
     )
 
     width: int | None = Field(
-        None,
+        768,
         description="The width of the generated video in pixels.",
         gt=0,
     )
 
     height: int | None = Field(
-        None,
+        512,
         description="The height of the generated video in pixels.",
         gt=0,
     )
 
     steps: int | None = Field(
-        None,
+        40,
         description=(
             "The number of denoising steps. More steps generally produce higher quality "
             "results but take longer to generate."
@@ -50,7 +50,7 @@ class VideoProviderOptions(BaseModel):
     )
 
     frames_per_second: int | None = Field(
-        None,
+        24.0,
         description=(
             "The frame rate for video generation in frames per second (fps). "
             "Common values are 24, 30, or 60 fps."
@@ -59,10 +59,36 @@ class VideoProviderOptions(BaseModel):
     )
 
     num_frames: int | None = Field(
-        None,
+        121,
         description=(
             "The number of frames to generate for video output. "
             "Total video duration equals num_frames / frames_per_second."
         ),
         gt=0,
+    )
+
+    guidance_scale: float | None = Field(
+        4.0,
+        description=(
+            "The classifier-free guidance scale. Higher values encourage the model to "
+            "follow the prompt more closely at the cost of lower image diversity."
+        ),
+        gt=0,
+    )
+
+    true_cfg_scale: float | None = Field(
+        4.0,
+        description=(
+            "The true classifier-free guidance scale. Higher values encourage the model to "
+            "follow the prompt more closely at the cost of lower image diversity. "
+            "This is used in conjunction with guidance_scale to balance the influence of "
+            "the prompt and the generated image."
+        ),
+        gt=0,
+    )
+
+    num_visuals: int = Field(
+        1,
+        description="The number of videos to generate. Defaults to 1.",
+        ge=1,
     )

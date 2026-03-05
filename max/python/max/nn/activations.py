@@ -10,8 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Activation function modules for MAX neural networks.
 
-from .autoencoder_kl import AutoencoderKLModel
-from .autoencoder_kl_flux2 import AutoencoderKLFlux2Model
-from .autoencoder_kl_ltx2 import AutoencoderKLLTX2VideoModel
-from .autoencoder_kl_ltx2_audio import AutoencoderKLLTX2AudioModel
+This module is a compatibility shim. Use max.nn.module_v3 directly.
+"""
+
+from .module_v3.activations import (  # noqa: F401
+    GEGLU,
+    GELU,
+    ApproximateGELU,
+    FeedForward,
+    Identity,
+    SiLU,
+    SwiGLU,
+)

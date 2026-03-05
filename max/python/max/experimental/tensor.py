@@ -965,6 +965,50 @@ class Tensor(DLPackArray, HasTensorValue):
         )
 
     @classmethod
+    def linspace(
+        cls,
+        start: float,
+        end: float,
+        steps: int,
+        *,
+        dtype: DType | None = None,
+        device: Device | None = None,
+    ) -> Tensor:
+        """Creates a tensor with evenly spaced values between start and end.
+
+        Returns a new 1D tensor containing ``steps`` evenly spaced values
+        starting from ``start`` (inclusive) and ending at ``end`` (inclusive).
+
+        .. code-block:: python
+
+            from max import tensor
+            from max.dtype import DType
+
+            # Create 5 evenly spaced values from 0 to 1
+            x = tensor.Tensor.linspace(0.0, 1.0, 5)
+            # Result: [0.0, 0.25, 0.5, 0.75, 1.0]
+
+            # Create 3 values from -1 to 1
+            y = tensor.Tensor.linspace(-1.0, 1.0, 3)
+            # Result: [-1.0, 0.0, 1.0]
+
+        Args:
+            start: The starting value of the sequence.
+            end: The ending value of the sequence.
+            steps: The number of values to generate. Must be >= 1.
+            dtype: The data type for the tensor elements. If not specified,
+                defaults to :obj:`DType.float32` for CPU devices and
+                :obj:`DType.bfloat16` for accelerator devices.
+            device: The device where the tensor will be allocated. If not
+                specified, defaults to an accelerator if available, otherwise CPU.
+
+        Returns:
+            Tensor: A 1D tensor containing evenly spaced values.
+        """
+        dtype, device = defaults(dtype, device)
+        return F.linspace(start, end, steps, dtype=dtype, device=device)
+
+    @classmethod
     def range_like(cls, type: TensorType) -> Tensor:
         """Creates a range tensor matching a given type's properties.
 
@@ -1632,6 +1676,21 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         return cast(list[Tensor], F.split(self, split_size_or_sections, axis))
 
+    def rebind(self, shape: ShapeLike) -> Tensor:
+        """Rebinds the tensor to a new shape.
+
+        Returns a tensor with the same data but with the shape re-assigned
+        to the new shape. This is useful for asserting a specific shape
+        when the compiler cannot infer it.
+
+        Args:
+            shape: The desired output shape. Can be a tuple or list of integers.
+
+        Returns:
+            Tensor: A new tensor with the re-bound shape.
+        """
+        return F.rebind(self, shape)
+
     def reshape(self, shape: ShapeLike) -> Tensor:
         """Reshapes the tensor to a new shape.
 
@@ -1663,6 +1722,39 @@ class Tensor(DLPackArray, HasTensorValue):
             Tensor: A reshaped tensor with the specified shape.
         """
         return F.reshape(self, shape)
+
+    def flatten(self, start_dim: int = 0, end_dim: int = -1) -> Tensor:
+        """Flattens the specified dimensions of the tensor.
+
+        Returns a tensor with dimensions from start_dim to end_dim (inclusive)
+        merged into a single dimension. The number and order of elements remains
+        unchanged.
+
+        .. code-block:: python
+
+            from max import tensor
+            from max.dtype import DType
+
+            # Create a 2x3x4 tensor
+            x = tensor.Tensor.ones([2, 3, 4], dtype=DType.float32)
+            print(x.shape)  # (2, 3, 4)
+
+            # Flatten all dimensions
+            y = x.flatten()
+            print(y.shape)  # (24,)
+
+            # Flatten only dimensions 1 and 2
+            z = x.flatten(1, 2)
+            print(z.shape)  # (2, 12)
+
+        Args:
+            start_dim: The starting dimension to flatten. Defaults to 0.
+            end_dim: The ending dimension to flatten (inclusive). Defaults to -1.
+
+        Returns:
+            Tensor: A tensor with the specified dimensions flattened.
+        """
+        return F.flatten(self, start_dim, end_dim)
 
     def broadcast_to(self, shape: ShapeLike) -> Tensor:
         """Broadcasts the tensor to the specified shape.

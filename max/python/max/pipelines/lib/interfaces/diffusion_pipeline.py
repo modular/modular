@@ -30,15 +30,14 @@ from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
-from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from PIL import Image
 from tqdm import tqdm
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from max.engine import InferenceSession
+    from max.pipelines import PixelContext
 
     from ..config import PipelineConfig
 
@@ -77,9 +76,18 @@ class DiffusionPipeline(ABC):
 
     @abstractmethod
     def prepare_inputs(
-        self, context: PixelGenerationContext
-    ) -> PixelModelInputs:
-        """Prepare inputs for the pipeline."""
+        self, flat_batch: PixelContext
+    ) -> type[PixelModelInputs]:
+        """Prepare inputs for the model.
+
+        Args:
+            flat_batch (`PixelContext`):
+                The flat batch context.
+
+        Returns:
+            `type[PixelModelInputs]`:
+                The model inputs type.
+        """
         raise NotImplementedError(
             f"prepare_inputs is not implemented for {self.__class__.__name__}"
         )
@@ -188,6 +196,39 @@ class DiffusionPipeline(ABC):
         if not absolute_paths:
             raise ValueError(f"Component weights not found: {relative_paths}")
         return absolute_paths
+
+    def _execution_device(self) -> DeviceRef:
+        r"""Returns the device on which the pipeline's models will be executed.
+
+        This property checks pipeline components to determine the execution device.
+        It supports MAX models (with DeviceRef device attribute).
+        Similar structure to diffusers' _execution_device but returns DeviceRef instead of DeviceRef.
+
+        Returns:
+            DeviceRef: The execution device (GPU if available, otherwise CPU).
+        """
+        # Check MAX models - prioritize GPU
+        # Similar to diffusers' _execution_device but for MAX models (not torch.nn.Module)
+        sub_models = {k: getattr(self, k) for k in self.components}
+        for name, model in sub_models.items():
+            exclude_from_cpu_offload = getattr(
+                self, "_exclude_from_cpu_offload", set()
+            )
+            if name in exclude_from_cpu_offload:
+                continue
+
+            if hasattr(model, "device") and isinstance(model.device, DeviceRef):
+                return model.device
+
+        if hasattr(self, "device"):
+            try:
+                device = self.device
+                if isinstance(device, DeviceRef):
+                    return device
+            except Exception:
+                pass
+
+        return DeviceRef.CPU()
 
 
 @dataclass(kw_only=True)
@@ -337,13 +378,28 @@ class PixelModelInputs:
     - Must be >= 0.
     """
 
-    num_images_per_prompt: int = 1
+    num_visuals_per_prompt: int = 1
     """
     Number of images/videos to generate per prompt.
 
     - Commonly used for "same prompt, multiple samples" behavior.
     - Must be > 0.
-    - For video generation, the naming may still be used for historical compatibility.
+    """
+
+    num_frames: int = 1
+    """
+    Number of frames to generate for video output.
+
+    - 1 for image generation; >1 for video generation.
+    - If a context provides `num_frames=None`, `from_context()` treates that as
+      "not provided" and substitutes this default value.
+    """
+
+    frame_rate: int = 24
+    """
+    Frame rate for generated video.
+
+    - Defaults to 24 fps if not specified.
     """
     input_image: Image.Image | None = None
     """
@@ -381,11 +437,19 @@ class PixelModelInputs:
                 f"num_warmup_steps must be >= 0. Got {self.num_warmup_steps!r}"
             )
         if (
-            not isinstance(self.num_images_per_prompt, int)
-            or self.num_images_per_prompt <= 0
+            not isinstance(self.num_visuals_per_prompt, int)
+            or self.num_visuals_per_prompt <= 0
         ):
             raise ValueError(
-                f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
+                f"num_visuals_per_prompt must be > 0. Got {self.num_visuals_per_prompt!r}"
+            )
+        if not isinstance(self.num_frames, int) or self.num_frames <= 0:
+            raise ValueError(
+                f"num_frames must be a positive int. Got {self.num_frames!r}"
+            )
+        if not isinstance(self.frame_rate, int) or self.frame_rate <= 0:
+            raise ValueError(
+                f"frame_rate must be a positive int. Got {self.frame_rate!r}"
             )
 
         required_arrays = {
@@ -404,34 +468,33 @@ class PixelModelInputs:
             )
 
     @classmethod
-    def from_context(cls, context: PixelGenerationContext) -> Self:
+    def from_context(cls, context: PixelContext) -> PixelModelInputs:
         """Build an instance from a context-like dict.
 
         Policy:
-
         - If a key is missing: the dataclass default applies automatically.
         - If a key is present with value None: treat as missing and substitute the class default
           (including subclass overrides).
+
         """
         fmap = {f.name: f for f in fields(cls)}
         kwargs: dict[str, Any] = {}
 
-        for dataclass_field in fields(cls):
-            name = dataclass_field.name
-            if not hasattr(context, name):
+        for k, v in context.__dict__.items():
+            if k not in fmap:
                 continue
-            v = getattr(context, name)
 
             if v is None:
-                if dataclass_field.default is not MISSING:
-                    kwargs[name] = dataclass_field.default
-                elif dataclass_field.default_factory is not MISSING:
-                    kwargs[name] = dataclass_field.default_factory()
+                f = fmap[k]
+                if f.default is not MISSING:
+                    kwargs[k] = f.default
+                elif f.default_factory is not MISSING:  # type: ignore[attr-defined]
+                    kwargs[k] = f.default_factory()  # type: ignore[misc]
                 else:
                     # No default -> keep None; for required fields this should fail downstream.
-                    kwargs[name] = None
+                    kwargs[k] = None
             else:
-                kwargs[name] = v
+                kwargs[k] = v
 
         return cls(**kwargs)
 

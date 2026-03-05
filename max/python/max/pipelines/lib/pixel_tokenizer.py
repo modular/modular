@@ -69,6 +69,7 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    LTX2 = "LTX2Pipeline"
 
     @classmethod
     def from_diffusers_config(
@@ -149,6 +150,12 @@ class PixelGenerationTokenizer(
                 subfolder=subfolder,
             )
 
+            if "gemma" in type(self.delegate).__name__.lower():
+                # Gemma expects left padding for chat-style prompts
+                self.delegate.padding_side = "left"
+                if self.delegate.pad_token is None:
+                    self.delegate.pad_token = self.delegate.eos_token
+
             if subfolder_2 is not None:
                 self.delegate_2 = AutoTokenizer.from_pretrained(
                     model_path,
@@ -202,13 +209,35 @@ class PixelGenerationTokenizer(
 
         # Compute static VAE scale factor
         block_out_channels = vae_config.get("block_out_channels", None)
-        self._vae_scale_factor = (
+        self._vae_spatial_compression_ratio = (
             2 ** (len(block_out_channels) - 1) if block_out_channels else 8
         )
 
         # Store static model dimensions
         self._default_sample_size = 128
         self._num_channels_latents = transformer_config["in_channels"] // 4
+
+        if self._pipeline_class_name == PipelineClassName.LTX2:
+            self._num_channels_latents = transformer_config["in_channels"]
+            self._causal_offset = 1
+            self._vae_temporal_compression_ratio = vae_config[
+                "temporal_compression_ratio"
+            ]
+            # LTX-2 uses CausalVideoAutoencoder with no standard block_out_channels;
+            # read spatial/temporal compression ratios directly from the VAE config.
+            self._vae_spatial_compression_ratio = vae_config[
+                "spatial_compression_ratio"
+            ]
+            self._patch_size = transformer_config["patch_size"]
+            self._patch_size_t = transformer_config["patch_size_t"]
+            audio_vae_config = components.get("audio_vae", {}).get(
+                "config_dict", {}
+            )
+            self._audio_sampling_rate = audio_vae_config["sample_rate"]
+            self._audio_hop_length = audio_vae_config["mel_hop_length"]
+            self._mel_bins = audio_vae_config["mel_bins"]
+            # LATENT_DOWNSAMPLE_FACTOR = 4
+            self._mel_compression_ratio = 4
 
         # Create scheduler
         scheduler_class_name = components.get("scheduler", {}).get(
@@ -230,6 +259,114 @@ class PixelGenerationTokenizer(
             PipelineClassName.FLUX2_KLEIN,
         ):
             self._max_pixel_size = 1024 * 1024
+
+    def _prepare_video_coords(
+        self,
+        batch_size: int,
+        num_frames: int,
+        height: int,
+        width: int,
+        fps: float,
+    ) -> npt.NDArray[np.float32]:
+        # 1. 1-D grids for each spatial/temporal dimension.
+        grid_f = np.arange(0, num_frames, self._patch_size_t, dtype=np.float32)
+        grid_h = np.arange(0, height, self._patch_size, dtype=np.float32)
+        grid_w = np.arange(0, width, self._patch_size, dtype=np.float32)
+
+        # 2. Broadcast to 3-D grid [N_F, N_H, N_W] then stack → [3, N_F, N_H, N_W].
+        grid = np.meshgrid(grid_f, grid_h, grid_w, indexing="ij")
+        grid = np.stack(grid, axis=0)  # [3, N_F, N_H, N_W]
+
+        # 2. Get the patch boundaries with respect to the latent video grid
+        patch_size = (self.patch_size_t, self.patch_size, self.patch_size)
+        patch_size_delta = np.array(patch_size, dtype=grid.dtype)
+        patch_ends = grid + patch_size_delta.view(3, 1, 1, 1)
+
+        # Combine the start (grid) and end (patch_ends) coordinates along new trailing dimension
+        latent_coords = np.stack(
+            [grid, patch_ends], axis=-1
+        )  # [3, N_F, N_H, N_W, 2]
+        # Reshape to (batch_size, 3, num_patches, 2)
+        latent_coords = latent_coords.flatten(1, 3)
+        latent_coords = np.expand_dims(latent_coords, axis=0).repeat(
+            batch_size, axis=0
+        )
+
+        # 3. Calculate the pixel space patch boundaries from the latent boundaries.
+        scale_tensor = np.array(
+            (
+                self._vae_temporal_compression_ratio,
+                self._vae_spatial_compression_ratio,
+                self._vae_spatial_compression_ratio,
+            ),
+            dtype=latent_coords.dtype,
+        )
+        # Broadcast the VAE scale factors such that they are compatible with latent_coords's shape
+        broadcast_shape = [1] * latent_coords.ndim
+        broadcast_shape[1] = -1  # This is the (frame, height, width) dim
+        # Apply per-axis scaling to convert latent coordinates to pixel space coordinates
+        pixel_coords = latent_coords * scale_tensor.view(*broadcast_shape)
+
+        # As the VAE temporal stride for the first frame is 1 instead of self.vae_scale_factors[0], we need to shift
+        # and clamp to keep the first-frame timestamps causal and non-negative.
+        pixel_coords[:, 0, ...] = (
+            pixel_coords[:, 0, ...]
+            + self._causal_offset
+            - self._vae_temporal_compression_ratio
+        ).clip(min=0)
+
+        # Scale the temporal coordinates by the video FPS
+        pixel_coords[:, 0, ...] = pixel_coords[:, 0, ...] / fps
+
+        return pixel_coords
+
+    def _prepare_audio_coords(
+        self,
+        batch_size: int,
+        num_frames: int,
+        shift: int = 0,
+    ) -> npt.NDArray[np.float32]:
+        # 1. Generate coordinates in the frame (time) dimension.
+        # Always compute rope in fp32
+        grid_f = np.arange(
+            start=shift,
+            stop=num_frames + shift,
+            step=self._patch_size_t,
+            dtype=np.float32,
+        )
+
+        # 2. Calculate start timstamps in seconds with respect to the original spectrogram grid
+        audio_scale_factor = self._vae_temporal_compression_ratio
+        # Scale back to mel spectrogram space
+        grid_start_mel = grid_f * audio_scale_factor
+        # Handle first frame causal offset, ensuring non-negative timestamps
+        grid_start_mel = (
+            grid_start_mel + self._causal_offset - audio_scale_factor
+        ).clip(min=0)
+        # Convert mel bins back into seconds
+        grid_start_s = (
+            grid_start_mel * self._audio_hop_length / self._audio_sampling_rate
+        )
+
+        # 3. Calculate start timstamps in seconds with respect to the original spectrogram grid
+        grid_end_mel = (grid_f + self._patch_size_t) * audio_scale_factor
+        grid_end_mel = (
+            grid_end_mel + self._causal_offset - audio_scale_factor
+        ).clip(min=0)
+        grid_end_s = (
+            grid_end_mel * self._audio_hop_length / self._audio_sampling_rate
+        )
+
+        audio_coords = np.stack(
+            [grid_start_s, grid_end_s], axis=-1
+        )  # [num_patches, 2]
+        audio_coords = np.expand_dims(audio_coords, axis=0).repeat(
+            batch_size, axis=0
+        )  # [batch_size, num_patches, 2]
+        audio_coords = np.expand_dims(
+            audio_coords, axis=1
+        )  # [batch_size, 1, num_patches, 2]
+        return audio_coords
 
     def _prepare_latent_image_ids(
         self, height: int, width: int, batch_size: int = 1
@@ -330,7 +467,7 @@ class PixelGenerationTokenizer(
             image = image.convert("RGB")
 
         image_width, image_height = image.size
-        multiple_of = self._vae_scale_factor * 2
+        multiple_of = self._vae_spatial_compression_ratio * 2
 
         if self._max_pixel_size is not None:
             if image_width * image_height > self._max_pixel_size:
@@ -365,9 +502,20 @@ class PixelGenerationTokenizer(
         latent_height: int,
         latent_width: int,
         seed: int | None,
+        num_frames: int | None = None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         shape = (batch_size, num_channels_latents, latent_height, latent_width)
-
+        if num_frames is not None:
+            num_latent_frames = (
+                num_frames - 1
+            ) // self._vae_temporal_compression_ratio + 1
+            shape = (
+                batch_size,
+                num_channels_latents,
+                num_latent_frames,
+                latent_height,
+                latent_width,
+            )
         latents = self._randn_tensor(shape, seed)
         latent_image_ids = self._prepare_latent_image_ids(
             latent_height // 2, latent_width // 2, batch_size
@@ -427,6 +575,7 @@ class PixelGenerationTokenizer(
         negative_token_ids: npt.NDArray[np.int64] | None = None
         negative_attn_mask: npt.NDArray[np.bool_] | None = None
         negative_token_ids_2: npt.NDArray[np.int64] | None = None
+        attn_mask_neg: npt.NDArray[np.bool_] | None = None
         if do_true_cfg:
             negative_token_ids, negative_attn_mask = await self.encode(
                 negative_prompt or ""
@@ -440,6 +589,7 @@ class PixelGenerationTokenizer(
         return (
             token_ids,
             attn_mask,
+            attn_mask_neg,
             token_ids_2,
             attn_mask_2,
             negative_token_ids,
@@ -755,29 +905,33 @@ class PixelGenerationTokenizer(
         input_image = self._retrieve_image(request) or input_image
 
         # Extract image provider options (always available via defaults)
-        image_options = request.body.provider_options.image
-        if image_options is None:
+        visual_options = getattr(
+            request.body.provider_options,
+            "video",
+            request.body.provider_options.image,
+        )
+        if visual_options is None:
             raise ValueError(
-                "Image provider options are required for pixel generation. "
+                "Visual provider options are required for visual generation. "
                 "This should not happen as defaults are applied at request creation."
             )
 
         if (
-            image_options.guidance_scale < 1.0
-            or image_options.true_cfg_scale < 1.0
+            visual_options.guidance_scale < 1.0
+            or visual_options.true_cfg_scale < 1.0
         ):
             logger.warning(
-                f"Guidance scales < 1.0 detected (guidance_scale={image_options.guidance_scale}, "
-                f"true_cfg_scale={image_options.true_cfg_scale}). This is mathematically possible"
+                f"Guidance scales < 1.0 detected (guidance_scale={visual_options.guidance_scale}, "
+                f"true_cfg_scale={visual_options.true_cfg_scale}). This is mathematically possible"
                 " but may produce lower quality or unexpected results."
             )
 
         if (
-            image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is None
+            visual_options.true_cfg_scale > 1.0
+            and visual_options.negative_prompt is None
         ):
             logger.warning(
-                f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
+                f"true_cfg_scale={visual_options.true_cfg_scale} is set, but no negative_prompt "
                 "is provided. True classifier-free guidance requires a negative prompt; "
                 "falling back to standard generation."
             )
@@ -789,12 +943,12 @@ class PixelGenerationTokenizer(
             # for non-distilled models, CFG is enabled
             # whenever guidance_scale > 1.0; negative prompt defaults to "".
             do_true_cfg = (
-                image_options.guidance_scale > 1.0 and not is_distilled_klein
+                visual_options.guidance_scale > 1.0 and not is_distilled_klein
             )
         else:
             do_true_cfg = (
-                image_options.true_cfg_scale > 1.0
-                and image_options.negative_prompt is not None
+                visual_options.true_cfg_scale > 1.0
+                and visual_options.negative_prompt is not None
             )
         import PIL.Image
 
@@ -812,6 +966,7 @@ class PixelGenerationTokenizer(
         (
             token_ids,
             attn_mask,
+            attn_mask_neg,
             token_ids_2,
             _attn_mask_2,
             negative_token_ids,
@@ -819,11 +974,11 @@ class PixelGenerationTokenizer(
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
             prompt,
-            image_options.secondary_prompt,
-            image_options.negative_prompt,
-            image_options.secondary_negative_prompt,
+            visual_options.secondary_prompt,
+            visual_options.negative_prompt,
+            visual_options.secondary_negative_prompt,
             do_true_cfg,
-            images=images_for_tokenization,
+            images_for_tokenization,
         )
 
         token_buffer = TokenBuffer(
@@ -846,46 +1001,117 @@ class PixelGenerationTokenizer(
             )
 
         default_sample_size = self._default_sample_size
-        vae_scale_factor = self._vae_scale_factor
+        vae_spatial_compression_ratio = self._vae_spatial_compression_ratio
 
         # 2. Preprocess input image if provided
         preprocessed_image_array = None
         if input_image is not None:
             preprocessed_image = self._preprocess_input_image(input_image)
-            height = image_options.height or preprocessed_image.height
-            width = image_options.width or preprocessed_image.width
+            height = visual_options.height or preprocessed_image.height
+            width = visual_options.width or preprocessed_image.width
             preprocessed_image_array = np.array(
                 preprocessed_image, dtype=np.uint8
             ).copy()
         else:
             height = (
-                image_options.height or default_sample_size * vae_scale_factor
+                visual_options.height
+                or default_sample_size * vae_spatial_compression_ratio
             )
             width = (
-                image_options.width or default_sample_size * vae_scale_factor
+                visual_options.width
+                or default_sample_size * vae_spatial_compression_ratio
             )
 
         # 3. Resolve image dimensions using cached static values
-        latent_height = 2 * (int(height) // (self._vae_scale_factor * 2))
-        latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
-        image_seq_len = (latent_height // 2) * (latent_width // 2)
+        latent_height = 2 * (
+            int(height) // (self._vae_spatial_compression_ratio * 2)
+        )
+        latent_width = 2 * (
+            int(width) // (self._vae_spatial_compression_ratio * 2)
+        )
+        visual_seq_len = (
+            (latent_height // 2)
+            * (latent_width // 2)
+            * (
+                (visual_options.num_frames - 1)
+                // self._vae_temporal_compression_ratio
+                + 1
+                if getattr(visual_options, "num_frames", None) is not None
+                else 1
+            )
+        )
 
-        num_inference_steps = image_options.steps
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-            image_seq_len, num_inference_steps
+            visual_seq_len, visual_options.steps
         )
 
         num_warmup_steps: int = max(
-            len(timesteps) - num_inference_steps * self._scheduler.order, 0
+            len(timesteps) - visual_options.steps * self._scheduler.order, 0
         )
 
         latents, latent_image_ids = self._prepare_latents(
-            image_options.num_images,
+            visual_options.num_visuals,
             self._num_channels_latents,
             latent_height,
             latent_width,
             request.body.seed,
+            getattr(visual_options, "num_frames", None),
         )
+
+        extra_params: dict[str, npt.NDArray[Any]] = {}
+        if self._pipeline_class_name == PipelineClassName.LTX2:
+            latent_mel_bins = self._mel_bins // self._mel_compression_ratio
+            duration_s = (
+                visual_options.num_frames / visual_options.frames_per_second
+            )
+            audio_latents_per_second = (
+                self._audio_sampling_rate
+                / self._audio_hop_length
+                / float(self._mel_compression_ratio)
+            )
+            audio_num_frames = round(duration_s * audio_latents_per_second)
+            audio_shape = (
+                visual_options.num_visuals,
+                8,
+                audio_num_frames,
+                latent_mel_bins,
+            )
+            audio_latents = self._randn_tensor(audio_shape, request.body.seed)
+            extra_params["audio_latents"] = audio_latents
+            latent_num_frames = (
+                visual_options.num_frames - 1
+            ) // self._vae_temporal_compression_ratio + 1
+            extra_params["latent_mel_bins"] = np.array(
+                latent_mel_bins, dtype=np.int64
+            )
+
+            video_coords = self._prepare_video_coords(
+                visual_options.num_visuals,
+                latent_num_frames,
+                latent_height,
+                latent_width,
+                visual_options.frames_per_second,
+            )
+            audio_coords = self._prepare_audio_coords(
+                visual_options.num_visuals,
+                audio_num_frames,
+            )
+
+            if visual_options.guidance_scale > 1.0:
+                video_coords = np.concatenate([video_coords, video_coords])
+                audio_coords = np.concatenate([audio_coords, audio_coords])
+            extra_params["video_coords"] = video_coords
+            extra_params["audio_coords"] = audio_coords
+
+            valid_length = np.atleast_2d(
+                np.array(attn_mask.sum(axis=-1), dtype=np.int32)
+            )
+            if visual_options.guidance_scale > 1.0:
+                valid_length_neg = np.atleast_2d(
+                    np.array(attn_mask_neg.sum(axis=-1), dtype=np.int32)
+                )
+                valid_length = np.concatenate([valid_length_neg, valid_length])
+            extra_params["valid_length"] = valid_length
 
         # 5. Build the context
         context = PixelContext(
@@ -901,13 +1127,16 @@ class PixelGenerationTokenizer(
             latent_image_ids=latent_image_ids,
             height=height,
             width=width,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=image_options.guidance_scale,
-            num_images_per_prompt=image_options.num_images,
-            true_cfg_scale=image_options.true_cfg_scale,
+            num_inference_steps=visual_options.steps,
+            guidance_scale=visual_options.guidance_scale,
+            num_visuals_per_prompt=visual_options.num_visuals,
+            num_frames=visual_options.num_frames,
+            frame_rate=visual_options.frames_per_second,
+            true_cfg_scale=visual_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
+            extra_params=extra_params,
         )
 
         for validator in self._context_validators:

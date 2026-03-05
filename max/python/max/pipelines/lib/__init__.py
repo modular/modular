@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Types to interface with ML pipelines such as text/token generation."""
+"""Types to interface with ML pipelines such as text/token/visual generation."""
 
 from max.config import (
     MAXConfig,

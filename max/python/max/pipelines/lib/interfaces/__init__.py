@@ -35,11 +35,13 @@ __all__ = [
     "ArchConfigWithKVCache",
     "ComponentModel",
     "DiffusionPipeline",
+    "DiffusionPipeline",
     "GenerateMixin",
     "ModelInputs",
     "ModelOutputs",
     "PipelineModel",
     "PipelineModelWithKVCache",
+    "PixelModelInputs",
     "PixelModelInputs",
     "get_paged_manager",
 ]
