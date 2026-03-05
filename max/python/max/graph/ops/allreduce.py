@@ -20,7 +20,7 @@ from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import _ChainType
-from ..value import BufferValueLike, TensorType, TensorValue, TensorValueLike
+from ..value import BufferValueLike, TensorValue, TensorValueLike
 from .utils import _buffer_values, _tensor_values
 
 
@@ -86,42 +86,4 @@ def sum(
     for device in devices:
         graph.device_chains[device] = out_chain
 
-    return [res.tensor for res in results]
-
-
-def matmul_allreduce(
-    inputs: Iterable[TensorValueLike],
-    weights: Iterable[TensorValueLike],
-    signal_buffers: Iterable[BufferValueLike],
-) -> list[TensorValue]:
-    """Performs batched matmul then all-reduce over the given inputs, weights, and signal buffers."""
-    inputs = _tensor_values(inputs)
-    weights = _tensor_values(weights)
-    signal_buffers = _buffer_values(signal_buffers)
-
-    def infer_out_type(a: TensorValue, b: TensorValue) -> TensorType:
-        if a.rank != 2 or b.rank != 2:
-            raise ValueError("matmul_allreduce inputs must be 2D")
-        m = a.shape[-2]
-        n = b.shape[-2]
-        out_shape = a.shape[:-2] + [m, n]
-        return TensorType(
-            dtype=a.dtype,
-            shape=out_shape,
-            device=a.device,
-        )
-
-    in_chain = Graph.current._current_chain
-    *results, out_chain = Graph.current._add_op_generated(
-        mo.DistributedMatmulAllreduceOp,
-        # Types for 2 outputs: chain, list of tensors
-        [infer_out_type(a, b) for a, b in zip(inputs, weights, strict=True)],
-        _ChainType(),
-        inputs,
-        weights,
-        signal_buffers,
-        in_chain,
-    )
-
-    Graph.current._update_chain(out_chain)
     return [res.tensor for res in results]
