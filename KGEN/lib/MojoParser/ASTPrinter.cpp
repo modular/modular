@@ -519,6 +519,21 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (auto it = binaryOpNames.find(name); it != binaryOpNames.end())
         return printOperands(operandsToPrint, /*separator=*/it->second);
 
+      // Print unary prefix operators using their operator syntax.
+      static SmallDenseMap<StringRef, StringRef> unaryOpNames{
+          {"__invert__", "not "},
+          {"__neg__", "-"},
+          {"__pos__", "+"},
+      };
+      if (auto it = unaryOpNames.find(name); it != unaryOpNames.end()) {
+        if (!operandsToPrint.empty()) {
+          os << it->second;
+          return printParam(os, operandsToPrint.front(), diagShared);
+        }
+        // A unary op with no operands is malformed AST.
+        llvm_unreachable("unexpected empty operand list for unary operator");
+      }
+
       // Print `x.__getitem__(args...)` as `x[args...]`
       if (name == "__getitem__" && !operandsToPrint.empty()) {
         printParam(os, operandsToPrint.front(), diagShared);

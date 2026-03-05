@@ -228,6 +228,33 @@ fn fn_with_lt_constraint[N: Int]() where N < 10:
 
 
 ##===----------------------------------------------------------------------===##
+# Unary operator sugar in constraints
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_not_constraint",
+# CHECK: "signature": "fn_with_not_constraint[x: Bool]() where not x"
+fn fn_with_not_constraint[x: Bool]() where not x:
+    """Function with a 'not' constraint.
+
+    Parameters:
+        x: A boolean parameter constrained to be false.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_neg_constraint",
+# CHECK: "signature": "fn_with_neg_constraint[N: Int]() where (-N == 1)"
+fn fn_with_neg_constraint[N: Int]() where -N == 1:
+    """Function with a negation constraint.
+
+    Parameters:
+        N: An integer parameter constrained so its negation equals one.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
 # Combined function and parameter constraints
 ##===----------------------------------------------------------------------===##
 
