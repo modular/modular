@@ -79,7 +79,7 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     DISPATCH_MISS,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
 from std.collections import OptionalReg
 
@@ -1341,8 +1341,11 @@ fn block_scaled_matmul[
             ";", trace_arg("A", IndexList[2](m, k), a_type),
             ";", trace_arg("B", IndexList[2](k, n), b_type),
             ";", trace_arg("C", IndexList[2](m, n), c_type),
+            ";A_scales=", a_scales_device.dynamic_shape,
+            ";B_scales=", b_scales_device.dynamic_shape,
             ";transpose_a=", True,
             ";transpose_b=", transpose_b,
+            ";tensor_sf=", tensor_sf,
             ")"
         )
         # fmt: on
@@ -1357,7 +1360,7 @@ fn block_scaled_matmul[
             _trace_description if _trace_description else "",
         ](),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=OptionalReg(Int(ctx.id())),
+        task_id=get_safe_task_id(ctx),
     ):
         comptime if static_NK in DeepSeek_NK:
             if m == 1:
@@ -1374,7 +1377,7 @@ fn block_scaled_matmul[
                     )
                     return
 
-        logger.info("Executing CUBLAS SM100 Block Scaled matmul kernel")
+        logger.info("Executing Block Scaled matmul kernel")
 
         block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -1458,46 +1461,39 @@ fn block_scaled_matmul_with_epilogue[
 
     var m = c.dim(0)
     var n = c.dim(1)
+    var k = a.dim(1) * 2 if a_type == DType.uint8 else a.dim(1)
     if m == 0 or n == 0:
         return
 
-    comptime if not elementwise_lambda_fn:
-        if not c.ptr:
-            raise "c must be allocated!"
-
-        matmul(
-            ctx,
-            c,
-            a,
-            b,
-            a_scales=a_scales,
-            b_scales=b_scales,
-            transpose_b=True,
-            c_row_major=True,
-            alpha=tensor_sf,
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        # fmt: off
+        return String(
+            "(gpu",
+            ";", trace_arg("A", IndexList[2](m, k), a_type),
+            ";", trace_arg("B", IndexList[2](k, n), b_type),
+            ";", trace_arg("C", IndexList[2](m, n), c_type),
+            ";A_scales=[", a_scales.dim(0), ",", a_scales.dim(1), "]",
+            ";B_scales=[", b_scales.dim(0), ",", b_scales.dim(1), "]",
+            ";transpose_b=", transpose_b,
+            ";tensor_sf=", tensor_sf,
+            ")"
         )
-    else:
-        comptime epilogue = elementwise_lambda_fn.value()
-        # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
-        comptime use_32b_simd = True
-        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target=get_gpu_target()]()
-        )
+        # fmt: on
 
-        @parameter
-        @__copy_capture(c)
-        fn epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c.load[width=simd_width,](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
-
-        # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
-        # apply the epilogue.
-        if c.ptr:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        get_static_string[
+            "block_scaled_matmul_with_epilogue_",
+            String("nvfp4_" if a_type == DType.uint8 else "mxfp8_"),
+            String(SF_VECTOR_SIZE) + String("_sfvs"),
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        comptime if not elementwise_lambda_fn:
+            if not c.ptr:
+                raise Error("c must be allocated!")
 
             matmul(
                 ctx,
@@ -1506,32 +1502,68 @@ fn block_scaled_matmul_with_epilogue[
                 b,
                 a_scales=a_scales,
                 b_scales=b_scales,
-                alpha=tensor_sf,
                 transpose_b=True,
                 c_row_major=True,
+                alpha=tensor_sf,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
+        else:
+            comptime epilogue = elementwise_lambda_fn.value()
+            # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
+            comptime use_32b_simd = True
+            comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
+                simd_width_of[c_type, target=get_gpu_target()]()
             )
-            return
 
-        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
-        var c_tmp = c
-        c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
+            @parameter
+            @__copy_capture(c)
+            fn epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                var c_coord = Index(idx[0], idx[1])
+                var c_val = c.load[width=simd_width,](c_coord)
+                epilogue[c_type, simd_width, alignment=alignment](
+                    c_coord, c_val
+                )
 
-        block_scaled_matmul_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
-            c_tmp,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            tensor_sf,
-            ctx,
-        )
+            # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
+            # apply the epilogue.
+            if c.ptr:
+                var m = c.dim[0]()
+                var n = c.dim[1]()
 
-        _ = tmp_device_buffer^
+                matmul(
+                    ctx,
+                    c,
+                    a,
+                    b,
+                    a_scales=a_scales,
+                    b_scales=b_scales,
+                    alpha=tensor_sf,
+                    transpose_b=True,
+                    c_row_major=True,
+                )
+                elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                    Index(m, n), ctx
+                )
+                return
+
+            # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
+            var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
+            var c_tmp = c
+            c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
+
+            block_scaled_matmul_with_epilogue[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                c_tmp,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                tensor_sf,
+                ctx,
+            )
+
+            _ = tmp_device_buffer^
