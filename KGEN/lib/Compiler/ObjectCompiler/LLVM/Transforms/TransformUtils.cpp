@@ -46,7 +46,12 @@ void CallGraphUpdater::update() {
       for (llvm::Instruction &inst : bb) {
         if (llvm::CallInst *call = llvm::dyn_cast<llvm::CallInst>(&inst)) {
           llvm::Function *callee = call->getCalledFunction();
-          if (!functionsToUpdate.contains(callee))
+          // Type-mismatched calls use a bitcast wrapper; strip it.
+          if (!callee) {
+            callee = llvm::dyn_cast<llvm::Function>(
+                call->getCalledOperand()->stripPointerCasts());
+          }
+          if (!callee || !functionsToUpdate.contains(callee))
             continue;
           calls.push_back(call);
         }
@@ -56,8 +61,15 @@ void CallGraphUpdater::update() {
     llvm::LLVMContext &ctx = module.getContext();
     llvm::IRBuilder<> builder(ctx);
     for (llvm::CallInst *call : calls) {
+      llvm::Function *resolvedCallee = call->getCalledFunction();
+      if (!resolvedCallee) {
+        resolvedCallee = llvm::dyn_cast<llvm::Function>(
+            call->getCalledOperand()->stripPointerCasts());
+      }
+      assert(resolvedCallee && funcMap.count(resolvedCallee) &&
+             "resolved callee not in funcMap; missing from functionsToUpdate?");
       llvm::Value *newCall =
-          updateCall(*call, *funcMap[call->getCalledFunction()], *newFunc);
+          updateCall(*call, *funcMap[resolvedCallee], *newFunc);
 
       if (newCall != call) {
         builder.SetInsertPoint(call);
