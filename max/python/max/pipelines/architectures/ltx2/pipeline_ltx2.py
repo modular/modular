@@ -13,7 +13,7 @@
 
 from dataclasses import dataclass
 from queue import Queue
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import max.experimental.functional as F
 import numpy as np
@@ -71,7 +71,7 @@ class LTX2ModelInputs:
     """Number of frames in the latent space."""
 
     video_seq_len: int
-    """Packed video sequence length ((latent_h // 2) * (latent_w // 2) * latent_f)."""
+    """Packed video sequence length (latent_h * latent_w * latent_f)."""
 
     height: int
     """Output image height in pixels."""
@@ -239,7 +239,7 @@ class LTX2Pipeline(DiffusionPipeline):
         latent_f = (
             context.num_frames - 1
         ) // self.vae_temporal_compression_ratio + 1
-        video_seq_len = (latent_h // 2) * (latent_w // 2) * latent_f
+        video_seq_len = latent_h * latent_w * latent_f
         sigmas_key = f"{context.num_inference_steps}_{video_seq_len}"
         if sigmas_key in self._cached_sigmas:
             sigmas = self._cached_sigmas[sigmas_key]
@@ -416,34 +416,10 @@ class LTX2Pipeline(DiffusionPipeline):
         )
 
     def build_decode_audio_latents(self) -> None:
-        """Compile _postprocess_audio_latents if audio VAE statistics are available.
-
-        Mirrors Flux2's build_decode_latents -> _postprocess_latents pattern.
-        """
-        if (
-            self._audio_vae_latents_mean is None
-            or self._audio_vae_latents_std is None
-        ):
-            return
-        dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
-        # latents_mean has shape [C*M = base_channels = 128], matching the packed
-        # audio tensor last dim [B, L, C*M].  Denormalization happens on the packed
-        # tensor before unpack — same order as diffusers.
-        num_channels = int(self._audio_vae_latents_mean.shape[0])  # 128 = C*M
-        _audio_num_frames = 126  # round((121/24)*25.0)=126
-        input_types = [
-            TensorType(
-                dtype,
-                shape=[1, _audio_num_frames, num_channels],
-                device=device,
-            ),
-            TensorType(DType.float32, shape=[num_channels], device=device),
-            TensorType(DType.float32, shape=[num_channels], device=device),
-        ]
-        self.__dict__["_postprocess_audio_latents"] = max_compile(
-            self._postprocess_audio_latents,
-            input_types=input_types,
+        num_channels = self.audio_vae.bn.running_mean.shape[0].dim
+        self._postprocess_and_decode_audio_latents = (
+            self.audio_vae.build_fused_decode(device, num_channels)
         )
 
     def build_prepare_cfg_latents_timesteps(self) -> None:
@@ -994,22 +970,6 @@ class LTX2Pipeline(DiffusionPipeline):
         std_r = F.reshape(latents_std.cast(latents.dtype), (1, c, 1, 1, 1))
         return latents * std_r / self.vae.config.scaling_factor + mean_r
 
-    def _postprocess_audio_latents(
-        self,
-        latents: Tensor,
-        latents_mean: Tensor,
-        latents_std: Tensor,
-    ) -> Tensor:
-        """Denormalize packed audio latents [B,L,C*M] using per-channel stats.
-
-        Operates on the packed tensor (before unpack), matching diffusers order:
-          _denormalize_audio_latents -> _unpack_audio_latents
-        stats shape [C*M] broadcasts against last dim of [B, L, C*M] directly.
-        """
-        return latents * latents_std.cast(latents.dtype) + latents_mean.cast(
-            latents.dtype
-        )
-
     @traced
     def prepare_prompt_embeddings(
         self,
@@ -1111,16 +1071,9 @@ class LTX2Pipeline(DiffusionPipeline):
         # Shape-dependent unpack: [B,S,C] -> [B,C,F,H,W]  (not compiled).
         latents = self._unpack_latents(latents, num_frames, height, width)
         # Compiled postprocess: denormalize using per-channel stats.
-        if (
-            self._vae_latents_mean is not None
-            and self._vae_latents_std is not None
-        ):
-            latents = self._postprocess_video_latents(
-                latents, self._vae_latents_mean, self._vae_latents_std
-            )
-        else:
-            scaling_factor = getattr(self.vae.config, "scaling_factor", 1.0)
-            latents = latents / scaling_factor
+        latents = self._postprocess_video_latents(
+            latents, self._vae_latents_mean, self._vae_latents_std
+        )
         # VAE decode: [B,C,F,H,W].
         video = self.vae.decode(latents.cast(DType.bfloat16))
         # Scale pixels to [0, 1] and permute to channel-last [B,F,H,W,C].
@@ -1131,9 +1084,7 @@ class LTX2Pipeline(DiffusionPipeline):
     def decode_audio_latents(
         self,
         latents: Tensor,
-        audio_num_frames: int,
         latent_mel_bins: int,
-        output_type: Literal["np", "latent", "pil"] = "np",
     ) -> Tensor | np.ndarray:
         """Decode packed audio latents into a waveform Tensor (or return latents).
 
@@ -1146,38 +1097,24 @@ class LTX2Pipeline(DiffusionPipeline):
         Returns:
             Waveform Tensor or raw latent Tensor.
         """
-        if output_type == "latent":
-            return latents
-        # Denormalize on the PACKED latent [B,L,C*M] before unpack — matches diffusers:
-        #   _denormalize_audio_latents(packed) -> _unpack_audio_latents
-        # stats [C*M=128] broadcast against last dim of [B,L,128] directly.
-        if (
-            self._audio_vae_latents_mean is not None
-            and self._audio_vae_latents_std is not None
-        ):
-            latents = self._postprocess_audio_latents(
-                latents,
-                self._audio_vae_latents_mean,
-                self._audio_vae_latents_std,
-            )
-        # Shape-dependent unpack: [B,L,C*M] -> [B,C,L,M]  (not compiled).
-        latents = self._unpack_audio_latents(
-            latents, audio_num_frames, latent_mel_bins
+
+        # Unpack audio latents
+        # Assume [B, S, D] = [B, L, C * M], which implies that patch_size = M and patch_size_t = 1.
+        latents_bclm = latents.unflatten(2, (-1, latent_mel_bins)).transpose(
+            1, 2
         )
-        mel_spectrograms = self.audio_vae.decode(latents.cast(DType.bfloat16))
-        _mel = np.from_dlpack(mel_spectrograms.cast(DType.float32).to(CPU()))
-        print(
-            f"[AUDIO] mel: shape={_mel.shape}, mean={_mel.mean():.4f}, std={_mel.std():.4f}, min={_mel.min():.4f}, max={_mel.max():.4f}",
-            flush=True,
+
+        # mel_spectrograms = self.audio_vae.decode(latents.cast(DType.bfloat16))
+        mel_spectrograms = self._postprocess_and_decode_audio_latents(
+            latents_bclm,
+            self.audio_vae.bn.running_mean,
+            self.audio_vae.bn.running_var,
         )
+
         # Vocoder compiled as float32 (cuDNN conv_transpose hardcodes CUDNN_DATA_FLOAT).
-        result = self.vocoder(mel_spectrograms.cast(DType.float32))
-        _wav = np.from_dlpack(result.cast(DType.float32).to(CPU()))
-        print(
-            f"[AUDIO] wav: shape={_wav.shape}, mean={_wav.mean():.4f}, std={_wav.std():.4f}, min={_wav.min():.4f}, max={_wav.max():.4f}",
-            flush=True,
-        )
-        return self._to_numpy(result)
+        decoded = self.vocoder(mel_spectrograms.cast(DType.float32))
+
+        return np.from_dlpack(decoded)
 
     def _to_numpy(self, image: Tensor) -> np.ndarray:
         cpu_video: Tensor = image.cast(DType.float32).to(CPU())
@@ -1421,63 +1358,20 @@ class LTX2Pipeline(DiffusionPipeline):
                     audio_latents, noise_pred_audio, dt, num_noise_tokens
                 )
 
-            if callback_queue is not None:
-                if hasattr(device, "synchronize"):
-                    device.synchronize()
-                callback_queue.put_nowait(
-                    cast(
-                        np.ndarray,
-                        self.decode_video_latents(
-                            video_latents,
-                            latent_num_frames,
-                            latent_height,
-                            latent_width,
-                            output_type,
-                        ),
-                    )
-                )
-                if hasattr(device, "synchronize"):
-                    device.synchronize()
-                callback_queue.put_nowait(
-                    cast(
-                        np.ndarray,
-                        self.decode_audio_latents(
-                            audio_latents,
-                            audio_num_frames,
-                            latent_mel_bins,
-                            output_type,
-                        ),
-                    )
-                )
-
-        # 5) Decode final outputs per batch element.
-        video_list = []
+        # 5) Decode final outputs for all batch elements in a single pass.
         with Tracer("decode_video_latents"):
-            for b in range(batch_size):
-                with Tracer("slice_batch"):
-                    video_latents_b = video_latents[b : b + 1]
-                video_list.append(
-                    self.decode_video_latents(
-                        video_latents_b,
-                        latent_num_frames,
-                        latent_height,
-                        latent_width,
-                        output_type,
-                    )
-                )
+            videos = self.decode_video_latents(
+                video_latents,
+                model_inputs.latent_f,
+                model_inputs.latent_h,
+                model_inputs.latent_w,
+            )
 
-        audio_list = []
         with Tracer("decode_audio_latents"):
-            for b in range(batch_size):
-                with Tracer("slice_batch"):
-                    audio_latents_b = audio_latents[b : b + 1]
-                audio_list.append(
-                    self.decode_audio_latents(
-                        audio_latents_b,
-                        audio_num_frames,
-                        latent_mel_bins,
-                        output_type,
-                    )
-                )
+            audios = self.decode_audio_latents(
+                audio_latents,
+                audio_num_frames,
+                latent_mel_bins,
+            )
 
-        return LTX2PipelineOutput(video_list, audio_list)
+        return LTX2PipelineOutput(videos, audios)
