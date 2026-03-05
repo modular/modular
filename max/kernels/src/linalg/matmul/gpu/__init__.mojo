@@ -23,7 +23,7 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
 from std.algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -496,10 +496,7 @@ fn _matmul_gpu[
     comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
     comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
-    comptime if (
-        has_nvidia_gpu_accelerator()
-        and ctx.default_device_info.compute > H100.compute
-    ):
+    comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
