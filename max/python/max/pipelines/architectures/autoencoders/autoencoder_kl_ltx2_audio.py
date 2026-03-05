@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """LTX2 Audio Autoencoder Architecture."""
 
-from typing import Any
 from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Any
 
 import max.experimental.functional as F
 import max.nn.module_v3 as nn
@@ -610,7 +610,12 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         return (
             TensorType(
                 self.dtype,
-                shape=[1, self.latent_channels, 126, 16],
+                shape=[
+                    "batch_size",
+                    self.latent_channels,
+                    "audio_num_frames",
+                    "latent_mel_bins",
+                ],
                 device=self.device,
             ),
         )
@@ -717,14 +722,12 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
     def __init__(
         self,
         decoder: LTX2AudioDecoder,
-        batch_norm_eps: float,
         num_channels: int,
         device: DeviceRef,
         dtype: DType,
     ) -> None:
         super().__init__()
         self.decoder = decoder
-        self.batch_norm_eps = batch_norm_eps
         self._num_channels = num_channels
         self._device = device
         self._dtype = dtype
@@ -746,7 +749,12 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
         return (
             TensorType(
                 self._dtype,
-                shape=["batch", "channels", "audio_num_frames", "num_mel_bins"],
+                shape=[
+                    "batch_size",
+                    self._num_channels,
+                    "audio_num_frames",
+                    "num_mel_bins",
+                ],
                 device=self._device,
             ),
             TensorType(
@@ -856,7 +864,6 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
             autoencoder = AutoencoderKLLTX2Audio(self.config)
             fused = PostprocessAndDecode(
                 decoder=autoencoder.decoder,
-                batch_norm_eps=self.config.batch_norm_eps,
                 num_channels=num_channels,
                 device=device_ref,
                 dtype=dtype,
