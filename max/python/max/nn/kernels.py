@@ -2196,12 +2196,16 @@ def flare_mla_prefill_plan(
         buffer_size, DType.uint32, device=DeviceRef.CPU()
     )
 
+    op_name = "mo.mla.prefill.ragged.plan"
     results = ops.inplace_custom(
-        "mo.mla.prefill.ragged.plan",
+        op_name,
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            *kv_collection,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            kv_collection.max_lengths,
             layer_idx,
             buffer_size_tensor,
         ],
@@ -2663,6 +2667,8 @@ def mla_prefill_decode_graph(
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
+    elif kv_collection.kv_scales is not None:
+        op_name += ".quantized"
 
     if scalar_args is not None:
         op_name += ".capturable"
