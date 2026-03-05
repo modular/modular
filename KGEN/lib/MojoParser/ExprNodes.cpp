@@ -36,6 +36,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/POPDialect/POPUtils.h"
 
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -4524,56 +4525,18 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
   }
 
   // First argument: compile-time index
-  // Can be an integer literal, a compile-time constant expression, or a
-  // parametric expression (e.g., a parameter reference).
-  std::optional<int64_t> indexValue;
-  TypedAttr parametricIndex;
-  const ExprNode *indexExpr = subExprs[0]->getWithoutParens();
+  CValue indexCValue = emitter.emitIndex(subExprs[0], EC_MLIRMagic);
+  if (!indexCValue)
+    return {};
 
-  // First try: check if it's a literal integer
-  if (auto *intLit = dyn_cast<IntLiteralNode>(indexExpr)) {
-    APInt value = Lexer::getIntegerLiteralValue(intLit->spelling);
-    indexValue = value.getSExtValue();
-  }
-
-  // Second try: emit as PValue and check if it resolves to an integer
-  // Use EC_MLIRMagic to properly evaluate compile-time constants including
-  // parameter references (e.g., when called from a wrapper function like
-  // struct_field_ref[idx: Int, T: AnyType]).
-  if (!indexValue) {
-    PValue indexPValue = emitter.emitExprPValue(subExprs[0], EC_MLIRMagic);
-    if (indexPValue) {
-      // Try to extract integer from various possible attribute types
-      if (auto intAttr = dyn_cast<IntegerAttr>(indexPValue.get())) {
-        indexValue = intAttr.getInt();
-      } else if (auto intLitAttr =
-                     dyn_cast<POP::IntLiteralAttr>(indexPValue.get())) {
-        indexValue = intLitAttr.getValue().getAPInt().getSExtValue();
-      } else if (auto litStruct =
-                     dyn_cast<LIT::LITStructAttr>(indexPValue.get())) {
-        // Handle Int struct wrapper - extract the value field
-        auto values = litStruct.getValues();
-        if (!values.empty()) {
-          auto [_, valueAttr] = values.front();
-          if (auto innerInt = dyn_cast<IntegerAttr>(valueAttr))
-            indexValue = innerInt.getInt();
-        }
-      }
-      // If we couldn't extract a concrete integer but have a valid PValue,
-      // it might be a parametric expression (e.g., ParamDeclRefAttr).
-      // Save it for RefStructGEROp with index access.
-      if (!indexValue) {
-        parametricIndex = indexPValue.get();
-      }
-    }
-  }
-
-  if (!indexValue && !parametricIndex) {
+  PValue indexPValue = indexCValue.getIfPValue();
+  if (!indexPValue) {
     emitter.emitError(subExprs[0]->getLoc(),
                       "struct_field_ref requires a compile-time integer index")
         << subExprs[0]->getRange();
     return {};
   }
+  TypedAttr indexAttr = indexPValue.get();
 
   // Second argument: reference to struct
   AnyValue structExprValue = emitter.emitExpr(subExprs[1], dest.getContext());
@@ -4593,15 +4556,13 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
   auto refType = cast<RefType>(structRef.getType());
   Type elementType = refType.getElementType();
 
-  // Try to get a concrete struct type. If the element type is parametric
-  // (e.g., a generic T), structType will be null.
-  auto structType = sugarDynCast<LIT::StructType>(elementType);
-
   Value resultRef;
   MLIRContext *ctx = emitter.getContext();
 
   // If we have a concrete struct type and a concrete index, use the direct path
-  if (structType && indexValue) {
+  auto structType = sugarDynCast<LIT::StructType>(elementType);
+  ErrorOr<int64_t> indexValueOr = POP::getScalarIndexValue(indexAttr);
+  if (structType && succeeded(indexValueOr)) {
     // RefStructGEROp requires the base to be a StructType: rebind away sugar.
     if (!isa<LIT::StructType>(structRef.getRValueType())) {
       auto newEltType = SugarAttr::strip(structRef.getRValueType());
@@ -4626,7 +4587,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
     }
 
     // Concrete index case: emit RefStructGEROp directly
-    size_t idx = static_cast<size_t>(*indexValue);
+    size_t idx = static_cast<size_t>(*indexValueOr);
     StructFieldOp fieldOp;
     size_t currentIdx = 0;
     for (Operation &op : structDecl.getFields().front()) {
@@ -4649,7 +4610,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
 
     resultRef =
         RefStructGEROp::create(*emitter.builder, mlirLoc, structRef, fieldOp);
-  } else if (parametricIndex) {
+  } else {
     // Parametric index case (or parametric struct type): emit RefStructGEROp
     // with index access. This will be canonicalized to field name access after
     // the index is resolved during elaboration/canonicalization.
@@ -4674,9 +4635,6 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
         emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
             ctx, structTypeAttr, variadicType);
 
-    // Normalize index to IndexType for VariadicGet.
-    TypedAttr indexAttr = normalizeToIndexType(parametricIndex, ctx);
-
     // Compute element type as VariadicGet(fieldTypes, index)
     auto elementTypeAttr =
         ParamOperatorAttr::get(POC::VariadicGet, fieldTypesAttr, indexAttr);
@@ -4691,12 +4649,6 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
 
     resultRef = RefStructGEROp::create(*emitter.builder, mlirLoc, resultType,
                                        indexAttr, structRef);
-  } else {
-    // Concrete struct type but no index - this shouldn't happen
-    emitter.emitError(subExprs[1]->getLoc(),
-                      "struct_field_ref requires a compile-time index")
-        << subExprs[1]->getRange();
-    return {};
   }
 
   // Result kind depends on the input kind - preserve mutability
