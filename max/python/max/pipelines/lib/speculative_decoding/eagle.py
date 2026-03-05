@@ -397,11 +397,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     def _prepare_verification_step(
         self,
         model: PipelineModel[TextContext],
-        batch: list[TextContext],
         replica_batches: list[list[TextContext]],
         num_steps: int,
         return_n_logits: int,
-        draft_inputs: ModelInputs | None,
         merged_tokens: Buffer | None,
         merged_offsets: Buffer | None,
         host_merged_offsets: Buffer | None = None,
@@ -462,7 +460,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         return_n_logits: int,
         is_draft: bool = False,
         draft_inputs: ModelInputs | None = None,
-        draft_tokens: Buffer | None = None,
         merged_tokens: Buffer | None = None,
         merged_offsets: Buffer | None = None,
         hidden_states: list[Buffer] | None = None,
@@ -499,11 +496,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         else:
             return self._prepare_verification_step(
                 model,
-                batch,
                 replica_batches,
                 num_steps,
                 return_n_logits,
-                draft_inputs,
                 merged_tokens,
                 merged_offsets,
                 host_merged_offsets,
@@ -660,11 +655,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         target_inputs, _ = self._prepare_verification_step(
             self._target_model,
-            context_batch,
             replica_batches,
             num_steps=num_steps,
             return_n_logits=num_draft_tokens_generated + 1,
-            draft_inputs=None,
             merged_tokens=merged_tokens,
             merged_offsets=merged_offsets,
             host_merged_offsets=host_merged_offsets,
@@ -805,7 +798,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         context_batch: list[TextContext],
         replica_batches: list[list[TextContext]],
-        data_parallel_splits_np: npt.NDArray[np.int64],
     ) -> tuple[ModelOutputs, Buffer, npt.NDArray[np.integer]]:
         target_inputs, _ = self.prepare_batch(
             self._target_model,
@@ -833,23 +825,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         target_sampled_tokens_np = target_sampled_tokens.to_numpy()
 
         return target_outputs, target_sampled_tokens, target_sampled_tokens_np
-
-    def _target_extend(
-        self,
-        context_batch: list[TextContext],
-        replica_batches: list[list[TextContext]],
-        data_parallel_splits_np: npt.NDArray[np.int64],
-    ) -> tuple[ModelOutputs, Buffer]:
-        target_outputs, target_sampled_tokens, target_sampled_tokens_np = (
-            self._target_forward(
-                context_batch, replica_batches, data_parallel_splits_np
-            )
-        )
-
-        for i, context in enumerate(context_batch):
-            context.update(int(target_sampled_tokens_np[i].item()))
-
-        return target_outputs, target_sampled_tokens
 
     def _save_draft_tokens(
         self,
@@ -961,9 +936,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         data_parallel_splits_np: npt.NDArray[np.int64],
     ) -> dict[RequestID, TextGenerationOutput]:
         target_outputs, _target_sampled_tokens, target_sampled_tokens_np = (
-            self._target_forward(
-                context_batch, replica_batches, data_parallel_splits_np
-            )
+            self._target_forward(context_batch, replica_batches)
         )
 
         assert target_outputs.hidden_states is not None
