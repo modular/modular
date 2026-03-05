@@ -1600,8 +1600,14 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return failure();
 
   // 'def' implies raises if not specified.
-  if (isDef)
+  if (isDef) {
+    if (!fnSignature.effects.isThrows())
+      p.emitWarning(funcOp.getLoc(),
+                    "'def' functions will soon stop implying 'raises', add an "
+                    "explicit 'raises'")
+          << FixIt::insertBeforeToken(p.getToken().getLoc(), "raises ");
     fnSignature.effects.setThrows();
+  }
 
   // TODO: effects parsing must be moved after captures parsing.
   // A capture list must be specified for every unified closure.

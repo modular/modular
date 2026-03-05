@@ -165,7 +165,7 @@ fn direct_call_init():
 
 struct DummyFunc:
     @implicit
-    fn __init__(out self, f: def(Int)):
+    fn __init__(out self, f: def(Int) raises):
         pass
 
 fn func_arg_conversion(f: DummyFunc): pass
@@ -1000,7 +1000,7 @@ fn function_types[
   p0: fn[a: Int](ParamType[a]) -> None,
 
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
-  p1: def[a: Int, b: ParamType[a]]() -> None,
+  p1: def[a: Int, b: ParamType[a]]() raises -> None,
 
   # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}#VariadicPack <:!Bool {:i1 0}, {{.*}}origin<0> *[0,0]>> *?, :!Bool {:i1 0}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
@@ -1027,7 +1027,7 @@ fn function_types[
   float6: async fn(Int) capturing -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
-  float7: def(*Int) -> None,
+  float7: def(*Int) raises -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>

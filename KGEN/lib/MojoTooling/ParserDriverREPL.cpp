@@ -426,13 +426,13 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   for (auto &[name, type] : variables)
     exprOS << llvm::formatv(", mut `{0}`: {1}", name,
                             getPersistentVariableTypeName(name));
-  exprOS << ") -> None:\n";
+  exprOS << ") raises -> None:\n";
 
   // Splat out the main body code inside of a nested def. This will allow for us
   // to redefine previous variables transparently.
   exprOS << "  var __mojo_repl_expr_failed = True\n"
             "  @parameter\n"
-            "  def __mojo_repl_expr_body__() -> None:\n";
+            "  def __mojo_repl_expr_body__() raises -> None:\n";
 
   // The following is the other chunk of code just written by the user.
   for (StringRef code : mainBodyCode) {

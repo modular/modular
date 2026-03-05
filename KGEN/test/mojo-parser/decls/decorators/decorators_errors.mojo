@@ -23,7 +23,7 @@ fn issue1242():
     fn on_message(): pass
 
 @invalid_dec # expected-error {{use of unknown declaration 'invalid_dec'}}
-def unknown_decorator(): pass
+fn unknown_decorator(): pass
 
 fn decorator_on_statements() raises:
     @invalid_dec
@@ -89,7 +89,7 @@ fn bad_always_inline_3():
 # ===----------------------------------------------------------------------=== #
 
 @staticmethod  # expected-error {{only methods on structs may be declared static}}
-def not_a_struct_method(): pass
+fn not_a_struct_method(): pass
 
 struct HasBadStaticMethod:
     @staticmethod()  # expected-error {{'@staticmethod' cannot have arguments}}
@@ -353,4 +353,3 @@ trait DeprecatedRPTrait:
 @register_passable
 struct DeprecatedRPStruct:
     pass
-

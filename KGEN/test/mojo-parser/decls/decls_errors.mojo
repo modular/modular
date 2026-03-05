@@ -13,6 +13,10 @@ struct HasIntParam[x: Int]:
 # Functions
 ##===----------------------------------------------------------------------===##
 
+# expected-warning @+1 {{'def' functions will soon stop implying 'raises', add an explicit 'raises'}}
+def missing_raises():
+  pass
+
 struct NotBoolConvertible: pass
 # expected-note @+1 {{function declared here}}
 fn test_bool_context(a: NotBoolConvertible): pass
@@ -451,14 +455,14 @@ fn unprovable_default_constraint[x: Int = 3, y: Int where x + y > 3 = 1]():
 ##===----------------------------------------------------------------------===##
 
 # expected-note @+1 {{previous definition here}}
-def fn_redecl(): pass
+fn fn_redecl(): pass
 # expected-error @+1 {{redefinition of function 'fn_redecl' with identical signature}}
-def fn_redecl(): pass
+fn fn_redecl(): pass
 
 # expected-note @+1 {{previous definition here}}
-def fn_redecl2() raises -> Int: pass
+fn fn_redecl2() raises -> Int: pass
 # expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}
-def fn_redecl2() -> FloatDyn: pass
+fn fn_redecl2() -> FloatDyn: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: value passed to 'a' cannot be converted from 'TestOverloading' to 'Int'}}
@@ -657,8 +661,8 @@ struct Rec2[
   p2: Rec1]:
 
 
-# expected-error @+1 {{'def' statement must be on its own line}}
-struct Struct: def foo(mut self): pass
+# expected-error @+1 {{'fn' statement must be on its own line}}
+struct Struct: fn foo(mut self): pass
 
 struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
@@ -716,7 +720,7 @@ struct TestOwnedDeinitErrors:
 struct WrongType(RegisterPassable):
   # expected-error @+2 {{__init__ method must return Self type with 'out' argument}}
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
-  def __init__(self: None): pass
+  def __init__(self: None) raises: pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
   fn __init__(out self: Int): pass
@@ -795,7 +799,7 @@ struct InvalidMember(TrivialRegisterPassable):
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
   fn __del__(deinit self): pass
 
-def noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
+fn noop():  # expected-error {{expected body statements; use 'pass' if none is required}}
 
 struct BadDtor1:
   fn __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
@@ -1252,4 +1256,3 @@ fn bar[n: Int]():
 
 
 comptime _ = MyParam.p # expected-error {{'p' refers to an unbound parameter in 'MyParam[?]'}}
-

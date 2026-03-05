@@ -579,7 +579,7 @@ fn param_for_merge_diagnostic():
         _ = array_ptr._mlir_value
 
 
-def raises_ret_int() -> Int:
+fn raises_ret_int() raises -> Int:
     return 4
 
 

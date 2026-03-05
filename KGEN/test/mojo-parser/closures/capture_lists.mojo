@@ -158,7 +158,7 @@ def callIt(x: String, x1: String, x2: String, x3: String, x4: String) raises:
 
 
 @no_inline
-def takeIt[T: def () unified -> None](impl: T) raises:
+def takeIt[T: def () raises unified -> None](impl: T) raises:
     impl()
 
 
@@ -172,7 +172,7 @@ def longCaptureLists(
     mut something5: String,
 ) raises:
     # CHECK: lit.closure.init
-    def closure() unified {
+    def closure() unified raises {
         var something,
         mut something2,
         read something3,
@@ -182,4 +182,3 @@ def longCaptureLists(
         callIt(something, something2, something3, something4, something5)
 
     takeIt(closure)
-

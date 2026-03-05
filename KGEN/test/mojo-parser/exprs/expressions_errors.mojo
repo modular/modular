@@ -189,7 +189,7 @@ fn test_func_type():
     # expected-error @below {{fn[a: Int](mut *Int) -> None}}
     comptime float4: fn[a: Int](mut *Int) -> None = test_func_type
     # expected-error @below {{fn(*MemType) raises capturing -> None}}
-    comptime float5: def(*MemType) capturing -> None = test_func_type
+    comptime float5: def(*MemType) raises capturing -> None = test_func_type
     # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
     comptime float6: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'fn[Ts: Variadic[AnyType]](var * *Ts) capturing -> None'}}
@@ -237,13 +237,13 @@ struct LValuesRvalues:
   fn __init__(out self): pass
   fn __init__(out self, *, copy: Self): pass
 
-  def normalMethod(self): pass
+  fn normalMethod(self) raises: pass
   # expected-note @+1 {{function declared here}}
   def mutatingMethod(mut self) raises -> None: pass
   # expected-note @+1 {{function declared here}}
-  def takesByRef(self, mut x: LValuesRvalues): pass
+  def takesByRef(self, mut x: LValuesRvalues) raises: pass
 
-  def normalMethod3(self, a: FloatDyn): pass
+  fn normalMethod3(self, a: FloatDyn): pass
 
 struct MemoryOnlyPair(Copyable):
   var x: Int
