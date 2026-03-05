@@ -327,16 +327,21 @@ class Linear(Module, Shardable):
 
         if self.bias:
             # Only truly shard the bias across devices when the weight sharding
-            # is rowwise.
+            # is rowwise or stacked_qkv (output dimension is split per device).
             # Otherwise, when the weight sharding is columnwise, set the bias to
             # replicate so that it is complete on device 0.
             # Linear.shard handles setting bias to None on devices >= 1 to
             # prevent bias duplication, which would be incorrect.
-            self.bias.sharding_strategy = (
-                strategy
-                if strategy.is_rowwise
-                else ShardingStrategy.replicate(strategy.num_devices)
-            )
+            if strategy.is_rowwise:
+                self.bias.sharding_strategy = strategy
+            elif strategy.is_stacked_qkv:
+                self.bias.sharding_strategy = ShardingStrategy.rowwise(
+                    strategy.num_devices
+                )
+            else:
+                self.bias.sharding_strategy = ShardingStrategy.replicate(
+                    strategy.num_devices
+                )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[Linear]:
         """Creates sharded views of this Linear layer across multiple devices.
@@ -353,12 +358,11 @@ class Linear(Module, Shardable):
             )
 
         # Calculate sharded dimensions.
-        out_dim = (
-            int(self.weight.shape[0])
-            // self.weight.sharding_strategy.num_devices
-            if self.weight.sharding_strategy.is_rowwise
-            else int(self.weight.shape[0])
-        )
+        strategy = self.weight.sharding_strategy
+        if strategy.is_rowwise or strategy.is_stacked_qkv:
+            out_dim = int(self.weight.shape[0]) // strategy.num_devices
+        else:
+            out_dim = int(self.weight.shape[0])
 
         # Get sharded weights
         sharded_weights = self.weight.shard(devices)
