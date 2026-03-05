@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from typing_extensions import Self
@@ -34,6 +35,46 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
+
+
+@dataclass
+class SSMStateCacheParams:
+    """Parameters for SSM state cache memory estimation.
+
+    SSM cache is fixed-size per batch element (no sequence-length scaling):
+      conv_state: num_layers * intermediate_size * conv_kernel * dtype_bytes
+      ssm_state:  num_layers * intermediate_size * d_state * dtype_bytes
+    """
+
+    num_layers: int
+    intermediate_size: int
+    d_state: int
+    conv_kernel: int
+    dtype: DType
+
+    @property
+    def per_element_bytes(self) -> int:
+        return (
+            self.num_layers
+            * self.intermediate_size
+            * (self.conv_kernel + self.d_state)
+            * self.dtype.size_in_bytes
+        )
+
+    def estimated_memory_size(
+        self,
+        available_cache_memory: int,
+        max_batch_size: int,
+        max_seq_len: int,
+    ) -> int:
+        """Total SSM cache bytes. Independent of sequence length."""
+        return self.per_element_bytes * max_batch_size
+
+    def compute_max_seq_len_fitting_in_cache(
+        self, cache_memory: int
+    ) -> int | None:
+        """SSM cache doesn't scale with seq length — no constraint."""
+        return None
 
 
 class MambaConfigBase(MAXModelConfigBase):
@@ -345,3 +386,13 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
     def get_max_seq_len(self) -> int:
         """Get the maximum sequence length (ArchConfig protocol)."""
         return self.max_seq_len
+
+    def get_ssm_cache_params(self) -> SSMStateCacheParams:
+        """Get SSM cache parameters (ArchConfigWithSSMCache protocol)."""
+        return SSMStateCacheParams(
+            num_layers=self.num_hidden_layers,
+            intermediate_size=self.intermediate_size,
+            d_state=self.d_state,
+            conv_kernel=self.conv_kernel,
+            dtype=self.dtype,
+        )
