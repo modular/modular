@@ -14,8 +14,8 @@
 import math
 
 import max.experimental.functional as F
-import max.nn.module_v3 as nn
 from max.dtype import DType
+from max.experimental import nn
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
 

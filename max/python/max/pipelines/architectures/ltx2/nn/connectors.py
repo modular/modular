@@ -14,13 +14,12 @@
 import math
 
 import max.experimental.functional as F
-import max.nn.module_v3 as nn
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import random
+from max.experimental import nn, random
+from max.experimental.nn import FeedForward
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.nn.module_v3 import FeedForward
 
 from ..ltx2 import LTX2Attention
 from ..model_config import LTX2TextConnectorsConfig

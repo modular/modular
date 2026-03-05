@@ -23,18 +23,18 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.interfaces import TokenBuffer
+from max.interfaces.tokens import TokenBuffer
 from max.pipelines import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 from tqdm import tqdm
-from transformers import Gemma3ForConditionalGeneration
 
 from ..autoencoders import (
     AutoencoderKLLTX2AudioModel,
     AutoencoderKLLTX2VideoModel,
 )
+from ..gemma3multimodal.text_encoder import Gemma3TextEncoderModel
 from .model import (
     LTX2TextConnectorsModel,
     LTX2TransformerModel,
@@ -138,7 +138,7 @@ class LTX2Pipeline(DiffusionPipeline):
 
     vae: AutoencoderKLLTX2VideoModel
     audio_vae: AutoencoderKLLTX2AudioModel
-    # text_encoder: Gemma3TextEncoderModel
+    text_encoder: Gemma3TextEncoderModel
     transformer: LTX2TransformerModel
     connectors: LTX2TextConnectorsModel
     vocoder: LTX2VocoderModel
@@ -146,7 +146,7 @@ class LTX2Pipeline(DiffusionPipeline):
     components = {
         "vae": AutoencoderKLLTX2VideoModel,
         "audio_vae": AutoencoderKLLTX2AudioModel,
-        # "text_encoder": Gemma3TextEncoderModel,
+        "text_encoder": Gemma3TextEncoderModel,
         "transformer": LTX2TransformerModel,
         "connectors": LTX2TextConnectorsModel,
         "vocoder": LTX2VocoderModel,
@@ -164,7 +164,7 @@ class LTX2Pipeline(DiffusionPipeline):
         )
 
         model_id = str(self.pipeline_config.model.model_path)
-        self.text_encoder = Gemma3ForConditionalGeneration.from_pretrained(
+        self.text_encoder = Gemma3TextEncoderModel.from_pretrained(
             model_id,
             subfolder="text_encoder",
             torch_dtype=torch.bfloat16,

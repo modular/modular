@@ -16,16 +16,18 @@ from dataclasses import dataclass
 from typing import Any
 
 import max.experimental.functional as F
-import max.nn.module_v3 as nn
 from max.driver import Device
 from max.dtype import DType
+from max.experimental import nn
+from max.experimental.nn import FeedForward
+from max.experimental.nn.common_layers.activation import (
+    activation_function_from_name,
+)
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
-from max.nn.module_v3 import FeedForward
 
-from ..common_layers.activation import activation_function_from_name
 from ..embeddings import PixArtAlphaCombinedTimestepSizeEmbeddings
 from ..flux1.layers.embeddings import PixArtAlphaTextProjection
 from .model_config import LTX2TransformerConfigBase

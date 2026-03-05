@@ -10,9 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""A Module for dropout layers."""
 
+from __future__ import annotations
+
+from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
-from max.nn.module_v3.module import Module
 
 
 class Dropout(Module[[Tensor], Tensor]):

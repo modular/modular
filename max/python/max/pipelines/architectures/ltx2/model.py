@@ -15,8 +15,8 @@ from collections.abc import Callable
 from typing import Any
 
 import max.experimental.functional as F
-import max.nn.module_v3 as nn
 from max.driver import Device
+from max.experimental import nn
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding

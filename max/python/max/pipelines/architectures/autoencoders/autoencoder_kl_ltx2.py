@@ -12,22 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """LTX2 Video Autoencoder Architecture."""
 
+from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import max.experimental.functional as F
-import max.nn.module_v3 as nn
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import random
+from max.experimental import nn, random
+from max.experimental.nn.common_layers.activation import (
+    activation_function_from_name,
+)
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 
-from ..common_layers.activation import activation_function_from_name
 from ..embeddings import PixArtAlphaCombinedTimestepSizeEmbeddings
 from .model import BaseAutoencoderModel
-from .model_config import AutoencoderKLLTX2VideoConfig
+from .model_config import (
+    AutoencoderKLLTX2VideoConfig,
+)
 
 
 def pixel_shuffle_3d_merge(x: Tensor, stride: tuple[int, int, int]) -> Tensor:
