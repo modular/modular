@@ -60,6 +60,7 @@ def register_all_models() -> None:
     from .mpnet import mpnet_arch
     from .olmo import olmo_arch
     from .olmo2 import olmo2_arch
+    from .olmo2_modulev3 import olmo2_modulev3_arch
     from .olmo3 import olmo3_arch
     from .olmo_modulev3 import olmo_modulev3_arch
     from .phi3 import phi3_arch
@@ -101,6 +102,7 @@ def register_all_models() -> None:
         olmo_arch,
         olmo_modulev3_arch,
         olmo2_arch,
+        olmo2_modulev3_arch,
         olmo3_arch,
         phi3_arch,
         phi3_modulev3_arch,
