@@ -1,4 +1,4 @@
-# Test file moved to utils/benchmarking/pipeline-latency/test/test_benchmark_pipeline_latency.py
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -6,3 +6,13 @@ package(default_visibility = [
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+modular_py_test(
+    name = "test_base_model",
+    size = "small",
+    srcs = ["test_base_model.py"],
+    deps = [
+        "//max/python/max/config",
+        requirement("pydantic"),
+    ],
+)

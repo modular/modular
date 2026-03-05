@@ -31,7 +31,9 @@ class MAXBaseModel(BaseModel):
         """Structural equality based on public model fields."""
         if not isinstance(other, type(self)):
             return NotImplemented
-        return self.model_dump(mode="python") == other.model_dump(mode="python")
+        return self.model_dump(
+            mode="python", exclude_computed_fields=True
+        ) == other.model_dump(mode="python", exclude_computed_fields=True)
 
     def __ne__(self, other: object) -> bool:
         """Negation of `__eq__` with consistent NotImplemented behavior."""
