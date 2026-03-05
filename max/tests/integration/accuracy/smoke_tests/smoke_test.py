@@ -79,7 +79,7 @@ def is_huge_moe(model: str) -> bool:
     """Large MoE models that need expert parallelism instead of tensor parallelism."""
     if "deepseek" in model and "lite" not in model:
         return True
-    return any(x in model for x in ["minimax-m2", "kimi-k2"])
+    return any(x in model for x in ["minimax-m", "kimi-k"])
 
 
 def validate_hf_token() -> None:
@@ -608,6 +608,8 @@ def smoke_test(
             "qwen2.5-vl",
             "qwen3-vl",
             "vision",
+            "kimi-k2.5",
+            "kimi-vl",
         )
     )
     # 1b is non-vision
