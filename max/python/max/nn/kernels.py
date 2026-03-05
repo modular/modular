@@ -1953,6 +1953,10 @@ def flash_attention_ragged_gpu(
             f"input_row_offsets must be rank 1, got {input_row_offsets.rank}"
         )
 
+    _validate_argument_tensor(
+        "max_seq_len", max_seq_len, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+
     parameters = _mha_parameters(
         mask_variant, local_window_size=local_window_size
     )
@@ -2792,10 +2796,12 @@ def cross_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if q_max_seq_len and (q_max_seq_len.dtype != DType.uint32):
-        raise ValueError(
-            f"expected q_max_seq_len to be uint32 but got {q_max_seq_len.dtype}"
-        )
+    _validate_argument_tensor(
+        "q_max_seq_len",
+        q_max_seq_len,
+        dtype=DType.uint32,
+        device=DeviceRef.CPU(),
+    )
 
     parameters = _mha_parameters(
         mask_variant, local_window_size=local_window_size
