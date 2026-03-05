@@ -79,7 +79,7 @@ class GroupNorm(Module):
         """Apply group normalization to input tensor.
 
         Args:
-            x: Input tensor of shape [N, C, *] where C is number of channels
+            x: Input tensor of shape ``[N, C, *]`` where ``C`` is number of channels
 
         Returns:
             Normalized tensor of same shape as input
