@@ -17,7 +17,7 @@ from std.sys import size_of, _RegisterPackType
 import std.gpu.primitives.warp as warp
 from std.gpu import (
     barrier,
-    thread_idx,
+    thread_idx_int as thread_idx,
     block_idx,
     warp_id,
 )
@@ -2315,7 +2315,7 @@ struct MLA_SM100_Decode_Common[
             swizzle_mode=Self.config.swizzle_mode,
         ],
     ):
-        var tid = Int(thread_idx.x)
+        var tid = thread_idx.x
 
         # -- 1. Write -inf to LSE so combine gives this split zero weight --
         # LSE layout: (num_splits, batch_size, max_seq_len, num_heads)
@@ -2576,7 +2576,7 @@ struct MLA_SM100_Decode_Common[
         var c_prod = DecodeCProducer(c_bars.producer())
         var warp_idx = warp.broadcast(warp_id())
         # 0..127 inside the softmax WG
-        var lane_id = Int(thread_idx.x)
+        var lane_id = thread_idx.x
         # Lane mapping inside the softmax warpgroup
         var row: Int = lane_id & 0x3F  # 0..63
         var half: Int = lane_id >> 6  # 0 or 1

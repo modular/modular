@@ -14,7 +14,7 @@
 from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
 
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx_int as thread_idx
 from std.gpu.host import DeviceContext
 from layout.coord import Coord, Idx, coord
 from layout import row_major
@@ -77,7 +77,7 @@ fn tpool_patch_merger_kernel[
     var vid = Int(block_idx.z)
     var pat_idx = Int(block_idx.y)
     var d_tile = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     if vid >= n_vids:
         return

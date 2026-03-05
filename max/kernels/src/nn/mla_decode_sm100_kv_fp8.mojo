@@ -17,7 +17,7 @@ import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    thread_idx,
+    thread_idx_int as thread_idx,
     block_idx,
     warp_id,
 )
@@ -768,7 +768,7 @@ struct MLA_SM100_Decode_KV_FP8[
         var scale_smem_stage = scale_smem_base + stage_idx * UInt32(
             Self.config.scale_smem_per_stage
         )
-        var lane = Int(thread_idx.x) & 31
+        var lane = thread_idx.x & 31
         var max_key = max(num_keys, UInt32(1)) - 1
 
         # Each of 32 threads handles 2 rows (rows lane and lane+32).
@@ -829,7 +829,7 @@ struct MLA_SM100_Decode_KV_FP8[
         var kv_cvt_prod = KVCvt2MmaProducer[Self.q_type, Self.config](
             kv_cvt2mma_pipe, kv_smem_bf16
         )
-        var lane: Int = Int(thread_idx.x) & 0x7F
+        var lane: Int = thread_idx.x & 0x7F
         var row: Int = lane & 0x3F
         # XOR the half selection with row bits to spread
         # conflicting rows across different column halves.

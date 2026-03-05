@@ -19,7 +19,7 @@ from std.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
     grid_dim,
 )
 from std.gpu import warp_id
@@ -1434,7 +1434,7 @@ struct AMDPingPongMatmul[
         # See module header and TileBuffers struct for detailed swizzle documentation.
 
         # Thread and warp identification
-        var thread_id = Int(thread_idx.x)
+        var thread_id = thread_idx.x
         var lane_id = Int(lane_id())
         var warp_id = readfirstlane(Int(warp_id()))
 

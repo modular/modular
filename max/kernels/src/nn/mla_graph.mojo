@@ -25,7 +25,7 @@ from std.gpu import (
     block_idx,
     global_idx,
     grid_dim,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -201,7 +201,7 @@ fn fused_rope_rmsnorm_kernel[
 
                 var vec_data = SIMD[accum_type, k_width](0)
 
-                var idx = Int(thread_idx.x) * k_width
+                var idx = thread_idx.x * k_width
                 if idx < kv_norm_dim:
                     vec_data = k_cache.load[width=k_width](
                         batch_idx,
@@ -375,7 +375,7 @@ fn fused_rope_rmsnorm_quantization_kernel[
 
                 var vec_data = SIMD[accum_type, k_width](0)
 
-                var idx = Int(thread_idx.x) * k_width
+                var idx = thread_idx.x * k_width
                 if idx < kv_norm_dim:
                     vec_data = kv.load[width=k_width](
                         (Idx(global_token_idx), Idx(idx))

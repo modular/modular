@@ -28,7 +28,7 @@ from std.gpu import (
     block_idx,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
     warp_id,
 )
 from std.gpu.compute.mma import mma as _mma_intrinsic
@@ -140,7 +140,7 @@ fn _naive_matmul_kernel[
     """
     var block_m_offset = Int(block_idx.y) * BLOCK_M
     var block_n_offset = Int(block_idx.x) * BLOCK_N
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     # 128 threads handle 64*64 = 4096 elements → 32 elements per thread
     comptime for elem in range(32):
@@ -206,7 +206,7 @@ fn _wmma_matmul_kernel[
     var block_n_offset = block_n * BLOCK_N
 
     # Thread identification
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var wid = Int(warp_id())
     var lid = Int(lane_id())
 

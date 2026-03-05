@@ -38,7 +38,7 @@ from std.gpu import (
     grid_dim,
     warp_id,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory, fence_mbarrier_init
@@ -794,7 +794,7 @@ fn grouped_matmul_amd_kernel_launcher[
             comptime threads_per_block = 256
             comptime elements_per_thread = ceildiv(BM * BN, threads_per_block)
 
-            var tid = Int(thread_idx.x)
+            var tid: Int = thread_idx.x
             var thread_start = tid * elements_per_thread
             var thread_end = min(thread_start + elements_per_thread, BM * BN)
 

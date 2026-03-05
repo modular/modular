@@ -69,7 +69,7 @@ from std.gpu import (
     barrier,
     block_idx,
     grid_dim,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
@@ -149,7 +149,7 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var idx = tid * simd_width
     var is_valid = idx < cols
 
@@ -334,7 +334,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var col_idx = tid * simd_width
     var is_valid = col_idx < cols
     var num_blocks = Int(grid_dim.x)
