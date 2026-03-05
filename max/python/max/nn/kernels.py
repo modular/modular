@@ -2247,11 +2247,6 @@ def _validate_mla_prefill_decode_graph_inputs(
             f"expected {tensor_name} of rank {input_rank_expected} but got {q.rank}"
         )
 
-    if expected_dtype is not None and q.dtype != expected_dtype:
-        raise ValueError(
-            f"expected {tensor_name} to be dtype: {expected_dtype}, got {q.dtype}"
-        )
-
     if layer_idx.dtype != DType.uint32:
         raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
 
@@ -2667,8 +2662,6 @@ def mla_prefill_decode_graph(
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
-    elif kv_collection.kv_scales is not None:
-        op_name += ".quantized"
 
     if scalar_args is not None:
         op_name += ".capturable"

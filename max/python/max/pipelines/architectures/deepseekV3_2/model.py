@@ -40,7 +40,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config.config_enums import is_float4_encoding
 from max.pipelines.lib.float8 import parse_float8_config
 from transformers import AutoConfig
 from typing_extensions import override
@@ -78,8 +77,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and is_float4_encoding(encoding):
-            cache_dtype = DType.bfloat16
         return DeepseekV3_2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

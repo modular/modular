@@ -2981,15 +2981,22 @@ fn _flare_mla_decode_kv_cache_ragged[
 @always_inline
 fn generic_flare_mla_prefill_kv_cache_ragged[
     collection_t: KVCollectionT,
+    input_dtype: DType,
     dtype: DType,
     //,
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    k: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     buffer_row_offsets: LayoutTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3069,6 +3076,7 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
 
 @always_inline
 fn _flare_mla_prefill_kv_cache_ragged[
+    input_dtype: DType,
     dtype: DType,
     collection_t: KVCollectionT,
     //,
@@ -3076,9 +3084,15 @@ fn _flare_mla_prefill_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    k: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     buffer_row_offsets: LayoutTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
