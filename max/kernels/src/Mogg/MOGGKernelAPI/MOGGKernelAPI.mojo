@@ -5274,26 +5274,18 @@ struct MLAIndexerRaggedFloat8Paged:
             ),
         )
 
-        # Use layouts from tensor specs
-        comptime q_layout = q.static_spec.to_layout()
-        comptime qs_layout = qs.static_spec.to_layout()
-        comptime output_layout = output_indices.static_spec.to_layout()
-
         mla_indexer_ragged_float8_paged[
             DType.float8_e4m3fn,
-            q_layout,
-            qs_layout,
-            output_layout,
             type_of(k_collection),
             num_heads,
             depth,
             k,
             mask_str,
         ](
-            output_indices.to_layout_tensor(),
-            q.to_layout_tensor(),
-            qs.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
+            output_indices.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            qs.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
             k_collection,
             layer_idx,
             ctx.get_device_context(),

@@ -17,8 +17,6 @@ from layout.layout_tensor import (
     LayoutTensor,
     ThreadScope,
     copy_dram_to_sram,
-    copy_dram_to_local,
-    copy_local_to_shared,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile, SharedMemBarrier
 from std.gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
@@ -30,8 +28,6 @@ from nn.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.mha_fa3_utils import q_tma
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 struct IndexSmemStorage[

@@ -20,7 +20,14 @@ from kv_cache.types import (
 from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.mha_mask import MaskName
 from std.random import rand, random_ui64
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout.layout_tensor import LayoutTensor
 from std.utils.index import Index, IndexList
 from std.testing import assert_true
@@ -230,51 +237,38 @@ fn test_mla_index_fp8_paged_variable_lengths[
     var o_ptr = UnsafePointer[Scalar[DType.int32]].alloc(total_output_size)
     var o_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
 
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
-    var q_tensor = LayoutTensor[DType.float8_e4m3fn, q_layout](
+    var q_tile = TileTensor(
         q_device.unsafe_ptr(),
-        RuntimeLayout[q_layout].row_major(
-            Index(total_seq_len, num_heads, depth)
-        ),
+        row_major((Idx(total_seq_len), Idx(num_heads), Idx(depth))),
     )
 
-    comptime qs_layout = Layout.row_major(UNKNOWN_VALUE, num_heads)
-    var qs_tensor = LayoutTensor[DType.float32, qs_layout](
+    var qs_tile = TileTensor(
         qs_device.unsafe_ptr(),
-        RuntimeLayout[qs_layout].row_major(Index(total_seq_len, num_heads)),
+        row_major((Idx(total_seq_len), Idx(num_heads))),
     )
 
-    comptime input_row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-    var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, input_row_offsets_layout
-    ](
+    var input_row_offsets_tile = TileTensor(
         input_row_offsets_device.unsafe_ptr(),
-        RuntimeLayout[input_row_offsets_layout].row_major(
-            Index(batch_size + 1)
-        ),
+        row_major((Idx(batch_size + 1),)),
     )
 
-    comptime o_layout = Layout.row_major(UNKNOWN_VALUE, top_k)
-    var o_tensor = LayoutTensor[DType.int32, o_layout](
+    var o_tile = TileTensor(
         o_device.unsafe_ptr(),
-        RuntimeLayout[o_layout].row_major(Index(total_seq_len, top_k)),
+        row_major((Idx(total_seq_len), Idx(top_k))),
     )
 
     mla_indexer_ragged_float8_paged[
         DType.float8_e4m3fn,
-        q_layout,
-        qs_layout,
-        o_layout,
         type_of(k_collection),
         num_heads,
         depth,
         top_k,
         mask_name,
     ](
-        o_tensor,
-        q_tensor,
-        qs_tensor,
-        input_row_offsets_tensor,
+        o_tile,
+        q_tile,
+        qs_tile,
+        input_row_offsets_tile,
         k_collection,
         UInt32(0),  # layer_idx
         ctx,
