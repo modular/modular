@@ -24,10 +24,12 @@ from typing import cast as typing_cast
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.embedding import Embedding
+from max.experimental.nn.linear import Linear
+from max.experimental.nn.norm import RMSNorm, rms_norm
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Embedding, Linear, Module
-from max.nn.module_v3.norm import RMSNorm, rms_norm
-from max.nn.module_v3.sequential import ModuleList
 
 from .functional_ops import (
     causal_conv1d,

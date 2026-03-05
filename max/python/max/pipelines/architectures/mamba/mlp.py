@@ -19,8 +19,9 @@ Mamba variants that include an MLP in each block.
 from __future__ import annotations
 
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Linear, Module
 
 
 class GatedMLP(Module[[Tensor], Tensor]):
