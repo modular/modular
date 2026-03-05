@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Callable
 from typing import Any
 
 from max.driver import Device
-from max.engine import Model
 from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
@@ -41,7 +41,7 @@ class T5Model(ComponentModel):
         )
         self.load_model()
 
-    def load_model(self) -> Model:
+    def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():

@@ -25,21 +25,24 @@ from typing_extensions import Self
 
 from .pipeline_flux2 import Flux2Pipeline
 
+_FLUX2_DEFAULT_MAX_SEQ_LEN = 512
+
 
 @dataclass(kw_only=True)
 class Flux2ArchConfig(ArchConfig):
     """Pipeline-level config for Flux2 (implements ArchConfig; no KV cache)."""
 
-    pipeline_config: PipelineConfig
+    max_seq_len: int = 512
 
     def get_max_seq_len(self) -> int:
-        return 512
+        """Returns the maximum sequence length for the tokenizer."""
+        return self.max_seq_len
 
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:
         if len(pipeline_config.model.device_specs) != 1:
             raise ValueError("Flux2 is only supported on a single device")
-        return cls(pipeline_config=pipeline_config)
+        return cls()
 
 
 flux2_arch = SupportedArchitecture(

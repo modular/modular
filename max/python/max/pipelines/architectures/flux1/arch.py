@@ -31,14 +31,18 @@ from .pipeline_flux import FluxPipeline
 class FluxArchConfig(ArchConfig):
     """Pipeline-level config for Flux1 (implements ArchConfig; no KV cache)."""
 
-    pipeline_config: PipelineConfig
+    max_seq_len: int = 77
+    secondary_max_seq_len: int = 512
 
     def get_max_seq_len(self) -> int:
-        return 77
+        """Returns the maximum sequence length for the primary tokenizer."""
+        return self.max_seq_len
 
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        return cls(pipeline_config=pipeline_config)
+        if len(pipeline_config.model.device_specs) != 1:
+            raise ValueError("Flux1 is only supported on a single device")
+        return cls()
 
 
 flux1_arch = SupportedArchitecture(
