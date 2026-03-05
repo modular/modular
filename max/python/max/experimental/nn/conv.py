@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.driver import Accelerator, accelerator_api
+from max.driver import Accelerator, Device, accelerator_api
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
@@ -65,7 +65,7 @@ class Conv2d(Module[[Tensor], Tensor]):
         padding: int | tuple[int, int] | tuple[int, int, int, int] = 0,
         dilation: int | tuple[int, int] = 1,
         num_groups: int = 1,
-        device: DeviceRef | None = None,
+        device: Device | DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
         name: str | None = None,
@@ -128,16 +128,14 @@ class Conv2d(Module[[Tensor], Tensor]):
                 out_channels,
             ],
             dtype=self.dtype,
-            device=self.device.to_device() if self.device is not None else None,
+            device=self.device,
         )
 
         if has_bias:
             self.bias = random.normal(
                 [out_channels],
                 dtype=self.dtype,
-                device=self.device.to_device()
-                if self.device is not None
-                else None,
+                device=self.device,
             )
         else:
             self.bias = 0

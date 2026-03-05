@@ -36,7 +36,6 @@ class RotaryEmbedding(Module[..., Tensor]):
     """The maximum sequence length for model's input."""
     head_dim: int
     """head_dim = dim // n_heads if not specified in the config."""
-    device: Device
     _freqs_cis: Tensor | None = None
     interleaved: bool = True
 

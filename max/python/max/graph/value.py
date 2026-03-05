@@ -723,7 +723,19 @@ class TensorValue(Value[mo.TensorType]):
         return ops.transpose(self, dim_1, dim_2)
 
     def to(self, device: DeviceRef) -> TensorValue:
-        """Transfers the tensor to a specified device without mutation.
+        """Inserts a graph-level transfer to ``device`` into the compiled graph.
+
+        This is a **graph execution-time** operation: it records a transfer
+        node during graph tracing that moves this symbolic tensor to ``device``
+        when the compiled graph runs. It is equivalent to calling
+        :func:`~max.graph.ops.transfer_to` and is typically used inside
+        :meth:`forward` to route activation tensors between devices.
+
+        This is distinct from :meth:`~max.experimental.nn.Module.to`, which is a
+        **pre-compilation** host-side operation that moves stored weight
+        tensors before the graph is built. If you want to place a module's
+        weights and computation on a device, use ``Module.to(device)`` before
+        calling :meth:`~max.experimental.nn.Module.compile`.
 
         The following example demonstrates how to move a tensor from one device to another:
 

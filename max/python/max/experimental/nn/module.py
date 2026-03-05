@@ -29,7 +29,7 @@ from max.experimental.realization_context import (
     _session,
 )
 from max.experimental.tensor import Tensor, realization_context
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from rich.pretty import pretty_repr
 from typing_extensions import ParamSpec, Self, TypeVar, dataclass_transform
 
@@ -108,6 +108,67 @@ class Module(Generic[_P, _R]):
         linear = Linear(Tensor.zeros([5, 4]))
         print(linear)
         print(linear(Tensor([1, 2, 3, 4])))
+
+    **Device placement:**
+
+    MAX uses a compiled graph model that separates *weight storage* from
+    *computation placement*. Understanding this distinction is essential for
+    running models on GPU.
+
+    :meth:`to` is the single pre-compilation entry point for device placement.
+    It moves all weight tensors to the target device and records it on the
+    module via the :attr:`device` property. :meth:`input_types` implementations
+    should reference ``self.device`` when constructing
+    :obj:`~max.graph.TensorType` objects, so a single ``to()`` call drives
+    both weight placement and computation placement:
+
+    .. code-block:: python
+
+        from max.driver import Accelerator
+        from max.experimental.nn import Linear
+
+        model = Linear(10, 5)
+        model.to(Accelerator())                       # sets device, moves weights
+        compiled = model.compile(*model.input_types())  # computation runs on GPU
+
+    For CPU (the default), calling ``to()`` is optional — the :attr:`device`
+    property defaults to :obj:`~max.driver.CPU`:
+
+    .. code-block:: python
+
+        model = Linear(10, 5)
+        compiled = model.compile(*model.input_types())  # runs on CPU
+
+    Because :attr:`device` is tracked per-module instance, sub-modules can be
+    placed on different devices independently:
+
+    .. code-block:: python
+
+        encoder.to(Accelerator(0))
+        decoder.to(Accelerator(1))
+
+    For graph-level tensor routing *inside* ``forward()`` (e.g., pulling an
+    activation back to CPU at the end of the graph), use
+    :func:`~max.graph.ops.transfer_to` or :meth:`~max.graph.TensorValue.to`
+    instead — those insert transfer nodes into the compiled graph and are
+    unrelated to pre-compilation weight placement.
+
+    .. list-table::
+       :header-rows: 1
+       :widths: 30 25 45
+
+       * - API
+         - When it runs
+         - What it moves
+       * - ``Module.to(device)``
+         - Python host, before ``compile()``
+         - Stored weight tensors; records ``module.device``
+       * - ``ops.transfer_to(x, d)`` / ``TensorValue.to(d)``
+         - Graph execution time (inside ``forward()``)
+         - Activation tensors within the compiled graph
+       * - ``Tensor.to(device)``
+         - Eager runtime (outside a graph)
+         - Concrete eager tensors (e.g., staging inputs)
     """
 
     def forward(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
@@ -480,24 +541,87 @@ class Module(Generic[_P, _R]):
         new.apply_to_parameters(f)
         return new
 
-    def to(self, device: Device) -> Self:
-        """Updates the module's parameters, transferring them to the specified device.
+    @property
+    def device(self) -> Device:
+        """The canonical device for this module's weights and computation.
+
+        Set by calling :meth:`to` or by assigning ``self.device`` in a
+        subclass ``__init__``. When neither has been called the property
+        returns :obj:`~max.driver.CPU` as a safe default so that modules
+        without an explicit device placement still compile and run on CPU.
+        :meth:`input_types` implementations should reference ``self.device``
+        when constructing :obj:`~max.graph.TensorType` objects so that a
+        single :meth:`to` call drives both weight placement and computation
+        placement.
 
         .. code-block:: python
 
-            from max.driver import CPU
+            from max.driver import Accelerator
             from max.experimental.nn import Linear
 
             model = Linear(2, 3)
-            model.to(CPU())
-
-        Args:
-            device: The device to which all model parameters will be transferred.
+            print(model.device)     # CPU()  — CPU default
+            model.to(Accelerator())
+            print(model.device)     # Accelerator(id=0)
 
         Returns:
-            A reference to the model. The transfer is applied mutably; internal
-            parameters are updated to be transferred to the specified device.
+            The device this module is placed on, defaulting to
+            :obj:`~max.driver.CPU` if :meth:`to` has not been called and
+            ``self.device`` has not been set in a subclass ``__init__``.
         """
+        device = getattr(self, "_module_target_device", None)
+        return device if device is not None else CPU()
+
+    @device.setter
+    def device(self, value: Device | DeviceRef | None) -> None:
+        if isinstance(value, DeviceRef):
+            value = value.to_device()
+        object.__setattr__(self, "_module_target_device", value)
+
+    def to(self, device: Device) -> Self:
+        """Sets this module's device and transfers all weight parameters to it.
+
+        This is the single entry point for device placement. After calling
+        ``to(device)``, both weight storage and :meth:`input_types` reflect the
+        target device, so ``compile(*self.input_types())`` works correctly
+        without any additional device configuration:
+
+        .. code-block:: python
+
+            from max.driver import Accelerator
+            from max.experimental.nn import Linear
+            from max.graph import TensorType
+            from max.dtype import DType
+
+            model = Linear(2, 3)
+            model.to(Accelerator())
+
+            # input_types() uses self.device, so computation runs on GPU:
+            compiled = model.compile(*model.input_types())
+
+        Unlike PyTorch's eager mode where weights and computation are
+        inseparable, MAX uses a compiled graph model. ``to()`` handles the
+        weight side; :meth:`input_types` implementations use ``self.device``
+        to handle the computation side. Together they form one coherent
+        mechanism.
+
+        For graph-level tensor routing at execution time (inside
+        :meth:`forward`), use :func:`~max.graph.ops.transfer_to` or
+        :meth:`~max.graph.TensorValue.to` instead — those insert transfer ops
+        into the compiled graph and are unrelated to pre-compilation device
+        placement.
+
+        Args:
+            device: The device to which all model parameters will be
+                transferred and which :meth:`input_types` will use as the
+                computation device.
+
+        Returns:
+            A reference to the model. The transfer is applied mutably; the
+            module's :attr:`device` property and all internal parameters are
+            updated in place.
+        """
+        object.__setattr__(self, "_module_target_device", device)
         self.apply_to_parameters(lambda _, t: t.to(device))
         return self
 
@@ -532,6 +656,24 @@ class Module(Generic[_P, _R]):
 
         The input type specifications must match the signature of ``forward``.
         Use positional arguments for positional parameters.
+
+        **Device placement:** The canonical pattern is to call :meth:`to`
+        before ``compile``. :meth:`to` sets :attr:`device`, moves all weights
+        to that device, and causes :meth:`input_types` to return
+        :obj:`~max.graph.TensorType` objects annotated with that device. This
+        means a single :meth:`to` call drives both weight placement and
+        computation placement:
+
+        .. code-block:: python
+
+            from max.driver import Accelerator
+            from max.experimental.nn import Linear
+
+            model = Linear(10, 5)
+            model.to(Accelerator())  # sets device, moves weights to GPU
+
+            # input_types() uses self.device — computation runs on GPU:
+            compiled = model.compile(*model.input_types())
 
         Basic compilation with fixed shapes:
 
@@ -568,7 +710,10 @@ class Module(Generic[_P, _R]):
             *input_types: Type specifications for each positional argument to
                 ``forward``. Must match the number and order of arguments.
                 Each should be a :obj:`max.graph.Type` (typically
-                :obj:`TensorType`) describing the shape and dtype.
+                :obj:`TensorType`) describing the shape and dtype. The
+                ``device`` field on each :obj:`~max.graph.TensorType`
+                determines where activations are computed; use :meth:`to` to
+                set this consistently across weights and inputs.
             weights: Mapping of parameter names to weight data. Weights should
                 be on CPU and will be transferred to the target device as part
                 of model initialization. If not passed, the model's parameters

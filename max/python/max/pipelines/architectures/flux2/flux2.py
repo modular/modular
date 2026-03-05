@@ -504,7 +504,6 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         )
 
         # Store config for input_types
-        self.max_device = device
         self.max_dtype = dtype
         self.in_channels = in_channels
         self.joint_attention_dim = joint_attention_dim
@@ -518,28 +517,28 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "image_seq_len", self.in_channels],
-            device=self.max_device,
+            device=self.device,
         )
         encoder_hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "text_seq_len", self.joint_attention_dim],
-            device=self.max_device,
+            device=self.device,
         )
         timestep_type = TensorType(
-            self.max_dtype, shape=["batch_size"], device=self.max_device
+            self.max_dtype, shape=["batch_size"], device=self.device
         )
         img_ids_type = TensorType(
             DType.int64,
             shape=["batch_size", "image_seq_len", 4],
-            device=self.max_device,
+            device=self.device,
         )
         txt_ids_type = TensorType(
             DType.int64,
             shape=["batch_size", "text_seq_len", 4],
-            device=self.max_device,
+            device=self.device,
         )
         guidance_type = TensorType(
-            self.max_dtype, shape=["batch_size"], device=self.max_device
+            self.max_dtype, shape=["batch_size"], device=self.device
         )
 
         return (
