@@ -99,6 +99,102 @@ static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
   return {};
 }
 
+/// If every element of \p params is a ParamDeclRefAttr that is an
+/// auto-parameterization of the same base argument, return the common base
+/// argument name. This detects "identity type reconstructions" like
+/// TileTensor[x.dtype, x.layout, ...] which are just re-expansions of x's
+/// type, allowing us to print just "x" instead.
+///
+/// This is safe because StructType::getParamValues() always contains an entry
+/// for every declared parameter (unbound slots use UnboundAttr), so we never
+/// match a partial application — any non-auto-param entry causes early
+/// bail-out.
+static StringRef getIdentityReconstructionArgName(ArrayRef<TypedAttr> params) {
+  if (params.empty())
+    return {};
+  StringRef commonBase;
+  for (TypedAttr p : params) {
+    auto declRef = sugarDynCast<ParamDeclRefAttr>(p);
+    if (!declRef)
+      return {};
+
+    StringRef name = declRef.getName();
+    // Use demangleParameterName to strip the uniquing backtick suffix,
+    // e.g. "arg.field`42" -> "arg.field". The dot-extraction that follows
+    // is specific to identity reconstruction detection.
+    StringRef stripped = demangleParameterName(name);
+    if (stripped == name)
+      return {}; // No backtick suffix means it's not an auto-param.
+
+    // Extract the base argument name (before the first '.').
+    size_t dotPos = stripped.find('.');
+    if (dotPos == StringRef::npos)
+      return {}; // Not in "arg.field" form.
+    StringRef base = stripped.take_front(dotPos);
+
+    if (commonBase.empty())
+      commonBase = base;
+    else if (commonBase != base)
+      return {}; // Different base arguments.
+  }
+  return commonBase;
+}
+
+/// If \p typeValue is a TypeParamAttr wrapping a LIT::StructType whose
+/// parameters are all auto-params from the same argument AND whose auto-param
+/// field names match the struct's declared parameter names, print
+/// "argName.memberName" and return true. Otherwise return false and print
+/// nothing.
+///
+/// The field-name check prevents false positives: when a different struct type
+/// is constructed using the same argument's auto-params (e.g. Swapped[p.A, p.B]
+/// where p is a TwoParam), the auto-param field names ("A", "B") won't match
+/// the target struct's declared names ("X", "Y"), so we correctly bail out.
+static bool tryPrintIdentityReconstruction(raw_ostream &os, TypedAttr typeValue,
+                                           StringRef memberName,
+                                           SharedState *diagShared) {
+  auto typeAttr = sugarDynCast<TypeParamAttr>(typeValue);
+  if (!typeAttr)
+    return false;
+  auto structTy = dyn_cast<LIT::StructType>(typeAttr.getMlirType());
+  if (!structTy)
+    return false;
+  ArrayRef<TypedAttr> params = structTy.getParamValues();
+  StringRef argName = getIdentityReconstructionArgName(params);
+  if (argName.empty())
+    return false;
+
+  // When the struct declaration is resolvable, verify that each auto-param's
+  // field name matches the struct's declared parameter name at the same
+  // position. This prevents false positives where a different struct type is
+  // constructed using the same argument's auto-params (e.g. Swapped[p.A, p.B]
+  // where p is a TwoParam). For cross-module types that can't be resolved,
+  // fall through to accept the reconstruction — the basic auto-param check is
+  // sufficient since cross-module false positives are unlikely in practice.
+  if (ASTDecl *decl =
+          diagShared->getDeclResolver().getDeclForTypeSymbolIfExists(
+              structTy.getValue().getValue())) {
+    auto declIntf = dyn_cast<DeclInterface>(decl->getIfOperation());
+    if (!declIntf)
+      return false;
+    ArrayRef<ParamDeclAttr> declaredParams = declIntf.getInputParams();
+    if (declaredParams.size() != params.size())
+      return false;
+    for (size_t i = 0; i < params.size(); ++i) {
+      auto declRef = sugarDynCast<ParamDeclRefAttr>(params[i]);
+      StringRef fieldName =
+          demangleParameterName(declRef.getName(), /*forUser=*/true);
+      StringRef declaredName = demangleParameterName(
+          declaredParams[i].getName().getValue(), /*forUser=*/true);
+      if (fieldName != declaredName)
+        return false;
+    }
+  }
+
+  os << argName << '.' << memberName;
+  return true;
+}
+
 // If we are a builtin symbol, then just strip everything but the name of the
 // type. E.g. Print ::Int instead of std::builtin::int::Int.
 static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
@@ -602,6 +698,17 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
       // For constructors, print the type name instead of __init__.
       if (name == "__init__" && nameAttr.getNestedReferences().size() >= 2) {
+        // Identity reconstruction: if every callee parameter is an auto-param
+        // from the same argument, print just the argument name instead of the
+        // full TypeName[arg.field1, arg.field2, ...] expansion.
+        if (diagShared && operandsToPrint.empty()) {
+          if (StringRef argName =
+                  getIdentityReconstructionArgName(calleeParams);
+              !argName.empty()) {
+            os << argName;
+            return;
+          }
+        }
         os << tryGetTypeNameFromSymbolRef(nameAttr);
       } else {
         // Static methods print 'StructName.method', not just 'method'.
@@ -661,6 +768,12 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     }
   }
   if (auto getWitness = dyn_cast<GetWitnessAttr>(param)) {
+    // Identity reconstruction: simplify Type[arg.f1, arg.f2, ...].witness
+    // to arg.witness when the type is rebuilt from one argument's auto-params.
+    if (diagShared && tryPrintIdentityReconstruction(
+                          os, getWitness.getTypeValue(),
+                          getWitness.getWitnessName().strref(), diagShared))
+      return;
     printParam(os, getWitness.getTypeValue(), diagShared);
     os << "." << getWitness.getWitnessName().strref();
     return;
@@ -1006,6 +1119,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     // even for mangled names because the arguments should be unique.  We don't
     // sugar other things though because the identifiers may not be fully
     // qualified.
+
+    // Identity type reconstruction: simplify MemberAlias sugars like
+    // TileTensor[x.dtype, x.layout, ...].rank to just x.rank when the
+    // sugared type is rebuilt entirely from one argument's auto-params.
+    if (diagShared && sugar.getKind() == SugarKind::MemberAlias &&
+        tryPrintIdentityReconstruction(
+            os, sugar.getSugared(), sugar.getMemberName().strref(), diagShared))
+      return;
+
     if (diagShared)
       param = sugar.getSugared();
     else

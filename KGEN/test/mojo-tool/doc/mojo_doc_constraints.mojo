@@ -276,6 +276,46 @@ fn fn_with_both_constraint_types[
 
 
 ##===----------------------------------------------------------------------===##
+# Identity type reconstruction simplification
+# Tests that when a constraint references a computed property of a function
+# argument (e.g. arg.property), the output uses the argument name instead of
+# re-expanding the full parameterized type.
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_identity_reconstruction",
+# CHECK: "signature": "fn_with_identity_reconstruction(c: Container[c.T]) where (c.inner_size == 2)"
+fn fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
+    """Function where a constraint references a computed property of an argument.
+
+    The constraint 'c.inner_size' should be printed using the argument name 'c'
+    rather than re-expanding the full Container type with all its parameters.
+
+    Args:
+        c: A container with inner_size constrained to 2.
+    """
+    pass
+
+
+# Negative test: AltContainer has different declared param names than Container,
+# so AltContainer[c.T] should NOT simplify to just 'c'.
+# CHECK-LABEL: "name": "fn_no_false_positive_different_struct",
+# CHECK: "signature": "fn_no_false_positive_different_struct(c: Container[c.T]) where (AltContainer[c.T].alt_size == 4)"
+fn fn_no_false_positive_different_struct(
+    c: Container,
+) where AltContainer[c.T].alt_size == 4:
+    """Constraint references a DIFFERENT struct built from the same auto-params.
+
+    AltContainer[c.T] is NOT an identity reconstruction of c (which is a
+    Container), so the output must NOT simplify to 'c.alt_size'.
+
+    Args:
+        c: A container argument.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
 # Struct with method-level constraints
 # Note: In JSON output, struct fields are alphabetical, so 'functions' comes
 # before 'name' and 'signature'.
@@ -371,3 +411,25 @@ struct StructWithMultiParamPredConstraint[
     """
 
     pass
+
+
+##===----------------------------------------------------------------------===##
+# Helper types for identity type reconstruction tests (defined after use
+# because mojo doc processes all declarations in a module).
+##===----------------------------------------------------------------------===##
+
+
+trait HasSize(TrivialRegisterPassable):
+    comptime size: Int
+
+
+struct Container[T: HasSize](TrivialRegisterPassable):
+    """A generic container parameterized on a sized type."""
+
+    comptime inner_size = Self.T.size
+
+
+struct AltContainer[U: HasSize](TrivialRegisterPassable):
+    """A different single-param container (param name 'U', not 'T')."""
+
+    comptime alt_size = Self.U.size * 2
