@@ -20,9 +20,9 @@ from std.gpu import (
     thread_idx,
     warp_id as get_warp_id,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor, row_major as tt_row_major
 from layout._utils import idx2crd
-from layout.layout_tensor import LayoutTensor
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from nn.softmax import _exp2_concrete, _exp_concrete
 
 
@@ -44,9 +44,6 @@ struct Softmax[
 
     comptime exp_function = _exp2_concrete if Self.use_exp2 else _exp_concrete
     comptime num_m_mmas = Self.score_layout_by_mma_unit.shape[0].value()
-    comptime row_layout = Layout.row_major(
-        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
-    )
     comptime num_colwise_warps = Self.block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = Self.block_layout_by_warp.shape[1].value()
 
@@ -68,10 +65,14 @@ struct Softmax[
     # The online softmax attributes for each thread's elements (fragments).
     comptime num_rows_per_thread = Self.num_colwise_tiles * Self.frag_num_rows
 
-    comptime RowMaxTensorType = LayoutTensor[
+    comptime row_tt_layout = tt_row_major[
+        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
+    ]()
+
+    comptime RowMaxTensorType = TileTensor[
         Self.dtype,
-        Self.row_layout,
-        MutAnyOrigin,
+        type_of(Self.row_tt_layout),
+        MutExternalOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -80,36 +81,38 @@ struct Softmax[
     var rowmax_tensor: Self.RowMaxTensorType
     var rowsum_tensor: Self.RowSumTensorType
 
-    var score_frag_rowmax: LayoutTensor[
+    comptime score_frag_tt_layout = tt_row_major[
+        Self.num_colwise_tiles, Self.frag_num_rows
+    ]()
+
+    comptime ScoreFragTensorType = TileTensor[
         Self.dtype,
-        Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
-    var score_frag_rowsum: LayoutTensor[
-        Self.dtype,
-        Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
-        MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
-    var correction: LayoutTensor[
-        Self.dtype,
-        Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
-        MutAnyOrigin,
+        type_of(Self.score_frag_tt_layout),
+        MutExternalOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
+    var score_frag_rowmax: Self.ScoreFragTensorType
+    var score_frag_rowsum: Self.ScoreFragTensorType
+    var correction: Self.ScoreFragTensorType
+
     @always_inline
     fn __init__(out self):
-        self.rowmax_tensor = Self.RowMaxTensorType.stack_allocation()
-        self.rowsum_tensor = Self.RowSumTensorType.stack_allocation()
-        self.score_frag_rowmax = type_of(
-            self.score_frag_rowmax
-        ).stack_allocation()
-        self.score_frag_rowsum = (
-            type_of(self.score_frag_rowsum).stack_allocation().fill(0)
-        )
-        self.correction = type_of(self.correction).stack_allocation().fill(1)
+        self.rowmax_tensor = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.row_tt_layout)
+        self.rowsum_tensor = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.row_tt_layout)
+        self.score_frag_rowmax = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.score_frag_tt_layout)
+        self.score_frag_rowsum = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.score_frag_tt_layout).fill(0)
+        self.correction = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.score_frag_tt_layout).fill(1)
 
     @always_inline
     fn calculate_qk_max(
@@ -227,7 +230,6 @@ struct Softmax[
                 self.score_frag_rowsum[col_tile, row] = 0
 
         var tid = thread_idx.x
-        var lane = lane_id()
         var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
             Self.num_rowwise_warps
         )
@@ -410,7 +412,9 @@ struct Softmax[
     @always_inline
     fn update_max(self):
         # Save current rowmax and rowsum
-        self.rowmax_tensor.copy_from(self.score_frag_rowmax)
+        comptime for i in range(Self.num_colwise_tiles):
+            comptime for j in range(Self.frag_num_rows):
+                self.rowmax_tensor[i, j] = self.score_frag_rowmax[i, j]
 
     @always_inline
     fn full(
