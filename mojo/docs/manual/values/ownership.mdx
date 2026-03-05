@@ -310,10 +310,10 @@ three ways:
   transferred directly to the callee. For example:
 
   ```mojo
-  def take(var s: String):
+  def take(var s: String) raises:
       pass
 
-  def main():
+  def main() raises:
       take("A brand-new String!")
   ```
 

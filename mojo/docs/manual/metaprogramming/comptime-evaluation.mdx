@@ -89,7 +89,7 @@ the program, which can reduce your final binary size. For example:
 ```mojo
 from std.sys import has_accelerator
 
-def main():
+def main() raises:
     comptime if has_accelerator():
         run_on_gpu()
     else:
