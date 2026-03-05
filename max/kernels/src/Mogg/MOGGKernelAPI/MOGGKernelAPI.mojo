@@ -9015,10 +9015,12 @@ struct Struct_kv_cache_store_k_scales_paged:
         comptime if is_gpu[target]():
             cuda_ctx = context.get_device_context()
 
-        var input_row_offsets_lt = input_row_offsets.to_layout_tensor()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
+            DType.int64
+        ]()
 
         @parameter
-        @__copy_capture(k_cache, input_row_offsets_lt)
+        @__copy_capture(k_cache, input_row_offsets_tt, input_row_offsets)
         fn write_scale_to_cache[
             width: Int,
             rank: Int,
@@ -9030,11 +9032,9 @@ struct Struct_kv_cache_store_k_scales_paged:
                 rebind[IndexList[3]](idx),
             )
             var batch_idx = get_batch_from_row_offsets(
-                input_row_offsets_lt, idx[0]
+                input_row_offsets_tt, idx[0]
             )
-            var token_idx = Int(
-                UInt32(idx[0]) - input_row_offsets_lt[batch_idx]
-            )
+            var token_idx = Int(UInt32(idx[0]) - input_row_offsets[batch_idx])
             var h_idx = idx[1]
             var hd_idx = idx[2]
             var cache_length = k_cache.cache_length(batch_idx)
