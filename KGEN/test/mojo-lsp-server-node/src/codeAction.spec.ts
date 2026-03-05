@@ -15,7 +15,7 @@ describe("code actions", () => {
       server,
       "test:///test.mojo",
       `
-def main():
+def main() raises:
     var a = [1, 2, 3]
     var b = a
 

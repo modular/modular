@@ -1309,12 +1309,19 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   // Parse the result type.
   SMLoc endLoc = getToken().getEndLoc();
 
+  // If not already specified, 'def' implies raises.
+  if (isDef) {
+    if (!fnSignature.effects.isThrows()) {
+      emitWarning(baseLoc,
+                  "'def' functions will soon stop implying 'raises', add an "
+                  "explicit 'raises'")
+          << FixIt::insertBeforeToken(endLoc, "raises ");
+    }
+    fnSignature.effects.setThrows();
+  }
+
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(*this, stmtIndent);
-
-  // If not already specified, 'def' implies raises.
-  if (isDef)
-    fnSignature.effects.setThrows();
 
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),

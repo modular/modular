@@ -152,7 +152,7 @@ async fn fn_that_async() -> Int:
 # CHECK:      "summary": "This is a function summary."
 
 
-def fn_that_raises() -> Int:
+def fn_that_raises() raises -> Int:
     """This is a function summary.
 
     The is some kind of description.
