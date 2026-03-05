@@ -27,7 +27,7 @@ using namespace M::KGEN::LIT;
 void LIT::emitConstraintInconclusive(DeclResolver &resolver,
                                      MojoInflightDiag &diag,
                                      ConstraintAttr constraint) {
-  TypedAttr prop = stripStructExtractFromBool(constraint.getProposition());
+  TypedAttr prop = constraint.getProposition();
 
   // First point to the constraint declaration and explain what it folded into.
   diag.attachNote(constraint.getLoc())
@@ -208,7 +208,6 @@ ConstraintResult LIT::checkConstraints(
       else
         prop = constraint.getProposition();
 
-      prop = stripStructExtractFromBool(prop);
       diag.attachNote(constraint.getLoc())
           << "constraint declared here evaluated to False, expected "
           << remapper.replace(prop);

@@ -1251,31 +1251,6 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
 }
 
 //===----------------------------------------------------------------------===//
-// Attribute Utilities
-//===----------------------------------------------------------------------===//
-
-TypedAttr LIT::stripStructExtractFromBool(TypedAttr prop) {
-  if (auto sugar = dyn_cast<SugarAttr>(prop)) {
-    // If the prop is sugared, attempt to strip from both sides, but it's highly
-    // likely only the sugared form will be un-canonicalized (and therefore
-    // strippable). In that case, rebind the sugared form to have the same type
-    // as the original input.
-    TypedAttr sugared = stripStructExtractFromBool(sugar.getSugared());
-    TypedAttr expanded = stripStructExtractFromBool(sugar.getExpanded());
-    if (sugared.getType() != expanded.getType())
-      sugared = ParamOperatorAttr::getRebind(sugared, expanded.getType());
-    return SugarAttr::get(prop.getContext(), sugar.getKind(),
-                          sugar.getMemberName(), sugared, expanded);
-  }
-
-  if (auto extract = dyn_cast<LIT::StructExtractAttr>(prop))
-    if (extract.getField() == "_mlir_value")
-      return extract.getStructValue();
-
-  return prop;
-}
-
-//===----------------------------------------------------------------------===//
 // IndexToDeclRefRemapper
 //===----------------------------------------------------------------------===//
 

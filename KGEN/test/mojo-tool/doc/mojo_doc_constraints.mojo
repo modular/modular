@@ -350,6 +350,28 @@ fn fn_no_false_positive_different_struct(
 
 
 ##===----------------------------------------------------------------------===##
+# Conditional (if/else) constraints — _mlir_value must not appear
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_cond_where",
+# CHECK: "constraints": " where (C <= B) if (A <= B) else (C <= 0)"
+# CHECK: "name": "C",
+# CHECK: "signature": "fn_with_cond_where[A: Int, B: Int, C: Int where (C <= B) if (A <= B) else (C <= 0)]()"
+fn fn_with_cond_where[
+    A: Int, B: Int, C: Int where (C <= B) if (A <= B) else (C <= 0)
+]():
+    """Function with a conditional inline constraint.
+
+    Parameters:
+        A: First integer.
+        B: Upper bound.
+        C: An integer constrained to be <= B when A <= B, else <= 0.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
 # Struct with method-level constraints
 # Note: In JSON output, struct fields are alphabetical, so 'functions' comes
 # before 'name' and 'signature'.
