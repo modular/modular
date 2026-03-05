@@ -1101,6 +1101,49 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 //===----------------------------------------------------------------------===//
 // Top-Level Decl Resolution
 
+void DeclResolver::resolveReferencedDecls() {
+  // Iteratively resolve all of the parsed decls that got referenced outside
+  // the main container (typically stdlib/library declarations).
+  llvm::SetVector<ASTDecl *> deferredDecls;
+  size_t parsedDeclIt = 0;
+  do {
+    // Resolve all of the newly parsed decls that got referenced.
+    for (; parsedDeclIt != parsedDeclList.size(); ++parsedDeclIt) {
+      ASTDecl &decl = *parsedDeclList[parsedDeclIt];
+
+      // If the decl was never touched and we pulled it in from bytecode, treat
+      // it as unreachable and don't resolve it now.
+      if (decl.resolvedness == DeclResolvedness::unparsed) {
+        // Some decls always need to be resolved if their parents were resolved,
+        // allowlist the decls that we can safely ignore when unparsed.
+        if (isa_and_nonnull<FnOp, FileModuleOp, PackageOp, UnresolvedImportOp,
+                            UnresolvedWildcardImportOp, StructDeclOp,
+                            TraitDeclOp, AliasDeclOp>(decl.getIfOperation())) {
+          deferredDecls.insert(&decl);
+          continue;
+        }
+      }
+
+      (void)resolveBody(decl, decl.getLoc());
+    }
+
+    // After resolving the newly parsed decls, make sure we resolve any
+    // previously parsed decls that are newly referenced.
+    bool resolvedAnything = false;
+    do {
+      resolvedAnything = false;
+      for (ASTDecl *decl : deferredDecls) {
+        // Fully resolve this decl if it was only midway resolved during normal
+        // parsing resolution.
+        if (decl->resolvedness == DeclResolvedness::signature) {
+          (void)resolveBody(*decl, decl->getLoc());
+          resolvedAnything = true;
+        }
+      }
+    } while (resolvedAnything);
+  } while (parsedDeclIt != parsedDeclList.size());
+}
+
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
                                             bool eraseUnparsedDecls) {
   CompilerTimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
@@ -1144,46 +1187,13 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     }
   }
 
-  // After all of the children within `decl` have been fully resolved, we can
-  // now iteratively resolve all of the outside decls that got referenced.
-  llvm::SetVector<ASTDecl *> deferredDecls;
-  size_t parsedDeclIt = 0;
-  do {
-    // Resolve all of the newly parsed decls that got referenced.
-    for (; parsedDeclIt != parsedDeclList.size(); ++parsedDeclIt) {
-      ASTDecl &decl = *parsedDeclList[parsedDeclIt];
-
-      // If the decl was never touched and we pulled it in from bytecode, treat
-      // it as unreachable and don't resolve it now.
-      if (decl.resolvedness == DeclResolvedness::unparsed) {
-        // Some decls always need to be resolved if their parents were resolved,
-        // allowlist the decls that we can safely ignore when unparsed.
-        if (isa_and_nonnull<FnOp, FileModuleOp, PackageOp, UnresolvedImportOp,
-                            UnresolvedWildcardImportOp, StructDeclOp,
-                            TraitDeclOp, AliasDeclOp>(decl.getIfOperation())) {
-          deferredDecls.insert(&decl);
-          continue;
-        }
-      }
-
-      (void)resolveBody(decl, decl.getLoc());
-    }
-
-    // After resolving the newly parsed decls, make sure we resolve any
-    // previously parsed decls that are newly referenced.
-    bool resolvedAnything = false;
-    do {
-      resolvedAnything = false;
-      for (ASTDecl *decl : deferredDecls) {
-        // Fully resolve this decl if it was only midway resolved during normal
-        // parsing resolution.
-        if (decl->resolvedness == DeclResolvedness::signature) {
-          (void)resolveBody(*decl, decl->getLoc());
-          resolvedAnything = true;
-        }
-      }
-    } while (resolvedAnything);
-  } while (parsedDeclIt != parsedDeclList.size());
+  // After all of the children within `decl` have been fully resolved,
+  // iteratively resolve all of the outside decls that got referenced.
+  // Skip when errors have already been emitted: resolving library/stdlib
+  // declarations is expensive (potentially the entire stdlib) and
+  // unnecessary when compilation will fail anyway.
+  if (!shared.diags.isErrorEmitted())
+    resolveReferencedDecls();
 
   // Erase unresolved operations from source.
   if (eraseUnparsedDecls) {

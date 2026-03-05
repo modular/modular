@@ -300,6 +300,11 @@ public:
   };
 
 private:
+  /// Iteratively resolve all parsed decls that were referenced outside the
+  /// main container (typically stdlib/library declarations). Called by
+  /// resolveAllReferencedFrom when no errors have been emitted.
+  void resolveReferencedDecls();
+
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
