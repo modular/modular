@@ -406,8 +406,13 @@ modular_cc_library(
     name = "Profiling",
     srcs = glob(["lib/Profiling/*.cpp"]),
     hdrs = glob(["include/Support/Profiling/*.h"]),
-    # NOTE: Passed as defines to propagate to dependents
-    defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
+    # NOTE: Passed as defines to propagate to dependents.
+    # TRACY_CUDA_ENABLE is propagated so consumers (e.g. CUDADeviceContext.cpp)
+    # see the same define and the no-op vs. real initTracyCuda() are consistent.
+    defines = ASYNCRT_PROFILING_LOCAL_DEFINES + select({
+        "//:tracy_cuda_enabled": ["TRACY_CUDA_ENABLE=1"],
+        "//conditions:default": ["TRACY_CUDA_ENABLE=0"],
+    }),
     deps = [
         ":Base",
         ":Globals",
@@ -415,7 +420,20 @@ modular_cc_library(
         "//Config",
         "@llvm-project//llvm:Support",
     ] + select({
+        # Tracy without CUDA support
         "//:tracy_enabled": ["@tracy//:Tracy"],
+        "//conditions:default": [],
+    }) + select({
+        # Tracy CUDA support - only when both Tracy and NVIDIA GPU are enabled.
+        # libcupti_tracy_stub and libcuda_tracy_stub (Tracy deps) provide all
+        # CUPTI and CUDA driver symbols Tracy calls directly via on-demand
+        # dlopen, so neither libcupti.so nor libcuda.so.1 needs a hard link
+        # here.  cuda_headers is still needed for compiling CUDA types used in
+        # the Profiling sources.  cudart is needed for cudaDeviceSynchronize.
+        "//:tracy_cuda_enabled": [
+            "//bazel/third-party:cuda_headers",
+            "//bazel/third-party:cudart",
+        ],
         "//conditions:default": [],
     }),
 )
