@@ -66,6 +66,7 @@ def register_all_models() -> None:
     from .phi3 import phi3_arch
     from .phi3_modulev3 import phi3_modulev3_arch
     from .pixtral import pixtral_arch
+    from .pixtral_modulev3 import pixtral_modulev3_arch
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch, qwen3_moe_arch
@@ -107,6 +108,7 @@ def register_all_models() -> None:
         phi3_arch,
         phi3_modulev3_arch,
         pixtral_arch,
+        pixtral_modulev3_arch,
         qwen2_arch,
         qwen2_5_vl_arch,
         qwen3_arch,

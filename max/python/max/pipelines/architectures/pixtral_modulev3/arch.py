@@ -27,14 +27,12 @@ from . import weight_adapters
 from .model import PixtralModel
 from .model_config import PixtralConfig
 
-pixtral_arch = SupportedArchitecture(
-    name="LlavaForConditionalGeneration",
+pixtral_modulev3_arch = SupportedArchitecture(
+    name="LlavaForConditionalGeneration_ModuleV3",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistral-community/pixtral-12b"],
     default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    supported_encodings={"bfloat16"},
     pipeline_model=PixtralModel,
     tokenizer=TextAndVisionTokenizer,
     context_type=TextAndVisionContext,
