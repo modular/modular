@@ -458,7 +458,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
     def __init__(
         self,
         base_channels: int = 128,
-        output_channels: int = 1,
+        out_channels: int = 1,
         num_res_blocks: int = 2,
         attn_resolutions: list[int] | None = None,
         in_channels: int = 2,
@@ -498,7 +498,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
         self.in_channels = in_channels
-        self.out_ch = output_channels
+        self.out_ch = out_channels
         self.give_pre_end = False
         self.tanh_out = False
         self.norm_type = norm_type
@@ -611,7 +611,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         if self.causality_axis is not None:
             self.conv_out = LTX2AudioCausalConv2d(
                 in_channels=final_block_channels,
-                out_channels=output_channels,
+                out_channels=self.out_ch,
                 kernel_size=3,
                 stride=1,
                 causality_axis=self.causality_axis,
@@ -620,11 +620,26 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
             self.conv_out = nn.Conv2d(
                 kernel_size=3,
                 in_channels=final_block_channels,
-                out_channels=output_channels,
+                out_channels=self.out_ch,
                 stride=1,
                 padding=1,
                 permute=True,
             )
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        """Returns the expected input types for the decoder."""
+        return (
+            TensorType(
+                self.dtype or DType.bfloat16,
+                shape=[
+                    "batch_size",
+                    self.latent_channels,
+                    "audio_num_frames",
+                    "num_mel_bins",
+                ],
+                device=self.device or DeviceRef.from_device(Device("cpu")),
+            ),
+        )
 
     def forward(
         self,
@@ -695,7 +710,7 @@ class AutoencoderKLLTX2Audio(nn.Module[[Tensor], Tensor]):
         super().__init__()
         self.decoder = LTX2AudioDecoder(
             base_channels=config.base_channels,
-            output_channels=config.output_channels,
+            out_channels=config.out_channels,
             num_res_blocks=config.num_res_blocks,
             attn_resolutions=config.attn_resolutions,
             in_channels=config.in_channels,
@@ -728,16 +743,16 @@ class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
     def __init__(
         self,
         decoder: LTX2AudioDecoder,
-        bn_mean: Tensor,
-        bn_var: Tensor,
+        latents_mean: Tensor,
+        latents_std: Tensor,
         num_channels: int,
         device: DeviceRef,
         dtype: DType,
     ) -> None:
         super().__init__()
         self.decoder = decoder
-        self.bn_mean = bn_mean
-        self.bn_var = bn_var
+        self.latents_mean = latents_mean
+        self.latents_std = latents_std
         self._num_channels = num_channels
         self._device = device
         self._dtype = dtype
@@ -747,7 +762,7 @@ class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
         latents_bclm: Tensor,
     ) -> Tensor:
         # Denormalization
-        latents = latents_bclm * self.bn_var + self.bn_mean
+        latents = latents_bclm * self.latents_std + self.latents_mean
 
         decoded = self.decoder(latents)
         # TODO: Add vocoder here too?
@@ -776,8 +791,8 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
     statistics for LTX2Audio's latent patchification.
     """
 
-    bn_running_mean: Tensor
-    bn_running_var: Tensor
+    latents_mean: Tensor
+    latents_std: Tensor
 
     def __init__(
         self,
@@ -825,9 +840,9 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
                 bn_stats[key] = weight_data.data
 
         bn_mean_data = bn_stats.get("latents_mean")
-        bn_var_data = bn_stats.get("latents_std")
+        bn_std_data = bn_stats.get("latents_std")
 
-        if bn_mean_data is None or bn_var_data is None:
+        if bn_mean_data is None or bn_std_data is None:
             raise ValueError(
                 "Latents statistics (latents_mean, latents_std) not loaded. "
                 "Make sure the model weights contain 'latents_mean' and 'latents_std'."
@@ -835,10 +850,10 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
 
         super().load_model()
 
-        self.bn_running_mean = Tensor.from_dlpack(bn_mean_data).to(
+        self.latents_mean = Tensor.from_dlpack(bn_mean_data).to(
             self.devices[0]
         )
-        self.bn_running_var = Tensor.from_dlpack(bn_var_data).to(
+        self.latents_std = Tensor.from_dlpack(bn_std_data).to(
             self.devices[0]
         )
 
@@ -854,8 +869,8 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
             num_channels: Number of latent channels (latents_mean shape[0]).
 
         Returns:
-            Compiled callable taking (latents_bsc, h_carrier, w_carrier)
-            and returning the decoded image tensor.
+            Compiled callable taking a latent tensor ``latents_bclm`` and
+            returning the decoded mel-spectrogram tensor.
         """
         dtype = self.config.dtype
         device_ref = DeviceRef.from_device(device)
@@ -881,8 +896,8 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
             autoencoder = AutoencoderKLLTX2Audio(self.config)
             fused = PostprocessAndDecode(
                 decoder=autoencoder.decoder,
-                bn_mean=self.bn_running_mean,
-                bn_var=self.bn_running_var,
+                latents_mean=self.latents_mean,
+                latents_std=self.latents_std,
                 num_channels=num_channels,
                 device=device_ref,
                 dtype=dtype,
@@ -905,5 +920,5 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
             SimpleNamespace: Object containing running_mean and running_var attributes.
         """
         return SimpleNamespace(
-            running_mean=self.bn_running_mean, running_var=self.bn_running_var
+            running_mean=self.latents_mean, running_var=self.latents_std
         )

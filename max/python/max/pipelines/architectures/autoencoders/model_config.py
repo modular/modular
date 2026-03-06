@@ -108,7 +108,7 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
 class AutoencoderKLLTX2AudioConfig(AutoencoderKLConfigBase):
     base_channels: int = 128
     in_channels: int = 2
-    output_channels: int = 2
+    out_channels: int = 2
     ch_mult: tuple[int, ...] = (1, 2, 4)
     num_res_blocks: int = 2
     attn_resolutions: list[int] | None = None
@@ -138,7 +138,6 @@ class AutoencoderKLLTX2AudioConfig(AutoencoderKLConfigBase):
         # Add LTX-2-specific parameters if present
         ltx2_params = [
             "base_channels",
-            "output_channels",
             "ch_mult",
             "num_res_blocks",
             "attn_resolutions",
@@ -155,6 +154,10 @@ class AutoencoderKLLTX2AudioConfig(AutoencoderKLConfigBase):
         for param in ltx2_params:
             if param in config_dict:
                 init_dict[param] = config_dict[param]
+
+        # Map output_channels from HF config to out_channels if out_channels not already set
+        if "output_channels" in config_dict and "out_channels" not in init_dict:
+            init_dict["out_channels"] = config_dict["output_channels"]
         init_dict.update(
             {
                 "dtype": supported_encoding_dtype(encoding),
