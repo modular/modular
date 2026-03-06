@@ -22,7 +22,7 @@ from std.gpu import (
     lane_id,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
 from std.logger import Logger
 from std.gpu.primitives.warp import shuffle_xor
 from std.math import recip
@@ -1305,11 +1305,15 @@ fn block_scaled_matmul[
         "]",
     )
 
-    comptime static_N = c.layout.shape[1].value()
-    comptime static_K = a.layout.shape[1].value() * (
+    comptime static_N = c_device.shape.get[1]()
+    comptime static_K = a_device.shape.get[1]() * (
         2 if a_type == DType.uint8 else 1
     )
     comptime static_NK = Index(static_N, static_K)
+
+    var c_tt = TileTensor(c_device)
+    var a_tt = TileTensor(a_device)
+    var b_tt = TileTensor(b_device)
 
     comptime if get_defined_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
@@ -1319,7 +1323,7 @@ fn block_scaled_matmul[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
-        ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+        ](c_tt, a_tt, b_tt, a_scales, b_scales, tensor_sf, ctx)
 
         if status == DISPATCH_HIT:
             logger.info("Executing SM100 Block Scaled matmul kernel")
@@ -1375,7 +1379,15 @@ fn block_scaled_matmul[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     pdl_level=pdl_level,
-                ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+                ](
+                    c_tt,
+                    a_tt,
+                    b_tt,
+                    a_scales,
+                    b_scales,
+                    tensor_sf,
+                    ctx,
+                )
 
                 if status == DISPATCH_HIT:
                     logger.info(
@@ -1390,7 +1402,15 @@ fn block_scaled_matmul[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     pdl_level=pdl_level,
-                ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+                ](
+                    c_tt,
+                    a_tt,
+                    b_tt,
+                    a_scales,
+                    b_scales,
+                    tensor_sf,
+                    ctx,
+                )
 
                 if status == DISPATCH_HIT:
                     logger.info(
