@@ -15,11 +15,11 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import LayerNorm, RMSNorm
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.norm import LayerNorm, RMSNorm
-from max.nn.module_v3.sequential import ModuleList
 
 from .layers.attention import ZImageAttention
 from .layers.embeddings import RopeEmbedder, TimestepEmbedder

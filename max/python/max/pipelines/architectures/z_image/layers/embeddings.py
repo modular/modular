@@ -15,8 +15,8 @@ import math
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Linear, Module
 
 from ...flux2.layers.embeddings import get_1d_rotary_pos_embed
 
