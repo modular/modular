@@ -183,10 +183,9 @@ def execute_matmul_k_cache_ragged_scale[
 
     var batch_size = len(prompt_lens)
 
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        "expected prompt_lens and cache_sizes size to be equal",
-    )
+    assert len(prompt_lens) == len(
+        cache_sizes
+    ), "expected prompt_lens and cache_sizes size to be equal"
 
     var kv_block_size = (
         num_paged_blocks

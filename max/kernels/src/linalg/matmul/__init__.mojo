@@ -167,10 +167,9 @@ fn matmul[
 ) raises:
     comptime assert is_valid_target[target](), "unsupported target"
     comptime assert not transpose_a, "transpose_a not yet supported"
-    debug_assert(
-        is_cpu[target]() or Bool(ctx),
-        "expected DeviceContext to be provided if target != cpu",
-    )
+    assert is_cpu[target]() or Bool(
+        ctx
+    ), "expected DeviceContext to be provided if target != cpu"
 
     # If any of the dimensions are 0, we can skip the kernel.
     if c.dim[0]() == 0 or c.dim[1]() == 0:

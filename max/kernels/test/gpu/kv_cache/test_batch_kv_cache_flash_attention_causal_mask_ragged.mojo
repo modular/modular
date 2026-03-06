@@ -63,10 +63,9 @@ def execute_ragged_flash_attention[
         num_blocks,
         ")",
     )
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     # Define layouts
     comptime input_row_offsets_layout = Layout(UNKNOWN_VALUE)

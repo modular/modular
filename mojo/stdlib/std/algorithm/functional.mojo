@@ -203,7 +203,7 @@ fn vectorize[
     """
     comptime assert simd_width > 0, "simd width must be > 0"
     comptime assert unroll_factor > 0, "unroll factor must be > 0"
-    debug_assert(size >= 0, "size must be >= 0")
+    assert size >= 0, "size must be >= 0"
 
     comptime unrolled_simd_width = simd_width * unroll_factor
     var simd_end = align_down(UInt(size), UInt(simd_width))
@@ -328,7 +328,7 @@ fn vectorize[
     """
     comptime assert simd_width > 0, "simd width must be > 0"
     comptime assert unroll_factor > 0, "unroll factor must be > 0"
-    debug_assert(size >= 0, "size must be >= 0")
+    assert size >= 0, "size must be >= 0"
 
     comptime unrolled_simd_width = simd_width * unroll_factor
     var simd_end = Int(align_down(UInt(size), UInt(simd_width)))
@@ -574,7 +574,7 @@ fn parallelize[
 fn _parallelize_impl[
     origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
-    debug_assert(num_workers > 0, "Number of workers must be positive")
+    assert num_workers > 0, "Number of workers must be positive"
     # Calculate how many items are picked up by each worker.
     var chunk_size = num_work_items // num_workers
     # Calculate how many workers need to add an extra item to their work.

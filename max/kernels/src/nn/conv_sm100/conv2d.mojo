@@ -168,33 +168,27 @@ fn conv2d_fprop[
     comptime corner_limit = 128  # signed 8-bit range
     comptime offset_limit = 255  # unsigned 8-bit max
 
-    debug_assert(
-        lower_corner_h >= -corner_limit and lower_corner_h < corner_limit,
-        "lower_corner_h out of TMA im2col range [-128, 127]",
-    )
-    debug_assert(
-        lower_corner_w >= -corner_limit and lower_corner_w < corner_limit,
-        "lower_corner_w out of TMA im2col range [-128, 127]",
-    )
-    debug_assert(
-        upper_corner_h >= -corner_limit and upper_corner_h < corner_limit,
-        "upper_corner_h out of TMA im2col range [-128, 127]",
-    )
-    debug_assert(
-        upper_corner_w >= -corner_limit and upper_corner_w < corner_limit,
-        "upper_corner_w out of TMA im2col range [-128, 127]",
-    )
+    assert (
+        lower_corner_h >= -corner_limit and lower_corner_h < corner_limit
+    ), "lower_corner_h out of TMA im2col range [-128, 127]"
+    assert (
+        lower_corner_w >= -corner_limit and lower_corner_w < corner_limit
+    ), "lower_corner_w out of TMA im2col range [-128, 127]"
+    assert (
+        upper_corner_h >= -corner_limit and upper_corner_h < corner_limit
+    ), "upper_corner_h out of TMA im2col range [-128, 127]"
+    assert (
+        upper_corner_w >= -corner_limit and upper_corner_w < corner_limit
+    ), "upper_corner_w out of TMA im2col range [-128, 127]"
 
     # Filter offsets range from 0 to (filter_size - 1), multiplied by dilation
     # For now we assume dilation=1
-    debug_assert(
-        problem.filter_h - 1 <= offset_limit,
-        "filter_h offset exceeds TMA im2col limit [0, 255]",
-    )
-    debug_assert(
-        problem.filter_w - 1 <= offset_limit,
-        "filter_w offset exceeds TMA im2col limit [0, 255]",
-    )
+    assert (
+        problem.filter_h - 1 <= offset_limit
+    ), "filter_h offset exceeds TMA im2col limit [0, 255]"
+    assert (
+        problem.filter_w - 1 <= offset_limit
+    ), "filter_w offset exceeds TMA im2col limit [0, 255]"
 
     # Create activation LayoutTensor view (4D NHWC)
     comptime act_4d_layout = LegacyLayout.row_major(1, 1, 1, 1)  # Dynamic

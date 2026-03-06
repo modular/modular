@@ -294,10 +294,9 @@ struct Q4sym[
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
         var size_of_block = size_of[Q4sym[Self.group_size, Self.float_dtype]]()
-        debug_assert(
-            input_shape[input_tensor.rank - 1] % Self.group_size == 0,
-            "Only support fully divisible dimensions right now.",
-        )
+        assert (
+            input_shape[input_tensor.rank - 1] % Self.group_size == 0
+        ), "Only support fully divisible dimensions right now."
 
         var blob_output_ptr = output_tensor.ptr
         var base_block_ptr = UnsafePointer(blob_output_ptr).bitcast[
@@ -365,12 +364,11 @@ struct Q4sym[
         ), "input tensor and output tensor must have the same rank"
         # Read and dequantize `input_tensor` which are the bytes of the raw
         # blocked format. Write the corresponding results to `output_tensor`
-        debug_assert(
+        assert (
             output_tensor.runtime_layout.shape.value[output_tensor.rank - 1]
             % Self.group_size
-            == 0,
-            "Only support fully divisible dimensions right now.",
-        )
+            == 0
+        ), "Only support fully divisible dimensions right now."
 
         # TODO: check contiguous inputs and outputs
 

@@ -218,15 +218,13 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[dtype]()
-    debug_assert(
-        len(expected_q_out_buffer) == q_shape.flattened_length(),
-        "invalid expected q out init",
-    )
+    assert (
+        len(expected_q_out_buffer) == q_shape.flattened_length()
+    ), "invalid expected q out init"
     expected_k_out_buffer = k_out_golden[dtype]()
-    debug_assert(
-        len(expected_k_out_buffer) == batch_size * seq_len * dim,
-        "invalid expected k out init",
-    )
+    assert (
+        len(expected_k_out_buffer) == batch_size * seq_len * dim
+    ), "invalid expected k out init"
 
     # Create valid_lengths device buffer - all sequences have full seq_len valid
     var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](

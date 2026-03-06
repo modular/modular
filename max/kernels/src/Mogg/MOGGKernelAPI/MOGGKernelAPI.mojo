@@ -978,16 +978,14 @@ struct SqueezeShape:
         var num_remove_indices = remove_indices.dim_size[0]()
         var final_rank = num_input_dims - num_remove_indices
 
-        debug_assert(
-            final_rank == output_shape.dim_size[0](),
-            "Incorrect output shape.",
-        )
+        assert (
+            final_rank == output_shape.dim_size[0]()
+        ), "Incorrect output shape."
 
         comptime MAX_VECTOR_LIMIT = 12
-        debug_assert(
-            num_input_dims <= MAX_VECTOR_LIMIT,
-            "Only support shape vectors up to rank-12.",
-        )
+        assert (
+            num_input_dims <= MAX_VECTOR_LIMIT
+        ), "Only support shape vectors up to rank-12."
         var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
         for i in range(num_input_dims):
             input_shape_copy[i] = Int(input_shape[i])
@@ -1045,10 +1043,9 @@ struct UnsqueezeShape:
         var num_input_dims = input_shape.dim_size[0]()
         var num_padding_indices = padding_indices.dim_size[0]()
         var final_rank = num_input_dims + num_padding_indices
-        debug_assert(
-            final_rank == output_shape.dim_size[0](),
-            "Incorrect output shape.",
-        )
+        assert (
+            final_rank == output_shape.dim_size[0]()
+        ), "Incorrect output shape."
         for output_index in range(final_rank):
             output_shape[output_index] = -1
 
@@ -1058,20 +1055,16 @@ struct UnsqueezeShape:
                 padding_indices[padding_index_index] < 0
             )
 
-            debug_assert(
+            assert (
                 padding_index_normalize >= 0
-                and padding_index_normalize < final_rank,
-                (
-                    "Padding indices must be between [-r, r-1] where r is the"
-                    " final output rank."
-                ),
+                and padding_index_normalize < final_rank
+            ), (
+                "Padding indices must be between [-r, r-1] where r is the"
+                " final output rank."
             )
-            debug_assert(
-                output_shape[padding_index_normalize] == -1,
-                (
-                    "Duplicate padding indices point to the same dimension in"
-                    " the final output shape."
-                ),
+            assert output_shape[padding_index_normalize] == -1, (
+                "Duplicate padding indices point to the same dimension in"
+                " the final output shape."
             )
             output_shape[padding_index_normalize] = 1
 
@@ -1722,7 +1715,7 @@ struct BroadcastShape:
         # Ensure lhs is always the smaller shape
         var lhs_rank = lhs_buf.size()
         var rhs_rank = rhs_buf.size()
-        debug_assert(lhs_rank <= rhs_rank, "lhs shape must be the smaller one")
+        assert lhs_rank <= rhs_rank, "lhs shape must be the smaller one"
 
         # lhs_buf =      [l0, l1, ...]
         # rhs_buf = [..., r0, r1, ...]
@@ -1739,9 +1732,7 @@ struct BroadcastShape:
                 out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.dtype]()
 
             elif lhs_dim != 1 and rhs_dim != 1:
-                debug_assert(
-                    rhs_dim == 1, "one of the differing dimensions must be 1"
-                )
+                assert rhs_dim == 1, "one of the differing dimensions must be 1"
 
             elif lhs_dim != 1:
                 out_buf[rhs_idx] = lhs_buf[lhs_idx].cast[out_buf.dtype]()
@@ -4344,7 +4335,7 @@ struct RandomUniform:
         variance: Scalar,
         seed_value: Scalar,
     ) -> IndexList[output_rank]:
-        debug_assert(shape.dim_size[0]() == output_rank)
+        assert shape.dim_size[0]() == output_rank
 
         var unrolled_shape = IndexList[output_rank]()
         for i in range(output_rank):

@@ -55,10 +55,9 @@ def execute_ragged_flash_attention[
         num_blocks,
         ")",
     )
-    debug_assert(
-        len(valid_lengths_list) == len(cache_lengths_list),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths_list) == len(
+        cache_lengths_list
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     comptime layout_1d = Layout.row_major[1]()
     var input_row_offsets = LayoutTensor[DType.uint32, layout_1d](

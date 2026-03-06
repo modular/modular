@@ -675,7 +675,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         var l = len(self)
         var i = normalize_index["LinkedList"](idx, l)
-        debug_assert(0 <= i < l, "index out of bounds")
+        assert 0 <= i < l, "index out of bounds"
         var mid = l // 2
         if i <= mid:
             var curr = self._head
@@ -703,7 +703,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        debug_assert(len(self) > 0, "unable to get item from empty list")
+        assert len(self) > 0, "unable to get item from empty list"
         return self._get_node_ptr(idx)[].value
 
     fn __len__(self) -> Int:

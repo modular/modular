@@ -74,7 +74,7 @@ fn named_barrier[
         - The number of threads value must be a multiple of the warp size.
     """
 
-    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    assert id < MaxHardwareBarriers, "barrier id should not exceed 16"
     comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
@@ -106,7 +106,7 @@ fn named_barrier_arrive[
         - The barrier ID must not exceed 16.
         - All threads participating in the barrier must specify the same num_threads value.
     """
-    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    assert id < MaxHardwareBarriers, "barrier id should not exceed 16"
     comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
@@ -336,10 +336,9 @@ struct _WaitCountArg:
         comptime assert (
             _is_amd_cdna()
         ), "from_vmcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_VM_CNT,
-            "cnt should be less than or equal to MAX_VM_CNT = 63",
-        )
+        assert (
+            cnt <= Self.MAX_VM_CNT
+        ), "cnt should be less than or equal to MAX_VM_CNT = 63"
         return Self.MAX & ((cnt & 0b1111) | ((cnt & 0b110000) << 10))
 
     @staticmethod
@@ -347,10 +346,9 @@ struct _WaitCountArg:
         comptime assert (
             _is_amd_cdna()
         ), "from_expcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_EXP_CNT,
-            "cnt should be less than or equal to MAX_EXP_CNT = 7",
-        )
+        assert (
+            cnt <= Self.MAX_EXP_CNT
+        ), "cnt should be less than or equal to MAX_EXP_CNT = 7"
         return Self.MAX & (cnt << 4)
 
     @staticmethod
@@ -358,10 +356,9 @@ struct _WaitCountArg:
         comptime assert (
             _is_amd_cdna()
         ), "from_lgkmcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_LGKM_CNT,
-            "cnt should be less than or equal to MAX_LGKM_CNT = 15",
-        )
+        assert (
+            cnt <= Self.MAX_LGKM_CNT
+        ), "cnt should be less than or equal to MAX_LGKM_CNT = 15"
         return Self.MAX & (cnt << 8)
 
 

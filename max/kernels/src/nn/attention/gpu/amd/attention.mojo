@@ -752,10 +752,9 @@ struct Attention[
         self.kv_start_row = 0
 
         comptime if Self.sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
                 sink_weights.value()[Int(self.q_head_idx())][0].cast[
                     Self.accum_type

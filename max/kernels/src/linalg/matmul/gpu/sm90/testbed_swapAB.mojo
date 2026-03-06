@@ -200,61 +200,49 @@ fn test_matmul_sm90_swapAB_comparison[
     )
 
     # Assertions for normal kernel
-    debug_assert(
-        (ceildiv(M, BM) % CLUSTER_M) == 0,
-        String(
-            (
-                "Normal: Number of blocks on M axis should be multiple of"
-                " cluster dim. M"
-            ),
-            "(M // BM=",
-            String(M // BM),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M),
+    assert (ceildiv(M, BM) % CLUSTER_M) == 0, String(
+        (
+            "Normal: Number of blocks on M axis should be multiple of"
+            " cluster dim. M"
         ),
+        "(M // BM=",
+        String(M // BM),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_M),
     )
 
-    debug_assert(
-        (ceildiv(N, BN) % CLUSTER_N) == 0,
-        String(
-            (
-                "Normal: Number of blocks on N axis should be multiple of"
-                " cluster dim. N"
-            ),
-            "(N // BN=",
-            String(N // BN),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N),
+    assert (ceildiv(N, BN) % CLUSTER_N) == 0, String(
+        (
+            "Normal: Number of blocks on N axis should be multiple of"
+            " cluster dim. N"
         ),
+        "(N // BN=",
+        String(N // BN),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_N),
     )
 
     # Assertions for swapAB kernel
-    debug_assert(
-        (ceildiv(M, BM_SWAPAB) % CLUSTER_M_SWAPAB) == 0,
-        String(
-            (
-                "SwapAB: Number of blocks on M axis should be multiple of"
-                " cluster dim. M"
-            ),
-            "(M // BM=",
-            String(M // BM_SWAPAB),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M_SWAPAB),
+    assert (ceildiv(M, BM_SWAPAB) % CLUSTER_M_SWAPAB) == 0, String(
+        (
+            "SwapAB: Number of blocks on M axis should be multiple of"
+            " cluster dim. M"
         ),
+        "(M // BM=",
+        String(M // BM_SWAPAB),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_M_SWAPAB),
     )
 
-    debug_assert(
-        (ceildiv(N, BN_SWAPAB) % CLUSTER_N_SWAPAB) == 0,
-        String(
-            (
-                "SwapAB: Number of blocks on N axis should be multiple of"
-                " cluster dim. N"
-            ),
-            "(N // BN=",
-            String(N // BN_SWAPAB),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N_SWAPAB),
+    assert (ceildiv(N, BN_SWAPAB) % CLUSTER_N_SWAPAB) == 0, String(
+        (
+            "SwapAB: Number of blocks on N axis should be multiple of"
+            " cluster dim. N"
         ),
+        "(N // BN=",
+        String(N // BN_SWAPAB),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_N_SWAPAB),
     )
 
     # =========================================================================
@@ -635,61 +623,49 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     )
 
     # Assertions for normal kernel
-    debug_assert(
-        (ceildiv(M, BM) % CLUSTER_M) == 0,
-        String(
-            (
-                "Normal: Number of blocks on M axis should be multiple of"
-                " cluster dim. M"
-            ),
-            "(M // BM=",
-            String(M // BM),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M),
+    assert (ceildiv(M, BM) % CLUSTER_M) == 0, String(
+        (
+            "Normal: Number of blocks on M axis should be multiple of"
+            " cluster dim. M"
         ),
+        "(M // BM=",
+        String(M // BM),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_M),
     )
 
-    debug_assert(
-        (ceildiv(N, BN) % CLUSTER_N) == 0,
-        String(
-            (
-                "Normal: Number of blocks on N axis should be multiple of"
-                " cluster dim. N"
-            ),
-            "(N // BN=",
-            String(N // BN),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N),
+    assert (ceildiv(N, BN) % CLUSTER_N) == 0, String(
+        (
+            "Normal: Number of blocks on N axis should be multiple of"
+            " cluster dim. N"
         ),
+        "(N // BN=",
+        String(N // BN),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_N),
     )
 
     # Assertions for swapAB kernel
-    debug_assert(
-        (ceildiv(M, BM_SWAPAB) % CLUSTER_M_SWAPAB) == 0,
-        String(
-            (
-                "SwapAB: Number of blocks on M axis should be multiple of"
-                " cluster dim. M"
-            ),
-            "(M // BM=",
-            String(M // BM_SWAPAB),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M_SWAPAB),
+    assert (ceildiv(M, BM_SWAPAB) % CLUSTER_M_SWAPAB) == 0, String(
+        (
+            "SwapAB: Number of blocks on M axis should be multiple of"
+            " cluster dim. M"
         ),
+        "(M // BM=",
+        String(M // BM_SWAPAB),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_M_SWAPAB),
     )
 
-    debug_assert(
-        (ceildiv(N, BN_SWAPAB) % CLUSTER_N_SWAPAB) == 0,
-        String(
-            (
-                "SwapAB: Number of blocks on N axis should be multiple of"
-                " cluster dim. N"
-            ),
-            "(N // BN=",
-            String(N // BN_SWAPAB),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N_SWAPAB),
+    assert (ceildiv(N, BN_SWAPAB) % CLUSTER_N_SWAPAB) == 0, String(
+        (
+            "SwapAB: Number of blocks on N axis should be multiple of"
+            " cluster dim. N"
         ),
+        "(N // BN=",
+        String(N // BN_SWAPAB),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_N_SWAPAB),
     )
 
     # =========================================================================

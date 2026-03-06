@@ -163,10 +163,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A new `Counter` with the count of each passed key set to `value`.
         """
-        debug_assert(
-            value >= 0,
-            "value must be non-negative",
-        )
+        assert value >= 0, "value must be non-negative"
         var result = Counter[Self.V, Self.H]()
         for key in keys:
             result[key] = value
@@ -1065,7 +1062,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable):
         Returns:
             The value if `idx` is `0` and the count if `idx` is `1`.
         """
-        debug_assert(0 <= idx <= 1, "index must be within bounds")
+        assert 0 <= idx <= 1, "index must be within bounds"
         if idx == 0:
             return self._value.copy()
         else:

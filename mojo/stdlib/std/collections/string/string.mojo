@@ -380,10 +380,9 @@ struct String(
         Safety:
             `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
         """
-        debug_assert(
-            _is_valid_utf8(unsafe_from_utf8),
-            "String: span is not valid UTF-8",
-        )
+        assert _is_valid_utf8(
+            unsafe_from_utf8
+        ), "String: span is not valid UTF-8"
         var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
         memcpy(
@@ -915,10 +914,9 @@ struct String(
         This helper is inherently unsafe as it does not check if the capacity is
         sufficient and does not check UTF-8 validity.
         """
-        debug_assert(
-            self.capacity() > self.byte_length(),
-            "String: capacity is not sufficient",
-        )
+        assert (
+            self.capacity() > self.byte_length()
+        ), "String: capacity is not sufficient"
         var length = self.byte_length()
         (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
         self.set_byte_length(length + 1)
@@ -2157,9 +2155,9 @@ fn _unsafe_chr_ascii(c: UInt8) -> String:
     Safety:
         The byte must be a valid single byte ASCII character (0-127).
     """
-    debug_assert(
-        c <= _LARGEST_UNICODE_ASCII_BYTE, "Character is not single byte unicode"
-    )
+    assert (
+        c <= _LARGEST_UNICODE_ASCII_BYTE
+    ), "Character is not single byte unicode"
 
     return String(unsafe_from_utf8=Span(ptr=UnsafePointer(to=c), length=1))
 

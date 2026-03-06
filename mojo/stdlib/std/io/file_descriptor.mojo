@@ -75,10 +75,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         written = external_call["write", c_ssize_t](
             self.value, bytes.unsafe_ptr(), len(bytes)
         )
-        debug_assert(
-            written == len(bytes),
-            "expected amount of bytes not written",
-        )
+        assert written == len(bytes), "expected amount of bytes not written"
 
     fn write_string(mut self, string: StringSlice):
         """

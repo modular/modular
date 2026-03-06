@@ -810,9 +810,9 @@ struct Bench(Writable):
         """
 
         var num_ctxs = len(list_of_ctx)
-        debug_assert(
-            num_ctxs > 1, "list_of_ctx must contain at least 2 DeviceContexts"
-        )
+        assert (
+            num_ctxs > 1
+        ), "list_of_ctx must contain at least 2 DeviceContexts"
         # Some initial setup work:
         # Necessary to fill this List w/ default BenchmarkInfo
         # otherwise each thread attempts to free uninitialized BenchmarkInfo

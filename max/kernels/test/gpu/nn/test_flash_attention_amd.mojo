@@ -103,7 +103,7 @@ fn test[
 
     # Q, K, V are randomly initialized.
     if use_index_input:
-        debug_assert(batch_size == 1)
+        assert batch_size == 1
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):

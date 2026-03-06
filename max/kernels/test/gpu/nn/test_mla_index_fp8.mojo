@@ -57,10 +57,9 @@ fn test_mla_index_fp8_paged_variable_lengths[
     """
     comptime use_causal_mask = mask_name != MaskName.NULL.name
     var batch_size = len(seq_lens)
-    debug_assert(
-        len(cache_lens) == batch_size,
-        "cache_lens must have same length as seq_lens",
-    )
+    assert (
+        len(cache_lens) == batch_size
+    ), "cache_lens must have same length as seq_lens"
 
     # Compute totals and max lengths
     var total_seq_len = 0

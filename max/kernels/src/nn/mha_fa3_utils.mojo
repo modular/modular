@@ -119,12 +119,9 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
 
     @always_inline
     fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        debug_assert(
-            Bool(self.ptr),
-            (
-                "NonNullPointer is supposed to provide a compile-time guarantee"
-                " of being non-null"
-            ),
+        assert Bool(self.ptr), (
+            "NonNullPointer is supposed to provide a compile-time guarantee"
+            " of being non-null"
         )
         return self.ptr
 

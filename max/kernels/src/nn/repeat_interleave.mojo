@@ -86,8 +86,8 @@ fn repeat_interleave[
         coord_to_index_list(output.layout.shape_coord()), axis
     )
 
-    debug_assert(collapsed_output_shape[0] == collapsed_input_shape[0])
-    debug_assert(collapsed_output_shape[2] == collapsed_input_shape[2])
+    assert collapsed_output_shape[0] == collapsed_input_shape[0]
+    assert collapsed_output_shape[2] == collapsed_input_shape[2]
 
     var collapsed_input = TileTensor(
         input.ptr,

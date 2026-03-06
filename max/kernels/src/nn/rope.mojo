@@ -164,14 +164,11 @@ fn rope_ragged[
         comptime assert rank == 3, "Invalid rank passed to rope kernel"
 
         comptime if width == 1:
-            debug_assert(
-                False,
-                (
-                    "RoPE kernel called with simd width = 1, We should never be"
-                    " here. This is indicative of an uneven last dimension of"
-                    " the rope tensor. Ensure the model's head_size is"
-                    " divisible by the simd width of your target hardware."
-                ),
+            assert False, (
+                "RoPE kernel called with simd width = 1, We should never be"
+                " here. This is indicative of an uneven last dimension of"
+                " the rope tensor. Ensure the model's head_size is"
+                " divisible by the simd width of your target hardware."
             )
             return
         else:

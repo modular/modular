@@ -30,10 +30,9 @@ fn get_batch_from_row_offsets(
     """
     var row_offsets_size = row_offsets.size()
 
-    debug_assert(
-        tok_idx >= 0 and tok_idx < Int(row_offsets[row_offsets_size - 1]),
-        "tok_idx is out of range of row_offsets",
-    )
+    assert tok_idx >= 0 and tok_idx < Int(
+        row_offsets[row_offsets_size - 1]
+    ), "tok_idx is out of range of row_offsets"
 
     var low: UInt = 0
     var high = UInt(row_offsets_size - 1)
@@ -58,10 +57,9 @@ fn get_batch_from_row_offsets(
 
     var row_offsets_size = row_offsets.numel()
 
-    debug_assert(
-        tok_idx >= 0 and tok_idx < Int(row_offsets[row_offsets_size - 1]),
-        "tok_idx is out of range of row_offsets",
-    )
+    assert tok_idx >= 0 and tok_idx < Int(
+        row_offsets[row_offsets_size - 1]
+    ), "tok_idx is out of range of row_offsets"
 
     var low: UInt = 0
     var high = UInt(row_offsets_size - 1)
@@ -86,10 +84,9 @@ fn get_batch_and_token_idx_from_row_offsets(
 
     var row_offsets_size = row_offsets.numel()
 
-    debug_assert(
-        tok_idx >= 0 and tok_idx < Int(row_offsets[row_offsets_size - 1]),
-        "tok_idx is out of range of row_offsets",
-    )
+    assert tok_idx >= 0 and tok_idx < Int(
+        row_offsets[row_offsets_size - 1]
+    ), "tok_idx is out of range of row_offsets"
 
     var low: UInt = 0
     var high = UInt(row_offsets_size - 1)

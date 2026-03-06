@@ -559,10 +559,9 @@ struct ManagedTensorSlice[
           A new `ManagedTensorSlice` pointing to the same memory as `self`,
           with the shape and dtype of `other`.
         """
-        debug_assert(
-            self.num_bytes() >= other.num_bytes(),
-            "like: source buffer is smaller than the target shape requires",
-        )
+        assert (
+            self.num_bytes() >= other.num_bytes()
+        ), "like: source buffer is smaller than the target shape requires"
         result = {self._ptr.bitcast[Scalar[other.dtype]](), other.shape()}
 
     comptime _unknown_spec = StaticTensorSpec[
@@ -596,10 +595,7 @@ struct ManagedTensorSlice[
           A tuple `(lhs, rhs)` where `lhs` has `offset` elements starting at
           the beginning of `self` and `rhs` has the remaining elements.
         """
-        debug_assert(
-            0 <= offset <= self.size(),
-            "split: offset out of bounds",
-        )
+        assert 0 <= offset <= self.size(), "split: offset out of bounds"
         comptime PtrType = UnsafePointer[Scalar[Self.dtype]]
 
         var lhs_shape = Index(offset)
@@ -646,10 +642,9 @@ struct ManagedTensorSlice[
         comptime assert (
             not Self.static_spec.in_lambda
         ), "Direct load on fused tensor is forbidden"
-        debug_assert(
-            len(indices) == Self.rank,
-            "mismatch between requested index and rank",
-        )
+        assert (
+            len(indices) == Self.rank
+        ), "mismatch between requested index and rank"
         return self[IndexList[Self.rank](indices)]
 
     @always_inline
@@ -664,10 +659,9 @@ struct ManagedTensorSlice[
         comptime assert (
             not Self.static_spec.out_lambda
         ), "Direct store on fused tensor is forbidden"
-        debug_assert(
-            len(indices) == Self.rank,
-            "mismatch between requested index and rank",
-        )
+        assert (
+            len(indices) == Self.rank
+        ), "mismatch between requested index and rank"
         self[IndexList[Self.rank](indices)] = val
 
     @always_inline
@@ -1051,10 +1045,9 @@ struct ManagedTensorSlice[
         comptime assert (
             len(new_static_strides) == new_rank
         ), "static strides has incorrect rank"
-        debug_assert(
-            _is_consistent[new_static_shape](new_runtime_shape)
-            and _is_consistent[new_static_strides](new_runtime_strides)
-        )
+        assert _is_consistent[new_static_shape](
+            new_runtime_shape
+        ) and _is_consistent[new_static_strides](new_runtime_strides)
 
         return {
             offset_ptr.or_else(self._ptr),
@@ -1431,10 +1424,9 @@ fn foreach[
         tensor: The output tensor slice which receives the return values from `func`.
         ctx: The call context (forward this from the custom operation).
     """
-    debug_assert(
-        ctx._handle or is_cpu[target](),
-        "Expecting non-null device ctx for GPU kernels",
-    )
+    assert (
+        ctx._handle or is_cpu[target]()
+    ), "Expecting non-null device ctx for GPU kernels"
 
     @parameter
     @always_inline
@@ -1489,10 +1481,9 @@ fn foreach[
         tensor: The input tensor slice which the consumed values.
         ctx: The call context (forward this from the custom operation).
     """
-    debug_assert(
-        ctx._handle or is_cpu[target](),
-        "Expecting non-null device ctx for GPU kernels",
-    )
+    assert (
+        ctx._handle or is_cpu[target]()
+    ), "Expecting non-null device ctx for GPU kernels"
 
     @parameter
     @always_inline
@@ -1581,7 +1572,7 @@ fn view_copy_impl[
     comptime assert _compatible_with[
         x._static_shape, z._static_shape
     ](), "static shapes not compatible"
-    debug_assert(x.shape() == z.shape(), "runtime shapes not compatible")
+    assert x.shape() == z.shape(), "runtime shapes not compatible"
 
     @parameter
     @always_inline
@@ -1630,7 +1621,7 @@ fn copy_tensor[
         src: The source tensor slice.
         ctx: The device context.
     """
-    debug_assert(src.shape() == dst.shape(), "runtime shapes not compatible")
+    assert src.shape() == dst.shape(), "runtime shapes not compatible"
 
     @parameter
     @always_inline

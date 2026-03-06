@@ -76,10 +76,9 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var K = k.value
     var bs = batch_size.value
 
-    debug_assert(
-        M * size_of[DType.float32]() % 16 == 0,
-        "TMA expects M to be divisible by 16 bytes",
-    )
+    assert (
+        M * size_of[DType.float32]() % 16 == 0
+    ), "TMA expects M to be divisible by 16 bytes"
 
     print(
         "== test_sm100_blockwise_scaled_fp8_matmul",
@@ -104,10 +103,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         transpose_b,
     )
 
-    debug_assert(
-        (K % BLOCK_SCALE_K == 0),
-        "K must be divisible by BLOCK_SCALE_K",
-    )
+    assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
     comptime static_a_shape = DimList(batch_size.dim, m.dim, k.dim)
     comptime static_b_shape = DimList(
@@ -367,10 +363,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         transpose_b,
     )
 
-    debug_assert(
-        (K % BLOCK_SCALE_K == 0),
-        "K must be divisible by BLOCK_SCALE_K",
-    )
+    assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
     comptime static_a_shape = DimList(B, Dim(), K)
     comptime static_b_shape = DimList(B, N, K) if transpose_b else DimList(

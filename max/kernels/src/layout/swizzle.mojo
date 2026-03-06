@@ -363,11 +363,10 @@ struct Swizzle(
             shift: Distance to shift the mask.
         """
         if not is_compile_time():
-            debug_assert(
-                bits >= 0 and base >= 0,
-                "Require non-negative mask bits and base",
-            )
-            debug_assert(abs(shift) >= bits, "shift should be less than bits")
+            assert (
+                bits >= 0 and base >= 0
+            ), "Require non-negative mask bits and base"
+            assert abs(shift) >= bits, "shift should be less than bits"
 
         self.bits = bits
         self.base = base

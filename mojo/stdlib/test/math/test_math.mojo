@@ -145,7 +145,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
     fn edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
         """Creates a value at the tolerance boundary that should be considered close to `a`.
         """
-        debug_assert(all(a.ge(0)))
+        assert all(a.ge(0))
 
         comptime if symm:
             # |a - b| ≤ max(atol, rtol * max(|a|, |b|))

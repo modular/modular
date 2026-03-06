@@ -2636,10 +2636,9 @@ struct TMATensorTile[
         # Replace strides - note: stride for innermost dimension is implicitly 1
         # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
         comptime if dim_idx > 0:
-            debug_assert(
-                dim_stride is not None,
-                " dim_stride must be provided if dim_idx > 0",
-            )
+            assert (
+                dim_stride is not None
+            ), " dim_stride must be provided if dim_idx > 0"
             comptime temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
                 tensor_rank - dim_idx - 1
             ) + ", $1;"

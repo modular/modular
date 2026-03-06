@@ -38,10 +38,9 @@ fn test_kv_cache_radd[
     ctx: DeviceContext,
 ) raises:
     comptime num_layers = 2
-    debug_assert(
-        num_active_loras <= batch_size,
-        "num_active_loras must be less than or equal to batch_size",
-    )
+    assert (
+        num_active_loras <= batch_size
+    ), "num_active_loras must be less than or equal to batch_size"
     var cache_lengths = ManagedLayoutTensor[
         DType.uint32, Layout(UNKNOWN_VALUE)
     ](

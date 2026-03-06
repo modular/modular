@@ -1751,9 +1751,7 @@ struct CPython(Defaultable, Movable):
             err_ptr = self.PyErr_Fetch()
         else:
             err_ptr = self.PyErr_GetRaisedException()
-        debug_assert(
-            Bool(err_ptr), "Python exception occurred but null was returned"
-        )
+        assert Bool(err_ptr), "Python exception occurred but null was returned"
 
         var error: String
         try:
@@ -1894,7 +1892,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/refcounting.html#c.Py_NewRef
         """
-        debug_assert(Bool(o), "Py_NewRef called with NULL")
+        assert Bool(o), "Py_NewRef called with NULL"
         return self._Py_NewRef(o)
 
     fn Py_IncRef(self, ptr: PyObjectPtr):

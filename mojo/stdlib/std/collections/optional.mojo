@@ -547,7 +547,7 @@ struct Optional[T: Movable](
         print(y)
         ```
         """
-        debug_assert(self.__bool__(), "`.value()` on empty `Optional`")
+        assert self.__bool__(), "`.value()` on empty `Optional`"
         return self._value.unsafe_get[Self.T]()
 
     fn take(mut self) -> Self.T:
@@ -621,7 +621,7 @@ struct Optional[T: Movable](
         print(y)                    # Does not reach this line
         ```
         """
-        debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
+        assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
     fn or_else[

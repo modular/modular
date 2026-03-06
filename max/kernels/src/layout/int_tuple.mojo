@@ -935,10 +935,9 @@ struct IntTuple(
             - This operation requires reallocating the underlying `IntArray` storage to accommodate
             the new elements, which may impact performance for large tuples.
         """
-        debug_assert(
-            self._store.owning(),
-            "Can't modify a non-owning IntTuple (sub-tuple reference)",
-        )
+        assert (
+            self._store.owning()
+        ), "Can't modify a non-owning IntTuple (sub-tuple reference)"
 
         if len(elements) == 0:
             return
@@ -990,10 +989,9 @@ struct IntTuple(
               to accommodate the new elements, which may impact performance for large tuples.
             - If the input tuple is empty, this method returns without making any changes.
         """
-        debug_assert(
-            self._store.owning(),
-            "Can't modify a non-owning IntTuple (sub-tuple reference)",
-        )
+        assert (
+            self._store.owning()
+        ), "Can't modify a non-owning IntTuple (sub-tuple reference)"
 
         if len(tuple) == 0:
             return
@@ -2312,10 +2310,9 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
                 v_init = UNKNOWN_VALUE if is_unknown else v_init * product(v)
             return r
     else:
-        debug_assert(
-            not is_tuple(init),
-            "Invalid prefix_product: 'int' tuple case not allowed",
-        )
+        assert not is_tuple(
+            init
+        ), "Invalid prefix_product: 'int' tuple case not allowed"
 
         if is_tuple(init):  # "int" tuple
             return IntTuple()

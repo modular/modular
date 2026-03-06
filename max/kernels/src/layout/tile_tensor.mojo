@@ -1360,10 +1360,9 @@ struct TileTensor[
             var sliced = tensor.slice((1, 3), (2, 5))
             ```
         """
-        debug_assert(
-            len(slices) == Self.rank,
-            "slice requires one (start, end) tuple per dimension",
-        )
+        assert (
+            len(slices) == Self.rank
+        ), "slice requires one (start, end) tuple per dimension"
 
         var offset = 0
 
@@ -1649,10 +1648,9 @@ struct TileTensor[
         - May include runtime validation for dynamic shapes.
         """
         # Runtime validation for element count
-        debug_assert(
-            self.numel() == new_shape.product(),
-            "reshape: total number of elements must match",
-        )
+        assert (
+            self.numel() == new_shape.product()
+        ), "reshape: total number of elements must match"
 
         var new_layout = row_major(new_shape)
 

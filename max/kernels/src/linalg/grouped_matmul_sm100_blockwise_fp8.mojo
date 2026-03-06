@@ -548,27 +548,22 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     comptime assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
 
     var a_scales_1 = a_scales.dim(1)
-    debug_assert(a_scales_1 == c.dim(0), "a_scales.dim(1) must be equal to M")
+    assert a_scales_1 == c.dim(0), "a_scales.dim(1) must be equal to M"
 
     var a_scales_0 = a_scales.dim(0)
-    debug_assert(
-        K % a_scales_0 == 0 and (K // a_scales_0) == BK,
-        (
-            "K must be divisible by a_scales.dim(0) and BK must be equal to K"
-            " // a_scales.dim(0)"
-        ),
+    assert K % a_scales_0 == 0 and (K // a_scales_0) == BK, (
+        "K must be divisible by a_scales.dim(0) and BK must be equal to K"
+        " // a_scales.dim(0)"
     )
 
     var b_scales_0 = b_scales.dim(1)
     var b_scales_1 = b_scales.dim(2)
-    debug_assert(
-        (N % b_scales_0 == 0 and (N // b_scales_0) == BK)
-        and (K % b_scales_1 == 0 and (K // b_scales_1) == BK),
-        (
-            "N must be divisible by b_scales.dim(0) and BK must be equal to N"
-            " // b_scales.dim(0) and K must be divisible by b_scales.dim(1) and"
-            " BK must be equal to K // b_scales.dim(1)"
-        ),
+    assert (N % b_scales_0 == 0 and (N // b_scales_0) == BK) and (
+        K % b_scales_1 == 0 and (K // b_scales_1) == BK
+    ), (
+        "N must be divisible by b_scales.dim(0) and BK must be equal to N"
+        " // b_scales.dim(0) and K must be divisible by b_scales.dim(1) and"
+        " BK must be equal to K // b_scales.dim(1)"
     )
 
     logger.info(

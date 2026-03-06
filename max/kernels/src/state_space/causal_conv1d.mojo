@@ -175,12 +175,8 @@ fn causal_conv1d_channel_first_fwd_cpu[
             return
 
         # Validate bias tensor has valid dimensions (use debug_assert since we can't raise in @parameter fn)
-        debug_assert(
-            bias.dim(0) > 0, "Bias tensor must have at least one element"
-        )
-        debug_assert(
-            c < bias.dim(0), "Channel index out of bounds for bias tensor"
-        )
+        assert bias.dim(0) > 0, "Bias tensor must have at least one element"
+        assert c < bias.dim(0), "Channel index out of bounds for bias tensor"
 
         var weight_c_base_offset = UInt32(c * Int(weight_c_stride))
         var bias_offset = UInt32(c * Int(bias_stride))

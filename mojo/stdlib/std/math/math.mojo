@@ -1401,7 +1401,7 @@ fn align_down(value: Int, alignment: Int) -> Int:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return (value // alignment) * alignment
 
 
@@ -1418,7 +1418,7 @@ fn align_down(value: UInt, alignment: UInt) -> UInt:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return (value // alignment) * alignment
 
 
@@ -1440,7 +1440,7 @@ fn align_up(value: Int, alignment: Int) -> Int:
         Closest multiple of the alignment that is greater than or equal to the
         input value. In other words, ceiling(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return ceildiv(value, alignment) * alignment
 
 
@@ -1457,7 +1457,7 @@ fn align_up(value: UInt, alignment: UInt) -> UInt:
         Closest multiple of the alignment that is greater than or equal to the
         input value. In other words, ceiling(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return ceildiv(value, alignment) * alignment
 
 
@@ -3189,9 +3189,9 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(
-        0 <= n <= (12 if is_32bit() else 20), "input value causes an overflow"
-    )
+    assert (
+        0 <= n <= (12 if is_32bit() else 20)
+    ), "input value causes an overflow"
     return table[n]
 
 

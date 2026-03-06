@@ -602,7 +602,7 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable, Writable):
             The underlying data to be taken out as an owned value.
         """
         Self._check[T]()
-        debug_assert(self.isa[T](), "taking wrong type")
+        assert self.isa[T](), "taking wrong type"
         return self._storage^.take[T]()
 
     @always_inline
@@ -656,7 +656,7 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable, Writable):
         Returns:
             The underlying data to be taken out as an owned value.
         """
-        debug_assert(self.isa[Tout](), "taking out the wrong type!")
+        assert self.isa[Tout](), "taking out the wrong type!"
 
         var x = self^.unsafe_take[Tout]()
         self = Self(value^)
@@ -706,7 +706,7 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable, Writable):
             The internal data represented as a `Pointer[T]`.
         """
         Self._check[T]()
-        debug_assert(self.isa[T](), "get: wrong variant type")
+        assert self.isa[T](), "get: wrong variant type"
         return self._storage.unsafe_ptr[T]().unsafe_origin_cast[
             origin_of(self)
         ]()[]

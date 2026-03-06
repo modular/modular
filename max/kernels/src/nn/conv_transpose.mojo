@@ -1252,10 +1252,9 @@ fn pack_filter_shape(
     # Filter is in RSFC layout. The 2nd last dim is F.
     var F = Int(filter.dim[filter.rank - 2]())
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     # FRSCf layout.

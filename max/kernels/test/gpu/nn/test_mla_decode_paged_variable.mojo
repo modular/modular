@@ -1011,10 +1011,9 @@ fn run_test_paged_variable_ragged_q[
     - FP8 blockwise scaling is independent of variable Q lengths
     """
     var batch_size = len(cache_lengths)
-    debug_assert(
-        len(seq_lens) == batch_size,
-        "cache_lengths and seq_lens must have same length",
-    )
+    assert (
+        len(seq_lens) == batch_size
+    ), "cache_lengths and seq_lens must have same length"
     var q_max_seq_len = 0
     var total_q_tokens = 0
     for i in range(batch_size):

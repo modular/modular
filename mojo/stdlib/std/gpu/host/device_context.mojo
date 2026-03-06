@@ -3684,14 +3684,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         - This method will be deprecated and eventually removed.
           Use `compile_function()` instead for type-checked kernel compilation.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3762,14 +3761,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3835,14 +3833,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3914,14 +3911,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3987,14 +3983,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,

@@ -460,10 +460,9 @@ struct FileHandle(Defaultable, Movable, Writer):
         if self.handle < 0:
             raise "invalid file handle"
 
-        debug_assert(
-            whence >= 0 and whence < 3,
-            "Second argument to `seek` must be between 0 and 2.",
-        )
+        assert (
+            whence >= 0 and whence < 3
+        ), "Second argument to `seek` must be between 0 and 2."
 
         var fd = self._get_raw_fd()
         # lseek returns off_t which is typically Int64 on Unix systems
@@ -640,7 +639,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             Passing an invalid file handle (e.g., after calling `close()`) is
             undefined behavior. In debug builds, this will trigger an assertion.
         """
-        debug_assert(self.handle >= 0, "invalid file handle in write()")
+        assert self.handle >= 0, "invalid file handle in write()"
 
         var file = FileDescriptor(self._get_raw_fd())
         var buffer = _WriteBufferStack(file)

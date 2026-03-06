@@ -118,10 +118,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Args:
             unsafe_unchecked_codepoint: A valid Unicode scalar value code point.
         """
-        debug_assert(
-            _is_unicode_scalar_value(unsafe_unchecked_codepoint),
-            "codepoint is not a valid Unicode scalar value",
-        )
+        assert _is_unicode_scalar_value(
+            unsafe_unchecked_codepoint
+        ), "codepoint is not a valid Unicode scalar value"
 
         self._scalar_value = unsafe_unchecked_codepoint
 
@@ -188,10 +187,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             string.as_bytes()
         )
 
-        debug_assert(
-            string.byte_length() == num_bytes,
-            "input string must be one character",
-        )
+        assert (
+            string.byte_length() == num_bytes
+        ), "input string must be one character"
 
         return char
 
@@ -222,7 +220,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
         # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
         # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
-        debug_assert(len(s) > 0, "input Span must be non-empty")
+        assert len(s) > 0, "input Span must be non-empty"
 
         var ptr = s.unsafe_ptr()
         var b1 = ptr[]

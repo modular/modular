@@ -163,26 +163,20 @@ fn test_matmul_sm90[
         use_tma_store,
     )
 
-    debug_assert(
-        (ceildiv(M, BM) % (CLUSTER_M)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. M",
-            "(M // BM=",
-            String(M // BM),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M),
-        ),
+    assert (ceildiv(M, BM) % (CLUSTER_M)) == 0, String(
+        "Number of blocks on M axis should be multiple of cluster dim. M",
+        "(M // BM=",
+        String(M // BM),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_M),
     )
 
-    debug_assert(
-        (ceildiv(N, BN) % (CLUSTER_N)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. N",
-            "N // BN=(",
-            String(N // BN),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N),
-        ),
+    assert (ceildiv(N, BN) % (CLUSTER_N)) == 0, String(
+        "Number of blocks on M axis should be multiple of cluster dim. N",
+        "N // BN=(",
+        String(N // BN),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_N),
     )
 
     @parameter
