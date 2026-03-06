@@ -1568,6 +1568,14 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
 
 
+@register_internal("mogg.async.check_task_error")
+@no_inline
+fn mogg_async_check_task_error(mut error: Optional[Error]) raises:
+    """Raises the captured error from an async task, if present."""
+    if error:
+        raise error.take()
+
+
 @register_internal("mogg.async.error")
 @no_inline
 fn mogg_async_error(
