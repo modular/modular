@@ -1041,6 +1041,7 @@ struct Dict[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """The number of elements currently stored in the dictionary.
 
@@ -1049,6 +1050,7 @@ struct Dict[
         """
         return self._len
 
+    @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         """Check if the dictionary is empty or not.
 

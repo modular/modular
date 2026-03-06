@@ -272,6 +272,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         """Whether the set is non-empty or not.
 
@@ -280,6 +281,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self).__bool__()
 
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """The size of the set.
 

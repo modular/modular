@@ -626,6 +626,7 @@ struct List[T: Copyable](
         """
         return self._len
 
+    @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         """Checks whether the list has any elements or not.
 
