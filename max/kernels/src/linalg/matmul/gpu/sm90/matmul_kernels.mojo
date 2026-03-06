@@ -59,9 +59,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -539,7 +537,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn get_block_swizzle(
-        lut_ptr: UnsafePointer[UInt32] = UnsafePointer[UInt32](),
+        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin] = {},
     ) -> IndexList[2, element_type=DType.uint32]:
         """Calculate block swizzle for better L2 cache locality.
 
@@ -786,10 +784,12 @@ struct HopperMatmulSM90Kernel[
                 # Pointer types for rebinding TileTensor ptr to LayoutTensor ptr
                 comptime ATileLT_ptr = UnsafePointer[
                     Scalar[a_loader_type._dtype],
+                    MutAnyOrigin,
                     address_space=AddressSpace.SHARED,
                 ]
                 comptime BTileLT_ptr = UnsafePointer[
                     Scalar[b_loader_type._dtype],
+                    MutAnyOrigin,
                     address_space=AddressSpace.SHARED,
                 ]
 
@@ -862,7 +862,7 @@ struct HopperMatmulSM90Kernel[
         a: LayoutTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin],
         b: LayoutTensor[Self.b_type, Self.b_layout, ImmutAnyOrigin],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
-        lut_ptr: UnsafePointer[UInt32],
+        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin],
     ):
         """Main kernel entry point for matrix multiplication.
 
@@ -1018,7 +1018,7 @@ struct HopperMatmulSM90Kernel[
         ],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
         workspace_buffer: NDBuffer[Self.accum_type, 3, MutAnyOrigin],
-        locks_ptr: UnsafePointer[UInt8],
+        locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
         problem_shape: IndexList[3],
     ):
         """Split-K variant of the kernel for better load balancing on small problems.

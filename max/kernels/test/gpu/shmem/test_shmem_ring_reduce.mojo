@@ -122,9 +122,9 @@ fn ring_reduce(
 
 def bench_ring_reduce(ctx: SHMEMContext) raises:
     var min_ints = min_size // size_of[DType.int32]()
-    debug_assert(
-        min_ints % num_blocks == 0, "min_size must be divisible by num_blocks"
-    )
+    assert (
+        min_ints % num_blocks == 0
+    ), "min_size must be divisible by num_blocks"
 
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()

@@ -48,10 +48,9 @@ def execute_ragged_flash_attention[
     comptime page_size = 512
 
     var batch_size = len(valid_lengths)
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     # Compute dimensions
     var total_length = 0

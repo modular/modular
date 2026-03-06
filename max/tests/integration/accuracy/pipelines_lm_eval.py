@@ -55,7 +55,7 @@ class PipelineSitter:
 
     _args: Sequence[str]
     _extra_env: Mapping[str, str]
-    _proc: subprocess.Popen | None
+    _proc: subprocess.Popen | None  # type: ignore[type-arg]
 
     def __init__(
         self,

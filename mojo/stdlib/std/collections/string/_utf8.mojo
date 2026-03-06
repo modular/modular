@@ -297,13 +297,10 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
-    debug_assert(
-        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
-    )
-    debug_assert(
-        not _is_utf8_continuation_byte(b),
-        "Function does not work correctly if given a continuation byte.",
-    )
+    assert b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
+    assert not _is_utf8_continuation_byte(
+        b
+    ), "Function does not work correctly if given a continuation byte."
     return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
 
 
@@ -321,9 +318,7 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    debug_assert(
-        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
-    )
+    assert b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
     return count_leading_zeros(~b)
 
 
@@ -368,7 +363,7 @@ fn _is_newline_char_utf8[
         else:
             return is_next_line
     else:  # unicode line sep or paragraph sep: \u2028 , \u2029
-        debug_assert(char_len == 3, "invalid UTF-8 byte length")
+        assert char_len == 3, "invalid UTF-8 byte length"
         var b2 = p[eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
 

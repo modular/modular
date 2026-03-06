@@ -820,9 +820,7 @@ struct SplitKPartition[dtype: DType](
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        debug_assert(
-            ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
-        )
+        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 

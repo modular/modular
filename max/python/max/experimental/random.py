@@ -17,7 +17,9 @@ This module provides functions for generating random tensors with various
 distributions. All functions support specifying data type and device,
 with sensible defaults based on the target device.
 
-You can generate random tensors using different distributions::
+You can generate random tensors using different distributions:
+
+.. code-block:: python
 
     from max.experimental import random
     from max.dtype import DType

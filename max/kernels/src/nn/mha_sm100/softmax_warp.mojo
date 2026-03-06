@@ -41,6 +41,7 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout import row_major, stack_allocation as tt_stack_allocation
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.fa4_config import FA4Config, EnableForcedOrdering, EnableEarlyAdd
 from nn.sm100_attention_utils import (
     LocalTensor,
@@ -83,41 +84,43 @@ fn fa4_scale_write_output[
     qkv_type: DType,
     output_type: DType,
     config: FA4Config,
+    output_swizzle_mode: TensorMapSwizzle = config.swizzle_mode,
+    kv_depth: Int = config.depth,
+    half_bm: Int = config.BM // 2,
+    tmem_kv_depth: Int = config.padded_depth,
 ](
     local_row: UInt32,
     local_warp_idx: UInt32,
     warp_group_idx: UInt32,
     inv_row_sum: Float32,
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
-    o_tmem_arg: TMemTile[DType.float32, config.BM // 2, config.padded_depth],
+    o_tmem_arg: TMemTile[DType.float32, half_bm, tmem_kv_depth],
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
-        BM=config.BM // 2,
-        BN=config.depth,
+        output_swizzle_mode,
+        BM=half_bm,
+        BN=kv_depth,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
 ):
     comptime accum_type = DType.float32
-    comptime BM = config.BM
-    comptime padded_depth = config.padded_depth
 
-    comptime swizzle_granularity = config.swizzle_mode.bytes() // size_of[
+    comptime swizzle_granularity = output_swizzle_mode.bytes() // size_of[
         output_type
     ]()
-    comptime iters = padded_depth // swizzle_granularity
+    comptime iters = tmem_kv_depth // swizzle_granularity
 
     comptime ST = STMatrixLayout[
-        BM // 2,
+        half_bm,
         swizzle_granularity,
         num_threads=WARPGROUP_SIZE,
         accum_type_size=4,
     ]
     comptime num_rows = ST.vec_local_layout[0].size()
 
-    comptime swizzle = make_swizzle[output_type, config.swizzle_mode]()
+    comptime swizzle = make_swizzle[output_type, output_swizzle_mode]()
 
     comptime swizzle_block_size: UInt32 = UInt32(
         WARP_SIZE * swizzle_granularity
@@ -129,7 +132,7 @@ fn fa4_scale_write_output[
             ragged_tma_store.prefetch_descriptor()
 
     # Allocate register tiles for double-buffered pipeline.
-    comptime ChunkTMemType = TMemTile[accum_type, BM // 2, swizzle_granularity]
+    comptime ChunkTMemType = TMemTile[accum_type, half_bm, swizzle_granularity]
     var o_cur = ChunkTMemType.allocate_register_tile[
         num_threads=WARPGROUP_SIZE
     ]()
@@ -158,7 +161,7 @@ fn fa4_scale_write_output[
             comptime assert pow_two + local_offset <= ST.repeat
             comptime if pow_two > 0:
                 comptime offsets = STMatrixOffsets[
-                    BM // 2,
+                    half_bm,
                     swizzle_granularity,
                     num_threads=WARPGROUP_SIZE,
                     accum_type_size=4,
@@ -220,7 +223,7 @@ fn fa4_scale_write_output[
         )
 
         comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
-            j * (BM // 2) * swizzle_granularity
+            j * half_bm * swizzle_granularity
         )
         comptime smem_layout = row_major[16, swizzle_granularity]()
         var accum_smem_warp_tile = _SharedMemTT[output_type, smem_layout](

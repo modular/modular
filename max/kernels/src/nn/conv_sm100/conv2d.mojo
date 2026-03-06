@@ -168,33 +168,27 @@ fn conv2d_fprop[
     comptime corner_limit = 128  # signed 8-bit range
     comptime offset_limit = 255  # unsigned 8-bit max
 
-    debug_assert(
-        lower_corner_h >= -corner_limit and lower_corner_h < corner_limit,
-        "lower_corner_h out of TMA im2col range [-128, 127]",
-    )
-    debug_assert(
-        lower_corner_w >= -corner_limit and lower_corner_w < corner_limit,
-        "lower_corner_w out of TMA im2col range [-128, 127]",
-    )
-    debug_assert(
-        upper_corner_h >= -corner_limit and upper_corner_h < corner_limit,
-        "upper_corner_h out of TMA im2col range [-128, 127]",
-    )
-    debug_assert(
-        upper_corner_w >= -corner_limit and upper_corner_w < corner_limit,
-        "upper_corner_w out of TMA im2col range [-128, 127]",
-    )
+    assert (
+        lower_corner_h >= -corner_limit and lower_corner_h < corner_limit
+    ), "lower_corner_h out of TMA im2col range [-128, 127]"
+    assert (
+        lower_corner_w >= -corner_limit and lower_corner_w < corner_limit
+    ), "lower_corner_w out of TMA im2col range [-128, 127]"
+    assert (
+        upper_corner_h >= -corner_limit and upper_corner_h < corner_limit
+    ), "upper_corner_h out of TMA im2col range [-128, 127]"
+    assert (
+        upper_corner_w >= -corner_limit and upper_corner_w < corner_limit
+    ), "upper_corner_w out of TMA im2col range [-128, 127]"
 
     # Filter offsets range from 0 to (filter_size - 1), multiplied by dilation
     # For now we assume dilation=1
-    debug_assert(
-        problem.filter_h - 1 <= offset_limit,
-        "filter_h offset exceeds TMA im2col limit [0, 255]",
-    )
-    debug_assert(
-        problem.filter_w - 1 <= offset_limit,
-        "filter_w offset exceeds TMA im2col limit [0, 255]",
-    )
+    assert (
+        problem.filter_h - 1 <= offset_limit
+    ), "filter_h offset exceeds TMA im2col limit [0, 255]"
+    assert (
+        problem.filter_w - 1 <= offset_limit
+    ), "filter_w offset exceeds TMA im2col limit [0, 255]"
 
     # Create activation LayoutTensor view (4D NHWC)
     comptime act_4d_layout = LegacyLayout.row_major(1, 1, 1, 1)  # Dynamic
@@ -270,8 +264,8 @@ fn conv2d_fprop[
     )
 
     filter_tma_op = create_tma_tile[
-        KernelType.FilterTmaTile.tile_layout,
-        KernelType.FilterTmaTile.desc_layout,
+        KernelType.FilterTileLayout,
+        KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode=config.b_swizzle,
     ](ctx, filter_tensor)
@@ -292,8 +286,8 @@ fn conv2d_fprop[
     ) else c_tma_tile_shape_mma128
 
     out_tma_op = create_tma_tile[
-        KernelType.OutTmaTile.tile_layout,
-        KernelType.OutTmaTile.desc_layout,
+        KernelType.OutTileLayout,
+        KernelType.OutDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, out_tensor)
@@ -520,8 +514,8 @@ fn conv2d_fprop_with_residual[
         ),
     )
     filter_tma_op = create_tma_tile[
-        KernelType.FilterTmaTile.tile_layout,
-        KernelType.FilterTmaTile.desc_layout,
+        KernelType.FilterTileLayout,
+        KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode=config.b_swizzle,
     ](ctx, filter_tensor)
@@ -541,8 +535,8 @@ fn conv2d_fprop_with_residual[
     ) else c_tma_tile_shape_mma128
 
     out_tma_op = create_tma_tile[
-        KernelType.OutTmaTile.tile_layout,
-        KernelType.OutTmaTile.desc_layout,
+        KernelType.OutTileLayout,
+        KernelType.OutDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, out_tensor)
@@ -556,8 +550,8 @@ fn conv2d_fprop_with_residual[
         ),
     )
     src_tma_op = create_tma_tile[
-        KernelType.SrcTmaTile.tile_layout,
-        KernelType.SrcTmaTile.desc_layout,
+        KernelType.SrcTileLayout,
+        KernelType.SrcDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, src_tensor)

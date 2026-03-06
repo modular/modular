@@ -678,13 +678,10 @@ struct TMAStoreExecutor[
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
-                # Non-transpose: wrap as SMemTile for _store_non_transpose
-                from std.memory import LegacyUnsafePointer
-
-                comptime SMemPtrType = LegacyUnsafePointer[
+                comptime SMemPtrType = UnsafePointer[
                     Scalar[Self.c_type],
+                    MutAnyOrigin,
                     address_space=AddressSpace.SHARED,
-                    origin=MutAnyOrigin,
                 ]
                 var c_lt = SMemTile[
                     Self.c_type, Self.c_smem_layout, alignment=128
@@ -713,9 +710,6 @@ struct TMAStoreExecutor[
         """Transpose TMA store using reshape."""
         from layout import Coord, Idx
 
-        # Convert to LayoutTensor at TMA async_store boundary
-        from std.memory import LegacyUnsafePointer
-
         comptime if Self.cta_group == 2 and Self.MMA_M == 128:
             # Path A: reshape to (2*stageN, sc_size//2), tile by warp
             comptime reshaped = row_major[
@@ -730,10 +724,10 @@ struct TMAStoreExecutor[
             comptime split_layout = Layout.row_major(
                 Self.stageN, Self.stage_contiguous_size // 2
             )
-            comptime SMemPtrType = LegacyUnsafePointer[
+            comptime SMemPtrType = UnsafePointer[
                 Scalar[Self.c_type],
+                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
-                origin=MutAnyOrigin,
             ]
             var c_split_lt = SMemTile[Self.c_type, split_layout, alignment=128](
                 rebind[SMemPtrType](c_split.ptr.mut_cast[True]())
@@ -771,10 +765,10 @@ struct TMAStoreExecutor[
                 comptime warp_layout = Layout.row_major(
                     Self.stageN, Self.swizzle_width
                 )
-                comptime SMemPtrType = LegacyUnsafePointer[
+                comptime SMemPtrType = UnsafePointer[
                     Scalar[Self.c_type],
+                    MutAnyOrigin,
                     address_space=AddressSpace.SHARED,
-                    origin=MutAnyOrigin,
                 ]
                 var c_warp_lt = SMemTile[
                     Self.c_type, warp_layout, alignment=128

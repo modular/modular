@@ -789,13 +789,9 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[Self.dtype, Self.size]()
 
         # TODO: Make this a compile-time check when possible.
-        debug_assert(
-            Self.size == len(elems),
-            (
-                "mismatch in the number of elements in the SIMD variadic"
-                " constructor"
-            ),
-        )
+        assert Self.size == len(
+            elems
+        ), "mismatch in the number of elements in the SIMD variadic constructor"
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
@@ -3343,7 +3339,7 @@ fn _powi(base: Scalar, exp: Int32) -> type_of(base):
     if base.dtype.is_integral() and exp < 0:
         # Not defined for Integers, this should raise an
         # exception.
-        debug_assert(False, "exponent < 0 is undefined for integers")
+        assert False, "exponent < 0 is undefined for integers"
         return 0
 
     var a = base

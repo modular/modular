@@ -553,10 +553,7 @@ struct Span[
         Args:
             other: The `Span` to copy all elements from.
         """
-        debug_assert(
-            len(self) == len(other),
-            "Spans must be of equal length",
-        )
+        assert len(self) == len(other), "Spans must be of equal length"
         # For trivial types, uninit_copy_n is a single memcpy (no destroy
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
@@ -887,10 +884,7 @@ struct Span[
             "offset out of bounds: ",
             offset,
         )
-        debug_assert(
-            0 <= offset + length <= len(self),
-            "subspan out of bounds.",
-        )
+        assert 0 <= offset + length <= len(self), "subspan out of bounds."
         return Self(ptr=self._data + offset, length=length)
 
     fn _binary_search_index[

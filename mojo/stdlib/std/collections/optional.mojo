@@ -42,9 +42,8 @@ from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 
 
-# TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(ImplicitlyCopyable):
+struct _NoneType(TrivialRegisterPassable):
     pass
 
 
@@ -144,9 +143,6 @@ struct Optional[T: Movable](
     comptime Element = Self.T
     """The element type of this optional."""
 
-    # Fields
-    # _NoneType comes first so its index is 0.
-    # This means that Optionals that are 0-initialized will be None.
     comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
 
@@ -551,7 +547,7 @@ struct Optional[T: Movable](
         print(y)
         ```
         """
-        debug_assert(self.__bool__(), "`.value()` on empty `Optional`")
+        assert self.__bool__(), "`.value()` on empty `Optional`"
         return self._value.unsafe_get[Self.T]()
 
     fn take(mut self) -> Self.T:
@@ -625,7 +621,7 @@ struct Optional[T: Movable](
         print(y)                    # Does not reach this line
         ```
         """
-        debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
+        assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
     fn or_else[
@@ -656,7 +652,7 @@ struct Optional[T: Movable](
         ```
         """
         if self:
-            return self.unsafe_take()
+            return self._value^.unsafe_take[_T]()
         return default^
 
     fn copied[

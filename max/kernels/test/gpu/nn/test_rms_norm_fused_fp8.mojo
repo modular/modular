@@ -27,7 +27,7 @@ from layout import (
     row_major,
 )
 from layout.int_tuple import fill_like
-from std.memory import LegacyUnsafePointer, bitcast
+from std.memory import bitcast
 from std.runtime.asyncrt import DeviceContextPtr
 from std.utils.index import Index, IndexList
 from std.math import rsqrt
@@ -35,12 +35,10 @@ from std.utils.numerics import max_finite, min_finite
 
 from nn.normalization import rms_norm_fused_fp8
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 fn initialize_test_data[
     dtype: DType
-](data: UnsafePointer[Scalar[dtype]], size: Int):
+](data: UnsafePointer[mut=True, Scalar[dtype], _], size: Int):
     """Initialize test data with diverse positive values to avoid FP8 saturation.
 
     Creates a mix of small, medium, and large magnitudes (0.05 to 3.0) that will
@@ -72,10 +70,10 @@ fn compute_reference_dynamic_scaling[
     out_dtype: DType,
     scales_dtype: DType,
 ](
-    input_data: UnsafePointer[Scalar[in_dtype]],
-    gamma_data: UnsafePointer[Scalar[in_dtype]],
-    output_data: UnsafePointer[Scalar[out_dtype]],
-    scales_data: UnsafePointer[Scalar[scales_dtype]],
+    input_data: UnsafePointer[Scalar[in_dtype], _],
+    gamma_data: UnsafePointer[Scalar[in_dtype], _],
+    output_data: UnsafePointer[mut=True, Scalar[out_dtype], _],
+    scales_data: UnsafePointer[mut=True, Scalar[scales_dtype], _],
     rows: Int,
     cols: Int,
     epsilon: Float32,
@@ -87,7 +85,7 @@ fn compute_reference_dynamic_scaling[
     var fp8_min = Float32(min_finite[out_dtype]())
 
     # Allocate temporary storage for normalized values
-    var temp_storage = UnsafePointer[Scalar[DType.float32]].alloc(cols)
+    var temp_storage = alloc[Scalar[DType.float32]](cols)
 
     for row in range(rows):
         # Step 1: Compute mean square for RMSNorm
@@ -155,12 +153,12 @@ fn test_dynamic[
     var rows = input_size // cols
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[in_dtype]].alloc(input_size)
-    var out_host = UnsafePointer[Scalar[out_dtype]].alloc(input_size)
-    var gamma_host = UnsafePointer[Scalar[in_dtype]].alloc(cols)
-    var scales_host = UnsafePointer[Scalar[scales_dtype]].alloc(rows)
-    var expected_host = UnsafePointer[Scalar[out_dtype]].alloc(input_size)
-    var expected_scales_host = UnsafePointer[Scalar[scales_dtype]].alloc(rows)
+    var in_host = alloc[Scalar[in_dtype]](input_size)
+    var out_host = alloc[Scalar[out_dtype]](input_size)
+    var gamma_host = alloc[Scalar[in_dtype]](cols)
+    var scales_host = alloc[Scalar[scales_dtype]](rows)
+    var expected_host = alloc[Scalar[out_dtype]](input_size)
+    var expected_scales_host = alloc[Scalar[scales_dtype]](rows)
 
     # Initialize with diverse values to avoid FP8 saturation
     initialize_test_data(in_host, input_size)

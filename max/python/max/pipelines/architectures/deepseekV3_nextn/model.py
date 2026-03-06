@@ -117,8 +117,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         cache_dtype: DType,
     ) -> KVCacheParams:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and is_float4_encoding(encoding):
-            cache_dtype = DType.bfloat16
         return DeepseekV3NextNConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

@@ -75,10 +75,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
-    "test_overlap_matmul_allreduce.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
     "test_batched_matmul.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -192,7 +188,6 @@ _GPU_MEMORY = {
     "test_matmul_sm100_bf16.mojo": "3",
     "test_matmul_sm100_fp8.mojo": "3",
     "test_matmul_sm100_epilogue.mojo": "3",
-    "test_overlap_matmul_allreduce.mojo": "1.5",
     "test_matmul_sm100_batched_block_scaled_mxfp8_1sm.mojo": "3",
     "test_matmul_sm100_batched_block_scaled_mxfp8_2sm.mojo": "3",
     "test_matmul_sm100_batched_block_scaled_nvfp4_1sm.mojo": "3",

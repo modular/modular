@@ -171,12 +171,9 @@ def execute_matmul_kv_cache_ragged[
         dtype, kv_params
     ]
 
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        (
-            "mismatch between cache_sizes and prompt_lens, both should be"
-            " batch_size in length"
-        ),
+    assert len(prompt_lens) == len(cache_sizes), (
+        "mismatch between cache_sizes and prompt_lens, both should be"
+        " batch_size in length"
     )
 
     batch_size = len(prompt_lens)
@@ -454,10 +451,9 @@ def execute_matmul_k_cache_ragged[
         dtype, kv_params, page_size
     ]
     var batch_size = len(prompt_lens)
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        "expected prompt_lens and cache_sizes size to be equal",
-    )
+    assert len(prompt_lens) == len(
+        cache_sizes
+    ), "expected prompt_lens and cache_sizes size to be equal"
 
     # Define layouts
     comptime layout_1d = Layout(UNKNOWN_VALUE)
@@ -794,12 +790,9 @@ def generic_execute_fused_qkv_cache_ragged[
     comptime weight_layout = Layout.row_major(fused_hidden_size, hidden_size)
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
 
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        (
-            "mismatch between cache_sizes and prompt_lens, both should be"
-            " batch_size in length"
-        ),
+    assert len(prompt_lens) == len(cache_sizes), (
+        "mismatch between cache_sizes and prompt_lens, both should be"
+        " batch_size in length"
     )
 
     batch_size = len(prompt_lens)
@@ -947,10 +940,9 @@ def execute_paged_fused_qkv_matmul[
     comptime kv_block_layout = Layout.row_major[6]()
 
     var batch_size = len(prompt_lens)
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        "expected prompt_lens and cache_sizes size to be equal",
-    )
+    assert len(prompt_lens) == len(
+        cache_sizes
+    ), "expected prompt_lens and cache_sizes size to be equal"
 
     var cache_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
         batch_size
@@ -1063,12 +1055,9 @@ def execute_cont_batch_fused_qkv_matmul[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
 
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        (
-            "mismatch between cache_sizes and prompt_lens, both should be"
-            " batch_size in length"
-        ),
+    assert len(prompt_lens) == len(cache_sizes), (
+        "mismatch between cache_sizes and prompt_lens, both should be"
+        " batch_size in length"
     )
 
     # Initialize our KVCache

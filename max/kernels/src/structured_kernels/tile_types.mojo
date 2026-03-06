@@ -455,50 +455,6 @@ Same as TmaOpType but for im2col TMA (used by conv2d activation loads).
 """
 
 
-# ============================================================================
-# TMATile -- New Layout wrapper around TMATensorTile
-# ============================================================================
-
-
-struct TMATile[
-    dtype: DType,
-    tile_layout: TensorLayout,
-    desc_layout: TensorLayout,
-]:
-    """TMA tile descriptor parameterized on new Layout types.
-
-    Thin wrapper around TMATensorTile that preserves new Layout type
-    parameters. The underlying TMATensorTile uses rank and IndexList
-    shapes (via _to_index_list), but callers work exclusively with new
-    Layout types.
-
-    The kernel `run()` accepts `Self.InnerType` (TMATensorTile) for
-    DevicePassable compatibility. Host code uses TMATile for type-safe
-    construction, then passes `.inner` through enqueue_function.
-
-    Parameters:
-        dtype: Element data type.
-        tile_layout: Tile shape as a new Layout (TensorLayout).
-        desc_layout: TMA descriptor layout as a new Layout.
-    """
-
-    # The underlying legacy TMATensorTile type
-    comptime InnerType = TmaOpType[
-        Self.dtype, Self.tile_layout, Self.desc_layout
-    ]
-
-    var inner: Self.InnerType
-
-    @always_inline
-    fn __init__(out self, inner: Self.InnerType):
-        """Wrap an existing TMATensorTile.
-
-        Args:
-            inner: The underlying legacy TMATensorTile descriptor.
-        """
-        self.inner = inner
-
-
 def create_tma_tile[
     tma_tile_layout: TensorLayout,
     tma_desc_layout: TensorLayout,

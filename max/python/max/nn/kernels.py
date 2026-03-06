@@ -1472,6 +1472,55 @@ def rope_ragged_with_position_ids(
     interleaved: bool = True,
 ) -> TensorValue:
     """Apply RoPE using explicit position_ids (no KV cache coupling)."""
+    if position_ids.dtype != DType.uint32:
+        raise ValueError(
+            f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+        )
+    if position_ids.rank == 1:
+        position_ids = ops.unsqueeze(position_ids, 0)
+    if position_ids.rank != 2:
+        raise ValueError(
+            f"expected position_ids to be 1D or 2D, got rank {position_ids.rank}"
+        )
+
+    # Fast path: invoke kernel directly when mrope_section is not used.
+    if mrope_section is None:
+        total_tokens = input.shape[0]
+        row_offsets = ops.range(
+            0,
+            total_tokens + 1,
+            total_tokens,
+            out_dim=2,
+            dtype=DType.uint32,
+            device=input.device,
+        )
+        start_pos = ops.range(
+            0,
+            1,
+            1,
+            out_dim=1,
+            dtype=DType.uint32,
+            device=input.device,
+        )
+        return ops.custom(
+            "mo.rope.ragged.with_position_id",
+            device=input.device,
+            values=[
+                input,
+                row_offsets,
+                start_pos,
+                freqs_cis,
+                position_ids,
+            ],
+            out_types=[
+                TensorType(
+                    dtype=input.dtype, shape=input.shape, device=input.device
+                )
+            ],
+            parameters={"interleaved": interleaved},
+        )[0].tensor
+
+    # Fallback path for mRoPE sections, keep existing graph implementation.
     per_token_freqs = _freqs_cis_from_position_ids(
         freqs_cis,
         position_ids,
@@ -1664,11 +1713,7 @@ def mla_fp8_index_top_k(
             q,
             q_s,
             input_row_offsets,
-            k_collection.blocks,
-            k_collection.cache_lengths,
-            k_collection.lookup_table,
-            k_collection.max_lengths,
-            k_collection.kv_scales,
+            *k_collection,
             layer_idx,
         ],
         out_types=[
@@ -1855,10 +1900,7 @@ def flash_attention_ragged(
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        kv_collection.kv_blocks,
-        kv_collection.cache_lengths,
-        kv_collection.lookup_table,
-        kv_collection.max_lengths,
+        *kv_collection,
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2202,10 +2244,7 @@ def flare_mla_prefill_plan(
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            kv_collection.kv_blocks,
-            kv_collection.cache_lengths,
-            kv_collection.lookup_table,
-            kv_collection.max_lengths,
+            *kv_collection,
             layer_idx,
             buffer_size_tensor,
         ],
@@ -2245,11 +2284,6 @@ def _validate_mla_prefill_decode_graph_inputs(
     if q.rank != input_rank_expected:
         raise ValueError(
             f"expected {tensor_name} of rank {input_rank_expected} but got {q.rank}"
-        )
-
-    if expected_dtype is not None and q.dtype != expected_dtype:
-        raise ValueError(
-            f"expected {tensor_name} to be dtype: {expected_dtype}, got {q.dtype}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -2667,8 +2701,6 @@ def mla_prefill_decode_graph(
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
-    elif kv_collection.kv_scales is not None:
-        op_name += ".quantized"
 
     if scalar_args is not None:
         op_name += ".capturable"

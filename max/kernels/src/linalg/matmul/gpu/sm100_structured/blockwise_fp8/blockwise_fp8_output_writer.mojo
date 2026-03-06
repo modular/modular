@@ -24,7 +24,7 @@ Supports two write modes:
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx
+from std.gpu import WARP_SIZE, lane_id, thread_idx_int as thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
@@ -447,7 +447,7 @@ struct BlockwiseFP8TileWriter[
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
                     element_type=DType.uint32,
-                ](Int(thread_idx.x), j)
+                ](thread_idx.x, j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
                     zipped.shape,

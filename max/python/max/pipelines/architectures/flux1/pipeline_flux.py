@@ -355,7 +355,16 @@ class FluxPipeline(DiffusionPipeline):
         return self._to_numpy(self.vae.decode(latents))
 
     def _to_numpy(self, image: Tensor) -> np.ndarray:
-        cpu_image: Tensor = image.cast(DType.float32).to(CPU())
+        # Perform all post-processing on GPU before transfer:
+        #   cast, denormalize [-1,1]->[0,1], clip, NCHW->NHWC, scale, uint8.
+        # This shrinks the PCIe transfer 4x (float32 -> uint8).
+        image = image.cast(DType.float32)
+        image = image * 0.5 + 0.5
+        image = image.clip(min=0.0, max=1.0)
+        image = F.permute(image, (0, 2, 3, 1))  # NCHW -> NHWC
+        image = image * 255.0
+        image = image.cast(DType.uint8)
+        cpu_image: Tensor = image.to(CPU())
         return np.from_dlpack(cpu_image)
 
     def execute(  # type: ignore[override]

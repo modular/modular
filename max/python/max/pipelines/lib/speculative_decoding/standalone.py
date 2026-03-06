@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, final
+from typing import final
 
 import numpy as np
 from max.driver import Buffer
@@ -25,11 +25,8 @@ from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
-from ..sampling import apply_logits_processors
+from ..sampling import SamplerInputs, apply_logits_processors
 from .base import SpeculativeDecodingPipelineBase
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger("max.pipelines")
 
@@ -118,9 +115,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> tuple[int, Buffer, Buffer, ModelInputs, Buffer | None]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
-        top_k, max_k, temperature, top_p, min_top_p, seed = (
-            self._create_sampling_parameters(batch, self.draft_devices[0])
-        )
+        sampler_inputs = SamplerInputs.create(batch, self.draft_devices[0])
 
         # Generate tensor for generated tokens.
         generated_tokens = Buffer.zeros(
@@ -161,12 +156,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     model_outputs,
                     generated_tokens,
                     generated_logits,
-                    top_k,
-                    max_k,
-                    temperature,
-                    top_p,
-                    min_top_p,
-                    seed,
+                    sampler_inputs,
                 )
             )
             generated_tokens = new_generated_tokens

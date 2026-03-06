@@ -89,7 +89,7 @@ fn load_config(key: String) raises ConfigError -> String:
 # =============================================================================
 
 
-def demonstrate_assert_raises():
+def demonstrate_assert_raises() raises:
     """Shows assert_raises works with typed errors."""
     print("=== Pattern 1: assert_raises ===")
 

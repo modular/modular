@@ -13,11 +13,17 @@
 """Neural network modules for MAX.
 
 Graph-based API:
-    >>> from max.nn import Linear, AttentionWithRope
-    >>> from max.nn.kv_cache import KVCacheParams
+
+.. code-block:: python
+
+    from max.nn import Linear, AttentionWithRope
+    from max.nn.kv_cache import KVCacheParams
 
 Eager tensor API:
-    >>> from max.experimental.nn import Module, Linear, Embedding
+
+.. code-block:: python
+
+    from max.experimental.nn import Module, Linear, Embedding
 """
 
 from .attention import (

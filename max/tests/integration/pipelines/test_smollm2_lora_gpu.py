@@ -31,7 +31,8 @@ from test_common.lora_utils import (
 
 
 def generate_tokens_from_contexts(
-    pipeline: TextGenerationPipeline, contexts: dict[RequestID, TextContext]
+    pipeline: TextGenerationPipeline,  # type: ignore[type-arg]
+    contexts: dict[RequestID, TextContext],
 ) -> dict[RequestID, list[int]]:
     """Generate tokens from multiple contexts using the same pipeline.
 

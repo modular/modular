@@ -19,7 +19,7 @@ from std.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
     grid_dim,
 )
 from std.gpu import warp_id
@@ -29,9 +29,6 @@ from std.gpu.memory import AddressSpace
 from std.gpu.compute.mma import mma
 from std.sys import llvm_intrinsic
 from std.gpu.sync import barrier, schedule_barrier, s_waitcnt
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.memory.unsafe import bitcast
 
 from std.utils import Index, IndexList, StaticTuple
@@ -291,7 +288,11 @@ fn _load_from_lds[
     //,
     width: Int = 1,
 ](
-    shared_ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED],
+    shared_ptr: UnsafePointer[
+        Scalar[dtype],
+        _,
+        address_space=AddressSpace.SHARED,
+    ],
 ) -> SIMD[dtype, width]:
     """Load a SIMD vector from LDS with LLVM alias scopes.
 
@@ -983,7 +984,9 @@ struct TileBuffers[
 
     # LDS pointer type aliases
     comptime smem_ptr = UnsafePointer[
-        Scalar[Self.in_type], address_space=AddressSpace.SHARED
+        Scalar[Self.in_type],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     # =========================================================================
@@ -1431,7 +1434,7 @@ struct AMDPingPongMatmul[
         # See module header and TileBuffers struct for detailed swizzle documentation.
 
         # Thread and warp identification
-        var thread_id = Int(thread_idx.x)
+        var thread_id = thread_idx.x
         var lane_id = Int(lane_id())
         var warp_id = readfirstlane(Int(warp_id()))
 

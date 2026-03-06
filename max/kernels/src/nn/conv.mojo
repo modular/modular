@@ -2530,10 +2530,9 @@ fn pack_filter_shape_impl[
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
     comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     var output_shape = IndexList[6]()
@@ -2573,10 +2572,9 @@ fn pack_conv_filter_shape[
     # Filter is in RSCF layout. The last dim is F no matter it's 1d, 2d, or 3d.
     var F = filter.dim[filter.rank - 1]()
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     # FRSCf layout.
@@ -2613,10 +2611,9 @@ fn pack_filter_shape[
 
     var F = filter.dim[filter.rank - 1]()  # RSCF layout
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     comptime conv_attr = ConvInfoStatic[filter.rank - 2](

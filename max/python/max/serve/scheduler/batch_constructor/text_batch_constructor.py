@@ -613,8 +613,17 @@ class TextBatchConstructor:
             if not lora_still_needed:
                 replica.active_loras.discard(lora_name)
 
-        # Release from paged cache (scheduler manages primary KV cache lifecycle)
-        if self.kv_cache is not None:
+        # Release from paged cache (scheduler manages primary KV cache lifecycle).
+        # Guard with contains() because _return_to_request_queue() may have
+        # already released the KV cache (e.g. during preemption) while leaving
+        # the request in _request_id_to_replica_idx so it remains visible to
+        # contains(). Without this check a subsequent release_request() call
+        # (e.g. from a delayed overlap-scheduler response) would attempt a
+        # second release and raise "Attempted to release request ID but it is
+        # not claimed".
+        if self.kv_cache is not None and self.kv_cache.contains(
+            request_id, replica_idx=replica_idx
+        ):
             self.kv_cache.release(request_id, replica_idx=replica_idx)
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)

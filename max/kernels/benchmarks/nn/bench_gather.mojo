@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.random import rand, randint
 
 from std.benchmark import *
@@ -42,13 +39,11 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
     var input_shape = Index(spec.m1, spec.m2)
     var indices_shape = Index(spec.n1, spec.n2)
 
-    var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
+    var data_ptr = alloc[Float32](input_shape.flattened_length())
     rand(data_ptr, input_shape.flattened_length())
     var data_tensor = TileTensor(data_ptr, row_major(Coord(input_shape)))
 
-    var indices_ptr = UnsafePointer[Int32].alloc(
-        indices_shape.flattened_length()
-    )
+    var indices_ptr = alloc[Int32](indices_shape.flattened_length())
     randint(
         indices_ptr,
         indices_shape.flattened_length(),
@@ -59,9 +54,7 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
         indices_ptr, row_major(Coord(indices_shape))
     )
 
-    var output_ptr = UnsafePointer[Float32].alloc(
-        indices_shape.flattened_length()
-    )
+    var output_ptr = alloc[Float32](indices_shape.flattened_length())
     var output_tensor = TileTensor(output_ptr, row_major(Coord(indices_shape)))
 
     @always_inline

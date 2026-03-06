@@ -296,7 +296,7 @@ struct IntentionalGpuCrash:
         output: OutputTensor[rank=1, ...],
         x: InputTensor[dtype=output.dtype, rank=1, ...],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         comptime assert target == "gpu"
         gpu_ctx = ctx.get_device_context()
 

@@ -46,6 +46,7 @@ from std.builtin.variadics import (
     VariadicPack,
     _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
+    _ReduceVariadicAndIdxToValue,
 )
 
 from .coord import (
@@ -99,6 +100,13 @@ trait TensorLayout(TrivialRegisterPassable):
     Parameters:
         i: The dimension index.
     """
+
+    comptime static_product: Int
+    """The compile-time product of all shape dimensions."""
+
+    comptime static_cosize: Int
+    """The compile-time size of the memory region spanned by the layout."""
+
     comptime _shape_types: Variadic.TypesOfTrait[CoordLike]
     comptime _stride_types: Variadic.TypesOfTrait[CoordLike]
 
@@ -281,6 +289,11 @@ struct Layout[
 
     comptime static_product = Coord[*Self.shape_types].static_product
     """The compile-time product of all shape dimensions."""
+
+    comptime static_cosize = _StaticCosize[
+        Self._flat_shape_types, Self._flat_stride_types
+    ]
+    """The compile-time size of the memory region spanned by the layout."""
 
     fn __init__(
         out self,
@@ -503,6 +516,28 @@ struct Layout[
             A Coord containing all stride dimensions.
         """
         return self._stride
+
+
+comptime _StaticCosizeReducer[
+    Strides: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.ValuesOfType[Int],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.values[
+    (From[idx].static_value - 1) * Strides[idx].static_value + Prev[0]
+]
+
+
+comptime _StaticCosize[
+    Shapes: Variadic.TypesOfTrait[CoordLike],
+    Strides: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToValue[
+    BaseVal=Variadic.values[1],
+    VariadicType=Shapes,
+    Reducer=_StaticCosizeReducer[Strides=Strides, ...],
+][
+    0
+]
 
 
 comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[

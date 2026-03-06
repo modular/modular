@@ -132,9 +132,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         if len(values) == 1:
             return Self(fill=values[0])
 
-        debug_assert(
-            Self.size == len(values), "mismatch in the number of elements"
-        )
+        assert Self.size == len(values), "mismatch in the number of elements"
 
         self = Self()
 
@@ -155,9 +153,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         if len(values) == 1:
             return Self(fill=values[0])
 
-        debug_assert(
-            Self.size == len(values), "mismatch in the number of elements"
-        )
+        assert Self.size == len(values), "mismatch in the number of elements"
 
         self = Self()
 
@@ -203,7 +199,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Returns:
             The value at the specified position.
         """
-        debug_assert(Self.size > index(idx), "index must be within bounds")
+        assert Self.size > index(idx), "index must be within bounds"
         return self._unsafe_ref(index(idx))
 
     @always_inline("nodebug")
@@ -217,7 +213,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
             idx: The index into the tuple.
             val: The value to store.
         """
-        debug_assert(Self.size > index(idx), "index must be within bounds")
+        assert Self.size > index(idx), "index must be within bounds"
         self._unsafe_ref(index(idx)) = val
 
     @always_inline("nodebug")

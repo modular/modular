@@ -66,18 +66,18 @@ def are_all_tensors_sequence(
 
 
 def are_all_buffer_values_sequence(
-    it: Sequence[Value],
+    it: Sequence[Value],  # type: ignore[type-arg]
 ) -> TypeGuard[Sequence[BufferValue]]:
     return all(isinstance(value, BufferValue) for value in it)
 
 
 def are_all_tensor_values_iterable(
-    it: Iterable[Value],
+    it: Iterable[Value],  # type: ignore[type-arg]
 ) -> TypeGuard[Iterable[TensorValue]]:
     return all(isinstance(value, TensorValue) for value in it)
 
 
 def are_all_tensor_values_sequence(
-    it: Sequence[Value],
+    it: Sequence[Value],  # type: ignore[type-arg]
 ) -> TypeGuard[Sequence[TensorValue]]:
     return all(isinstance(value, TensorValue) for value in it)

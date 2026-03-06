@@ -776,7 +776,7 @@ struct List[T: Copyable](
         print(list) # ['one', 'two', 'three']
         ```
         """
-        debug_assert(i <= len(self), "insert index out of range")
+        assert i <= len(self), "insert index out of range"
 
         var normalized_idx = i
         if i < 0:
@@ -930,7 +930,7 @@ struct List[T: Copyable](
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        debug_assert(count <= value.size, "count must be <= value.size")
+        assert count <= value.size, "count must be <= value.size"
         self.reserve(self._len + count)
         self._annotate_increase(count)
         var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
@@ -961,7 +961,7 @@ struct List[T: Copyable](
             normalize_index["List", assert_always=False](i, UInt(len(self)))
         )
 
-        debug_assert(normalized_idx < self._len, "pop index out of range")
+        assert normalized_idx < self._len, "pop index out of range"
 
         var ret_val = (self._data + normalized_idx).take_pointee()
         uninit_move_n[overlapping=True](
@@ -1020,7 +1020,7 @@ struct List[T: Copyable](
             self._unchecked_grow(new_size, value)
 
     fn _unchecked_grow(mut self, new_size: Int, value: Self.T):
-        debug_assert(new_size >= self._len)
+        assert new_size >= self._len
 
         self.reserve(new_size)
         self._annotate_increase(new_size - self._len)
@@ -1310,12 +1310,9 @@ struct List[T: Copyable](
             Never use `my_list.unsafe_get(-1)` to get the last element of the
             list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
-        debug_assert(
-            0 <= idx < len(self),
-            (
-                "The index provided must be within the range [0, len(List) -1]"
-                " when using List.unsafe_get()"
-            ),
+        assert 0 <= idx < len(self), (
+            "The index provided must be within the range [0, len(List) -1]"
+            " when using List.unsafe_get()"
         )
         return (self._data + idx)[]
 
@@ -1342,12 +1339,9 @@ struct List[T: Copyable](
             Never use `my_list.unsafe_set(-1, value)` to set the last element of
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
-        debug_assert(
-            0 <= idx < len(self),
-            (
-                "The index provided must be within the range [0, len(List) -1]"
-                " when using List.unsafe_set()"
-            ),
+        assert 0 <= idx < len(self), (
+            "The index provided must be within the range [0, len(List) -1]"
+            " when using List.unsafe_set()"
         )
         (self._data + idx).destroy_pointee()
         (self._data + idx).init_pointee_move(value^)
@@ -1399,12 +1393,9 @@ struct List[T: Copyable](
             This is useful because `swap(my_list[i], my_list[j])` cannot be
             supported by Mojo, because a mutable alias may be formed.
         """
-        debug_assert(
-            0 <= elt_idx_1 < len(self) and 0 <= elt_idx_2 < len(self),
-            (
-                "The indices provided to swap_elements must be within the range"
-                " [0, len(List)-1]"
-            ),
+        assert 0 <= elt_idx_1 < len(self) and 0 <= elt_idx_2 < len(self), (
+            "The indices provided to swap_elements must be within the range"
+            " [0, len(List)-1]"
         )
         var ptr = self._data
         (ptr + elt_idx_1).swap_pointees(ptr + elt_idx_2)
@@ -1449,12 +1440,9 @@ struct List[T: Copyable](
             after the last initialized element. This is equivalent to
             `list.unsafe_ptr() + len(list)`.
         """
-        debug_assert(
-            self.capacity > 0 and self.capacity > self._len,
-            (
-                "safety violation: Insufficient capacity to retrieve pointer to"
-                " next uninitialized element"
-            ),
+        assert self.capacity > 0 and self.capacity > self._len, (
+            "safety violation: Insufficient capacity to retrieve pointer to"
+            " next uninitialized element"
         )
 
         # self.unsafe_ptr() + self._len won't work because .unsafe_ptr()

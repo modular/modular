@@ -98,8 +98,8 @@ def test_multi_device_graph_capture_replay() -> None:
     )
 
 
-def test_multi_device_replay_rejects_mixed_keys() -> None:
-    """Replay rejects mixed per-stream keys on multi-GPU models."""
+def test_multi_device_replay_mixed_keys_routes_outputs_per_device() -> None:
+    """Mixed-key replay should route output bindings per replayed device key."""
     available_gpus = accelerator_count()
     if available_gpus < 2:
         pytest.skip("Test requires at least 2 GPUs")
@@ -116,7 +116,7 @@ def test_multi_device_replay_rejects_mixed_keys() -> None:
     )
 
     with Graph(
-        "multi_device_mixed_keys_all_hit",
+        "multi_device_mixed_keys_per_device_binding",
         input_types=[input_type0, input_type1],
     ) as graph:
         graph.output(graph.inputs[0].tensor + 1, graph.inputs[1].tensor + 2)
@@ -139,14 +139,26 @@ def test_multi_device_replay_rejects_mixed_keys() -> None:
         device1
     )
 
-    model.capture(keys_a, input0_a, input1_a)
-    model.capture(keys_b, input0_b, input1_b)
+    captured_a0, _captured_a1 = model.capture(keys_a, input0_a, input1_a)
+    _captured_b0, captured_b1 = model.capture(keys_b, input0_b, input1_b)
 
-    with pytest.raises(
-        RuntimeError,
-        match="mixed per-device graph keys are not supported",
-    ):
-        model.replay(mixed_keys, input0_a, input1_b)
+    input0_a.inplace_copy_from(
+        Buffer.from_numpy(np.arange(4, dtype=np.float32) + 5).to(device0)
+    )
+    input1_b.inplace_copy_from(
+        Buffer.from_numpy(np.arange(4, dtype=np.float32) + 5000).to(device1)
+    )
+
+    model.replay(mixed_keys, input0_a, input1_b)
+
+    np.testing.assert_allclose(
+        captured_a0.to_numpy(),
+        (np.arange(4, dtype=np.float32) + 5) + 1,
+    )
+    np.testing.assert_allclose(
+        captured_b1.to_numpy(),
+        (np.arange(4, dtype=np.float32) + 5000) + 2,
+    )
 
 
 def test_multi_device_graph_capture_with_updated_inputs() -> None:
