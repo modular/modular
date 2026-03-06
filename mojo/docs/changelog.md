@@ -303,6 +303,10 @@ what we publish.
 
 ### Library changes
 
+- `math.hypot()` now supports n-dimensional Euclidean distance computation,
+  matching Python's `math.hypot(*coordinates)`. New variadic and `Span`
+  overloads compute `sqrt(sum(x**2 for x in args))` with overflow-safe scaling.
+
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
