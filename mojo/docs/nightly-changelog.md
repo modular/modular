@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `Dict.unsafe_pop()` which returns `Optional[V]` instead of raising,
+  enabling non-raising key removal patterns.
+
 ## Tooling changes
 
 ## GPU programming
