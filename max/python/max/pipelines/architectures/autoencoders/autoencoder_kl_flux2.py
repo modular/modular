@@ -152,7 +152,13 @@ class PostprocessAndDecode(Module[..., Tensor]):
         decoded = F.permute(
             decoded, (0, 2, 3, 1)
         )  # (B, C, H, W) -> (B, H, W, C)
-        return F.transfer_to(decoded, DeviceRef.CPU())
+        # Denormalize [-1, 1] -> [0, 1], scale to [0, 255], cast to uint8.
+        # Doing this on GPU shrinks the PCIe transfer 4x (float32 -> uint8).
+        decoded = decoded * 0.5 + 0.5
+        decoded = F.max(decoded, 0.0)
+        decoded = F.min(decoded, 1.0)
+        decoded = decoded * 255.0
+        return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:
         return (

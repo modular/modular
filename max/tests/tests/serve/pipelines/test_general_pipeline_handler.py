@@ -60,7 +60,7 @@ def create_test_request() -> OpenResponsesRequest:
 def test_next_single_chunk() -> None:
     """Test next with a single chunk."""
     # Create test image data
-    pixel_data = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+    pixel_data = np.array([[1, 2, 3]], dtype=np.uint8)
 
     chunks = [
         GenerationOutput(
@@ -101,7 +101,7 @@ def test_next_multiple_chunks() -> None:
             final_status=GenerationStatus.ACTIVE,
             output=[
                 OutputImageContent.from_numpy(
-                    np.array([[1.0]], dtype=np.float32), format="png"
+                    np.array([[1]], dtype=np.uint8), format="png"
                 )
             ],
         ),
@@ -110,7 +110,7 @@ def test_next_multiple_chunks() -> None:
             final_status=GenerationStatus.ACTIVE,
             output=[
                 OutputImageContent.from_numpy(
-                    np.array([[2.0]], dtype=np.float32), format="png"
+                    np.array([[2]], dtype=np.uint8), format="png"
                 )
             ],
         ),
@@ -119,7 +119,7 @@ def test_next_multiple_chunks() -> None:
             final_status=GenerationStatus.END_OF_SEQUENCE,
             output=[
                 OutputImageContent.from_numpy(
-                    np.array([[3.0]], dtype=np.float32), format="png"
+                    np.array([[3]], dtype=np.uint8), format="png"
                 )
             ],
         ),
@@ -171,7 +171,7 @@ def test_next_streaming() -> None:
             final_status=GenerationStatus.ACTIVE,
             output=[
                 OutputImageContent.from_numpy(
-                    np.array([[1.0]], dtype=np.float32), format="png"
+                    np.array([[1]], dtype=np.uint8), format="png"
                 )
             ],
         ),
@@ -180,7 +180,7 @@ def test_next_streaming() -> None:
             final_status=GenerationStatus.END_OF_SEQUENCE,
             output=[
                 OutputImageContent.from_numpy(
-                    np.array([[2.0]], dtype=np.float32), format="png"
+                    np.array([[2]], dtype=np.uint8), format="png"
                 )
             ],
         ),

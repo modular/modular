@@ -43,8 +43,8 @@ class GenerationOutput(BaseModel):
         from max.interfaces.status import GenerationStatus
 
         # Convert numpy arrays to OutputImageContent using the factory method
-        img_array1 = np.random.rand(512, 512, 3).astype(np.float32)
-        img_array2 = np.random.rand(512, 512, 3).astype(np.float32)
+        img_array1 = (np.random.rand(512, 512, 3) * 255).astype(np.uint8)
+        img_array2 = (np.random.rand(512, 512, 3) * 255).astype(np.uint8)
 
         result = GenerationOutput(
             request_id=RequestID(value="req-123"),

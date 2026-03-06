@@ -354,7 +354,7 @@ class OutputImageContent(BaseModel):
     @classmethod
     def from_numpy(
         cls,
-        array: npt.NDArray[np.float32],
+        array: npt.NDArray[np.uint8],
         format: str = "png",
         detail: ImageDetail | None = None,
     ) -> OutputImageContent:
@@ -364,11 +364,9 @@ class OutputImageContent(BaseModel):
         suitable for the OpenResponses API.
 
         Args:
-            array: A numpy array containing image data with dtype float32.
-                   Expected shapes:
+            array: A uint8 numpy array with values in [0, 255]. Expected shapes:
                    - [H, W, C] for color images (C=3 for RGB, C=4 for RGBA)
                    - [H, W] for grayscale images
-                   Values should be in range [0, 1].
             format: The image format to use for encoding (e.g., 'png', 'jpeg', 'webp').
                     Defaults to 'png'.
             detail: Optional detail level for the generated image.
@@ -384,24 +382,20 @@ class OutputImageContent(BaseModel):
             >>> import numpy as np
             >>> from max.interfaces.request.open_responses import OutputImageContent
             >>> # Create a simple red image
-            >>> img_array = np.ones((100, 100, 3), dtype=np.float32)
-            >>> img_array[:, :, 1:] = 0  # Set green and blue to 0
+            >>> img_array = np.zeros((100, 100, 3), dtype=np.uint8)
+            >>> img_array[:, :, 0] = 255  # Set red channel to max
             >>> output = OutputImageContent.from_numpy(img_array, format="png")
         """
+        if array.dtype != np.uint8:
+            raise ValueError(
+                f"Expected uint8 array with values in [0, 255], got {array.dtype}."
+            )
+
         # Validate array shape
         if array.ndim not in (2, 3):
             raise ValueError(
                 f"Expected 2D or 3D array, got shape {array.shape}. "
                 "Valid shapes: [H, W] for grayscale or [H, W, C] for color."
-            )
-
-        # Convert to uint8 if needed
-        if array.dtype == np.float32:
-            # Assume values are in [0, 1] range
-            array = np.clip(array * 255, 0, 255).astype(np.uint8)
-        else:
-            raise ValueError(
-                f"Unsupported dtype {array.dtype}. Expected float32."
             )
 
         # Handle different array shapes
@@ -1440,7 +1434,7 @@ class ResponseResource(BaseModel):
             >>> import numpy as np
             >>>
             >>> # Create generation output
-            >>> img_array = np.random.rand(512, 512, 3).astype(np.float32)
+            >>> img_array = (np.random.rand(512, 512, 3) * 255).astype(np.uint8)
             >>> gen_output = GenerationOutput(
             ...     request_id=RequestID(value="req-123"),
             ...     final_status=GenerationStatus.END_OF_SEQUENCE,
