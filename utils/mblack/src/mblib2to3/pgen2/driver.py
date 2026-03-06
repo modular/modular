@@ -208,9 +208,10 @@ def _join_dot_continuation(prev: str, line: str) -> str | None:
     return None
 
 
-# Normalizers are applied in order; each receives the previous result line
-# (with any trailing comment already stripped) and the current raw line,
-# and returns a replacement for the previous line or None to skip.
+# Normalizers are applied in order; the *first* one that returns a
+# non-None replacement wins and the rest are skipped.  Each receives the
+# previous result line (with any trailing comment already stripped) and
+# the current raw line.
 _MOJO_LINE_NORMALIZERS = [
     _join_colon_next_line,
     _join_multiline_ternary,
@@ -256,6 +257,7 @@ def _try_merge_line(result: list[str], line: str) -> bool:
         if replacement is not None:
             prev_code = replacement
             merged = True
+            break
     if merged:
         result[-1] = prev_code + comment
     return merged
