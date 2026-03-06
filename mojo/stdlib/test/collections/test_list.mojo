@@ -916,11 +916,16 @@ struct NonEquatable(Copyable):
 
 def test_list_conditional_conformances() raises:
     assert_true(conforms_to(List[Int], Equatable))
-    # TODO(MSTDL-2077):
-    #   This should pass, but does not due to Unconditional Conformances
+    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
+    # `where` clause on conditional conformances — it sees that `List` has a
+    # conformance for `Equatable` and returns True without checking whether
+    # the condition holds for the concrete `T`. The type checker at call
+    # sites *does* enforce the condition correctly (e.g., passing
+    # `List[NonEquatable]` to `fn foo[T: Equatable](x: T)` is an error).
     # assert_false(conforms_to(List[NonEquatable], Equatable))
 
     assert_true(conforms_to(List[Int], Writable))
+    # assert_false(conforms_to(List[NonEquatable], Writable))
 
 
 def test_list_init_span() raises:
