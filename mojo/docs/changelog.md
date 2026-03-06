@@ -320,6 +320,11 @@ what we publish.
 
 ### Library changes
 
+- `StaticTuple` now supports comparison operators. `__eq__`/`__ne__` are
+  available when `element_type: Equatable`, and `__lt__`/`__le__`/`__gt__`/
+  `__ge__` are available when `element_type: Comparable`. All use
+  lexicographic ordering with compile-time unrolled loops.
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,
