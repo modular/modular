@@ -630,8 +630,29 @@ fn test_unpack(d: Int):
     test_unpack(*d)
 
 
+@fieldwise_init
 struct SomeStruct[a: Int, b: Int, c: Int]:
     pass
 
 # expected-error @+1 {{parameter after `...` must be passed by keyword}}
 comptime S = SomeStruct[..., 3]
+
+
+#expected-note @+1 {{'Foo' declared here}}
+struct Foo[a: Int, b: SomeStruct[a, 1, 1]]:
+    pass
+
+# expected-error @+1 {{failed to infer from type 'SomeStruct[1, 1, 1]', it overwrites an explicitly unbound parameter '_' at #0}}
+comptime foo = Foo[_, SomeStruct[1, 1, 1]()]
+
+
+fn depends_on_a[a: Int]() -> Int:
+    return a
+
+# expected-note @+1 {{'NestedDeps' declared here}}
+struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
+    pass
+
+# TODO: we could potentially support this.
+# expected-error @+1 {{'NestedDeps' failed to infer parameter 'b', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
+comptime _ = NestedDeps[_]
