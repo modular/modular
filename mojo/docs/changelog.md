@@ -21,6 +21,22 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports specifying default value for inferred parameter, it make it
+  easier to create a partially bound type like
+
+  ```mojo
+  struct Pointer[mut = False, // o: Origin[mut]] : pass
+
+  # Default to immutable pointer
+  comptime ImmPointer = Pointer[_]
+  # Explicitly set to mutable pointer
+  comptime mutPointer = Pointer[mut = True, _]
+  # Inferred mutability from `SomeOrigin()`
+  comptime InferredPointer = Pointer[SomeOrigin()]
+  # Parametric mutability pointer.
+  comptime ParametricPointer = Pointer[...]
+  ```
+
 - Mojo now supports a standalone `assert` statement, similar to Python's
   `assert`. It checks a condition at runtime and aborts the program if the
   condition is false:
