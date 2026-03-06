@@ -4001,10 +4001,10 @@ struct LinalgBandPart:
             target=target,
         ](
             input.shape(),
-            num_lower.to_layout_tensor().get_immutable(),
-            num_upper.to_layout_tensor().get_immutable(),
-            exclude.to_layout_tensor().get_immutable(),
-            output.to_layout_tensor(),
+            num_lower.to_tile_tensor[int_type](),
+            num_upper.to_tile_tensor[int_type](),
+            exclude.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[dtype](),
             ctx,
         )
 
