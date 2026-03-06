@@ -1455,21 +1455,17 @@ fn convert_bf16_to_fp8_e4m3fn(
         input_buffer.rank == output_buffer.rank
     ), "Input and output must have the same rank"
 
-    # Convert TileTensors to LayoutTensors for elementwise operation
-    var input_lt = input_buffer.to_layout_tensor()
-    var output_lt = output_buffer.to_layout_tensor()
-
     @always_inline
     @parameter
-    @__copy_capture(input_lt, output_lt)
+    @__copy_capture(input_buffer, output_buffer)
     fn convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    ](idx: IndexList[rank]):
         comptime assert rank == 2 or rank == 3, "rank should be 2 or 3"
 
-        var idx = rebind[IndexList[rank]](idx_arg)
-        output_lt.store(
-            idx, input_lt.load[width=width](idx).cast[DType.float8_e4m3fn]()
+        output_buffer.store_linear(
+            idx,
+            input_buffer.load_linear[width](idx).cast[DType.float8_e4m3fn](),
         )
 
     comptime target_simd_width = simd_width_of[
@@ -1479,15 +1475,21 @@ fn convert_bf16_to_fp8_e4m3fn(
     comptime if input_buffer.rank == 2:
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
-        ](Index(input_buffer.dim[0](), input_buffer.dim[1]()), context)
+        ](
+            IndexList[2](
+                Int(input_buffer.dim[0]()),
+                Int(input_buffer.dim[1]()),
+            ),
+            context,
+        )
     else:
         _elementwise_impl_gpu[
             func=convert_kernel, simd_width=UInt(target_simd_width)
         ](
-            Index(
-                input_buffer.dim[0](),
-                input_buffer.dim[1](),
-                input_buffer.dim[2](),
+            IndexList[3](
+                Int(input_buffer.dim[0]()),
+                Int(input_buffer.dim[1]()),
+                Int(input_buffer.dim[2]()),
             ),
             context,
         )
