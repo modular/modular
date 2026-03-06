@@ -75,15 +75,21 @@ class TextGenerationResponseFormat(TypedDict):
 
 
 class ContentPart(BaseModel):
+    """A single part of a multi-modal message content."""
+
     type: Literal["text", "image"]
 
 
 class MessageContentPart(BaseModel):
+    """A typed, immutable part of a message's content."""
+
     type: str = Field(..., description="Content type identifier")
     model_config = ConfigDict(frozen=True)
 
 
 class TextContentPart(MessageContentPart):
+    """A plain-text content part of a message."""
+
     type: Literal["text"] = Field(
         default="text", description="Content type identifier"
     )
@@ -91,6 +97,8 @@ class TextContentPart(MessageContentPart):
 
 
 class ImageContentPart(MessageContentPart):
+    """An image content part of a message."""
+
     type: Literal["image"] = Field(
         default="image", description="Content type identifier"
     )
@@ -102,6 +110,8 @@ MessageRole = Literal["system", "user", "assistant", "tool", "function"]
 
 
 class TextGenerationRequestMessage(BaseModel):
+    """A single message in a text generation request conversation."""
+
     role: MessageRole = Field(
         ..., description="Text role of the message sender"
     )
@@ -192,6 +202,8 @@ class TextGenerationRequestMessage(BaseModel):
 
 @dataclass(frozen=True)
 class TextGenerationRequest:
+    """An immutable request for text token generation from a pipeline."""
+
     request_id: RequestID = field()
     """A unique identifier for the request."""
 

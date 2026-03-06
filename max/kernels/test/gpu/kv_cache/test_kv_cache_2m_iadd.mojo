@@ -202,10 +202,9 @@ fn test_kv_cache_2m_iadd_gpu[
     ctx: DeviceContext,
 ) raises:
     comptime num_layers = 2
-    debug_assert(
-        num_active_loras <= batch_size,
-        "num_active_loras must be less than or equal to batch_size",
-    )
+    assert (
+        num_active_loras <= batch_size
+    ), "num_active_loras must be less than or equal to batch_size"
     var input_row_offsets = ManagedLayoutTensor[
         DType.uint32, Layout(UNKNOWN_VALUE)
     ](
@@ -415,10 +414,9 @@ fn test_kv_cache_2m_iadd_cpu[
     num_active_loras: Int,
 ) raises:
     comptime num_layers = 2
-    debug_assert(
-        num_active_loras <= batch_size,
-        "num_active_loras must be less than or equal to batch_size",
-    )
+    assert (
+        num_active_loras <= batch_size
+    ), "num_active_loras must be less than or equal to batch_size"
     var input_row_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
         batch_size + 1
     )

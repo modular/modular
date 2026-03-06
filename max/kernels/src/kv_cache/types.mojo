@@ -358,18 +358,13 @@ struct ContinuousBatchingKVCache[
     fn _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[4]:
-        debug_assert(
-            UInt(head_idx) < Self.kv_params.num_heads,
-            "KVCache head_idx out of range",
-        )
-        debug_assert(
-            UInt(head_dim_idx) < Self.kv_params.head_size,
-            "KVCache head_dim_idx is out of range",
-        )
-        debug_assert(
-            tok_idx < self.blocks.dim[1](),
-            "KVCache tok_idx out of range",
-        )
+        assert (
+            UInt(head_idx) < Self.kv_params.num_heads
+        ), "KVCache head_idx out of range"
+        assert (
+            UInt(head_dim_idx) < Self.kv_params.head_size
+        ), "KVCache head_dim_idx is out of range"
+        assert tok_idx < self.blocks.dim[1](), "KVCache tok_idx out of range"
         return Index(block_idx, tok_idx, head_idx, head_dim_idx)
 
     @staticmethod
@@ -392,14 +387,12 @@ struct ContinuousBatchingKVCache[
         comptime assert (
             not self.quantization_enabled
         ), "ContinuousBatchingKVCache does not support quantization"
-        debug_assert(
-            blocks.dim[2]() == Int(Self.kv_params.num_heads),
-            "blocks.dim[2]() must be equal to kv_params.num_heads",
-        )
-        debug_assert(
-            blocks.dim[3]() == Int(Self.kv_params.head_size),
-            "blocks.dim[3]() must be equal to kv_params.head_size",
-        )
+        assert blocks.dim[2]() == Int(
+            Self.kv_params.num_heads
+        ), "blocks.dim[2]() must be equal to kv_params.num_heads"
+        assert blocks.dim[3]() == Int(
+            Self.kv_params.head_size
+        ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
         self.blocks = blocks
         self.cache_lengths = cache_lengths
@@ -419,9 +412,9 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
-        debug_assert(
-            batch_idx < self._batch_size(), "KVCache batch_idx is out of bounds"
-        )
+        assert (
+            batch_idx < self._batch_size()
+        ), "KVCache batch_idx is out of bounds"
         return Int(self.cache_lengths[batch_idx][0])
 
     @always_inline
@@ -431,10 +424,7 @@ struct ContinuousBatchingKVCache[
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
         output_dtype, width
     ]:
-        debug_assert(
-            bs < self._batch_size(),
-            "KVCache::load batch_size out of range",
-        )
+        assert bs < self._batch_size(), "KVCache::load batch_size out of range"
 
         var block_idx = self.lookup_table[bs]
         var idx = self._get_idx_tuple(
@@ -451,10 +441,7 @@ struct ContinuousBatchingKVCache[
         head_dim_idx: Int,
         val: SIMD[Self.dtype, ...],
     ):
-        debug_assert(
-            bs < self._batch_size(),
-            "KVCache::store batch_size out of range",
-        )
+        assert bs < self._batch_size(), "KVCache::store batch_size out of range"
         var block_idx = self.lookup_table[bs]
         var idx = self._get_idx_tuple(
             Int(block_idx), head_idx, tok_idx, head_dim_idx
@@ -766,18 +753,15 @@ struct PagedKVCache[
         max_cache_length: UInt32,
         scales: OptionalReg[Self.scales_block_type] = None,
     ):
-        debug_assert(
-            blocks.dim[1]() == Self.page_size,
-            "blocks.dim[1]() must be equal to page_size",
-        )
-        debug_assert(
-            blocks.dim[2]() == Int(Self.kv_params.num_heads),
-            "blocks.dim[2]() must be equal to kv_params.num_heads",
-        )
-        debug_assert(
-            blocks.dim[3]() == Int(Self.kv_params.head_size),
-            "blocks.dim[3]() must be equal to kv_params.head_size",
-        )
+        assert (
+            blocks.dim[1]() == Self.page_size
+        ), "blocks.dim[1]() must be equal to page_size"
+        assert blocks.dim[2]() == Int(
+            Self.kv_params.num_heads
+        ), "blocks.dim[2]() must be equal to kv_params.num_heads"
+        assert blocks.dim[3]() == Int(
+            Self.kv_params.head_size
+        ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
         self.blocks = blocks
         self.cache_lengths = cache_lengths
@@ -813,14 +797,11 @@ struct PagedKVCache[
         var lut_block_index, tok_in_block_idx = divmod(
             Int(tok_idx), Self.page_size
         )
-        debug_assert(
-            tok_in_block_idx < self.blocks.dim[1](),
-            "KVCache tok_idx out of range",
-        )
+        assert (
+            tok_in_block_idx < self.blocks.dim[1]()
+        ), "KVCache tok_idx out of range"
 
-        debug_assert(
-            batch_idx < UInt32(self.cache_lengths.size()), "batch_idx is oob"
-        )
+        assert batch_idx < UInt32(self.cache_lengths.size()), "batch_idx is oob"
         debug_assert(
             lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
@@ -917,19 +898,17 @@ struct PagedKVCache[
             head_idx,
             ")",
         )
-        debug_assert(
-            UInt(head_dim_idx) < Self.kv_params.head_size,
-            "KVCache head_dim_idx is out of range",
-        )
+        assert (
+            UInt(head_dim_idx) < Self.kv_params.head_size
+        ), "KVCache head_dim_idx is out of range"
 
         var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
-        debug_assert(
-            tok_in_block_idx < self.blocks.dim[1](),
-            "KVCache tok_idx out of range",
-        )
+        assert (
+            tok_in_block_idx < self.blocks.dim[1]()
+        ), "KVCache tok_idx out of range"
 
-        debug_assert(bs < self.cache_lengths.size(), "batch_idx is oob")
+        assert bs < self.cache_lengths.size(), "batch_idx is oob"
         debug_assert(
             lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
@@ -957,12 +936,11 @@ struct PagedKVCache[
 
         var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
-        debug_assert(
-            tok_in_block_idx < self.blocks.dim[1](),
-            "KVCache tok_idx out of range",
-        )
+        assert (
+            tok_in_block_idx < self.blocks.dim[1]()
+        ), "KVCache tok_idx out of range"
 
-        debug_assert(bs < self.cache_lengths.size(), "batch_idx is oob")
+        assert bs < self.cache_lengths.size(), "batch_idx is oob"
         debug_assert(
             lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
@@ -1042,10 +1020,9 @@ struct PagedKVCache[
         comptime assert (
             Self.scale_dtype != DType.invalid
         ), "Invalid scale data type"
-        debug_assert(
-            self.scales is not None,
-            "Scales missing, yet KVCache quantization enabled",
-        )
+        assert (
+            self.scales is not None
+        ), "Scales missing, yet KVCache quantization enabled"
         var idx = self._get_scale_idx(bs, head_idx, tok_idx, head_dim_idx)
         return self.scales.value().load[width=width](idx)
 
@@ -1142,9 +1119,7 @@ struct PagedKVCache[
         var full_scale_block_idx = self._get_scale_idx(
             batch_idx, head_idx, start_tok_idx, head_dim_idx
         )
-        debug_assert(
-            self.scales is not None, "Quantization scale factors not set."
-        )
+        assert self.scales is not None, "Quantization scale factors not set."
         var scales_block = self.scales.value()
 
         var scales_ptr = scales_block.ptr + scales_block._offset(
@@ -1265,10 +1240,9 @@ struct ContinuousBatchingKVCacheCollection[
 
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
-        debug_assert(
-            kv_idx == 0 or self.blocks.runtime_layout.shape.value[1] > 1,
-            "invalid kv_idx for MLA cache",
-        )
+        assert (
+            kv_idx == 0 or self.blocks.runtime_layout.shape.value[1] > 1
+        ), "invalid kv_idx for MLA cache"
         return self.CacheType(
             self.CacheType.blocks_type(
                 self.blocks.ptr

@@ -81,7 +81,7 @@ def test_debug_print_options(session: InferenceSession, tmp_path: Path) -> None:
 def test_debug_print_compact(
     compiled_model: Model,
     session: InferenceSession,
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_model.execute(
@@ -99,7 +99,7 @@ def test_debug_print_compact(
 def test_debug_print_buffer(
     compiled_buffer_model: Model,
     session: InferenceSession,
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_buffer_model.execute(
@@ -117,7 +117,7 @@ def test_debug_print_buffer(
 def test_debug_print_full(
     compiled_model: Model,
     session: InferenceSession,
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     session.set_debug_print_options("FULL", 2)
     _ = compiled_model.execute(
@@ -152,7 +152,7 @@ def test_debug_print_full(
 def test_debug_print_none(
     compiled_model: Model,
     session: InferenceSession,
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     session.set_debug_print_options("NONE")
     _ = compiled_model.execute(
@@ -167,7 +167,7 @@ def test_debug_print_none(
 def test_debug_print_binary(
     compiled_model: Model,
     session: InferenceSession,
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
     tmp_path: Path,
 ) -> None:
     session.set_debug_print_options("BINARY", output_directory=tmp_path)
@@ -185,7 +185,7 @@ def test_debug_print_binary(
 def test_debug_print_binary_max(
     compiled_model: Model,
     session: InferenceSession,
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
     tmp_path: Path,
 ) -> None:
     session.set_debug_print_options(
@@ -209,7 +209,9 @@ def test_debug_print_binary_max(
     reason="BF16 is not supported on ARM CPU architecture",
 )
 def test_debug_print_binary_max_bf16(
-    session: InferenceSession, capfd: pytest.CaptureFixture, tmp_path: Path
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
+    tmp_path: Path,
 ) -> None:
     def print_input(x: TensorValue) -> TensorValue:
         x.print("test_x_value")
@@ -249,7 +251,7 @@ def test_debug_print_binary_max_bf16(
 @pytest.mark.parametrize("shape", [(), (5,), (2, 3), (2, 3, 4)])
 def test_debug_print_binary_max_bf16_shapes(
     session: InferenceSession,
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
     tmp_path: Path,
     shape: tuple[int, ...],
 ) -> None:

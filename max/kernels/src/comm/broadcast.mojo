@@ -472,10 +472,9 @@ fn broadcast[
     if num_elements == 0:
         return
 
-    debug_assert(
-        output_buffer.num_elements() == input_buffer.num_elements(),
-        "Buffer shapes don't match",
-    )
+    assert (
+        output_buffer.num_elements() == input_buffer.num_elements()
+    ), "Buffer shapes don't match"
 
     if not is_p2p_enabled():
         raise Error("Broadcast currently requires P2P access between GPUs")
@@ -603,10 +602,9 @@ fn broadcast_2stage[
     if num_elements == 0:
         return
 
-    debug_assert(
-        output_buffer.num_elements() == input_buffer.num_elements(),
-        "Buffer shapes don't match",
-    )
+    assert (
+        output_buffer.num_elements() == input_buffer.num_elements()
+    ), "Buffer shapes don't match"
 
     comptime BLOCK_SIZE = 256
     # Limit blocks - tuning parameter

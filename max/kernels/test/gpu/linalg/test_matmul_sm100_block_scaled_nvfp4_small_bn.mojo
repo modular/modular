@@ -43,7 +43,13 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    LayoutTensor,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -78,7 +84,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     n: ValOrDim,
     k: ValOrDim,
     alpha: Float32 = 1.0,
-):
+) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -238,9 +244,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         scales_dtype, 5, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    var a_tensor = from_ndbuffer_row_major(a_device_nd)
-    var b_tensor = from_ndbuffer_row_major(b_device_nd)
-    var c_tensor = from_ndbuffer_row_major(c_device_nd)
+    var a_lt = from_ndbuffer_row_major(a_device_nd)
+    var b_lt = from_ndbuffer_row_major(b_device_nd)
+    var a_tensor = TileTensor(a_device_nd)
+    var b_tensor = TileTensor(b_device_nd)
+    var c_tensor = TileTensor(c_device_nd)
     var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
     var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
@@ -339,9 +347,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
     )
 
+    comptime K_phys = k.dim.get()
     blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
+        K=K_phys,
     ](
         c_tensor,
         a_tensor,
@@ -355,8 +365,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     vendor_blas.matmul(
         ctx,
         c_ref_tensor,
-        a_tensor,
-        b_tensor,
+        a_lt,
+        b_lt,
         a_scales=a_scales_tensor.get_immutable(),
         b_scales=b_scales_tensor.get_immutable(),
         transpose_b=transpose_b,
@@ -394,7 +404,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16

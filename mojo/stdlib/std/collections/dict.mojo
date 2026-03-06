@@ -338,10 +338,9 @@ struct _DictEntryIter[
                     .unsafe_origin_cast[Self.origin]()[]
                 )
 
-        debug_assert(
-            self.seen == len(self.src[]),
-            "_order exhausted but not all entries seen: _len out of sync",
-        )
+        assert self.seen == len(
+            self.src[]
+        ), "_order exhausted but not all entries seen: _len out of sync"
         raise StopIteration()
 
     @always_inline
@@ -399,10 +398,9 @@ struct _TakeDictEntryIter[
                 self.src[]._len -= 1
                 return entry^
 
-        debug_assert(
-            len(self.src[]) == 0,
-            "_order exhausted but _len > 0: ctrl bytes and _len out of sync",
-        )
+        assert (
+            len(self.src[]) == 0
+        ), "_order exhausted but _len > 0: ctrl bytes and _len out of sync"
         raise StopIteration()
 
 
@@ -861,10 +859,9 @@ struct Dict[
         """
         # TODO: Use capacity to reserve space.
         self = Self()
-        debug_assert(
-            len(keys) == len(values),
-            "keys and values must have the same length",
-        )
+        assert len(keys) == len(
+            values
+        ), "keys and values must have the same length"
 
         # TODO: Should transfer the key/value's from the list to avoid copying
         # the values.
@@ -1203,10 +1200,9 @@ struct Dict[
         var found, slot_idx = self._find_slot(hash, key)
 
         if found:
-            debug_assert(
-                _is_occupied(self._ctrl[slot_idx]),
-                "_find_slot returned found=True but ctrl byte is not occupied",
-            )
+            assert _is_occupied(
+                self._ctrl[slot_idx]
+            ), "_find_slot returned found=True but ctrl byte is not occupied"
             return (self._slots + slot_idx)[].value
 
         raise DictKeyError[Self.K]()
@@ -1324,10 +1320,9 @@ struct Dict[
         var hash = hash[HasherType=Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
         if found:
-            debug_assert(
-                _is_occupied(self._ctrl[slot_idx]),
-                "_find_slot returned found=True but ctrl byte is not occupied",
-            )
+            assert _is_occupied(
+                self._ctrl[slot_idx]
+            ), "_find_slot returned found=True but ctrl byte is not occupied"
             var entry = (self._slots + slot_idx).take_pointee()
             self._set_ctrl(slot_idx, _CTRL_DELETED)
             self._len -= 1
@@ -1562,10 +1557,9 @@ struct Dict[
             self._len += 1
             self._growth_left -= 1
         else:
-            debug_assert(
-                _is_occupied(self._ctrl[slot_idx]),
-                "_find_slot returned found=True but ctrl byte is not occupied",
-            )
+            assert _is_occupied(
+                self._ctrl[slot_idx]
+            ), "_find_slot returned found=True but ctrl byte is not occupied"
         return (self._slots + slot_idx)[].value
 
     # ===-------------------------------------------------------------------===#
@@ -1593,10 +1587,9 @@ struct Dict[
             self._order.append(Int32(slot_idx))
             self._len += 1
             self._growth_left -= 1
-            debug_assert(
-                self._growth_left >= 0,
-                "_growth_left went negative after insert",
-            )
+            assert (
+                self._growth_left >= 0
+            ), "_growth_left went negative after insert"
 
     @always_inline
     fn _set_ctrl(mut self, index: Int, value: UInt8):
@@ -1606,10 +1599,7 @@ struct Dict[
             index: The slot index.
             value: The control byte value (h2, EMPTY, or DELETED).
         """
-        debug_assert(
-            0 <= index < self._capacity,
-            "ctrl index out of bounds",
-        )
+        assert 0 <= index < self._capacity, "ctrl index out of bounds"
         self._ctrl[index] = value
         # Mirror first GROUP_WIDTH bytes at the end of the ctrl array
         if index < _GROUP_WIDTH:
@@ -1724,10 +1714,9 @@ struct Dict[
                 (self._slots + new_slot).init_pointee_move(entry^)
                 self._order.append(Int32(new_slot))
 
-        debug_assert(
-            len(self._order) == self._len,
-            "order length doesn't match _len after resize",
-        )
+        assert (
+            len(self._order) == self._len
+        ), "order length doesn't match _len after resize"
 
         # Free old storage
         old_ctrl.free()
@@ -1740,10 +1729,9 @@ struct Dict[
         probe positions at the current capacity. This is the Abseil
         "drop deletes without resize" algorithm.
         """
-        debug_assert(
-            self._len <= self._capacity * 7 // 16,
-            "in-place rehash called when table is too full",
-        )
+        assert (
+            self._len <= self._capacity * 7 // 16
+        ), "in-place rehash called when table is too full"
 
         # Step 0: Compact _order to remove stale entries before we lose
         # track of which slots are occupied vs deleted.
@@ -1807,10 +1795,9 @@ struct Dict[
         for j in range(len(self._order)):
             self._order[j] = slot_map[Int(self._order[j])]
 
-        debug_assert(
-            len(self._order) == self._len,
-            "order length doesn't match _len after in-place rehash",
-        )
+        assert (
+            len(self._order) == self._len
+        ), "order length doesn't match _len after in-place rehash"
 
         # Step 5: Reset growth_left (all tombstones are now EMPTY).
         self._growth_left = self._capacity * 7 // 8 - self._len

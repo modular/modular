@@ -86,8 +86,8 @@ fn _bmm0_bs[
     # num_heads * kv_max_seq_len * batch * depth + depth * head
     num_keys = cur_kv_len + k_cache.cache_length(Int(batch))
 
-    debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
-    debug_assert(num_keys <= padded_num_keys, "Invalid max_cache_size")
+    assert cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len"
+    assert num_keys <= padded_num_keys, "Invalid max_cache_size"
 
     if x >= UInt(kv_max_seq_len + max_cache_size) or y >= UInt(q_max_seq_len):
         return
@@ -187,8 +187,8 @@ fn _bmm1_bs[
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
 
-    debug_assert(cur_query_len <= q_max_seq_len, "Invalid cur_query_len")
-    debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
+    assert cur_query_len <= q_max_seq_len, "Invalid cur_query_len"
+    assert cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len"
 
     if x >= UInt(depth) or y >= UInt(cur_query_len):
         return

@@ -177,7 +177,7 @@ struct _FormatUtils:
         var auto_arg_index = 0
         for e in compiled.entries:
             # offset can equal fmt_len when format ends with a replacement field
-            debug_assert(offset <= fmt_len, "offset > format.byte_length()")
+            assert offset <= fmt_len, "offset > format.byte_length()"
             writer.write(_build_slice(ptr, offset, e.first_curly))
             e._format_entry[len_pos_args](writer, args, auto_arg_index)
             offset = e.last_curly + 1

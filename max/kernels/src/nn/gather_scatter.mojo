@@ -1600,10 +1600,9 @@ fn _gather_nd_impl[
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
     var indices_shape = coord_to_index_list(indices.layout.shape_coord())
-    debug_assert(
-        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims,
-        "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims",
-    )
+    assert (
+        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims
+    ), "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims"
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
@@ -1639,16 +1638,14 @@ fn _gather_nd_impl[
             data_idx[src_start + i] = output_idx[output_start + i]
 
         comptime for i in range(data.rank):
-            debug_assert(
-                data_idx[i] >= 0 and data_idx[i] < Int(data.dim[i]()),
-                "data index out of bounds",
-            )
+            assert data_idx[i] >= 0 and data_idx[i] < Int(
+                data.dim[i]()
+            ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            debug_assert(
-                output_idx[i] >= 0 and output_idx[i] < Int(output.dim[i]()),
-                "output index out of bounds",
-            )
+            assert output_idx[i] >= 0 and output_idx[i] < Int(
+                output.dim[i]()
+            ), "output index out of bounds"
 
         var data_coord = Coord(data_idx)
         var output_coord = Coord(output_idx)
@@ -1696,9 +1693,7 @@ fn _gather_nd_impl[
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
     else:
-        debug_assert(
-            Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        )
+        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[
@@ -1767,10 +1762,9 @@ fn scatter_set_constant[
     comptime assert (
         indices.flat_rank == 2
     ), "scatter_set: indices must have rank 2"
-    debug_assert(
-        Int(indices.dim[1]()) == 2,
-        "scatter_set: indices must have shape [total_seq_len, 2]",
-    )
+    assert (
+        Int(indices.dim[1]()) == 2
+    ), "scatter_set: indices must have shape [total_seq_len, 2]"
 
     @always_inline
     @parameter

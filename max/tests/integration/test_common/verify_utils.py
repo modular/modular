@@ -89,13 +89,13 @@ class ValidationResult:
     """The message to print on failure. Not set if success == True"""
     message: str | None = None
     """The np.array of target values. Not set if success == True"""
-    target: numpy.typing.NDArray | None = None
+    target: numpy.typing.NDArray | None = None  # type: ignore[type-arg]
     """The np.array of reference values. Not set if success == True"""
-    reference: numpy.typing.NDArray | None = None
+    reference: numpy.typing.NDArray | None = None  # type: ignore[type-arg]
     """The indices of the failing tolerances. Not set if success == True"""
-    element_indices: numpy.typing.NDArray | None = None
+    element_indices: numpy.typing.NDArray | None = None  # type: ignore[type-arg]
     """The metrics to display on failure. Not set if success == True"""
-    data: list[numpy.typing.NDArray] = field(default_factory=list)
+    data: list[numpy.typing.NDArray] = field(default_factory=list)  # type: ignore[type-arg]
 
 
 class ValidationResultCollection:
@@ -211,8 +211,8 @@ class ValidatorBase(ABC):
     @abstractmethod
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         """Performs the validation with the given metric.
@@ -224,9 +224,9 @@ class ValidatorBase(ABC):
     @abstractmethod
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         raise NotImplementedError()
 
@@ -248,7 +248,7 @@ class ValidatorBase(ABC):
         references = []
         tensor_indices = []
         element_indices = []
-        data: list[list[numpy.typing.NDArray]] = []
+        data: list[list[numpy.typing.NDArray]] = []  # type: ignore[type-arg]
         metric_names = self._column_names()
         for tensor_idx, result_collection in enumerate(results):
             result = result_collection.get_result(self.short_name())
@@ -362,9 +362,9 @@ class MultiValidator(ValidatorBase):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         raise NotImplementedError(
             "_print_suggested_tolerances should not be called in MultiValidator"
@@ -375,8 +375,8 @@ class MultiValidator(ValidatorBase):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         overall_result = ValidationResultCollection()
@@ -439,9 +439,9 @@ class ToleranceValidator(ValidatorBase):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         target = np.concatenate([t.flatten() for t in targets])
         reference = np.concatenate([r.flatten() for r in references])
@@ -469,8 +469,8 @@ class ToleranceValidator(ValidatorBase):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         isoff = np.logical_not(
@@ -533,9 +533,9 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         assert len(metrics) == 1
         max_dist = np.array(metrics[0]).max()
@@ -549,8 +549,10 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 
     @abstractmethod
     def _compute_distance(
-        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
-    ) -> numpy.typing.NDArray:
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+    ) -> numpy.typing.NDArray:  # type: ignore[type-arg]
         raise NotImplementedError()
 
     @staticmethod
@@ -564,8 +566,8 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         distance = self._compute_distance(target, reference)
@@ -631,8 +633,10 @@ class CosineSimilarityValidator(DistanceValidatorBase):
         return f"cos_similarity={self._threshold}"
 
     def _compute_distance(
-        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
-    ) -> numpy.typing.NDArray:
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+    ) -> numpy.typing.NDArray:  # type: ignore[type-arg]
         flat_target = target.reshape((-1, target.shape[-1]))
         flat_ref = reference.reshape((-1, reference.shape[-1]))
         flat_distance = np.zeros(flat_ref.shape[:-1], dtype=reference.dtype)
@@ -662,8 +666,10 @@ class KLDivergenceValidator(DistanceValidatorBase):
         return f"kl_div={self._threshold}"
 
     def _compute_distance(
-        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
-    ) -> numpy.typing.NDArray:
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+    ) -> numpy.typing.NDArray:  # type: ignore[type-arg]
         eps = 1e-9
         result = rel_entr(
             softmax(reference, -1), softmax(target, -1) + eps
@@ -704,9 +710,9 @@ class LPIPSValidator(ValidatorBase):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         assert len(metrics) == 1
         max_lpips = np.array(metrics[0]).max()
@@ -719,8 +725,8 @@ class LPIPSValidator(ValidatorBase):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         """Validate LPIPS: lower is better, pass when max(lpips) <= threshold."""
@@ -784,9 +790,9 @@ class SSIMValidator(ValidatorBase):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         assert len(metrics) == 1
         min_ssim = np.array(metrics[0]).min()
@@ -797,8 +803,8 @@ class SSIMValidator(ValidatorBase):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         """Validate SSIM: higher is better, pass when ssim >= threshold."""
@@ -855,8 +861,8 @@ def construct_validator(
 
 
 def _print_pareto_tolerances(
-    a: np.typing.NDArray,
-    b: np.typing.NDArray,
+    a: np.typing.NDArray,  # type: ignore[type-arg]
+    b: np.typing.NDArray,  # type: ignore[type-arg]
     min_atol: float,
     max_atol: float,
     min_rtol: float,
@@ -964,7 +970,7 @@ def _print_pareto_tolerances(
         )
 
 
-def _is_pareto(costs: np.typing.NDArray) -> np.typing.NDArray:
+def _is_pareto(costs: np.typing.NDArray) -> np.typing.NDArray:  # type: ignore[type-arg]
     """
     Find the pareto-efficient points
 
@@ -989,9 +995,9 @@ def _lookup(value: dict[str, Any], keys: Sequence[str]) -> list[Any]:
 
 
 def _print_diff_table(
-    tensor_indices: numpy.typing.NDArray,
-    element_indices: numpy.typing.NDArray,
-    data: list[numpy.typing.NDArray],
+    tensor_indices: numpy.typing.NDArray,  # type: ignore[type-arg]
+    element_indices: numpy.typing.NDArray,  # type: ignore[type-arg]
+    data: list[numpy.typing.NDArray],  # type: ignore[type-arg]
     column_names: list[str],
     max_shown: int,
     sort_by_idx: int,
@@ -1062,8 +1068,8 @@ def _print_diff_table(
 
 
 def _is_close(  # noqa: ANN202
-    a: numpy.typing.NDArray,
-    b: numpy.typing.NDArray,
+    a: numpy.typing.NDArray,  # type: ignore[type-arg]
+    b: numpy.typing.NDArray,  # type: ignore[type-arg]
     absolute_tolerance: float,
     relative_tolerance: float,
     equal_nan: bool,

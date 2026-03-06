@@ -376,18 +376,20 @@ fn apple_matmul[
             alpha,
             beta,
             rebind[
-                LegacyUnsafePointer[
-                    mut=True, Float32, address_space=c.address_space
+                UnsafePointer[
+                    Float32,
+                    MutAnyOrigin,
+                    address_space=c.address_space,
                 ]
             ](c.data),
             rebind[
-                LegacyUnsafePointer[
-                    mut=True, Float32, address_space=a.address_space
+                UnsafePointer[
+                    Float32, ImmutAnyOrigin, address_space=a.address_space
                 ]
             ](a.data),
             rebind[
-                LegacyUnsafePointer[
-                    mut=True, Float32, address_space=b.address_space
+                UnsafePointer[
+                    Float32, ImmutAnyOrigin, address_space=b.address_space
                 ]
             ](b.data),
         )

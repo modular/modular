@@ -349,9 +349,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
-        debug_assert(
-            len(elems) == Self.size, "No. of elems must match array size"
-        )
+        assert len(elems) == Self.size, "No. of elems must match array size"
         self = Self(storage=elems^)
 
     @always_inline

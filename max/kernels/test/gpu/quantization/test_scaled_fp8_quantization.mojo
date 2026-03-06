@@ -13,7 +13,15 @@
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx, RuntimeInt
 from layout._fillers import random
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
@@ -36,16 +44,11 @@ comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 fn test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
-    M: Optional[Int],
-    N: Optional[Int],
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
-    comptime static_shape = DimList(to_dim[M], to_dim[N])
-    var dynamic_shape = Index(M.or_else(m), N.or_else(n))
+    var dynamic_shape = Index(m, n)
     var total_size = m * n
 
-    comptime layout_2d = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
-    )
+    comptime layout_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var in_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(total_size)
     var out_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(total_size)
@@ -68,18 +71,13 @@ fn test_static_scaled_fp8_quant[
     ctx.enqueue_copy(in_device, in_host_ptr)
     ctx.enqueue_copy(out_device, out_host_ptr)
 
-    var in_ndbuffer = NDBuffer[in_dtype, 2, _, static_shape](
-        in_device.unsafe_ptr(),
-        IndexList[2](m, n),
+    var shape = Coord(
+        RuntimeInt[DType.int64](Int64(m)), RuntimeInt[DType.int64](Int64(n))
     )
-    var out_ndbuffer = NDBuffer[out_dtype, 2, _, static_shape](
-        out_device.unsafe_ptr(),
-        IndexList[2](m, n),
-    )
+    var in_tt = TileTensor(in_device.unsafe_ptr(), row_major(shape))
+    var out_tt = TileTensor(out_device.unsafe_ptr(), row_major(shape))
 
-    quantize_static_scaled_fp8[out_dtype, in_dtype](
-        out_ndbuffer, in_ndbuffer, scale, ctx
-    )
+    quantize_static_scaled_fp8[out_dtype, in_dtype](out_tt, in_tt, scale, ctx)
 
     ctx.enqueue_copy(out_host_ptr, out_device)
 
@@ -405,13 +403,16 @@ fn test_batched_dynamic_fp8_quant[
 def main() raises:
     with DeviceContext() as ctx:
         test_static_scaled_fp8_quant[
-            DType.float8_e4m3fn, DType.bfloat16, M=None, N=Int(16)
+            DType.float8_e4m3fn,
+            DType.bfloat16,
         ](ctx, 0.5, 32, 16)
         test_static_scaled_fp8_quant[
-            DType.float8_e4m3fn, DType.float16, M=None, N=Int(15)
+            DType.float8_e4m3fn,
+            DType.float16,
         ](ctx, 0.33, 31, 15)
         test_static_scaled_fp8_quant[
-            DType.float8_e4m3fn, DType.bfloat16, M=None, N=Int(15)
+            DType.float8_e4m3fn,
+            DType.bfloat16,
         ](ctx, 0.3323, 31, 15)
 
         test_dynamic_fp8_quant[

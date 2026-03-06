@@ -46,6 +46,8 @@ CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
 
 
 class SamplingConfig(ConfigFileModel):
+    """Configuration for the sampling stage of token generation."""
+
     in_dtype: CoercedDType = Field(
         default=DType.float32,
         description="The data type of the input tokens.",

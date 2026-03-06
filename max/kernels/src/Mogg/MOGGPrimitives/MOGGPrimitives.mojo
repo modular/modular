@@ -81,7 +81,7 @@ struct StateContext(TrivialRegisterPassable):
 
     @always_inline
     fn __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
-        debug_assert(0 <= index < self.num_slots, "index must be within bounds")
+        assert 0 <= index < self.num_slots, "index must be within bounds"
         return external_call[
             "MGP_RT_GetContextPayloadPtr",
             OpaquePointer[MutAnyOrigin],
@@ -546,7 +546,7 @@ fn mgp_buffer_constant_external(
     size: UInt64,
     align: UInt64,
 ) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
-    debug_assert(align > 0, "align must be a positive integer value")
+    assert align > 0, "align must be a positive integer value"
 
     if not weights:
         raise Error(
@@ -586,15 +586,12 @@ fn fill_buffer[
 fn mgp_buffer_set_with_index[
     bDevice: StaticString
 ](buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], *vals: Int) raises:
-    debug_assert(
-        is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
-    )
+    assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
-    debug_assert(
-        bufSize % numArgs == 0,
-        "buffer size not divisible by number of index args",
-    )
+    assert (
+        bufSize % numArgs == 0
+    ), "buffer size not divisible by number of index args"
 
     var elSize = bufSize // numArgs
     if elSize == 4:
@@ -610,12 +607,9 @@ fn mgp_buffer_set_with_index[
 fn mgp_buffer_to_bool[
     bDevice: StaticString
 ](buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin]) -> Bool:
-    debug_assert(is_cpu[bDevice](), "to_bool can only work on cpu buffers")
+    assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
     var bufSize = buffer.num_elements()
-    debug_assert(
-        bufSize == 1,
-        "buffer size must be a size of 1",
-    )
+    assert bufSize == 1, "buffer size must be a size of 1"
     return buffer[0] != 0
 
 
@@ -1566,6 +1560,14 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     Marks the chain as ready.
     """
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
+
+
+@register_internal("mogg.async.check_task_error")
+@no_inline
+fn mogg_async_check_task_error(mut error: Optional[Error]) raises:
+    """Raises the captured error from an async task, if present."""
+    if error:
+        raise error.take()
 
 
 @register_internal("mogg.async.error")

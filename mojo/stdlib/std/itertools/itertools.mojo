@@ -906,5 +906,5 @@ fn repeat[
         print(s)  # Prints: hello, hello, hello, hello, hello
     ```
     """
-    debug_assert(times >= 0, "The `times` argument must be non-negative")
+    assert times >= 0, "The `times` argument must be non-negative"
     return {element.copy(), times}

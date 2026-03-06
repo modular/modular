@@ -539,7 +539,7 @@ fn masked_load[
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
-    debug_assert(Bool(addr), "masked_load requires a valid (non-null) pointer")
+    assert Bool(addr), "masked_load requires a valid (non-null) pointer"
 
     comptime if size == 1:
         return addr.load() if mask else passthrough[0]
@@ -579,7 +579,7 @@ fn masked_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(Bool(addr), "masked_store requires a valid (non-null) pointer")
+    assert Bool(addr), "masked_store requires a valid (non-null) pointer"
 
     comptime if size == 1:
         if mask:
@@ -620,9 +620,7 @@ fn compressed_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(
-        Bool(addr), "compressed_store requires a valid (non-null) pointer"
-    )
+    assert Bool(addr), "compressed_store requires a valid (non-null) pointer"
 
     comptime if size == 1:
         if mask:
@@ -667,7 +665,7 @@ fn strided_load[
     Returns:
       A vector containing the loaded data.
     """
-    debug_assert(Bool(addr), "strided_load requires a valid (non-null) pointer")
+    assert Bool(addr), "strided_load requires a valid (non-null) pointer"
 
     comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
@@ -710,9 +708,7 @@ fn strided_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(
-        Bool(addr), "strided_store requires a valid (non-null) pointer"
-    )
+    assert Bool(addr), "strided_store requires a valid (non-null) pointer"
 
     comptime if simd_width == 1:
         if mask:

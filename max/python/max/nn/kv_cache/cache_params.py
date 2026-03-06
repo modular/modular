@@ -301,8 +301,17 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def quantized_kv_cache(self) -> bool:
-        # Currently only FP8_E4M3 KVCache quantization supported.
-        return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
+        # Currently only FP8_E4M3 KVCache quantization is supported.
+        valid_scale = False
+        if self.kvcache_quant_config is not None:
+            valid_scale = self.kvcache_quant_config.scale_dtype in (
+                DType.float32,
+                DType.float8_e8m0fnu,
+            )
+        return (
+            self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
+            and valid_scale
+        )
 
     @property
     def n_devices(self) -> int:
@@ -547,7 +556,7 @@ class KVCacheParams(KVCacheParamInterface):
                 values.append(value)
 
             scales: list[Buffer] | None = None
-            if self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+            if self.quantized_kv_cache:
                 scales = []
                 assert self.kvcache_quant_config is not None
                 scale_dtype = self.kvcache_quant_config.scale_dtype

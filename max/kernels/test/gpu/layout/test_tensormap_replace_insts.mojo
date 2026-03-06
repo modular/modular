@@ -463,13 +463,10 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         " number of columns in cta tile layout"
     )
 
-    debug_assert(
-        ctx.get_api_version() >= 12050,
-        (
-            "CUDA version must be >= 12.5. Current implementation of"
-            " `replace_tensormap_global_dim_strides_in_shared_mem` dose not"
-            " support CUDA versions < 12.5"
-        ),
+    assert ctx.get_api_version() >= 12050, (
+        "CUDA version must be >= 12.5. Current implementation of"
+        " `replace_tensormap_global_dim_strides_in_shared_mem` dose not"
+        " support CUDA versions < 12.5"
     )
     comptime num_of_subtensors = size_of_subtensors - 1
 

@@ -57,6 +57,8 @@ fn test_grouped_1d1d_nvfp4[
     K: Int,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     cta_group: Int = 1,
+    mma_n: Int = 128 * cta_group,
+    AB_swapped: Bool = (cta_group == 2),
 ](ctx: DeviceContext, num_active_experts: Int, tokens_per_expert: Int) raises:
     comptime a_type = DType.uint8
     comptime b_type = DType.uint8
@@ -220,7 +222,7 @@ fn test_grouped_1d1d_nvfp4[
     ).as_any_origin()
 
     # Launch kernel
-    comptime mma_shape = Index(128 * cta_group, 128 * cta_group, 32)
+    comptime mma_shape = Index(128 * cta_group, mma_n, 32)
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, NVFP4_SF_DTYPE, NVFP4_SF_DTYPE, True
     ](
@@ -229,7 +231,7 @@ fn test_grouped_1d1d_nvfp4[
         mma_shape=mma_shape,
         block_swizzle_size=0,
         cta_group=cta_group,
-        AB_swapped=(cta_group == 2),
+        AB_swapped=AB_swapped,
         k_group_size=1,
         num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
         is_gmm=True,
@@ -272,6 +274,27 @@ def main() raises:
     test_grouped_1d1d_nvfp4[4, 128, 256](ctx, 4, 64)
     test_grouped_1d1d_nvfp4[8, 128, 256](ctx, 4, 64)
     test_grouped_1d1d_nvfp4[4, 1024, 1024](ctx, 2, 128)
+
+    print("\n=== Grouped 1D1D NVFP4 MMA_N=64 1SM Smoke Tests (TileTensor) ===")
+    test_grouped_1d1d_nvfp4[4, 128, 256, mma_n=64](ctx, 4, 64)
+    test_grouped_1d1d_nvfp4[4, 1024, 1024, mma_n=64](ctx, 2, 128)
+
+    print(
+        "\n=== Grouped 1D1D NVFP4 MMA_N=64 AB_swapped 1SM Smoke Tests"
+        " (TileTensor) ==="
+    )
+    test_grouped_1d1d_nvfp4[4, 128, 256, mma_n=64, AB_swapped=True](ctx, 4, 64)
+    test_grouped_1d1d_nvfp4[4, 1024, 1024, mma_n=64, AB_swapped=True](
+        ctx, 2, 128
+    )
+
+    print(
+        "\n=== Grouped 1D1D NVFP4 MMA_N=64 AB_swapped 2SM Smoke Tests"
+        " (TileTensor) ==="
+    )
+    # 2SM with mma_n=64: UMMA shape (256, 128, 32), BM=128, BN=64
+    test_grouped_1d1d_nvfp4[4, 2048, 1024, Index(2, 1, 1), 2, 64](ctx, 4, 64)
+    test_grouped_1d1d_nvfp4[4, 2048, 1024, Index(2, 1, 1), 2, 64](ctx, 2, 256)
 
     print("\n=== Grouped 1D1D NVFP4 2SM Smoke Tests (TileTensor) ===")
     test_grouped_1d1d_nvfp4[4, 2048, 1024, Index(2, 1, 1), 2](ctx, 4, 64)

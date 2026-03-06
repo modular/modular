@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import iota
 from std.random import random_float64
 
@@ -112,8 +109,8 @@ fn merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_ptr = UnsafePointer[Scalar[dtype]].alloc(left_size)
-    var right_ptr = UnsafePointer[Scalar[dtype]].alloc(right_size)
+    var left_ptr = alloc[Scalar[dtype]](left_size)
+    var right_ptr = alloc[Scalar[dtype]](right_size)
 
     # Copy data to temporary arrays
     for i in range(left_size):
@@ -181,7 +178,7 @@ fn test_is_sorted_descending[
 ](mut buf: NDBuffer[mut=True, dtype, rank, ...], vocab_size: Int) -> Bool:
     comptime assert rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
-    var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
+    var sorted_flag = alloc[Bool](batch_size)
 
     # Initialize all flags to True
     for i in range(batch_size):
@@ -265,19 +262,15 @@ fn test_case_sampling[
         m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
+    var in_logits_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
     var in_logits = NDBuffer[dtype, rank, ...](
         in_logits_ptr, IndexList[2](batch_size, vocab_size)
     )
-    var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
-        batch_size * 1
-    )
+    var token_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * 1)
     var token_ids = NDBuffer[out_idx_type, rank, ...](
         token_ids_ptr, IndexList[2](batch_size, 1)
     )
-    var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
+    var p_thresholds_ptr = alloc[Scalar[dtype]](batch_size)
     var p_thresholds = NDBuffer[dtype, 1, ...](
         p_thresholds_ptr, IndexList[1](batch_size)
     )
@@ -301,15 +294,11 @@ fn test_case_sampling[
     ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.data)
 
     # Copy to CPU and perform softmax & sort for correctness testing
-    var in_logits_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
+    var in_logits_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
     var in_logits_cpu_test = NDBuffer[dtype, rank, ...](
         in_logits_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
-    var probs_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
+    var probs_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
     var probs_cpu_test = NDBuffer[dtype, rank, ...](
         probs_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )

@@ -26,37 +26,37 @@ from typed_errors_testing import (
 # =============================================================================
 
 
-def test_assert_raises_basic():
+def test_assert_raises_basic() raises:
     """Test assert_raises catches typed errors."""
     with assert_raises():
         validate_username("")
 
 
-def test_assert_raises_contains_message():
+def test_assert_raises_contains_message() raises:
     """Test assert_raises(contains=...) matches error messages."""
     with assert_raises(contains="cannot be empty"):
         validate_username("")
 
 
-def test_assert_raises_contains_reason():
+def test_assert_raises_contains_reason() raises:
     """Test assert_raises matches partial reason."""
     with assert_raises(contains="at least 3"):
         validate_username("ab")
 
 
-def test_assert_raises_contains_field():
+def test_assert_raises_contains_field() raises:
     """Test assert_raises matches field name in output."""
     with assert_raises(contains="field: username"):
         validate_username("")
 
 
-def test_assert_raises_config_error():
+def test_assert_raises_config_error() raises:
     """Test assert_raises with ConfigError."""
     with assert_raises(contains="key not found"):
         _ = load_config("missing")
 
 
-def test_assert_raises_config_invalid():
+def test_assert_raises_config_invalid() raises:
     """Test assert_raises with different ConfigError reason."""
     with assert_raises(contains="invalid value format"):
         _ = load_config("invalid")

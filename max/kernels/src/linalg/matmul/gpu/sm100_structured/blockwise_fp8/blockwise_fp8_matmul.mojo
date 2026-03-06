@@ -160,17 +160,17 @@ fn blockwise_fp8_matmul[
         ),
     ]
 
-    # Create TMA descriptors using kernel's derived legacy layouts
+    # Create TMA descriptors using kernel's layout types
     a_tma_op = create_tma_tile[
-        Kernel.ATmaTile.tile_layout,
-        Kernel.ATmaTile.desc_layout,
+        Kernel.ATileLayout,
+        Kernel.ADescLayout,
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        Kernel.BTmaTile.tile_layout,
-        Kernel.BTmaTile.desc_layout,
+        Kernel.BTileLayout,
+        Kernel.BDescLayout,
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -180,8 +180,8 @@ fn blockwise_fp8_matmul[
     ](ctx, b)
 
     a_scales_tma_op = create_tma_tile[
-        Kernel.AScalesTmaTile.tile_layout,
-        Kernel.AScalesTmaTile.desc_layout,
+        Kernel.AScalesLayout,
+        Kernel.AScalesLayout,
         Index(1, BM),
     ](ctx, a_scales)
 
@@ -191,8 +191,8 @@ fn blockwise_fp8_matmul[
     ) else c_tma_tile_shape_mma128
 
     var c_tma_op = create_tma_tile[
-        Kernel.CTmaTile.tile_layout,
-        Kernel.CTmaTile.desc_layout,
+        Kernel.CTileLayout,
+        Kernel.CDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, c)

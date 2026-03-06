@@ -357,7 +357,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     """
     comptime assert src.rank == 1, "src must be of rank 1"
 
-    debug_assert(src.size() != 0, "input must not be empty")
+    assert src.size() != 0, "input must not be empty"
 
     @parameter
     @always_inline
@@ -513,7 +513,7 @@ fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
     """
     comptime assert src.rank == 1, "src must be of rank 1"
 
-    debug_assert(src.numel() != 0, "input must not be empty")
+    assert src.numel() != 0, "input must not be empty"
 
     @parameter
     @always_inline

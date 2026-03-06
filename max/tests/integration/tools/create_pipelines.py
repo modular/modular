@@ -1236,6 +1236,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": GenericOracle(
+        model_path="RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
+    ),
     "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
         config_params={"max_length": 512},
@@ -1453,6 +1460,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="Qwen/Qwen3-30B-A3B-Instruct-2507",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8": GenericOracle(
+        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
     "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",

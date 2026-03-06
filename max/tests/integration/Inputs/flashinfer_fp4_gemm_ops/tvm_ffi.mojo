@@ -41,7 +41,7 @@ struct TVMFFIAny(Copyable, Movable):
 
     def __init__[
         rank: Int, dtype: DType
-    ](out self, tensor_ptr: UnsafePointer[DLTensor[rank, dtype], _],):
+    ](out self, tensor_ptr: UnsafePointer[DLTensor[rank, dtype], _],) raises:
         """Construct from a pointer to a DLTensor.
 
         The caller must ensure the pointed-to DLTensor outlives this
@@ -51,7 +51,7 @@ struct TVMFFIAny(Copyable, Movable):
         self.zero_padding = 0
         self.data = Int64(Int(tensor_ptr))
 
-    def __init__(out self, value: Int):
+    def __init__(out self, value: Int) raises:
         self.type_index = Types.INT
         self.zero_padding = 0
         self.data = Int64(value)

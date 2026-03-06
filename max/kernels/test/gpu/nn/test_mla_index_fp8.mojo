@@ -33,8 +33,6 @@ from std.utils.index import Index, IndexList
 from std.testing import assert_true
 from std.collections import Set
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 fn test_mla_index_fp8_paged_variable_lengths[
     num_heads: Int,
@@ -59,10 +57,9 @@ fn test_mla_index_fp8_paged_variable_lengths[
     """
     comptime use_causal_mask = mask_name != MaskName.NULL.name
     var batch_size = len(seq_lens)
-    debug_assert(
-        len(cache_lens) == batch_size,
-        "cache_lens must have same length as seq_lens",
-    )
+    assert (
+        len(cache_lens) == batch_size
+    ), "cache_lens must have same length as seq_lens"
 
     # Compute totals and max lengths
     var total_seq_len = 0
@@ -113,20 +110,20 @@ fn test_mla_index_fp8_paged_variable_lengths[
 
     # Q tensor: [total_seq_len, num_heads, depth]
     var q_size = total_seq_len * num_heads * depth
-    var q_ptr = UnsafePointer[Scalar[DType.float8_e4m3fn]].alloc(q_size)
+    var q_ptr = alloc[Scalar[DType.float8_e4m3fn]](q_size)
     rand(q_ptr, q_size)
     var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
     ctx.enqueue_copy(q_device, q_ptr)
 
     # Q scales: [total_seq_len, num_heads]
     var qs_size = total_seq_len * num_heads
-    var qs_ptr = UnsafePointer[Scalar[DType.float32]].alloc(qs_size)
+    var qs_ptr = alloc[Scalar[DType.float32]](qs_size)
     rand(qs_ptr, qs_size)
     var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
     ctx.enqueue_copy(qs_device, qs_ptr)
 
     # Input row offsets: [batch_size + 1] for ragged indexing (variable lengths)
-    var input_row_offsets_ptr = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var input_row_offsets_ptr = alloc[UInt32](batch_size + 1)
     input_row_offsets_ptr[0] = UInt32(0)
     for i in range(batch_size):
         input_row_offsets_ptr[i + 1] = input_row_offsets_ptr[i] + UInt32(
@@ -138,7 +135,7 @@ fn test_mla_index_fp8_paged_variable_lengths[
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_ptr)
 
     # Cache lengths: [batch_size] - variable cached tokens per sequence
-    var cache_lengths_ptr = UnsafePointer[UInt32].alloc(batch_size)
+    var cache_lengths_ptr = alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_ptr[i] = UInt32(cache_lens[i])
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -234,7 +231,7 @@ fn test_mla_index_fp8_paged_variable_lengths[
     # Dense output: [total_seq_len, top_k]
     var total_output_size = total_seq_len * top_k
 
-    var o_ptr = UnsafePointer[Scalar[DType.int32]].alloc(total_output_size)
+    var o_ptr = alloc[Scalar[DType.int32]](total_output_size)
     var o_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
 
     var q_tile = TileTensor(

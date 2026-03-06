@@ -48,7 +48,7 @@ def load_pickle(path: Path | str) -> Any:
         return pickle.load(handle)
 
 
-def flatten(value: int | object | Iterable) -> list[Any]:
+def flatten(value: int | object | Iterable) -> list[Any]:  # type: ignore[type-arg]
     """Flatten nested iterables into a single list."""
     if not isinstance(value, Iterable) or isinstance(value, str):
         return [value]
@@ -110,13 +110,14 @@ def _get_hw_gpu_count(target_accelerator: str) -> int | None:
         if not smi:
             return None
         try:
-            out = subprocess.check_output([smi, "--showid"], timeout=10)
-            lines = out.decode().strip().splitlines()
-            return sum(
-                1
-                for line in lines
-                if line.strip() and line.strip()[0].isdigit()
+            out = subprocess.check_output(
+                [smi, "--showproductname", "--csv"],
+                timeout=10,
+                stderr=subprocess.DEVNULL,
             )
+            lines = out.decode().strip().splitlines()
+            # CSV: "device,Card series,..." header, then "card0,..." per GPU
+            return sum(1 for line in lines if line.startswith("card"))
         except (subprocess.SubprocessError, OSError):
             return None
     return None

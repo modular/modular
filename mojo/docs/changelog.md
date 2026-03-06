@@ -21,6 +21,21 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports a standalone `assert` statement, similar to Python's
+  `assert`. It checks a condition at runtime and aborts the program if the
+  condition is false:
+
+  ```mojo
+  assert x > 0, "x must be positive"
+  assert len(items) != 0
+  ```
+
+  The condition must be a `Bool` expression and the optional message can be any
+  `Writable` expression (`StringLiteral`, `String`, `Int`, etc.). Under the
+  hood, `assert` desugars to a call to `debug_assert`, so it respects the
+  existing `-D ASSERT` flag: assertions are active when compiled with
+  `-D ASSERT=all` and are no-ops otherwise.
+
 - Mojo now enforces a more explicit parameter bindings rules:
   - `[]` is mandatory to make type more concrete:
 
@@ -190,14 +205,16 @@ what we publish.
 
 - `def` functions now allows a `raises` specifier, and support typed errors.
   `def` will soon *require* an exception specifier to throw, so we strongly
-  recommend changing `def` functions to have an explicit `raises` keyword.
+  recommend changing `def` functions to have an explicit `raises` keyword. To
+  help with migration, the Mojo compiler now produces a warning for `def`
+  functions that lack a `raises` specifier.
 
   ```mojo
   # Older behavior
   def foo():        # implicitly raises Error.
   def bar() raises: # was invalid
   # Current behavior
-  def bar():        # Still implicitly raises Error (not recommended)
+  def bar():        # Still implicitly raises Error (not recommended; warns)
   def bar() raises: # Explicit raises Error (recommended)
   # Near future behavior
   def bar():        # Does not raise.
@@ -302,6 +319,13 @@ what we publish.
   function rather than the module.
 
 ### Library changes
+
+- `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
+  `std.gpu.primitives.warp` now always broadcast the reduction result to all
+  participating lanes, using optimized hardware-specific paths (AMD DPP,
+  Blackwell redux, or butterfly shuffle pattern). The previous
+  `lane_group_sum_and_broadcast()`, `lane_group_max_and_broadcast()` functions
+  are deprecated — use the short names instead.
 
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
@@ -579,6 +603,19 @@ what we publish.
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
+
+- Added the `UnsafeNicheable` and `UnsafeSingleNicheable` traits to
+  `std.utils`. These traits allow types to expose known-invalid bit patterns
+  ("niches") that can be used by containers like `Optional` and `Variant` to avoid
+  storing a separate tag, so that `size_of[Optional[T]]() == size_of[T]()`.
+  `UnsafeSingleNicheable` is a simplified subtrait for the common case where a
+  type has exactly one niche value.
+  - `Variant` and `Optional` now automatically take advantage of this: when the
+    variant types qualify, the discriminant tag is elided entirely, reducing the
+    size of the variant. For example, `size_of[Optional[T]]() == size_of[T]()`
+    for any `T` that implements `UnsafeNicheable`.
+  - `Variant` also only works with `Movable` types in the interim instead of
+    `AnyType` due to some compiler limitations.
 
 - `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
   There are a few restrictions including iteration requiring `T: Copyable`.

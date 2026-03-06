@@ -32,7 +32,7 @@ Usage:
 """
 
 from std.collections import Optional
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
@@ -41,8 +41,6 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
-    Layout as LegacyLayout,
-    LayoutTensor,
     RuntimeInt,
     RuntimeLayout,
     TileTensor,
@@ -159,6 +157,7 @@ fn grouped_matmul_1d1d_nvfp4[
 
     comptime if config.cta_group == 2:
         comptime assert MMA_M == 256 and MMA_N in (
+            64,
             128,
             256,
         ), "Only support cta_group == 2 with MMA_M == 256"
@@ -166,9 +165,9 @@ fn grouped_matmul_1d1d_nvfp4[
             config.AB_swapped
         ), "cta_group == 2 requires AB_swapped for scheduler alignment"
     else:
-        comptime assert MMA_M == 128 and MMA_N in (128, 256), (
-            "Only support MMA_M == 128 and MMA_N in (128, 256) when"
-            " cta_group == 1"
+        comptime assert MMA_M == 128 and MMA_N in (64, 128, 256), (
+            "Only support MMA_M == 128 and MMA_N in (64, 128, 256)"
+            " when cta_group == 1"
         )
 
     comptime cluster_shape = config.cluster_shape
@@ -222,7 +221,7 @@ fn grouped_matmul_1d1d_nvfp4[
     )
 
     comptime sfb_tma_tile_shape = Index(
-        MMA_N // SF_MN_GROUP_SIZE,
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
@@ -300,14 +299,14 @@ fn grouped_matmul_1d1d_nvfp4[
     # and kernel launch. The @parameter if ensures compile-time branching.
     comptime if config.AB_swapped:
         var a_tma_op = create_tma_tile[
-            KernelType.ATmaTile.tile_layout,
-            KernelType.ATmaTile.desc_layout,
+            KernelType.ATileLayout,
+            KernelType.ADescLayout,
             Index(BM // cluster_shape[1], BK),
             swizzle_mode=config.a_swizzle,
         ](ctx, b_device)
         var b_tma_op = create_tma_tile[
-            KernelType.BTmaTile.tile_layout,
-            KernelType.BTmaTile.desc_layout,
+            KernelType.BTileLayout,
+            KernelType.BDescLayout,
             Index(
                 BN // (cluster_shape[0] // config.cta_group), BK
             ) if transpose_b else Index(
@@ -316,20 +315,20 @@ fn grouped_matmul_1d1d_nvfp4[
             swizzle_mode=config.b_swizzle,
         ](ctx, a_device)
         var c_tma_op = create_tma_tile[
-            KernelType.CTmaTile.tile_layout,
-            KernelType.CTmaTile.desc_layout,
+            KernelType.CTileLayout,
+            KernelType.CDescLayout,
             Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
             swizzle_mode=config.c_swizzle,
         ](ctx, c_device)
         var sfa_tma_op = create_tma_tile[
-            KernelType.SFATmaTile.tile_layout,
-            KernelType.SFATmaTile.desc_layout,
+            KernelType.SFATileLayout,
+            KernelType.SFADescLayout,
             sfa_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx, sfb_4d)
         var sfb_tma_op = create_tma_tile[
-            KernelType.SFBTmaTile.tile_layout,
-            KernelType.SFBTmaTile.desc_layout,
+            KernelType.SFBTileLayout,
+            KernelType.SFBDescLayout,
             sfb_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx, sfa_4d)
@@ -358,14 +357,14 @@ fn grouped_matmul_1d1d_nvfp4[
         )
     else:
         var a_tma_op = create_tma_tile[
-            KernelType.ATmaTile.tile_layout,
-            KernelType.ATmaTile.desc_layout,
+            KernelType.ATileLayout,
+            KernelType.ADescLayout,
             Index(BM // cluster_shape[1], BK),
             swizzle_mode=config.a_swizzle,
         ](ctx, a_device)
         var b_tma_op = create_tma_tile[
-            KernelType.BTmaTile.tile_layout,
-            KernelType.BTmaTile.desc_layout,
+            KernelType.BTileLayout,
+            KernelType.BDescLayout,
             Index(
                 BN // (cluster_shape[0] // config.cta_group), BK
             ) if transpose_b else Index(
@@ -374,20 +373,20 @@ fn grouped_matmul_1d1d_nvfp4[
             swizzle_mode=config.b_swizzle,
         ](ctx, b_device)
         var c_tma_op = create_tma_tile[
-            KernelType.CTmaTile.tile_layout,
-            KernelType.CTmaTile.desc_layout,
+            KernelType.CTileLayout,
+            KernelType.CDescLayout,
             c_tma_tile_shape,
             swizzle_mode=config.c_swizzle,
         ](ctx, c_device)
         var sfa_tma_op = create_tma_tile[
-            KernelType.SFATmaTile.tile_layout,
-            KernelType.SFATmaTile.desc_layout,
+            KernelType.SFATileLayout,
+            KernelType.SFADescLayout,
             sfa_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx, sfa_4d)
         var sfb_tma_op = create_tma_tile[
-            KernelType.SFBTmaTile.tile_layout,
-            KernelType.SFBTmaTile.desc_layout,
+            KernelType.SFBTileLayout,
+            KernelType.SFBDescLayout,
             sfb_tma_tile_shape,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx, sfb_4d)

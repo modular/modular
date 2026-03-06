@@ -853,10 +853,9 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        debug_assert(
-            self.is_contiguous() or width == 1,
-            "Function requires contiguous buffer.",
-        )
+        assert (
+            self.is_contiguous() or width == 1
+        ), "Function requires contiguous buffer."
         return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline("nodebug")
@@ -906,10 +905,9 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        debug_assert(
-            self.is_contiguous() or width == 1,
-            "Function requires contiguous buffer.",
-        )
+        assert (
+            self.is_contiguous() or width == 1
+        ), "Function requires contiguous buffer."
         return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline
@@ -1034,10 +1032,9 @@ struct NDBuffer[
             idx: The index into the buffer.
             val: The value to store.
         """
-        debug_assert(
-            self.is_contiguous() or width == 1,
-            "Function requires contiguous buffer.",
-        )
+        assert (
+            self.is_contiguous() or width == 1
+        ), "Function requires contiguous buffer."
         self._offset(idx).store[alignment=alignment](val)
 
     @always_inline
@@ -1130,9 +1127,7 @@ struct NDBuffer[
         Returns:
             Constructed buffer object.
         """
-        debug_assert(
-            self.is_contiguous(), "Function requires contiguous buffer."
-        )
+        assert self.is_contiguous(), "Function requires contiguous buffer."
         return {self.data, IndexList[1](self.size())}
 
     @always_inline
@@ -1168,9 +1163,7 @@ struct NDBuffer[
         Constraints:
             The buffer must be contiguous.
         """
-        debug_assert(
-            self.is_contiguous(), "Function requires contiguous buffer."
-        )
+        assert self.is_contiguous(), "Function requires contiguous buffer."
 
         comptime if Self.shape.all_known[Self.rank]():
             comptime count = Int(Self.shape.product())
@@ -1257,9 +1250,7 @@ struct NDBuffer[
         Args:
             val: The value to store.
         """
-        debug_assert(
-            self.is_contiguous(), "Function requires contiguous buffer."
-        )
+        assert self.is_contiguous(), "Function requires contiguous buffer."
         self._simd_fill[simd_width_of[Self.dtype]()](val)
 
     @staticmethod

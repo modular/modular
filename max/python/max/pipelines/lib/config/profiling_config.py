@@ -27,7 +27,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 class ProfilingConfig(ConfigFileModel):
-    """Configuration for pipeline profiling."""
+    """Configuration for GPU profiling of pipeline models."""
 
     gpu_profiling: GPUProfilingMode = Field(
         default="off",

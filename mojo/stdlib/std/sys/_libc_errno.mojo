@@ -407,10 +407,9 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         Args:
             value: The numeric error code.
         """
-        debug_assert(
-            0 <= value <= Int(c_int.MAX),
-            "constructed ErrNo from an `Int` out of range of `c_int`",
-        )
+        assert (
+            0 <= value <= Int(c_int.MAX)
+        ), "constructed ErrNo from an `Int` out of range of `c_int`"
         self.value = c_int(value)
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -421,9 +420,7 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         """
 
         comptime if CompilationTarget.is_macos():
-            debug_assert(
-                self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
-            )
+            assert self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
         var ptr = external_call[
             "strerror", UnsafePointer[Byte, MutExternalOrigin]
         ](self.value)

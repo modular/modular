@@ -323,6 +323,15 @@ class SamplingParams:
             logger.debug("Temperature is 0, overriding top_k to 1.")
             self.top_k = 1
 
+    @property
+    def needs_penalties(self) -> bool:
+        """Whether penalties are needed for the set of sampling parameters."""
+        return (
+            self.frequency_penalty != 0.0
+            or self.presence_penalty != 0.0
+            or self.repetition_penalty != 1.0
+        )
+
 
 @runtime_checkable
 class BaseContext(Protocol):

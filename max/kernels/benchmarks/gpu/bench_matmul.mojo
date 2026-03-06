@@ -31,16 +31,14 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from buffer import Dim, DimList, NDBuffer
-from std.gpu import global_idx, grid_dim, block_dim
+from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.primitives import block
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
-    assert_almost_equal,
-    assert_with_measure,
     pytorch_like_tolerances_for,
 )
-from internal_utils._measure import relative_difference
 from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -57,6 +55,64 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
+
+
+fn _verify_buffers_gpu[
+    c_type: DType, BLOCK_SIZE: Int
+](
+    output: UnsafePointer[Scalar[c_type]],
+    reference: UnsafePointer[Scalar[c_type]],
+    length: Int,
+    atol: Float32,
+    rtol: Float32,
+    result: UnsafePointer[Scalar[DType.float32]],
+):
+    """GPU kernel that computes verification metrics in one pass.
+
+    Each block computes partial reductions and writes 5 Float32 values:
+      [0] abs_diff_sum — for relative difference metric
+      [1] abs_ref_sum  — for relative difference metric
+      [2] max_violation — max(|x-y| - (atol + rtol*|y|)), <=0 means pass
+      [3] out_nz — 1.0 if any output element is nonzero
+      [4] ref_nz — 1.0 if any reference element is nonzero
+    """
+    # Per-thread accumulators
+    var abs_diff_sum: Float32 = 0
+    var abs_ref_sum: Float32 = 0
+    var max_violation = Float32.MIN_FINITE
+    var out_nz: Float32 = 0
+    var ref_nz: Float32 = 0
+
+    # Grid-stride loop
+    var i = UInt(global_idx.x)
+    var stride = UInt(grid_dim.x * block_dim.x)
+    while i < UInt(length):
+        var x = output[i].cast[DType.float32]()
+        var y = reference[i].cast[DType.float32]()
+        abs_diff_sum += abs(x - y)
+        abs_ref_sum += abs(y)
+        max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
+        if x != 0:
+            out_nz = 1.0
+        if y != 0:
+            ref_nz = 1.0
+        i += stride
+
+    # Block-wide reductions
+    abs_diff_sum = block.sum[block_size=BLOCK_SIZE](abs_diff_sum)
+    abs_ref_sum = block.sum[block_size=BLOCK_SIZE](abs_ref_sum)
+    max_violation = block.max[block_size=BLOCK_SIZE](max_violation)
+    out_nz = block.max[block_size=BLOCK_SIZE](out_nz)
+    ref_nz = block.max[block_size=BLOCK_SIZE](ref_nz)
+
+    # Each block writes its partial results
+    if thread_idx.x == 0:
+        var base = Int(block_idx.x) * 5
+        result[base + 0] = abs_diff_sum
+        result[base + 1] = abs_ref_sum
+        result[base + 2] = max_violation
+        result[base + 3] = out_nz
+        result[base + 4] = ref_nz
 
 
 fn verify_matmul[
@@ -80,24 +136,6 @@ fn verify_matmul[
     var a_size = dynamic_a_shape[0] * dynamic_a_shape[1]
     var b_size = dynamic_b_shape[0] * dynamic_b_shape[1]
 
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
-
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
-    var a_host = NDBuffer[dtype, 2, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
-    var b_host = NDBuffer[dtype, 2, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
-
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     var a_device_nd = NDBuffer[dtype, 2, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
@@ -117,6 +155,15 @@ fn verify_matmul[
 
     # Initialize matmul operands
     comptime if not init_on_gpu:
+        var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
+        var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
+        var a_host = NDBuffer[dtype, 2, _, static_a_shape](
+            a_host_ptr, dynamic_a_shape
+        )
+        var b_host = NDBuffer[dtype, 2, _, static_b_shape](
+            b_host_ptr, dynamic_b_shape
+        )
+
         comptime if dtype.is_float8():
             rand(a_host.data, a_host.num_elements())
             rand(b_host.data, b_host.num_elements())
@@ -138,6 +185,8 @@ fn verify_matmul[
         # Move operands to the Device
         ctx.enqueue_copy(a_device, a_host_ptr)
         ctx.enqueue_copy(b_device, b_host_ptr)
+        a_host_ptr.free()
+        b_host_ptr.free()
     else:
         init_vector_launch[dtype](a_device, a_size, init_type, ctx)
         init_vector_launch[dtype](b_device, b_size, init_type, ctx)
@@ -156,23 +205,61 @@ fn verify_matmul[
         transpose_b=transpose_b,
     ](c_device_nd, a_device_nd, b_device_nd, ctx)
 
+    # Launch GPU verification kernel
+    comptime NUM_BLOCKS = 32
+    comptime BLOCK_SIZE = 256
+
+    var rtol: Float32
+    var atol: Float32
+    comptime if dtype.is_float8():
+        rtol = 1e-2
+        atol = 1e-2
+    else:
+        var rtol64: Float64
+        var atol64: Float64
+        rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+        rtol = Float32(rtol64)
+        atol = Float32(atol64)
+
+    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+
+    comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
+    ctx.enqueue_function_experimental[kernel](
+        c_device.unsafe_ptr(),
+        c_device_ref.unsafe_ptr(),
+        c_size,
+        atol,
+        rtol,
+        result_device.unsafe_ptr(),
+        grid_dim=NUM_BLOCKS,
+        block_dim=BLOCK_SIZE,
+    )
+
+    # Copy back only NUM_BLOCKS * 5 Float32 values
+    var result_host = UnsafePointer[Scalar[DType.float32]].alloc(NUM_BLOCKS * 5)
+    ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.data, c_device)
-    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
-    ctx.synchronize()
+    # Reduce partial results from all blocks
+    var total_abs_diff: Float32 = 0
+    var total_abs_ref: Float32 = 0
+    var worst_violation = Float32.MIN_FINITE
+    var any_out_nz: Float32 = 0
+    var any_ref_nz: Float32 = 0
 
-    # Sanity check: verify outputs match expected zero/non-zero state
-    fn is_all_zeros(
-        ptr: UnsafePointer[Scalar[DType.bfloat16]], size: Int
-    ) -> Bool:
-        for i in range(size):
-            if ptr[i] != 0:
-                return False
-        return True
+    for b_idx in range(NUM_BLOCKS):
+        var base = b_idx * 5
+        total_abs_diff += result_host[base + 0]
+        total_abs_ref += result_host[base + 1]
+        worst_violation = max(worst_violation, result_host[base + 2])
+        any_out_nz = max(any_out_nz, result_host[base + 3])
+        any_ref_nz = max(any_ref_nz, result_host[base + 4])
 
-    var c_is_zeros = is_all_zeros(c_host.data, c_size)
-    var c_ref_is_zeros = is_all_zeros(c_host_ref.data, c_size)
+    result_host.free()
+
+    # Check zero/nonzero expectations
+    var c_is_zeros = any_out_nz == 0
+    var c_ref_is_zeros = any_ref_nz == 0
 
     if init_type == InitializationType.zero:
         if not c_is_zeros:
@@ -185,33 +272,26 @@ fn verify_matmul[
         if c_ref_is_zeros:
             raise "matmul verification failed: vendor BLAS output is all zeros"
 
-    # Verify using relative difference measure
-    assert_with_measure[relative_difference](
-        c_host.data,
-        c_host_ref.data,
-        c_size,
-        msg="matmul verification failed (relative_difference)",
-        threshold=0.001,
-    )
+    # Check relative difference: sum(|x-y|) / sum(|y|) <= 0.001
+    if total_abs_ref > 0:
+        var rel_diff = total_abs_diff / total_abs_ref
+        if rel_diff > 0.001:
+            raise String(
+                "matmul verification failed (relative_difference): ",
+                rel_diff,
+                " > 0.001",
+            )
 
-    # Verify element-wise with dtype-appropriate tolerances
-    # float8 needs looser tolerances due to reduced precision
-    var rtol: Float64
-    var atol: Float64
+    # Check element-wise tolerance: max(|x-y| - (atol + rtol*|y|)) <= 0
+    if worst_violation > 0:
+        raise String(
+            (
+                "matmul verification failed (element-wise tolerance): worst"
+                " violation = "
+            ),
+            worst_violation,
+        )
 
-    comptime if dtype.is_float8():
-        rtol = 1e-2
-        atol = 1e-2
-    else:
-        rtol, atol = pytorch_like_tolerances_for[DType.bfloat16]()
-
-    assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
-        c_host.num_elements(),
-        atol=atol,
-        rtol=rtol,
-    )
     print("\n=== TEST PASSED ===\n")
 
 
@@ -296,16 +376,12 @@ fn bench_matmul[
     var cb_c = CacheBustingBuffer[DType.bfloat16](
         get_size(shape_c_dim), simd_size, ctx
     )
-    var buffer_c_ref = ctx.enqueue_create_buffer[DType.bfloat16](cb_c.stride)
-
-    # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_a.alloc_size())
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_b.alloc_size())
-
     # TODO: remove init_on_gpu flag and the loading on CPU
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
+        var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_a.alloc_size())
+        var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_b.alloc_size())
         var a_host = NDBuffer[dtype, 1](a_host_ptr, cb_a.alloc_size())
         var b_host = NDBuffer[dtype, 1](b_host_ptr, cb_b.alloc_size())
 
@@ -331,6 +407,8 @@ fn bench_matmul[
         ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
         ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
         ctx.synchronize()
+        a_host_ptr.free()
+        b_host_ptr.free()
     else:
         cb_a.init_on_device(init_type, ctx)
         cb_b.init_on_device(init_type, ctx)
@@ -438,15 +516,10 @@ fn bench_matmul[
                 init_on_gpu=init_on_gpu,
             ](ctx, shape_c_dim, shape_a_dim, shape_b_dim, init_type)
 
-    # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
-
     # Consume device buffers
     _ = cb_a^
     _ = cb_b^
     _ = cb_c^
-    _ = buffer_c_ref^
 
 
 fn create_matmul_bench[

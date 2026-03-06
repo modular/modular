@@ -42,6 +42,8 @@ _DEFAULT_BATCH_SIZE = 512
 
 
 class MemoryEstimator:
+    """Estimates available memory for pipeline model allocation."""
+
     @classmethod
     def free_memory(cls, devices: list[Device]) -> int:
         """Return the total free memory available across all provided devices."""

@@ -273,9 +273,9 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
             num_heads, schedule
         ](idx)
 
-        debug_assert(prompt_tile_idx < self.max_num_prompt_tiles)
-        debug_assert(head_idx < num_heads)
-        debug_assert(prompt_idx < self.batch_size)
+        assert prompt_tile_idx < self.max_num_prompt_tiles
+        assert head_idx < num_heads
+        assert prompt_idx < self.batch_size
 
         return WorkInfo(
             prompt_tile_idx * tile_shape,

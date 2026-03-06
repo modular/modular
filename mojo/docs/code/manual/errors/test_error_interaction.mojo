@@ -44,7 +44,7 @@ def test_validate_typed_fail() raises:
         _ = validate_typed(-5)
 
 
-def test_bare_raises_erases_type():
+def test_bare_raises_erases_type() raises:
     # validate_bare_raises erases type info — only Error is caught
     with assert_raises(contains="cannot be negative"):
         _ = validate_bare_raises(-5)

@@ -110,7 +110,9 @@ class InternVisionConfig(PretrainedConfig):
 
     @classmethod
     def from_pretrained(
-        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
+        cls,
+        pretrained_model_name_or_path: str | os.PathLike,  # type: ignore[type-arg]
+        **kwargs,
     ) -> "PretrainedConfig":
         config_dict, kwargs = cls.get_config_dict(
             pretrained_model_name_or_path, **kwargs

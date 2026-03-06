@@ -28,7 +28,10 @@
 * `AbortOnCopy`
 """
 
+from std.memory import UnsafeMaybeUninit
 from std.os import abort
+from std.reflection import offset_of
+from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly
@@ -515,15 +518,18 @@ struct Observable[
     CopyOrigin: MutOrigin = MutExternalOrigin,
     MoveOrigin: MutOrigin = MutExternalOrigin,
     DelOrigin: MutOrigin = MutExternalOrigin,
-](Copyable):
+    opt_into_unsafe_niche: Bool = False,
+](Copyable, UnsafeNicheable where opt_into_unsafe_niche):
     """A type that tracks the number of times it has been copied, moved, and destroyed.
 
     Parameters:
         CopyOrigin: Origin of the copies pointer.
         MoveOrigin: Origin of the moves pointer.
         DelOrigin: Origin of the dels pointer.
+        opt_into_unsafe_niche: A flag indicating if this type should implement `UnsafeNicheable`.
     """
 
+    var _always_zero: Byte
     var _copies: Optional[Pointer[Int, Self.CopyOrigin]]
     var _moves: Optional[Pointer[Int, Self.MoveOrigin]]
     var _dels: Optional[Pointer[Int, Self.DelOrigin]]
@@ -542,6 +548,7 @@ struct Observable[
             moves: Optional pointer to an Int to count moves.
             dels: Optional pointer to an Int to count dels.
         """
+        self._always_zero = 0
         self._copies = copies^
         self._moves = moves^
         self._dels = dels^
@@ -552,6 +559,7 @@ struct Observable[
         Args:
             copy: The instance being copied from.
         """
+        self._always_zero = 0
         self._copies = copy._copies.copy()
         self._moves = copy._moves.copy()
         self._dels = copy._dels.copy()
@@ -564,6 +572,7 @@ struct Observable[
         Args:
             take: The instance being moved from.
         """
+        self._always_zero = 0
         self._copies = take._copies^
         self._moves = take._moves^
         self._dels = take._dels^
@@ -574,6 +583,55 @@ struct Observable[
         """Destroy the Observable and increment the del count."""
         if self._dels:
             self._dels.value()[] += 1
+
+    @staticmethod
+    fn niche_count() -> Int where Self.opt_into_unsafe_niche:
+        """Returns the number of niche values available.
+
+        Uses `_always_zero` (which is always `0` in a live instance) to store
+        niche indices as non-zero bytes, giving `Byte.MAX - 1` possible niches.
+
+        Returns:
+            `Byte.MAX - 1`.
+        """
+        return Int(Byte.MAX - 1)
+
+    @staticmethod
+    fn write_niche[
+        index: Int
+    ](
+        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
+    ) where Self.opt_into_unsafe_niche:
+        """Writes niche bit pattern `index` into storage.
+
+        Parameters:
+            index: Which niche to write.
+
+        Args:
+            memory: Pointer to uninitialized storage sized and aligned for `Self`.
+        """
+        comptime niche_offset = offset_of[Self, name="_always_zero"]()
+        (memory.bitcast[Byte]() + niche_offset).store(Byte(index + 1))
+
+    @staticmethod
+    fn classify_niche(
+        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+    ) -> NicheIndex where Self.opt_into_unsafe_niche:
+        """Classifies the bit pattern at `memory` as a niche or a live value.
+
+        Args:
+            memory: Pointer to initialized storage containing either a live
+                `Self` value or a previously written niche.
+
+        Returns:
+            The niche index of the memory.
+        """
+        comptime niche_offset = offset_of[Self, name="_always_zero"]()
+        var value = (memory.bitcast[Byte]() + niche_offset).load()
+        if value == 0:
+            return NicheIndex.NotANiche
+        else:
+            return NicheIndex(Int(value - 1))
 
 
 # ===----------------------------------------------------------------------=== #

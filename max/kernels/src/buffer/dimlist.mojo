@@ -557,10 +557,9 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         ```
         """
         var num_elements = len(self)
-        debug_assert(
-            rank == num_elements,
-            "[DimList] mismatch in the number of elements",
-        )
+        assert (
+            rank == num_elements
+        ), "[DimList] mismatch in the number of elements"
         var index_list = IndexList[rank]()
 
         comptime for idx in range(rank):

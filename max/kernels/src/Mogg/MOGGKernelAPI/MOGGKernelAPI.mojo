@@ -85,7 +85,6 @@ from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
-from linalg.distributed_matmul import matmul_allreduce
 from linalg.dual_gemm import swishGLU
 from linalg.fp8_quantization import (
     convert_e4m3fn_to_e4m3fnuz,
@@ -978,16 +977,14 @@ struct SqueezeShape:
         var num_remove_indices = remove_indices.dim_size[0]()
         var final_rank = num_input_dims - num_remove_indices
 
-        debug_assert(
-            final_rank == output_shape.dim_size[0](),
-            "Incorrect output shape.",
-        )
+        assert (
+            final_rank == output_shape.dim_size[0]()
+        ), "Incorrect output shape."
 
         comptime MAX_VECTOR_LIMIT = 12
-        debug_assert(
-            num_input_dims <= MAX_VECTOR_LIMIT,
-            "Only support shape vectors up to rank-12.",
-        )
+        assert (
+            num_input_dims <= MAX_VECTOR_LIMIT
+        ), "Only support shape vectors up to rank-12."
         var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
         for i in range(num_input_dims):
             input_shape_copy[i] = Int(input_shape[i])
@@ -1045,10 +1042,9 @@ struct UnsqueezeShape:
         var num_input_dims = input_shape.dim_size[0]()
         var num_padding_indices = padding_indices.dim_size[0]()
         var final_rank = num_input_dims + num_padding_indices
-        debug_assert(
-            final_rank == output_shape.dim_size[0](),
-            "Incorrect output shape.",
-        )
+        assert (
+            final_rank == output_shape.dim_size[0]()
+        ), "Incorrect output shape."
         for output_index in range(final_rank):
             output_shape[output_index] = -1
 
@@ -1058,20 +1054,16 @@ struct UnsqueezeShape:
                 padding_indices[padding_index_index] < 0
             )
 
-            debug_assert(
+            assert (
                 padding_index_normalize >= 0
-                and padding_index_normalize < final_rank,
-                (
-                    "Padding indices must be between [-r, r-1] where r is the"
-                    " final output rank."
-                ),
+                and padding_index_normalize < final_rank
+            ), (
+                "Padding indices must be between [-r, r-1] where r is the"
+                " final output rank."
             )
-            debug_assert(
-                output_shape[padding_index_normalize] == -1,
-                (
-                    "Duplicate padding indices point to the same dimension in"
-                    " the final output shape."
-                ),
+            assert output_shape[padding_index_normalize] == -1, (
+                "Duplicate padding indices point to the same dimension in"
+                " the final output shape."
             )
             output_shape[padding_index_normalize] = 1
 
@@ -1722,7 +1714,7 @@ struct BroadcastShape:
         # Ensure lhs is always the smaller shape
         var lhs_rank = lhs_buf.size()
         var rhs_rank = rhs_buf.size()
-        debug_assert(lhs_rank <= rhs_rank, "lhs shape must be the smaller one")
+        assert lhs_rank <= rhs_rank, "lhs shape must be the smaller one"
 
         # lhs_buf =      [l0, l1, ...]
         # rhs_buf = [..., r0, r1, ...]
@@ -1739,9 +1731,7 @@ struct BroadcastShape:
                 out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.dtype]()
 
             elif lhs_dim != 1 and rhs_dim != 1:
-                debug_assert(
-                    rhs_dim == 1, "one of the differing dimensions must be 1"
-                )
+                assert rhs_dim == 1, "one of the differing dimensions must be 1"
 
             elif lhs_dim != 1:
                 out_buf[rhs_idx] = lhs_buf[lhs_idx].cast[out_buf.dtype]()
@@ -4011,10 +4001,10 @@ struct LinalgBandPart:
             target=target,
         ](
             input.shape(),
-            num_lower.to_layout_tensor().get_immutable(),
-            num_upper.to_layout_tensor().get_immutable(),
-            exclude.to_layout_tensor().get_immutable(),
-            output.to_layout_tensor(),
+            num_lower.to_tile_tensor[int_type](),
+            num_upper.to_tile_tensor[int_type](),
+            exclude.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[dtype](),
             ctx,
         )
 
@@ -4344,7 +4334,7 @@ struct RandomUniform:
         variance: Scalar,
         seed_value: Scalar,
     ) -> IndexList[output_rank]:
-        debug_assert(shape.dim_size[0]() == output_rank)
+        assert shape.dim_size[0]() == output_rank
 
         var unrolled_shape = IndexList[output_rank]()
         for i in range(output_rank):
@@ -4560,7 +4550,7 @@ struct Concat:
             False,
             inputs_lambda,
             epilogue_wrapper,
-            target,
+            target=target,
         ](
             normalize_neg_index(Int(axis), rank),
             input_shapes,
@@ -6969,6 +6959,89 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             )
 
 
+@compiler.register("mo.rope.ragged.with_position_id")
+struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            return String(";").join(
+                Span(
+                    [
+                        trace_arg("output", output.shape()),
+                        trace_arg("x", x.shape()),
+                        trace_arg(
+                            "input_row_offsets", input_row_offsets.shape()
+                        ),
+                        trace_arg("start_pos", start_pos.shape()),
+                        trace_arg("freqs_cis", freqs_cis.shape()),
+                        trace_arg("position_ids", position_ids.shape()),
+                        "interleaved=" + String(Self.interleaved),
+                        "target=" + String(target),
+                    ]
+                )
+            )
+
+        @always_inline
+        @parameter
+        fn output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+            output._lambda_store[width=width, element_alignment=alignment](
+                idx,
+                rebind[SIMD[dtype, width]](val),
+            )
+
+        var device_ctx: Optional[DeviceContext] = None
+
+        comptime if is_gpu[target]():
+            device_ctx = ctx.get_device_context()
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.rope.ragged.with_position_id",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        ):
+            var x_tensor = x.to_tile_tensor[DType.int64]()
+            var row_offsets_tensor = input_row_offsets.to_tile_tensor[
+                DType.int64
+            ]()
+            var start_tensor = start_pos.to_tile_tensor[DType.int64]()
+            var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
+            var position_ids_tensor = position_ids.to_tile_tensor[DType.int64]()
+            comptime assert row_offsets_tensor.flat_rank == 1
+            comptime assert start_tensor.flat_rank == 1
+            comptime assert freqs_cis_tensor.flat_rank == 2
+            comptime assert position_ids_tensor.flat_rank == 2
+
+            rope_ragged[
+                interleaved=Self.interleaved,
+                target=target,
+                output_fn=output_fn,
+            ](
+                x_tensor,
+                row_offsets_tensor,
+                start_tensor,
+                freqs_cis_tensor,
+                device_ctx,
+                position_ids=position_ids_tensor.as_any_origin().as_immut(),
+            )
+
+
 # ===-----------------------------------------------------------------------===#
 # MHA
 #
@@ -7265,14 +7338,16 @@ struct Struct_mla_decode_ragged_paged_capturable:
     @staticmethod
     fn execute[
         dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
         //,
         mask_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
@@ -10439,141 +10514,6 @@ struct DistributedScatter:
             _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.matmul_allreduce")
-struct DistributedMatmulAllReduce:
-    @staticmethod
-    fn execute[
-        a_type: DType,
-        b_type: DType,
-        c_type: DType,
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        outputs: FusedOutputVariadicTensors[c_type, 2, ...],
-        inputs: InputVariadicTensors[a_type, 2, ...],
-        weights: InputVariadicTensors[b_type, 2, ...],
-        signal_buffers: MutableInputVariadicTensors[
-            dtype=DType.uint8, rank=1, ...
-        ],
-        dev_ctxs_input: DeviceContextPtrList,
-    ) capturing raises:
-        """Distributed allreduce operation implementation for sum reduction.
-
-
-        Args:
-            outputs: Output tensors (one per GPU) to store reduced results.
-            inputs: Input tensors (one per GPU) containing matmul inputs.
-            weights: Input tensors (one per GPU) containing matmul inputs.
-            signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
-            dev_ctxs_input: Device contexts for participating GPUs.
-
-        Implementation Notes:
-            1. Uses naive reduction implementation when P2P access unavailable.
-            2. Requires input/output buffers to be device-allocated and aligned.
-            3. Signal buffers must be device-allocated and large enough to fit
-               the buffer + signals metadata.
-
-        Limitations:
-            - Maximum of 8 GPUs supported (matches MAX_GPUS in allreduce.mojo)
-            - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
-            - Requires identical tensor shapes across all participating GPUs
-        """
-        comptime num_devices = inputs.size
-        comptime assert (
-            weights.size == num_devices
-            and signal_buffers.size == num_devices
-            and outputs.size == num_devices
-        ), (
-            "expected allreduce inputs, weights, outputs, and signal"
-            " buffers to all have the same number of elements"
-        )
-
-        var input_size_bytes = outputs[0].size() * size_of[c_type]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
-
-        var dev_ctxs = List[DeviceContext]()
-        for i in range(len(dev_ctxs_input)):
-            dev_ctxs.append(dev_ctxs_input[i])
-
-        # Get the static buffer dimensions
-        comptime n_dim = weights.static_specs[0].shape.at[0]()
-        comptime k_dim = weights.static_specs[0].shape.at[1]()
-        comptime assert not n_dim.is_dynamic(), "n dimension should be static"
-        comptime assert not k_dim.is_dynamic(), "k dimension should be static"
-
-        comptime A_static_shape = DimList(Dim(), k_dim)
-        comptime B_static_shape = DimList(n_dim, k_dim)
-        comptime C_static_shape = DimList(Dim(), n_dim)
-
-        # Marshal input and output variadic tensors into the expected format.
-        var in_bufs = InlineArray[
-            NDBuffer[a_type, 2, ImmutAnyOrigin, A_static_shape], num_devices
-        ](fill={})
-        var weight_bufs = InlineArray[
-            NDBuffer[b_type, 2, ImmutAnyOrigin, B_static_shape], num_devices
-        ](fill={})
-
-        comptime for i in range(num_devices):
-            in_bufs[i] = rebind[
-                NDBuffer[a_type, 2, ImmutAnyOrigin, A_static_shape]
-            ](managed_tensor_slice_to_ndbuffer(inputs[i]))
-            weight_bufs[i] = rebind[
-                NDBuffer[b_type, 2, ImmutAnyOrigin, B_static_shape]
-            ](managed_tensor_slice_to_ndbuffer(weights[i]))
-
-        var out_bufs = InlineArray[
-            NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape], num_devices
-        ](fill={})
-
-        comptime for i in range(num_devices):
-            out_bufs[i] = rebind[
-                NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape]
-            ](managed_tensor_slice_to_ndbuffer(outputs[i]))
-
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
-
-        comptime for i in range(signal_buffers.size):
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
-
-        @always_inline
-        @parameter
-        fn outputs_lambda[
-            input_index: Int,
-            _type: DType,
-            _rank: Int,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
-            comptime assert (
-                input_index < num_devices
-            ), "tensor index out of bounds"
-            return outputs[input_index]._lambda_store[
-                width=_width, element_alignment=_alignment
-            ](rebind[IndexList[2]](coords), rebind[SIMD[c_type, _width]](val))
-
-        # Allocate temporarie buffers to store the matmul outputs
-        var c_temp_bufs = InlineArray[
-            NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape], num_devices
-        ](uninitialized=True)
-
-        comptime for i in range(num_devices):
-            var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
-                out_bufs[i].num_elements()
-            )
-            c_temp_bufs[i] = NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape](
-                device_buffer.unsafe_ptr(), out_bufs[i].dynamic_shape
-            )
-
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            matmul_allreduce[
-                ngpus=num_devices,
-                outputs_lambda=outputs_lambda,
-            ](in_bufs, weight_bufs, c_temp_bufs, out_bufs, rank_sigs, dev_ctxs)
-
-
 @compiler.register("mo.distributed.allreduce_add_rms_norm_quant_fp8")
 struct DistributedAllReduceAddRMSNormQuantFP8:
     @staticmethod
@@ -10943,8 +10883,8 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
         var scale_loaded = scale.cast[DType.float32]()
         quantize_static_scaled_fp8[scale_is_inverted=Self.scale_is_inverted](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(input),
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
             scale_loaded,
             ctx.get_device_context(),
         )

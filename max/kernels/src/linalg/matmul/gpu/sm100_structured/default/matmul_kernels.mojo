@@ -30,9 +30,6 @@ The kernel implements a warp-specialized architecture:
 """
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE, barrier, warp_id
@@ -67,7 +64,7 @@ from layout.tile_layout import (
 from std.builtin.variadics import Variadic
 from layout.coord import Coord, Idx, coord
 from structured_kernels.tile_types import (
-    TMATile,
+    TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
 )
@@ -546,27 +543,21 @@ struct BlackwellMatmulSM100Kernel[
         Self.c_tile_dim0, Self.c_swizzle_elems
     ]
 
-    # 3D TMATile types (primary, used by run())
-    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
-    comptime ATmaOp = Self.ATmaTile.InnerType
-    comptime BTmaOp = Self.BTmaTile.InnerType
-    comptime CTmaOp = Self.CTmaTile.InnerType
+    # 3D TMA operation types (primary, used by run())
+    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime CTmaOp = TmaOpType[Self.c_type, Self.CTileLayout, Self.CDescLayout]
 
-    # 2D TMATile types (only for run_splitk)
-    comptime ATmaTile_splitk = TMATile[
+    # 2D TMA operation types (only for run_splitk)
+    comptime ATmaOp_splitk = TmaOpType[
         Self.a_type, Self.ATileLayout_splitk, Self.ADescLayout_splitk
     ]
-    comptime BTmaTile_splitk = TMATile[
+    comptime BTmaOp_splitk = TmaOpType[
         Self.b_type, Self.BTileLayout_splitk, Self.BDescLayout_splitk
     ]
-    comptime CTmaTile_splitk = TMATile[
+    comptime CTmaOp_splitk = TmaOpType[
         Self.c_type, Self.CTileLayout_splitk, Self.CDescLayout_splitk
     ]
-    comptime ATmaOp_splitk = Self.ATmaTile_splitk.InnerType
-    comptime BTmaOp_splitk = Self.BTmaTile_splitk.InnerType
-    comptime CTmaOp_splitk = Self.CTmaTile_splitk.InnerType
 
     # TMA load size constants (from desc layout dimensions)
     comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
@@ -1208,7 +1199,7 @@ struct BlackwellMatmulSM100Kernel[
         reduction_tensor: TileTensor[
             Self.config.accum_type, reduction_layout, MutAnyOrigin
         ],
-        lock_ptr: UnsafePointer[UInt8],
+        lock_ptr: UnsafePointer[UInt8, AnyOrigin[mut=True]],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
@@ -1487,10 +1478,8 @@ struct BlackwellMatmulSM100FallbackKernel[
     comptime BTileLayout = static_row_major[Self.BN, Self.BK]
     comptime BDescLayout = static_row_major[Self.BN, Self.b_swizzle_elems]
 
-    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime ATmaOp = Self.ATmaTile.InnerType
-    comptime BTmaOp = Self.BTmaTile.InnerType
+    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
 
     # Static N dimension (columns) from C layout stride -- used for output tiling
     comptime static_N = Self.c_layout.static_stride[0]

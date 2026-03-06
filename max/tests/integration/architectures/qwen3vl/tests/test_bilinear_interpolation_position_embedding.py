@@ -67,7 +67,7 @@ def generate_torch_outputs(
 
 def generate_max_outputs(
     grid_thw: torch.Tensor,
-    qwen3vl_config: dict,
+    qwen3vl_config: dict,  # type: ignore[type-arg]
     embeddings_weights: dict[str, torch.Tensor],
     dtype: DType,
     device: Device,

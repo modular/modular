@@ -27,7 +27,7 @@ def test_operation[
         x: SIMD[dtype, width], y: type_of(x)
     ) raises -> type_of(x),
     op_name: StaticString,
-]():
+]() raises:
     var scalar: String
     var pairwise: String
     var suffix: String

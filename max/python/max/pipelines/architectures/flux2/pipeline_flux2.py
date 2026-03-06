@@ -134,6 +134,8 @@ class Flux2Pipeline(DiffusionPipeline):
         - Flux2 VAE (with BatchNorm-based latent normalization)
     """
 
+    default_num_inference_steps = 28
+
     vae: AutoencoderKLFlux2Model
     text_encoder: Mistral3TextEncoderModel
     transformer: Flux2TransformerModel
@@ -541,7 +543,7 @@ class Flux2Pipeline(DiffusionPipeline):
         h_carrier: Tensor,
         w_carrier: Tensor,
     ) -> np.ndarray:
-        """Decode Flux2 packed latents into a (B, H, W, C) float32 NumPy array.
+        """Decode Flux2 packed latents into a (B, H, W, C) uint8 NumPy array.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
@@ -549,11 +551,11 @@ class Flux2Pipeline(DiffusionPipeline):
             w_carrier: 1-D shape carrier of length packed_w (content unused).
 
         Returns:
-            Float32 NumPy array of shape (B, H, W, C).
+            uint8 NumPy array of shape (B, H, W, C) with values in [0, 255].
         """
         decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
-        return decoded.driver_tensor.to_numpy()  # (B, H, W, C)
+        return np.from_dlpack(decoded)  # (B, H, W, C)
 
     @staticmethod
     def _prepare_text_ids(

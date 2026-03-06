@@ -30,9 +30,6 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import Index, IndexList, product
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 
@@ -631,6 +628,9 @@ struct MmaOpSM100_BlockScaled_SS[
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
         init_c: Bool,
+        sfb_tmem_adj: UInt32 = UInt32(
+            0
+        ),  # TMEM col offset for MMA_N < SF_MN_GROUP_SIZE
     ):
         """TileTensor overload for block-scaled MMA input tiles.
 
@@ -820,7 +820,10 @@ struct MmaOpSM100_BlockScaled_SS[
                 Self.sfa_dtype, sfa_layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
             self._copy_sf_to_tmem_tt[
-                Self.sfb_dtype, sfb_layout, Self.mma_shape[1], 0
+                Self.sfb_dtype,
+                sfb_layout,
+                align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                0,
             ](sfb_smem, sfb_tmem)
 
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
@@ -848,7 +851,7 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_tmem,
                     runtime_desc,
                     sfa_tmem,
-                    sfb_tmem,
+                    sfb_tmem + sfb_tmem_adj,
                     c_scale=c_scale,
                 )
             else:
@@ -861,7 +864,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
                 self._copy_sf_to_tmem_tt[
-                    Self.sfb_dtype, sfb_layout, Self.mma_shape[1], sf_idx
+                    Self.sfb_dtype,
+                    sfb_layout,
+                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                    sf_idx,
                 ](sfb_smem, sfb_tmem)
 
                 mma[Self.cta_group](
@@ -870,7 +876,9 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_tmem,
                     self.idesc,
                     sfa_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
-                    sfb_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
+                    sfb_tmem
+                    + sfb_tmem_adj
+                    + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
                     c_scale=c_scale,
                 )
 

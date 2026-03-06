@@ -14,6 +14,7 @@
 from std.math import align_up, ceildiv, gcd
 from std.sys import align_of, size_of
 from std.sys.info import (
+    _has_blackwell_tcgen05,
     _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -932,8 +933,7 @@ fn _batched_matmul_gpu[
 
     # SM100 (B200+) batched BF16 matmul dispatch
     comptime use_SM100_kernels = (
-        has_nvidia_gpu_accelerator()
-        and ctx.default_device_info.compute > H100.compute
+        has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()
     )
     comptime if use_SM100_kernels and has_static_NK and transpose_b:
         comptime bf16_ok = (a_type == b_type == c_type == DType.bfloat16)
