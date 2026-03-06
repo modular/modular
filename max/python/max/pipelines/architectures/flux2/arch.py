@@ -25,8 +25,6 @@ from typing_extensions import Self
 
 from .pipeline_flux2 import Flux2Pipeline
 
-_FLUX2_DEFAULT_MAX_SEQ_LEN = 512
-
 
 @dataclass(kw_only=True)
 class Flux2ArchConfig(ArchConfig):
