@@ -25,9 +25,7 @@ from ..ltx2.ltx2 import LTX2Attention
 from .model_config import LTX2TextConnectorsConfigBase
 
 
-class LTX2RotaryPosEmbed1d(
-    nn.Module[[int, int, Device], tuple[Tensor, Tensor]]
-):
+class LTX2RotaryPosEmbed1d(nn.Module[..., tuple[Tensor, Tensor]]):
     """
     1D rotary positional embeddings (RoPE) for the LTX 2.0 text encoder connectors.
     """
@@ -126,9 +124,7 @@ class LTX2RotaryPosEmbed1d(
         return cos_freqs, sin_freqs
 
 
-class LTX2TransformerBlock1d(
-    nn.Module[[Tensor, Tensor | None, Tensor | None], Tensor]
-):
+class LTX2TransformerBlock1d(nn.Module[..., Tensor]):
     def __init__(
         self,
         dim: int,
@@ -172,9 +168,7 @@ class LTX2TransformerBlock1d(
         return hidden_states
 
 
-class LTX2ConnectorTransformer1d(
-    nn.Module[[Tensor, Tensor | None, float], tuple[Tensor, Tensor]]
-):
+class LTX2ConnectorTransformer1d(nn.Module[..., tuple[Tensor, Tensor | None]]):
     """
     A 1D sequence transformer for modalities such as text.
 
@@ -248,6 +242,7 @@ class LTX2ConnectorTransformer1d(
 
         # 1. Replace padding positions with learned registers, if enabled.
         if self.learnable_registers is not None:
+            assert self.num_learnable_registers is not None
             num_register_repeats = seq_len // self.num_learnable_registers
             registers = F.tile(
                 self.learnable_registers, (num_register_repeats, 1)
@@ -300,9 +295,7 @@ class LTX2ConnectorTransformer1d(
         return hidden_states, valid_length
 
 
-class LTX2TextConnectors(
-    nn.Module[[Tensor, Tensor], tuple[Tensor, Tensor, Tensor]]
-):
+class LTX2TextConnectors(nn.Module[..., tuple[Tensor, Tensor, Tensor]]):
     """
     Text connector stack used by LTX 2.0 to process the packed text encoder hidden states for both the video and audio
     streams.
