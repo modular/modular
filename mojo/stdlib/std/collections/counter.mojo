@@ -597,7 +597,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             if item.value <= 0:
                 keys_to_remove.append(item.key.copy())
         for key in keys_to_remove:
-            _ = self.pop(key, 0)
+            _ = self._data.unsafe_pop(key)
 
     # ===------------------------------------------------------------------=== #
     # Unary operators
