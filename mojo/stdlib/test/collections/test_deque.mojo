@@ -1187,7 +1187,8 @@ def test_deque_conditional_conformances() raises:
 
 
 def test_getitem_slice_basic() raises:
-    """Basic contiguous slicing returns a new Deque with the expected elements."""
+    """Basic contiguous slicing returns a new Deque with the expected elements.
+    """
     var d: Deque[Int] = [1, 2, 3, 4, 5]
     var s = d[1:4]
     assert_equal(len(s), 3)
