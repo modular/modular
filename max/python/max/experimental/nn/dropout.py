@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Dropout layer implementation."""
 
-from .module import Module
 from max.experimental.tensor import Tensor
+
+from .module import Module
+
 
 class Dropout(Module[[Tensor], Tensor]):
     """Identity Dropout layer for inference."""
@@ -23,4 +25,12 @@ class Dropout(Module[[Tensor], Tensor]):
         self.p = p
 
     def forward(self, x: Tensor) -> Tensor:
+        """Forward pass for the identity dropout layer.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Output tensor.
+        """
         return x

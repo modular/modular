@@ -62,7 +62,7 @@ class PerChannelRMSNorm(nn.Module[[Tensor], Tensor]):
         return x / rms
 
 
-class LTX2VideoCausalConv3d(nn.Module[[Tensor, bool], Tensor]):
+class LTX2VideoCausalConv3d(nn.Module[..., Tensor]):
     """Causal or non-causal 3D convolution."""
 
     def __init__(
@@ -180,7 +180,7 @@ class LTX2VideoCausalConv3d(nn.Module[[Tensor, bool], Tensor]):
         return self.conv(hidden_states)
 
 
-class LTX2VideoResnetBlock3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
+class LTX2VideoResnetBlock3d(nn.Module[..., Tensor]):
     """3D ResNet block used in LTX2 Video decoder."""
 
     def __init__(
@@ -259,8 +259,9 @@ class LTX2VideoResnetBlock3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
         hidden_states = self.norm1(hidden_states)
 
         if self.scale_shift_table is not None:
+            assert temb is not None
             temb = (
-                temb.reshape((temb.shape[0], 4, -1))[..., None, None, None]
+                F.reshape(temb, (temb.shape[0], 4, -1))[..., None, None, None]
                 + self.scale_shift_table[None, ..., None, None, None]
             )
             shift_1 = temb[:, 0]
@@ -306,8 +307,8 @@ class LTX2VideoResnetBlock3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
             )
 
         if self.norm3 is not None:
-            inputs = self.norm3(inputs.permute((0, 4, 2, 3, 1))).permute(
-                (0, 4, 2, 3, 1)
+            inputs = self.norm3(inputs.permute([0, 4, 2, 3, 1])).permute(
+                [0, 4, 2, 3, 1]
             )
 
         if self.conv_shortcut is not None:
@@ -317,7 +318,7 @@ class LTX2VideoResnetBlock3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
         return hidden_states
 
 
-class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
+class LTXVideoDownsampler3d(nn.Module[..., Tensor]):
     def __init__(
         self,
         in_channels: int,
@@ -327,11 +328,11 @@ class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
     ):
         super().__init__()
 
-        self.stride = (
+        self.stride: tuple[int, int, int] = (
             stride if isinstance(stride, tuple) else (stride, stride, stride)
         )
         self.group_size = (
-            in_channels * stride[0] * stride[1] * stride[2]
+            in_channels * self.stride[0] * self.stride[1] * self.stride[2]
         ) // out_channels
 
         out_channels = out_channels // (
@@ -362,7 +363,7 @@ class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
             (H // h_stride) * h_stride,
             (W // w_stride) * w_stride,
         )
-        residual = hidden_states.rebind(intermediate_5d_shape).reshape(
+        residual = F.rebind(hidden_states, intermediate_5d_shape).reshape(
             (
                 N,
                 C,
@@ -374,7 +375,7 @@ class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
                 w_stride,
             )
         )
-        residual = residual.permute((0, 1, 3, 5, 7, 2, 4, 6))
+        residual = residual.permute([0, 1, 3, 5, 7, 2, 4, 6])
         residual = F.flatten(residual, 1, 4)
 
         r_shape = residual.shape
@@ -387,7 +388,7 @@ class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
             r_shape[3],
             r_shape[4],
         )
-        residual = residual.rebind(intermediate_5d_shape).reshape(
+        residual = F.rebind(residual, intermediate_5d_shape).reshape(
             (
                 r_shape[0],
                 new_c,
@@ -409,7 +410,7 @@ class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
             (H // h_stride) * h_stride,
             (W // w_stride) * w_stride,
         )
-        hidden_states = hidden_states.rebind(intermediate_5d_shape).reshape(
+        hidden_states = F.rebind(hidden_states, intermediate_5d_shape).reshape(
             (
                 N,
                 C,
@@ -421,7 +422,7 @@ class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
                 w_stride,
             )
         )
-        hidden_states = hidden_states.permute((0, 1, 3, 5, 7, 2, 4, 6))
+        hidden_states = hidden_states.permute([0, 1, 3, 5, 7, 2, 4, 6])
         hidden_states = F.flatten(hidden_states, 1, 4)
 
         hidden_states = hidden_states + residual
@@ -429,7 +430,7 @@ class LTXVideoDownsampler3d(nn.Module[[Tensor, bool], Tensor]):
         return hidden_states
 
 
-class LTXVideoUpsampler3d(nn.Module[[Tensor, bool], Tensor]):
+class LTXVideoUpsampler3d(nn.Module[..., Tensor]):
     def __init__(
         self,
         in_channels: int,
@@ -440,14 +441,14 @@ class LTXVideoUpsampler3d(nn.Module[[Tensor, bool], Tensor]):
     ) -> None:
         super().__init__()
 
-        self.stride = (
+        self.stride: tuple[int, int, int] = (
             stride if isinstance(stride, tuple) else (stride, stride, stride)
         )
         self.residual = residual
         self.upscale_factor = upscale_factor
 
         out_channels = (
-            in_channels * stride[0] * stride[1] * stride[2]
+            in_channels * self.stride[0] * self.stride[1] * self.stride[2]
         ) // upscale_factor
 
         self.conv = LTX2VideoCausalConv3d(
@@ -477,21 +478,22 @@ class LTXVideoUpsampler3d(nn.Module[[Tensor, bool], Tensor]):
                     width,
                 )
             )
-            residual = residual.permute((0, 1, 5, 2, 6, 3, 7, 4))
+            residual = residual.permute([0, 1, 5, 2, 6, 3, 7, 4])
             depth, h_stride, w_stride = self.stride
             # Use concat-based merge to avoid symbolic product issues in reshape
             residual = pixel_shuffle_3d_merge(
                 residual, (depth, h_stride, w_stride)
             )
             # Rebind to clean symbolic shape for downstream ops
-            residual = residual.rebind(
+            residual = F.rebind(
+                residual,
                 (
                     batch_size,
                     num_channels // stride_prod,
                     num_frames * depth,
                     height * h_stride,
                     width * w_stride,
-                )
+                ),
             )
             # Already 5D [B, C, D, H, W]
             repeats = (
@@ -516,21 +518,22 @@ class LTXVideoUpsampler3d(nn.Module[[Tensor, bool], Tensor]):
                 width,
             )
         )
-        hidden_states = hidden_states.permute((0, 1, 5, 2, 6, 3, 7, 4))
+        hidden_states = hidden_states.permute([0, 1, 5, 2, 6, 3, 7, 4])
         depth, h_stride, w_stride = self.stride
         # Use concat-based merge to avoid symbolic product issues in reshape
         hidden_states = pixel_shuffle_3d_merge(
             hidden_states, (depth, h_stride, w_stride)
         )
         # Rebind to clean symbolic shape for downstream ops
-        hidden_states = hidden_states.rebind(
+        hidden_states = F.rebind(
+            hidden_states,
             (
                 batch_size,
                 num_channels // stride_prod,
                 num_frames * depth,
                 height * h_stride,
                 width * w_stride,
-            )
+            ),
         )
         # Already 5D [B, C, D, H, W]
         hidden_states = hidden_states[:, :, self.stride[0] - 1 :]
@@ -541,9 +544,7 @@ class LTXVideoUpsampler3d(nn.Module[[Tensor, bool], Tensor]):
         return hidden_states
 
 
-class LTX2VideoDownBlock3D(
-    nn.Module[[Tensor, int | None, int | None, bool], Tensor]
-):
+class LTX2VideoDownBlock3D(nn.Module[..., Tensor]):
     def __init__(
         self,
         in_channels: int,
@@ -635,9 +636,7 @@ class LTX2VideoDownBlock3D(
         return hidden_states
 
 
-class LTX2VideoMidBlock3d(
-    nn.Module[[Tensor, Tensor | None, int | None, bool], Tensor]
-):
+class LTX2VideoMidBlock3d(nn.Module[..., Tensor]):
     def __init__(
         self,
         in_channels: int,
@@ -698,9 +697,7 @@ class LTX2VideoMidBlock3d(
         return hidden_states
 
 
-class LTX2VideoUpBlock3d(
-    nn.Module[[Tensor, Tensor | None, int | None, bool], Tensor]
-):
+class LTX2VideoUpBlock3d(nn.Module[..., Tensor]):
     r"""
     Up block used in the LTXVideo model.
 
@@ -824,7 +821,7 @@ class LTX2VideoUpBlock3d(
         return hidden_states
 
 
-class LTX2VideoDecoder3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
+class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
     def __init__(
         self,
         in_channels: int = 128,
@@ -923,28 +920,9 @@ class LTX2VideoDecoder3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
             self.time_embedder = PixArtAlphaCombinedTimestepSizeEmbeddings(
                 output_channel * 2, 0
             )
-            self.scale_shift_table = Tensor.constant(
-                random.gaussian(2, output_channel) / output_channel**0.5
+            self.scale_shift_table = (
+                random.gaussian((2, output_channel)) / output_channel**0.5
             )
-
-    def input_types(self) -> tuple[TensorType, ...]:
-        if self.dtype is None:
-            raise ValueError("dtype must be set for input_types")
-        if self.device is None:
-            raise ValueError("device must be set for input_types")
-
-        # Hardcoded for height=512, width=768, num_frames=121, frame_rate=24:
-        #   in_channels       = 128
-        #   latent_num_frames = (121-1)//8+1 = 16
-        #   latent_height     = 512//32      = 16
-        #   latent_width      = 768//32      = 24
-        return (
-            TensorType(
-                self.dtype,
-                shape=[1, self.in_channels, 16, 16, 24],
-                device=self.device,
-            ),
-        )
 
     def forward(
         self,
@@ -957,6 +935,7 @@ class LTX2VideoDecoder3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
         hidden_states = self.conv_in(hidden_states, causal=causal)
 
         if self.timestep_scale_multiplier is not None:
+            assert temb is not None
             temb = temb * self.timestep_scale_multiplier
 
         hidden_states = self.mid_block(hidden_states, temb, causal=causal)
@@ -977,6 +956,8 @@ class LTX2VideoDecoder3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
             temb = temb.reshape((hidden_states.shape[0], -1, 1, 1, 1)).reshape(
                 (hidden_states.shape[0], 2, -1, 1, 1, 1)
             )
+            assert temb is not None
+            assert self.scale_shift_table is not None
             temb = temb + self.scale_shift_table[None, ..., None, None, None]
             shift = temb[:, 0]
             scale = temb[:, 1]
@@ -1000,7 +981,7 @@ class LTX2VideoDecoder3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
             height,
             width,
         )
-        hidden_states = hidden_states.rebind(intermediate_5d_shape).reshape(
+        hidden_states = F.rebind(hidden_states, intermediate_5d_shape).reshape(
             (
                 batch_size,
                 target_padding_channels,
@@ -1012,18 +993,19 @@ class LTX2VideoDecoder3d(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
                 width,
             ),
         )
-        hidden_states = hidden_states.permute((0, 1, 5, 2, 6, 4, 7, 3))
+        hidden_states = hidden_states.permute([0, 1, 5, 2, 6, 4, 7, 3])
         # Use concat-based merge to avoid symbolic product issues in reshape
         hidden_states = pixel_shuffle_3d_merge(hidden_states, (p_t, p, p))
         # Rebind to clean symbolic shape for downstream ops
-        hidden_states = hidden_states.rebind(
+        hidden_states = F.rebind(
+            hidden_states,
             (
                 batch_size,
                 target_padding_channels,
                 num_frames * p_t,
                 height * p,
                 width * p,
-            )
+            ),
         )
         # Already 5D [B, C, D, H, W]
 
@@ -1066,7 +1048,7 @@ class AutoencoderKLLTX2Video(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
         return self.decoder(z, timestep, causal=causal)
 
 
-class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
+class PostprocessAndDecode(nn.Module[..., Tensor]):
     """Fused BN-denorm + unpatchify + VAE decode in a single compiled graph.
 
     Eliminates the inter-graph boundary and intermediate tensor materialization
@@ -1102,9 +1084,9 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
         )
         latents = latents * latents_std + latents_mean
 
-        decoded = self.decoder(latents)
+        decoded = self.decoder(latents, None, causal=True)
         decoded = F.cast(decoded, DType.float32)
-        decoded = F.permute(decoded, (0, 2, 3, 4, 1))
+        decoded = F.permute(decoded, [0, 2, 3, 4, 1])
         return F.transfer_to(decoded, DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:
@@ -1115,15 +1097,15 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
         #   latent_width      = 768//32      = 24
         return (
             TensorType(
-                self.dtype,
+                self._dtype,
                 shape=[
                     "batch_size",
-                    self.in_channels,
+                    self._num_channels,
                     "latent_num_frames",
                     "latent_height",
                     "latent_width",
                 ],
-                device=self.device,
+                device=self._device,
             ),
         )
 
