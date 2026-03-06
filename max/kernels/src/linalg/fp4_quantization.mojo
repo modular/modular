@@ -1306,7 +1306,9 @@ fn block_scaled_matmul[
     )
 
     comptime static_N = c.layout.shape[1].value()
-    comptime static_K = a.layout.shape[1].value()
+    comptime static_K = a.layout.shape[1].value() * (
+        2 if a_type == DType.uint8 else 1
+    )
     comptime static_NK = Index(static_N, static_K)
 
     comptime if get_defined_bool[
@@ -1329,6 +1331,10 @@ fn block_scaled_matmul[
         Index(7168, 16384),
         # Index(4096, 7168),
         # Index(7168, 2048),
+    ]
+
+    comptime Llama_NK = [
+        Index(16384, 2048),
     ]
 
     @always_inline
@@ -1364,6 +1370,21 @@ fn block_scaled_matmul[
     ):
         comptime if static_NK in DeepSeek_NK:
             if m == 1:
+                var status = heuristic_and_outliers_dispatch[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+                if status == DISPATCH_HIT:
+                    logger.info(
+                        "Executing Mojo SM100 Block Scaled matmul kernel"
+                    )
+                    return
+
+        comptime if static_NK in Llama_NK:
+            if m <= 256:
                 var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
