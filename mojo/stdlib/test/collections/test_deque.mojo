@@ -1216,5 +1216,22 @@ def test_getitem_slice_negative_indices() raises:
     assert_equal(s[1], 4)
 
 
+def test_getitem_slice_uses_default_config() raises:
+    """Slicing returns a new deque with default configuration."""
+    var d = Deque[Int](maxlen=5, min_capacity=8, shrink=False)
+    for i in range(5):
+        d.append(i)
+
+    var s = d[1:4]
+    assert_equal(len(s), 3)
+    assert_equal(s[0], 1)
+    assert_equal(s[1], 2)
+    assert_equal(s[2], 3)
+    # Slice result must not inherit source configuration.
+    assert_equal(s._maxlen, -1)
+    assert_equal(s._min_capacity, Deque[Int].default_capacity)
+    assert_true(s._shrink)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

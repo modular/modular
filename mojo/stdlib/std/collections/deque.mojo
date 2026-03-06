@@ -405,6 +405,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     fn __getitem__(self, slice: ContiguousSlice) -> Self:
         """Gets a new deque with elements at the specified contiguous slice.
 
+        The returned deque has default configuration (`min_capacity`, `maxlen`,
+        `shrink`) regardless of the source deque's configuration.
+
         Args:
             slice: A slice specifying start and stop (stride is always 1).
 
@@ -420,13 +423,19 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         ```
         """
         var start, end = slice.indices(len(self))
-        var result = Self(capacity=end - start)
+        var count = end - start
+        # Use count + 1 to avoid triggering a realloc when the ring buffer
+        # would otherwise be exactly full after inserting all elements.
+        var result = Self(capacity=count + 1)
         for i in range(start, end):
             result.append(self[i].copy())
         return result^
 
     fn __getitem__(self, slice: StridedSlice) -> Self:
         """Gets a new deque with elements at the specified strided slice positions.
+
+        The returned deque has default configuration (`min_capacity`, `maxlen`,
+        `shrink`) regardless of the source deque's configuration.
 
         Args:
             slice: A slice specifying start, stop, and step.
@@ -446,7 +455,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         var start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
-        var result = Self(capacity=len(r))
+        var count = len(r)
+        # Use count + 1 to avoid triggering a realloc when the ring buffer
+        # would otherwise be exactly full after inserting all elements.
+        var result = Self(capacity=count + 1)
         for i in r:
             result.append(self[i].copy())
         return result^
