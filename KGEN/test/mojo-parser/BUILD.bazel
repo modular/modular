@@ -27,6 +27,9 @@ lit_tests(
     ),
     data = ["//KGEN/test/test-packages"] + glob(_DATA),
     generate_litcfg = False,
+    mojo_deps = [
+        "@mojo//:std",
+    ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -34,5 +37,6 @@ lit_tests(
     tools = [
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
+        "//KGEN/tools/mojo",
     ],
 )
