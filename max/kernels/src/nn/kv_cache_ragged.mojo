@@ -39,6 +39,8 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
+from layout.tile_layout import RowMajorLayout
+from layout.coord import RuntimeInt
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
@@ -1488,20 +1490,63 @@ fn _matmul_blockwise_scaled_fp8_common[
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
-    var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
-    ]
 
-    c_nd = {
-        UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
-        RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
-    }
+    # Helper to convert 2D LayoutTensor to TileTensor. Needed because
+    # this function still accepts LayoutTensor parameters. Will be
+    # removed when kv_cache_ragged.mojo is fully migrated to TileTensor.
+    @always_inline
+    fn _lt_to_tt[
+        dtype: DType,
+    ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
+        dtype,
+        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        lt.origin,
+    ]:
+        var layout = row_major(
+            (
+                RuntimeInt(Scalar[DType.int64](lt.dim(0))),
+                RuntimeInt(Scalar[DType.int64](lt.dim(1))),
+            )
+        )
+        return TileTensor[
+            dtype,
+            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            lt.origin,
+        ](
+            ptr=UnsafePointer[Scalar[dtype], lt.origin](
+                unsafe_from_address=Int(lt.ptr)
+            ),
+            layout=layout,
+        )
+
+    # Construct a null-pointer TileTensor for the output (allocated by the
+    # callee when an epilogue is present).
+    var c_tt = TileTensor[
+        output_dtype,
+        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        MutAnyOrigin,
+    ](
+        ptr=UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
+        layout=row_major(
+            (
+                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
+                RuntimeInt(Scalar[DType.int64](N)),
+            )
+        ),
+    )
 
     blockwise_scaled_fp8_with_epilogue[
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
         scales_granularity_mnk=scales_granularity_mnk,
-    ](c_nd, hidden_state, weight, input_scale, weight_scale, context)
+    ](
+        c_tt,
+        _lt_to_tt(hidden_state),
+        _lt_to_tt(weight),
+        _lt_to_tt(input_scale),
+        _lt_to_tt(weight_scale),
+        context,
+    )
 
 
 @always_inline
