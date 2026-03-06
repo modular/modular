@@ -77,7 +77,7 @@ class EncoderAttention(Module[..., Tensor]):
 
         # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
         x = F.unsqueeze(x, 2)
-        x = F.tile(x, [1, 1, n_rep, 1])
+        x = F.concat([x] * n_rep, axis=2)
         x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
 
         return x
