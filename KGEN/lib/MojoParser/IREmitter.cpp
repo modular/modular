@@ -804,31 +804,12 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
     if (!signature.getInputParamTypes().empty()) {
-      ParamBindings paramBindings(getDeclScope(), expr);
-      // Try to fully bind the signature, in case it can be made concrete with
-      // default values, etc.
-      ParameterExprArrayAttr bindingAttr = paramBindings.tryVerifyBindings(
-          signature.getInputParamTypes(), signature.getMetadata());
-
-      // Notice if there are any unbound parameters.
-      bool anyUnbound = true;
-      if (bindingAttr)
-        anyUnbound = llvm::any_of(
-            bindingAttr, [](TypedAttr attr) { return isa<UnboundAttr>(attr); });
-
-      if (anyUnbound) {
-        // If it didn't work out, then it is an error because parameterized
-        // values cannot be used in a dynamic context.
-        emitError(expr->getLoc(), "cannot use parameterized function of type ")
-            << ASTType(attr.getType()) << " without binding all its parameters"
-            << expr->getRange();
-        return {};
-      }
-
-      // Apply whatever it produced to the attr of signature type to resolve the
-      // remaining arguments.
-      attr = BindParamsAttr::get(attr, {bindingAttr},
-                                 &shared.getEvaluationContext());
+      // We require explicit `[]` to bind values, if we are still seeing
+      // parametric type, then we can not materialize it as an SSA value.
+      emitError(expr->getLoc(), "cannot use parameterized function of type ")
+          << ASTType(attr.getType()) << " without binding all its parameters"
+          << expr->getRange();
+      return {};
     }
 
     // Materialize signatures as closures.
