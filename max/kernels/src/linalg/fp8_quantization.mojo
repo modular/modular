@@ -22,7 +22,7 @@ from buffer.dimlist import DimList
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx,
+    block_idx_int as block_idx,
     global_idx,
     thread_idx,
 )
@@ -225,8 +225,8 @@ fn quantize_fp8_kernel[
     var thread_max = Scalar[accum_type](0)
 
     var tid = thread_idx.x
-    var row = Int(block_idx.x)
-    var group_idx = Int(block_idx.y)
+    var row = block_idx.x
+    var group_idx = block_idx.y
 
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
@@ -366,9 +366,9 @@ fn batched_quantize_fp8_kernel[
     var thread_max = Scalar[accum_type](0)
 
     var tid = thread_idx.x
-    var row = Int(block_idx.x)
-    var group_idx = Int(block_idx.y)
-    var batch_idx = Int(block_idx.z)
+    var row = block_idx.x
+    var group_idx = block_idx.y
+    var batch_idx = block_idx.z
 
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
@@ -1199,7 +1199,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     var n = Int(global_idx.x)
     var m_local = Int(global_idx.y)
 
-    var expert_idx = Int(block_idx.z)
+    var expert_idx = block_idx.z
 
     # Determine rows for this expert
     var M_local: Int = Int(a_offsets[expert_idx + 1] - a_offsets[expert_idx])

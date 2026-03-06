@@ -20,7 +20,7 @@ from std.sys.info import _cdna_4_or_newer
 from std.sys.intrinsics import _type_is_eq
 from std.sys._assembly import inlined_assembly
 from std.algorithm.functional import unswitch
-from std.gpu import barrier, block_idx, lane_id, thread_idx
+from std.gpu import barrier, block_idx_int as block_idx, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
@@ -237,7 +237,7 @@ fn _mask_apply[
                         #     element_type = DType.int32
                         # ](
                         #     IndexList[4, element_type = DType.int32](
-                        #         Int(block_idx.z),
+                        #         block_idx.z,
                         #         Int(q_head_idx),
                         #         Int(score_row_with_start_pos)
                         #         - Int(score_col_with_cache_start_pos),
@@ -249,7 +249,7 @@ fn _mask_apply[
                         comptime fragment_col = fragment_layout(j)
                         p_reg_vectorized[mma_id, 0][j] = mask.mask(
                             IndexList[4, element_type=DType.uint32](
-                                Int(block_idx.z),
+                                block_idx.z,
                                 Int(q_head_idx),
                                 Int(score_row_with_start_pos),
                                 Int(

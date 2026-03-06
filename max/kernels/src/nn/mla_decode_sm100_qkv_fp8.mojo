@@ -37,7 +37,7 @@ import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx,
+    block_idx_int as block_idx,
     thread_idx,
     warp_id,
 )
@@ -275,7 +275,7 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # Early exit for ragged: skip blocks beyond actual sequence length
         comptime if Self.ragged:
-            if Int(block_idx.y) >= offset_position.seq_len:
+            if block_idx.y >= offset_position.seq_len:
                 comptime if Self.config.decoding_warp_split_k:
                     Self.Common_MLA_Op.pdl_early_exit(
                         offset_position.split_idx,

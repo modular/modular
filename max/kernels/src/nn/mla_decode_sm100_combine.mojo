@@ -33,7 +33,7 @@ import std.gpu.primitives.warp as warp
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx,
+    block_idx_int as block_idx,
     lane_id,
     thread_idx,
     warp_id,
@@ -196,9 +196,9 @@ fn mla_combine_kernel[
     comptime heads_per_block = ParamsType.heads_per_block
     comptime assert 8 % warps_per_head == 0, "warps_per_head must divide 8"
 
-    var batch_idx = Int(block_idx.x)
-    var seq_idx = Int(block_idx.y)
-    var head_block_idx = Int(block_idx.z)
+    var batch_idx = block_idx.x
+    var seq_idx = block_idx.y
+    var head_block_idx = block_idx.z
     var warp_idx = Int(warp_id())
     var lane_idx = Int(lane_id())
 

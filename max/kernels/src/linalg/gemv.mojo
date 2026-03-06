@@ -23,7 +23,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    block_idx,
+    block_idx_int as block_idx,
     global_idx,
     lane_id,
     thread_idx,
@@ -288,9 +288,9 @@ fn gemv_split_k[
     # Nvidia vectorized load is 16B.
     comptime tile_k = simd_width * num_threads
     # which rows of the activation matrix each thread will process
-    var tile_id_m = Int(block_idx.x) * tile_m
+    var tile_id_m = block_idx.x * tile_m
     # which rows of the weight matrix each thread will process
-    var tile_id_n = Int(block_idx.y) * tile_n
+    var tile_id_n = block_idx.y * tile_n
     var tid = Int(thread_idx.x)
     var tile_w = LayoutTensor[
         b_type,
@@ -319,10 +319,8 @@ fn gemv_split_k[
 
     # Each thread sums local data in K.
     for _ in range(tid * simd_width, k, tile_k):
-        var weight_tile = weight.tile[tile_n, tile_k](
-            Int(block_idx.y), iteration
-        )
-        var act_tile = act.tile[tile_m, tile_k](Int(block_idx.x), iteration)
+        var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
+        var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
 
         comptime for i in range(tile_n):
             # Here we load data @ thread_idx.x from the weight matrix
@@ -433,7 +431,7 @@ fn gevm_kernel[
 
     var warp_id = Int(warp_id())
     var lane_id = Int(lane_id())
-    var col = Int(block_idx.x) * WARP_SIZE + lane_id
+    var col = block_idx.x * WARP_SIZE + lane_id
     var global_warp_id = Int(global_idx.x) // warps_per_block
 
     var x_shared = stack_allocation[

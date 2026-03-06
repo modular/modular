@@ -11,7 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_dim, block_idx, grid_dim, thread_idx_int as thread_idx
+from std.gpu import (
+    block_dim,
+    block_idx_int as block_idx,
+    grid_dim,
+    thread_idx_int as thread_idx,
+)
 from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Coord, Idx, TileTensor
 from layout.tile_layout import TensorLayout, Layout
@@ -121,7 +126,7 @@ fn padded_copy_kernel[
     row_length: Int,
     scaled_row_length: Int,
 ):
-    var start_row = Int(block_idx.x) * rows_per_sm
+    var start_row = block_idx.x * rows_per_sm
     var threads_per_row = Int(block_dim.x)
 
     var rows_per_iter = Int(block_dim.y)

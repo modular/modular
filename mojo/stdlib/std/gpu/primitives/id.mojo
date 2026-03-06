@@ -247,9 +247,16 @@ comptime thread_idx_int = _ThreadIdx[Int]()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockIdx(Defaultable, TrivialRegisterPassable):
+struct _BlockIdx[ResultType: _FromInt = UInt](
+    Defaultable, TrivialRegisterPassable
+):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
-    a block within a grid."""
+    a block within a grid.
+
+    Parameters:
+        ResultType: Type of index accessors, typically `Int` or `UInt`
+            (default).
+    """
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -271,7 +278,7 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
             ]()
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    fn __getattr__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
 
         Returns:
@@ -279,12 +286,14 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        )
+        var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
+        return Self.ResultType(from_int=Int(i))
 
 
 comptime block_idx = _BlockIdx()
+"""Contains the block index in the grid, as `x`, `y`, and `z` values."""
+
+comptime block_idx_int = _BlockIdx[Int]()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 

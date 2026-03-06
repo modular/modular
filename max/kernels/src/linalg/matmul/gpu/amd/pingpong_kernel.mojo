@@ -17,7 +17,7 @@ from std.sys import simd_width_of, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx,
+    block_idx_int as block_idx,
     lane_id,
     thread_idx_int as thread_idx,
     grid_dim,
@@ -1439,8 +1439,8 @@ struct AMDPingPongMatmul[
         var warp_id = readfirstlane(Int(warp_id()))
 
         # Block coordinates from block indices
-        var n = Int(block_idx.x) * BN
-        var m = Int(block_idx.y) * BM
+        var n = block_idx.x * BN
+        var m = block_idx.y * BM
 
         # Swizzle for LDS bank conflict avoidance (see make_mma_swizzle docs)
         comptime mma_swizzle = Optional(

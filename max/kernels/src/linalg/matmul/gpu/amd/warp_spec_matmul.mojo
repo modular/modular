@@ -40,7 +40,7 @@ from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx,
+    block_idx_int as block_idx,
     thread_idx,
     warp_id,
 )
@@ -466,7 +466,7 @@ fn warp_specialized_matmul_kernel[
                 a,
                 ring_buffer_a,
                 warp_id,
-                Int(block_idx.x),
+                block_idx.x,
             )
         else:  # B producer
             var producer_warp_id = warp_id - UInt(a_producer_warps)
@@ -488,7 +488,7 @@ fn warp_specialized_matmul_kernel[
                 b,
                 ring_buffer_b,
                 producer_warp_id,
-                Int(block_idx.y),
+                block_idx.y,
             )
 
     else:  # Consumer
@@ -496,7 +496,7 @@ fn warp_specialized_matmul_kernel[
             MMA_M, WARP_SIZE // MMA_M
         )
 
-        var c_block_tile = c.tile[BM, BN](Int(block_idx.x), Int(block_idx.y))
+        var c_block_tile = c.tile[BM, BN](block_idx.x, block_idx.y)
         var c_scatter_gather = ScatterGatherAmd[
             output_thread_layout, thread_scope=ThreadScope.WARP
         ](c)

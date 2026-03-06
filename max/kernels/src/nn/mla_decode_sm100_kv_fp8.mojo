@@ -18,7 +18,7 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     thread_idx_int as thread_idx,
-    block_idx,
+    block_idx_int as block_idx,
     warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE
@@ -325,7 +325,7 @@ struct MLA_SM100_Decode_KV_FP8[
         comptime if Self.ragged:
             # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
             # But this batch might have fewer tokens than q_max_seq_len
-            if Int(block_idx.y) >= offset_position.seq_len:
+            if block_idx.y >= offset_position.seq_len:
                 comptime if Self.config.decoding_warp_split_k:
                     Self.Common_MLA_Op.pdl_early_exit(
                         offset_position.split_idx,
