@@ -24,7 +24,7 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout import Layout as LegacyLayout, TileTensor
-from structured_kernels.tile_types import create_tma_tile, lt_to_tt
+from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -153,7 +153,7 @@ fn blockwise_fp8_matmul[
         type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=corrected_config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(corrected_config.cluster_shape[0]),
             Int32(corrected_config.cluster_shape[1]),
             Int32(corrected_config.cluster_shape[2]),
@@ -165,7 +165,7 @@ fn blockwise_fp8_matmul[
         Kernel.ATmaTile.tile_layout,
         Kernel.ATmaTile.desc_layout,
         Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
@@ -176,7 +176,7 @@ fn blockwise_fp8_matmul[
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
     a_scales_tma_op = create_tma_tile[
@@ -194,7 +194,7 @@ fn blockwise_fp8_matmul[
         Kernel.CTmaTile.tile_layout,
         Kernel.CTmaTile.desc_layout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c)
 
     var grid_dim = (

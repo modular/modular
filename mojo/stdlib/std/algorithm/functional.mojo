@@ -492,7 +492,7 @@ fn sync_parallelize[
     fn func_wrapped(i: Int):
         with FlushDenormals():
             try:
-                with Trace[TraceLevel.THREAD, target = StaticString("cpu")](
+                with Trace[TraceLevel.THREAD, target=StaticString("cpu")](
                     "task", task_id=i, parent_id=parent_id
                 ):
                     func(i)
@@ -1516,7 +1516,7 @@ fn elementwise[
         task_id=get_safe_task_id(context),
     ):
         comptime if is_gpu[target]():
-            _elementwise_impl_gpu[func, simd_width = UInt(simd_width)](
+            _elementwise_impl_gpu[func, simd_width=UInt(simd_width)](
                 shape, context[]
             )
         else:
@@ -1841,7 +1841,7 @@ fn _elementwise_impl_gpu[
 
     if shape[rank - 1] % Int(simd_width) == 0:
         comptime kernel = _elementwise_gpu_kernel[
-            block_size = UInt(block_size), handle_uneven_simd=False
+            block_size=UInt(block_size), handle_uneven_simd=False
         ]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
@@ -1850,7 +1850,7 @@ fn _elementwise_impl_gpu[
         )
     else:
         comptime kernel = _elementwise_gpu_kernel[
-            block_size = UInt(block_size), handle_uneven_simd=True
+            block_size=UInt(block_size), handle_uneven_simd=True
         ]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
@@ -2011,7 +2011,7 @@ fn _stencil_impl_cpu[
             ](idx: Int) unified {mut indices, read input_shape}:
                 indices[rank - 1] = idx
                 var stencil_indices = IndexList[
-                    stencil_rank, element_type = stencil_axis.element_type
+                    stencil_rank, element_type=stencil_axis.element_type
                 ](indices[stencil_axis[0]], indices[stencil_axis[1]])
                 var bounds = map_fn(stencil_indices)
                 var lower_bound = bounds[0]
@@ -2175,7 +2175,7 @@ fn _stencil_impl_gpu[
 
         # Process stencil for this point
         var stencil_indices = IndexList[
-            stencil_rank, element_type = stencil_axis.element_type
+            stencil_rank, element_type=stencil_axis.element_type
         ](indices[stencil_axis[0]], indices[stencil_axis[1]])
         var bounds = map_fn(stencil_indices)
         var lower_bound = bounds[0]

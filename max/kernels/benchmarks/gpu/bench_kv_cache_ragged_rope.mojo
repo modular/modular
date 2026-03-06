@@ -36,8 +36,8 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import row_major
 from layout._fillers import random
 from nn.fused_qk_rope import fused_qk_rope_ragged
 

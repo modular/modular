@@ -13,8 +13,8 @@
 
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor
-from layout._layout import TensorLayout, Layout, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout, Layout
 from std.utils.index import Index, IndexList
 
 
@@ -127,7 +127,7 @@ fn spatial_merge_kernel[
         input_tiled_layout,
     )
 
-    # Create LayoutTensor for output: [T, H_out, W_out, C_out].
+    # Create TileTensor for output: [T, H_out, W_out, C_out].
     # Note: in reality we want 2D flattened to [T * H_out * W_out, C_out], but
     # we use 4D for semantic clarity - internally in memory it is handled correctly.
     var output_runtime_layout = row_major(
@@ -162,12 +162,10 @@ fn spatial_merge[
     dtype: DType,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    grid_thw: TileTensor[
-        DType.int64, address_space = AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    grid_thw: TileTensor[DType.int64, address_space=AddressSpace.GENERIC, ...],
     hidden_size: Int,
     merge_size: Int,
     ctx: DeviceContext,

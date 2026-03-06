@@ -234,7 +234,7 @@ fn test_block_scaled_nvfp4_cublaslt[
 
     var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
     naive_block_scaled_matmul[
-        scaling_kind = UMMAKind.KIND_MXF4NVF4,
+        scaling_kind=UMMAKind.KIND_MXF4NVF4,
         SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](

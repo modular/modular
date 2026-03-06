@@ -235,7 +235,7 @@ def lazy() -> Generator[None]:
 
         from max.experimental import functional as F
         from max.experimental.tensor import Tensor
-        from max.nn.module_v3 import Linear
+        from max.experimental.nn import Linear
 
         with F.lazy():
             model = Linear(2, 3)

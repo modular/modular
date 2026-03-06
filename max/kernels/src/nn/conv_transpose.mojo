@@ -42,8 +42,9 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv import _get_cudnn_meta, check_cudnn_error
@@ -405,22 +406,22 @@ struct ConvTransposedPacked[
         Self.output_type,
         Self.OutputLayoutType,
         Self.output_origin,
-        element_size = Self.output_element_size,
-        linear_idx_type = Self.output_linear_idx_type,
+        element_size=Self.output_element_size,
+        linear_idx_type=Self.output_linear_idx_type,
     ]
     var input: TileTensor[
         Self.input_type,
         Self.InputLayoutType,
         Self.input_origin,
-        element_size = Self.input_element_size,
-        linear_idx_type = Self.input_linear_idx_type,
+        element_size=Self.input_element_size,
+        linear_idx_type=Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
         Self.filter_type,
         Self.FilterLayoutType,
         Self.filter_origin,
-        element_size = Self.filter_element_size,
-        linear_idx_type = Self.filter_linear_idx_type,
+        element_size=Self.filter_element_size,
+        linear_idx_type=Self.filter_linear_idx_type,
     ]
 
     var conv_shape: ConvShape[Self.conv_attr_rank]
@@ -439,27 +440,27 @@ struct ConvTransposedPacked[
             Self.output_type,
             Self.OutputLayoutType,
             Self.output_origin,
-            element_size = Self.output_element_size,
-            linear_idx_type = Self.output_linear_idx_type,
-            address_space = AddressSpace.GENERIC,
+            element_size=Self.output_element_size,
+            linear_idx_type=Self.output_linear_idx_type,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
         input: TileTensor[
             Self.input_type,
             Self.InputLayoutType,
             Self.input_origin,
-            element_size = Self.input_element_size,
-            linear_idx_type = Self.input_linear_idx_type,
-            address_space = AddressSpace.GENERIC,
+            element_size=Self.input_element_size,
+            linear_idx_type=Self.input_linear_idx_type,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
         filter: TileTensor[
             Self.filter_type,
             Self.FilterLayoutType,
             Self.filter_origin,
-            element_size = Self.filter_element_size,
-            linear_idx_type = Self.filter_linear_idx_type,
-            address_space = AddressSpace.GENERIC,
+            element_size=Self.filter_element_size,
+            linear_idx_type=Self.filter_linear_idx_type,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
@@ -521,7 +522,7 @@ struct ConvTransposedPacked[
                 Self.filter_type,
                 Self.output_type,
                 Self.conv_attr,
-                elementwise_epilogue = Self.elementwise_epilogue,
+                elementwise_epilogue=Self.elementwise_epilogue,
             ](
                 output,
                 input,
@@ -1223,7 +1224,7 @@ fn _get_group_filter_base(
 ) -> UnsafePointer[
     Scalar[packed_filter.dtype],
     packed_filter.origin,
-    address_space = packed_filter.address_space,
+    address_space=packed_filter.address_space,
 ]:
     # TODO: support groups > 1.
     return packed_filter.ptr
@@ -1389,9 +1390,9 @@ fn conv_transposed_cpu[
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
 ](
-    output: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
-    filter: TileTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    filter: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
     pad_d: IndexList[2],
@@ -1416,7 +1417,7 @@ fn conv_transposed_cpu[
 
     comptime assert not filter_is_cfrs, "Filter layout CFRS is not supported"
 
-    with Trace[TraceLevel.OP, target = StaticString("cpu")](
+    with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "conv_transposed",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
@@ -1515,12 +1516,12 @@ fn conv_transposed_gpu[
     output: TileTensor[
         mut=True,
         output_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
-    input: TileTensor[input_type, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
     filter: TileTensor[
-        mut=True, filter_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, filter_type, address_space=AddressSpace.GENERIC, ...
     ],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
@@ -1580,9 +1581,9 @@ fn _conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, address_space = AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space = AddressSpace.GENERIC, ...],
-    output: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -1697,9 +1698,9 @@ fn conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[input_type, address_space = AddressSpace.GENERIC, ...],
-    filter: TileTensor[filter_type, address_space = AddressSpace.GENERIC, ...],
-    output: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],

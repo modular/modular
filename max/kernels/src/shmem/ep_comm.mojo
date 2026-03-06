@@ -57,15 +57,15 @@ from std.utils.numerics import get_accum_type
 from std.builtin.device_passable import DevicePassable
 
 comptime RtTuple_2 = RuntimeTuple[
-    IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type = DType.int32
+    IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type=DType.int32
 ]
 comptime RtTuple_3 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
-    element_type = DType.int32,
+    element_type=DType.int32,
 ]
 comptime RtTuple_4 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
-    element_type = DType.int32,
+    element_type=DType.int32,
 ]
 
 comptime elementwise_epilogue_type = fn[
@@ -96,7 +96,7 @@ fn _BLOCK_SCOPE() -> StaticString:
         return "workgroup"
     else:
         return CompilationTarget.unsupported_target_error[
-            StaticString, operation = __get_current_function_name()
+            StaticString, operation=__get_current_function_name()
         ]()
 
 
@@ -108,7 +108,7 @@ fn _DEVICE_SCOPE() -> StaticString:
         return "agent"
     else:
         return CompilationTarget.unsupported_target_error[
-            StaticString, operation = __get_current_function_name()
+            StaticString, operation=__get_current_function_name()
         ]()
 
 
@@ -161,7 +161,7 @@ fn block_prefix_sum[
     var warp_prefix_sum = stack_allocation[
         n_warps,
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     var val = Scalar[dtype](0)
@@ -222,7 +222,7 @@ fn ep_signal_completion[
     if my_p2p_world == dst_p2p_world:
         var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
         var old_count = Atomic[DType.int32, scope=DEVICE_SCOPE].fetch_add[
-            ordering = Consistency.MONOTONIC
+            ordering=Consistency.MONOTONIC
         ](rank_completion_counter + Int(dst_p2p_rank), 1)
 
         # If this is the last expert for this destination rank,
@@ -235,7 +235,7 @@ fn ep_signal_completion[
             # the arrival of the previous experts' signals to the target
             # device. However, this does not matter as we will check the
             # arrival signal individually in the dispatch_wait/combine_wait kernel.
-            store_release[scope = Scope.SYSTEM](dst_p2p_ptr, signal)
+            store_release[scope=Scope.SYSTEM](dst_p2p_ptr, signal)
             # Reset counter for next kernel invocation.
             rank_completion_counter[dst_p2p_rank] = 0
     else:
@@ -437,7 +437,7 @@ struct BF16TokenFormat[
                     buf_p.load[
                         width=byte_width,
                         invariant=True,
-                        alignment = Self.alignment,
+                        alignment=Self.alignment,
                     ](
                         i * byte_width,
                     )
@@ -591,7 +591,7 @@ struct BlockwiseFP8TokenFormat[
 
         for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
-                width=src_width, alignment = Self.alignment, invariant=True
+                width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width).cast[Self.scales_dtype]()
             var thread_max = abs(loaded_vec).reduce_max()
             var group_max = warp.lane_group_max_and_broadcast[
@@ -639,7 +639,7 @@ struct BlockwiseFP8TokenFormat[
                     buf_p.load[
                         width=fp8_width,
                         invariant=True,
-                        alignment = Self.alignment,
+                        alignment=Self.alignment,
                     ](
                         i * fp8_width,
                     )
@@ -887,7 +887,7 @@ struct NVFP4TokenFormat[
 
         for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
-                width=src_width, alignment = Self.alignment, invariant=True
+                width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width)
 
             # each thread finds maximum value in its local 8 elements
@@ -951,7 +951,7 @@ struct NVFP4TokenFormat[
                     buf_p.load[
                         width=fp4_width,
                         invariant=True,
-                        alignment = Self.alignment,
+                        alignment=Self.alignment,
                     ](
                         i * fp4_width,
                     )
@@ -1196,10 +1196,10 @@ struct EPDispatchKernel[
     fn _get_recv_buf_layout(
         out result: RuntimeLayout[
             Self.recv_layout_static,
-            element_type = _get_layout_type(
+            element_type=_get_layout_type(
                 Self.recv_layout_static, AddressSpace.GENERIC
             ),
-            linear_idx_type = _get_index_type(
+            linear_idx_type=_get_index_type(
                 Self.recv_layout_static, AddressSpace.GENERIC
             ),
         ]
@@ -1211,8 +1211,8 @@ struct EPDispatchKernel[
     fn _get_recv_count_layout(
         out result: RuntimeLayout[
             Layout.row_major(Self.n_local_experts, Self.n_ranks),
-            element_type = DType.int32,
-            linear_idx_type = DType.int32,
+            element_type=DType.int32,
+            linear_idx_type=DType.int32,
         ]
     ):
         return type_of(result)()
@@ -1222,8 +1222,8 @@ struct EPDispatchKernel[
     fn _get_send_buf_layout(
         out result: RuntimeLayout[
             Layout.row_major(Self.max_tokens_per_rank, Self.msg_bytes),
-            element_type = DType.int32,
-            linear_idx_type = DType.int32,
+            element_type=DType.int32,
+            linear_idx_type=DType.int32,
         ]
     ):
         return type_of(result)()
@@ -1275,7 +1275,7 @@ struct EPDispatchKernel[
             if lane_id() == 0:
                 # Wait until all the tokens for the expert have been sent.
                 while (
-                    load_acquire[scope = Scope.GPU](
+                    load_acquire[scope=Scope.GPU](
                         expert_finished_counter + expert_idx
                     )
                     != expert_count
@@ -1291,7 +1291,7 @@ struct EPDispatchKernel[
                 )
 
                 ep_signal_completion[
-                    Self.use_shmem, n_experts_per_device = Self.n_local_experts
+                    Self.use_shmem, n_experts_per_device=Self.n_local_experts
                 ](
                     my_rank,
                     dst_rank,
@@ -1379,8 +1379,8 @@ struct EPDispatchKernel[
                 # Cast the expert ID to a 16-bit integer to save space.
                 var top_k_idx = topk_ids.load[width=1](token_idx, Int(tid))
                 curr_send_buf_ptr.store[
-                    width = size_of[UInt16](),
-                    alignment = align_of[DType.uint16](),
+                    width=size_of[UInt16](),
+                    alignment=align_of[DType.uint16](),
                 ](
                     Self.token_fmt_type.topk_info_offset()
                     + Int(tid * UInt(size_of[UInt16]())),
@@ -1390,8 +1390,8 @@ struct EPDispatchKernel[
                 # Store the source token index in current token's message.
                 if tid == 0:
                     curr_send_buf_ptr.store[
-                        width = size_of[Int32](),
-                        alignment = align_of[DType.int32](),
+                        width=size_of[Int32](),
+                        alignment=align_of[DType.int32](),
                     ](
                         Self.token_fmt_type.src_info_offset(),
                         bitcast[DType.uint8, size_of[Int32]()](
@@ -1416,7 +1416,7 @@ struct EPDispatchKernel[
                     var slot_idx: Int32 = 0
                     if lane_id() == 0:
                         slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                            ordering = Consistency.MONOTONIC
+                            ordering=Consistency.MONOTONIC
                         ](expert_reserved_counter + target_expert, 1)
                     slot_idx = warp.broadcast(slot_idx)
 
@@ -1441,7 +1441,7 @@ struct EPDispatchKernel[
 
                     if lane_id() == 0:
                         _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                            ordering = Consistency.RELEASE
+                            ordering=Consistency.RELEASE
                         ](expert_finished_counter + target_expert, 1)
 
             # We set up `n_rcs` Reliable Communications (RCs) for each
@@ -1471,7 +1471,7 @@ struct EPDispatchKernel[
                         and my_p2p_world != dst_p2p_world
                     ):
                         var slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                            ordering = Consistency.MONOTONIC
+                            ordering=Consistency.MONOTONIC
                         ](expert_reserved_counter + target_expert, 1)
                         var dst_recv_buf_ptr = recv_buf_ptrs[
                             my_p2p_rank
@@ -1483,7 +1483,7 @@ struct EPDispatchKernel[
                                 0,
                             )
                         )
-                        shmem_put_nbi[kind = SHMEMScope.default](
+                        shmem_put_nbi[kind=SHMEMScope.default](
                             dst_recv_buf_ptr,
                             curr_send_buf_ptr,
                             UInt(Self.msg_bytes),
@@ -1491,7 +1491,7 @@ struct EPDispatchKernel[
                         )
 
                         _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                            ordering = Consistency.RELEASE
+                            ordering=Consistency.RELEASE
                         ](expert_finished_counter + target_expert, 1)
 
     # ===-------------------------------------------------------------------===#
@@ -1533,7 +1533,7 @@ struct EPDispatchKernel[
         var tid = thread_idx.x
 
         var prefix_sum_arr = stack_allocation[
-            Self.n_experts, DType.uint32, address_space = AddressSpace.SHARED
+            Self.n_experts, DType.uint32, address_space=AddressSpace.SHARED
         ]()
 
         if Int(tid) < Self.n_local_experts + shared_expert_offset:
@@ -1550,11 +1550,11 @@ struct EPDispatchKernel[
         var token_count: UInt32 = 0
         if tid < UInt(Self.n_experts):
             var target_count_ptr = recv_count_p + tid
-            var _token_count = load_acquire[scope = Scope.SYSTEM](
+            var _token_count = load_acquire[scope=Scope.SYSTEM](
                 target_count_ptr
             )
             while _token_count == UInt64.MAX_FINITE:
-                _token_count = load_acquire[scope = Scope.SYSTEM](
+                _token_count = load_acquire[scope=Scope.SYSTEM](
                     target_count_ptr
                 )
             token_count = UInt32(_token_count)
@@ -1603,7 +1603,7 @@ struct EPDispatchKernel[
                 expert_rank_linear_idx * 2 + 1,
                 Int32(aligned_expert_start_offset),
             )
-            store_release[scope = Scope.GPU](
+            store_release[scope=Scope.GPU](
                 atomic_counter + expert_rank_linear_idx * 2,
                 Int32(
                     EP_DATA_READY_FLAG
@@ -1668,9 +1668,9 @@ struct EPDispatchKernel[
         # Wait until the auxiliary SM has signaled that the data is ready, and
         # provided the offset where the tokens end in the output tensor.
         var offset_ptr = atomic_counter + expert_rank_offset * 2
-        var output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
+        var output_offset = load_acquire[scope=Scope.GPU](offset_ptr)
         while output_offset < EP_DATA_READY_FLAG:
-            output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
+            output_offset = load_acquire[scope=Scope.GPU](offset_ptr)
         output_offset -= EP_DATA_READY_FLAG
 
         var token_count = Int32(recv_count_p.load(expert_rank_offset))
@@ -1698,7 +1698,7 @@ struct EPDispatchKernel[
             if lane_id() < UInt(Self.top_k):
                 # Load top-k expert IDs from the token's message.
                 var src_topk_idx = bitcast[DType.uint16, 1](
-                    recv_buf_ptr.load[width = size_of[UInt16]()](
+                    recv_buf_ptr.load[width=size_of[UInt16]()](
                         Self.token_fmt_type.topk_info_offset()
                         + Int(lane_id() * UInt(size_of[UInt16]())),
                     )
@@ -1709,7 +1709,7 @@ struct EPDispatchKernel[
                 if global_expert_idx == Int32(src_topk_idx):
                     # Store the source token index and the top-k id.
                     var src_idx = bitcast[DType.int32, 1](
-                        recv_buf_ptr.load[width = size_of[Int32]()](
+                        recv_buf_ptr.load[width=size_of[Int32]()](
                             Self.token_fmt_type.src_info_offset()
                         )
                     )
@@ -1754,8 +1754,8 @@ struct EPDispatchKernel[
         var smem_buf_p = stack_allocation[
             format_handler.token_size(),
             DType.uint8,
-            alignment = simd_width_of[DType.uint8](),
-            address_space = AddressSpace.SHARED,
+            alignment=simd_width_of[DType.uint8](),
+            address_space=AddressSpace.SHARED,
         ]()
         var sm_id = block_idx.x - UInt(Self.n_offset_sms)
         var shared_expert_token_count = input_tokens.dim(0)
@@ -1773,7 +1773,7 @@ struct EPDispatchKernel[
             format_handler.copy_token_to_send_buf[
                 shared_expert_input_dtype,
                 UInt(Self.num_threads),
-                buf_addr_space = AddressSpace.SHARED,
+                buf_addr_space=AddressSpace.SHARED,
             ](smem_buf_p, input_tensor_p, input_scale)
             barrier()
             # Shared expert's input tokens are always packed at the beginning.
@@ -2090,10 +2090,10 @@ struct EPCombineKernel[
     fn _get_send_buf_layout(
         out result: RuntimeLayout[
             Self.send_layout_static,
-            element_type = _get_layout_type(
+            element_type=_get_layout_type(
                 Self.send_layout_static, AddressSpace.GENERIC
             ),
-            linear_idx_type = _get_index_type(
+            linear_idx_type=_get_index_type(
                 Self.send_layout_static, AddressSpace.GENERIC
             ),
         ]
@@ -2107,8 +2107,8 @@ struct EPCombineKernel[
             Layout.row_major(
                 Self.max_tokens_per_rank, Self.top_k, Self.msg_bytes
             ),
-            element_type = DType.int32,
-            linear_idx_type = DType.int32,
+            element_type=DType.int32,
+            linear_idx_type=DType.int32,
         ]
     ):
         return type_of(result)()
@@ -2118,8 +2118,8 @@ struct EPCombineKernel[
     fn _get_recv_count_layout(
         out result: RuntimeLayout[
             Layout.row_major(Self.n_local_experts, Self.n_ranks),
-            element_type = DType.int32,
-            linear_idx_type = DType.int32,
+            element_type=DType.int32,
+            linear_idx_type=DType.int32,
         ]
     ):
         return type_of(result)()
@@ -2241,7 +2241,7 @@ struct EPCombineKernel[
             comptime DATA_READY_FLAG = 1024
             var token_end_count = atomic_counter.load[
                 width=2,
-                alignment = align_of[SIMD[DType.int32, 2]](),
+                alignment=align_of[SIMD[DType.int32, 2]](),
                 invariant=True,
             ](2 * expert_rank_offset)
             var token_end = token_end_count[0] - DATA_READY_FLAG
@@ -2342,7 +2342,7 @@ struct EPCombineKernel[
                                     )
                                 )
 
-                                shmem_put_nbi[kind = SHMEMScope.default](
+                                shmem_put_nbi[kind=SHMEMScope.default](
                                     dst_recv_buf_ptr,
                                     curr_send_buf_ptr,
                                     UInt(Self.msg_bytes),
@@ -2366,7 +2366,7 @@ struct EPCombineKernel[
 
                     ep_signal_completion[
                         Self.use_shmem,
-                        n_experts_per_device = Self.n_local_experts,
+                        n_experts_per_device=Self.n_local_experts,
                     ](
                         my_rank,
                         Int32(target_rank),
@@ -2377,7 +2377,7 @@ struct EPCombineKernel[
                     )
 
                     atomic_counter.store[
-                        width=2, alignment = align_of[SIMD[DType.int32, 2]]()
+                        width=2, alignment=align_of[SIMD[DType.int32, 2]]()
                     ](expert_rank_offset * 2, 0)
 
     # ===-------------------------------------------------------------------===#
@@ -2404,7 +2404,7 @@ struct EPCombineKernel[
         if thread_idx.x < UInt(Self.n_experts):
             var target_count_ptr = recv_count_p + thread_idx.x
             while (
-                load_acquire[scope = Scope.SYSTEM](target_count_ptr)
+                load_acquire[scope=Scope.SYSTEM](target_count_ptr)
                 == UInt64.MAX_FINITE
             ):
                 pass
@@ -2467,7 +2467,7 @@ struct EPCombineKernel[
 
         if thread_idx.x == 0:
             while (
-                load_acquire[scope = Scope.GPU](atomic_counter + sm_id)
+                load_acquire[scope=Scope.GPU](atomic_counter + sm_id)
                 != DATA_READY_FLAG
             ):
                 pass

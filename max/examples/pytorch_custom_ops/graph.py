@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import torch
+from max.experimental.torch import graph_op
 from max.graph import TensorValue
-from max.torch import graph_op
 
 
 @graph_op

@@ -18,8 +18,7 @@ from std.os import abort
 
 import std.benchmark
 from std.benchmark import Unit, keep
-from layout import Coord, TileTensor
-from layout._layout import row_major
+from layout import Coord, TileTensor, row_major
 from nn.pad import pad_constant, pad_reflect
 from std.python import Python
 from std.testing import assert_true

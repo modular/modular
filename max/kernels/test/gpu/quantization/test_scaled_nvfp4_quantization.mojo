@@ -207,8 +207,8 @@ fn test_dynamic_fp4_quant[
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)
                             var output_e2m1 = cast_uint_to_fp4e2m1[
-                                out_dtype = DType.float32,
-                                out_width = SF_VECTOR_SIZE // 2,
+                                out_dtype=DType.float32,
+                                out_width=SF_VECTOR_SIZE // 2,
                             ](
                                 output_tensor_host.load[
                                     (SF_VECTOR_SIZE // 2) // 2
@@ -229,7 +229,7 @@ fn test_dynamic_fp4_quant[
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)
                             var output_e2m1 = cast_uint_to_fp4e2m1[
-                                out_dtype = DType.float32,
+                                out_dtype=DType.float32,
                                 out_width=SF_VECTOR_SIZE,
                             ](
                                 output_tensor_host.load[(SF_VECTOR_SIZE // 2)](
@@ -252,40 +252,40 @@ def main() raises:
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 0, 128)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 256, 128)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128 + 8),
+            N=Int(128 + 8),
         ](ctx, 258, 128 + 8)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128 + 64 - 8),
+            N=Int(128 + 64 - 8),
         ](ctx, 258, 128 + 64 - 8)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(8192 + 8),
+            N=Int(8192 + 8),
         ](ctx, 1000, 8192 + 8, tensor_sf=0.43)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(16384 + 8),
+            N=Int(16384 + 8),
         ](ctx, 2048, 16384 + 8, tensor_sf=0.5)

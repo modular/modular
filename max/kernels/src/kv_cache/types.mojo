@@ -605,7 +605,7 @@ struct ContinuousBatchingKVCache[
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             self.blocks.dim[1]()
         )
-        tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
+        tma = type_of(tma).create[depth=Int(Self.kv_params.head_size)](
             ctx,
             self.blocks.ptr,
             rows=Int(rows),
@@ -900,7 +900,7 @@ struct PagedKVCache[
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             Self.page_size
         )
-        tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
+        tma = type_of(tma).create[depth=Int(Self.kv_params.head_size)](
             ctx,
             self.blocks.ptr,
             rows=Int(rows),

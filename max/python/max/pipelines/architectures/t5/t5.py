@@ -17,10 +17,10 @@ import numpy as np
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Embedding, Linear, Module
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import Dim, TensorType
-from max.nn.module_v3 import Embedding, Linear, Module
-from max.nn.module_v3.sequential import ModuleList
 
 from .model_config import T5Config
 

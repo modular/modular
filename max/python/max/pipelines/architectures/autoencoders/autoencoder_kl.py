@@ -14,9 +14,9 @@
 from typing import Any
 
 from max.driver import Device
+from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
-from max.nn.module_v3 import Module
 from max.pipelines.lib import SupportedEncoding
 
 from .model import BaseAutoencoderModel

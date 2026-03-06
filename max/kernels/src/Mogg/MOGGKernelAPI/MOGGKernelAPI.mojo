@@ -70,7 +70,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import IntTuple, TileTensor, UNKNOWN_VALUE
+from layout import IntTuple, TileTensor, UNKNOWN_VALUE, row_major
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from layout.coord import (
     DynamicCoord,
@@ -80,7 +80,7 @@ from layout.coord import (
     Idx,
     coord_to_index_list,
 )
-from layout._layout import Layout as TileLayout, row_major
+from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
@@ -943,8 +943,8 @@ struct ConvertE4M3FNToE4M3FNUZ:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype = DType.float8_e4m3fnuz, rank=2, ...],
-        input: InputTensor[dtype = DType.float8_e4m3fn, rank=2, ...],
+        output: OutputTensor[dtype=DType.float8_e4m3fnuz, rank=2, ...],
+        input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
         ctx: DeviceContextPtr,
     ) raises:
         convert_e4m3fn_to_e4m3fnuz(
@@ -955,7 +955,7 @@ struct ConvertE4M3FNToE4M3FNUZ:
 
     @staticmethod
     fn shape(
-        input: InputTensor[dtype = DType.float8_e4m3fn, rank=2, ...],
+        input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](input.dim_size[0](), input.dim_size[1]())
 
@@ -1106,15 +1106,15 @@ struct ScatterND:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
         scatter_nd[
-            output_type = output.dtype,
-            indices_type = indices.dtype,
+            output_type=output.dtype,
+            indices_type=indices.dtype,
             single_thread_blocking_override=False,
             target=target,
         ](
@@ -1128,7 +1128,7 @@ struct ScatterND:
     @staticmethod
     fn shape[](
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, ...],
+        updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1147,8 +1147,8 @@ struct ScatterNDSkipNegIndices:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -1161,10 +1161,10 @@ struct ScatterNDSkipNegIndices:
         # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
         # the update for that index instead.
         scatter_nd_generator[
-            output_type = output.dtype,
-            indices_type = indices.dtype,
+            output_type=output.dtype,
+            indices_type=indices.dtype,
             single_thread_blocking_override=False,
-            oob_index_strategy = ScatterOobIndexStrategy.SKIP,
+            oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
             reduce_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
@@ -1184,8 +1184,8 @@ struct ScatterNDAdd:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -1199,8 +1199,8 @@ struct ScatterNDAdd:
             return lhs + rhs
 
         scatter_nd_generator[
-            output_type = output.dtype,
-            indices_type = indices.dtype,
+            output_type=output.dtype,
+            indices_type=indices.dtype,
             single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
@@ -1216,7 +1216,7 @@ struct ScatterNDAdd:
     @staticmethod
     fn shape[](
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, ...],
+        updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1235,8 +1235,8 @@ struct ScatterNDMul:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -1250,8 +1250,8 @@ struct ScatterNDMul:
             return lhs * rhs
 
         scatter_nd_generator[
-            output_type = output.dtype,
-            indices_type = indices.dtype,
+            output_type=output.dtype,
+            indices_type=indices.dtype,
             single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
@@ -1267,7 +1267,7 @@ struct ScatterNDMul:
     @staticmethod
     fn shape[](
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, ...],
+        updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1286,8 +1286,8 @@ struct ScatterNDMin:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -1301,8 +1301,8 @@ struct ScatterNDMin:
             return min(lhs, rhs)
 
         scatter_nd_generator[
-            output_type = output.dtype,
-            indices_type = indices.dtype,
+            output_type=output.dtype,
+            indices_type=indices.dtype,
             single_thread_blocking_override=False,
             target=target,
             reduce_fn=reduce_fn,
@@ -1318,7 +1318,7 @@ struct ScatterNDMin:
     @staticmethod
     fn shape(
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, ...],
+        updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1337,8 +1337,8 @@ struct ScatterNDMax:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -1352,10 +1352,10 @@ struct ScatterNDMax:
             return max(lhs, rhs)
 
         scatter_nd_generator[
-            output_type = output.dtype,
-            indices_type = indices.dtype,
+            output_type=output.dtype,
+            indices_type=indices.dtype,
             single_thread_blocking_override=False,
-            oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
+            oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
             target=target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
@@ -1370,7 +1370,7 @@ struct ScatterNDMax:
     @staticmethod
     fn shape[](
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, ...],
+        updates: InputTensor[dtype=input.dtype, ...],
         indices: InputTensor[...],
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1416,9 +1416,9 @@ struct Scatter:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        indices: InputTensor[rank = output.rank, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1442,8 +1442,8 @@ struct Scatter:
     @staticmethod
     fn shape(
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, rank = input.rank, ...],
-        indices: InputTensor[rank = input.rank, ...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1463,9 +1463,9 @@ struct ScatterAdd:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        indices: InputTensor[rank = output.rank, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1489,8 +1489,8 @@ struct ScatterAdd:
     @staticmethod
     fn shape(
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, rank = input.rank, ...],
-        indices: InputTensor[rank = input.rank, ...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1510,9 +1510,9 @@ struct ScatterMax:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        indices: InputTensor[rank = output.rank, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1536,8 +1536,8 @@ struct ScatterMax:
     @staticmethod
     fn shape(
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, rank = input.rank, ...],
-        indices: InputTensor[rank = input.rank, ...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1557,9 +1557,9 @@ struct ScatterMin:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        indices: InputTensor[rank = output.rank, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1583,8 +1583,8 @@ struct ScatterMin:
     @staticmethod
     fn shape(
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, rank = input.rank, ...],
-        indices: InputTensor[rank = input.rank, ...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1604,9 +1604,9 @@ struct ScatterMul:
         target: StaticString,
     ](
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        updates: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        indices: InputTensor[rank = output.rank, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -1630,8 +1630,8 @@ struct ScatterMul:
     @staticmethod
     fn shape(
         input: InputTensor[...],
-        updates: InputTensor[dtype = input.dtype, rank = input.rank, ...],
-        indices: InputTensor[rank = input.rank, ...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
@@ -1845,7 +1845,7 @@ struct StaticBroadcastTo:
         x: InputTensor[dtype=dtype, rank=in_rank, ...],
         output_shape: IndexList[out_rank],
         out result: InputTensor[
-            static_spec = x.static_spec.with_layout[out_rank](
+            static_spec=x.static_spec.with_layout[out_rank](
                 output_static_shape,
                 Self.get_view_strides[out_rank, x.rank](
                     x._static_shape, x._static_strides
@@ -1912,7 +1912,7 @@ struct StaticReshape:
         input: InputTensor[dtype=dtype, ...],
         shape: IndexList[output_rank],
         out result: InputTensor[
-            static_spec = input.static_spec.with_layout[output_rank](
+            static_spec=input.static_spec.with_layout[output_rank](
                 output_static_shape,
                 Self.get_view_strides[output_rank](output_static_shape),
             )
@@ -2026,7 +2026,7 @@ struct Transpose:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         permutations: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec = input.static_spec.with_layout[rank](
+            static_spec=input.static_spec.with_layout[rank](
                 output_static_shape,
                 Self.get_view_strides[static_permutations, rank](
                     input._static_strides
@@ -2120,7 +2120,7 @@ struct Slice:
         stops: InputTensor[rank=1, ...],
         steps: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec = input.static_spec.with_layout_and_alignment[rank](
+            static_spec=input.static_spec.with_layout_and_alignment[rank](
                 output_static_shape,
                 Self.get_view_strides[rank](
                     input._static_strides, static_steps
@@ -2304,7 +2304,7 @@ struct SliceDim:
         stops: Scalar,
         steps: Scalar,
         out result: InputTensor[
-            static_spec = input.static_spec.with_layout_and_alignment[rank](
+            static_spec=input.static_spec.with_layout_and_alignment[rank](
                 output_static_shape,
                 Self.get_view_strides[rank, axis](
                     input._static_strides,
@@ -2471,7 +2471,7 @@ struct Mean:
         target: StaticString
     ](
         output: FusedOutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -2522,7 +2522,7 @@ struct ReduceAdd:
         target: StaticString, _trace_name: StaticString
     ](
         output: FusedOutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -2577,7 +2577,7 @@ struct ReduceMul:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -2632,7 +2632,7 @@ struct ReduceMax:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -2687,7 +2687,7 @@ struct ReduceMin:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -3196,7 +3196,7 @@ struct GatherND:
         _trace_name: StaticString,
     ](
         output: OutputTensor[...],
-        data: InputTensor[dtype = output.dtype, ...],
+        data: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -3237,7 +3237,7 @@ struct Gather:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, ...],
+        input: FusedInputTensor[dtype=output.dtype, ...],
         indices: FusedInputTensor[...],
         axis: Scalar,
         ctx: DeviceContextPtr,
@@ -3274,8 +3274,8 @@ struct Gather:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             gather[
-                dtype = output.dtype,
-                indices_type = indices.dtype,
+                dtype=output.dtype,
+                indices_type=indices.dtype,
                 input_fn=input_fn,
                 indices_fn=indices_fn,
                 output_fn=output_fn,
@@ -3312,8 +3312,8 @@ struct GatherSum:
     @staticmethod
     fn execute(
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, ...],
-        indices: InputTensor[dtype = DType.int32, ...],
+        input: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[dtype=DType.int32, ...],
     ) raises:
         fn add[
             dtype: DType, simd_width: Int
@@ -3702,7 +3702,7 @@ struct BottomK:
         target: StaticString,
     ](
         values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype = DType.int64, rank=rank, ...],
+        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         k: Scalar,
         axis: Scalar,
@@ -3745,7 +3745,7 @@ struct TopK:
         _trace_name: StaticString,
     ](
         values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype = DType.int64, rank=rank, ...],
+        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         k: Scalar,
         axis: Scalar,
@@ -3792,7 +3792,7 @@ struct NonMaximumSuppression:
     fn execute[
         dtype: DType
     ](
-        output: OutputTensor[dtype = DType.int64, rank=2, ...],
+        output: OutputTensor[dtype=DType.int64, rank=2, ...],
         boxes: InputTensor[dtype=dtype, rank=3, ...],
         scores: InputTensor[dtype=dtype, rank=3, ...],
         max_output_boxes_per_class: Int64,
@@ -3955,7 +3955,7 @@ struct BatchMatmul:
         batched_matmul[
             transpose_a=transpose_a,
             transpose_b=transpose_b,
-            elementwise_epilogue_fn = Optional[
+            elementwise_epilogue_fn=Optional[
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
@@ -4006,7 +4006,7 @@ struct LinalgBandPart:
 
         matrix_band_part[
             input_0_fn=input_fn,
-            simd_width = simd_width_of[dtype](),
+            simd_width=simd_width_of[dtype](),
             single_thread_blocking_override=False,
             target=target,
         ](
@@ -4224,7 +4224,7 @@ struct RepeatInterleave:
     @staticmethod
     fn execute(
         output: OutputTensor[...],
-        input: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         repeats: InputTensor[rank=1, ...],
         axis: Scalar,
     ) raises:
@@ -4365,7 +4365,7 @@ struct Softmax:
         target: StaticString
     ](
         output: OutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -4400,7 +4400,7 @@ struct LogSoftmax:
         target: StaticString
     ](
         output: OutputTensor[...],
-        input: FusedInputTensor[dtype = output.dtype, rank = output.rank, ...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -4503,8 +4503,8 @@ struct ShardWeights:
     ](
         outputs: OutputVariadicTensors,
         inputs: InputVariadicTensors[
-            dtype = outputs.dtype,
-            rank = outputs.rank - 1,
+            dtype=outputs.dtype,
+            rank=outputs.rank - 1,
             ...,
         ],
         dev_ctxs_input: DeviceContextPtrList,
@@ -4585,9 +4585,7 @@ fn concat_from_list_shape_impl[
 ](
     axis0: Int,
     inputs: List[
-        InputTensor[
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-        ]
+        InputTensor[static_spec=StaticTensorSpec[dtype, rank].create_unknown(),]
     ],
 ) raises -> IndexList[rank]:
     var axis = normalize_neg_index(axis0, rank)
@@ -4743,7 +4741,7 @@ struct Conv:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[...],
-        input: InputTensor[rank = output.rank, ...],
+        input: InputTensor[rank=output.rank, ...],
         filter: InputTensor[...],
         strides: InputTensor[...],
         dilation: InputTensor[...],
@@ -4918,7 +4916,7 @@ struct ConvTranspose:
         target: StaticString,
     ](
         output: FusedOutputTensor[...],
-        input: InputTensor[rank = output.rank, ...],
+        input: InputTensor[rank=output.rank, ...],
         filter: InputTensor[...],
         strides: InputTensor[rank=1, ...],
         dilation: InputTensor[rank=1, ...],
@@ -5028,7 +5026,7 @@ struct ConvTranspose:
                 input.dtype,
                 filter.dtype,
                 output.dtype,
-                elementwise_epilogue = Optional[elementwise_simd_epilogue_type](
+                elementwise_epilogue=Optional[elementwise_simd_epilogue_type](
                     output_fn
                 ) if lambdas_have_fusion else Optional[
                     elementwise_simd_epilogue_type
@@ -5094,9 +5092,9 @@ struct Fold:
         var output_tensor = output.to_tile_tensor[DType.int64]()
 
         fold[
-            stride= (stride_h, stride_w),
-            dilation= (dilation_h, dilation_w),
-            padding= (padding_h, padding_w),
+            stride=(stride_h, stride_w),
+            dilation=(dilation_h, dilation_w),
+            padding=(padding_h, padding_w),
             target=target,
         ](
             input_tensor,
@@ -5176,15 +5174,15 @@ struct MLAIndexerRaggedFloat8Paged:
         quantization_granularity: Int,
         mask_str: StaticString,
     ](
-        output_indices: OutputTensor[dtype = DType.int32, rank=2, ...],
-        q: InputTensor[dtype = DType.float8_e4m3fn, rank=3, ...],
-        qs: InputTensor[dtype = DType.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        k_blocks: MutableInputTensor[dtype = DType.float8_e4m3fn, rank=6, ...],
-        k_cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        k_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        k_max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
-        k_scales: MutableInputTensor[dtype = DType.float32, rank=6, ...],
+        output_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        q: InputTensor[dtype=DType.float8_e4m3fn, rank=3, ...],
+        qs: InputTensor[dtype=DType.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        k_blocks: MutableInputTensor[dtype=DType.float8_e4m3fn, rank=6, ...],
+        k_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        k_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        k_max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        k_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -5276,26 +5274,18 @@ struct MLAIndexerRaggedFloat8Paged:
             ),
         )
 
-        # Use layouts from tensor specs
-        comptime q_layout = q.static_spec.to_layout()
-        comptime qs_layout = qs.static_spec.to_layout()
-        comptime output_layout = output_indices.static_spec.to_layout()
-
         mla_indexer_ragged_float8_paged[
             DType.float8_e4m3fn,
-            q_layout,
-            qs_layout,
-            output_layout,
             type_of(k_collection),
             num_heads,
             depth,
             k,
             mask_str,
         ](
-            output_indices.to_layout_tensor(),
-            q.to_layout_tensor(),
-            qs.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
+            output_indices.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            qs.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
             k_collection,
             layer_idx,
             ctx.get_device_context(),
@@ -5476,7 +5466,7 @@ struct PaddedFlashAttentionGPU:
         q: InputTensor[rank=rank, ...],
         k: InputTensor[rank=rank, ...],
         v: InputTensor[rank=rank, ...],
-        valid_length: InputTensor[dtype = DType.uint32, rank=1, ...],
+        valid_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -5530,8 +5520,8 @@ struct RaggedFlashAttentionGPU:
         q: InputTensor[rank=rank, ...],
         k: InputTensor[rank=rank, ...],
         v: InputTensor[rank=rank, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        q_max_seq_len: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_max_seq_len: InputTensor[dtype=DType.uint32, rank=1, ...],
         scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -5587,7 +5577,7 @@ struct NoMaskFlashAttentionCPU:
         q: InputTensor[dtype=dtype, rank=rank, ...],
         k: FusedInputTensor[dtype=dtype, rank=rank, ...],
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        scale: Scalar[dtype = DType.float32],
+        scale: Scalar[dtype=DType.float32],
     ) capturing raises:
         @parameter
         @always_inline
@@ -5635,10 +5625,10 @@ struct WithMaskFlashAttentionSplitKVCPU:
         q: InputTensor[dtype=dtype, rank=rank, ...],
         k: FusedInputTensor[dtype=dtype, rank=rank, ...],
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        k_cache: FusedInputTensor[dtype=dtype, rank = rank + 1, ...],
-        v_cache: FusedInputTensor[dtype=dtype, rank = rank + 1, ...],
+        k_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
+        v_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
         mask: FusedInputTensor[dtype=dtype, ...],
-        scale: Scalar[dtype = DType.float32],
+        scale: Scalar[dtype=DType.float32],
     ) capturing raises:
         @parameter
         @always_inline
@@ -5710,10 +5700,10 @@ struct WithMaskFlashAttentionSplitKVCPU:
         q: InputTensor[dtype=dtype, rank=rank, ...],
         k: InputTensor[dtype=dtype, rank=rank, ...],
         v: InputTensor[dtype=dtype, rank=rank, ...],
-        k_cache: InputTensor[dtype=dtype, rank = rank + 1, ...],
-        v_cache: InputTensor[dtype=dtype, rank = rank + 1, ...],
+        k_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
+        v_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
         mask: InputTensor[dtype=dtype, ...],
-        scale: Scalar[dtype = DType.float32],
+        scale: Scalar[dtype=DType.float32],
     ) -> IndexList[q.rank]:
         return q.shape()
 
@@ -5730,7 +5720,7 @@ struct WithMaskFlashAttentionCPU:
         k: FusedInputTensor[dtype=dtype, rank=rank, ...],
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
         mask: FusedInputTensor[dtype=dtype, ...],
-        scale: Scalar[dtype = DType.float32],
+        scale: Scalar[dtype=DType.float32],
     ) capturing raises:
         @parameter
         @always_inline
@@ -5785,10 +5775,10 @@ struct GGMLQ40Dequantize:
     fn execute[
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype = DType.float32, rank=2, ...],
-        input: InputTensor[dtype = DType.uint8, rank=2, ...],
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             var input_tensor = input.to_layout_tensor()
             var output_tensor = output.to_layout_tensor()
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
@@ -5802,7 +5792,7 @@ struct GGMLQ40Dequantize:
     @staticmethod
     @always_inline
     fn shape(
-        input: InputTensor[dtype = DType.uint8, rank=2, ...]
+        input: InputTensor[dtype=DType.uint8, rank=2, ...]
     ) -> IndexList[2]:
         comptime block_nbytes = size_of[Q4sym[group_size=32]]()
         comptime quants_per_block = 32
@@ -5819,11 +5809,11 @@ struct VroomQ40Matmul:
     fn execute[
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype = DType.float32, rank=2, ...],
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             matmul_qint4[32](
                 a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
@@ -5831,8 +5821,8 @@ struct VroomQ40Matmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5844,17 +5834,17 @@ struct VroomQ40RepackWeights:
     fn execute[
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype = DType.uint8, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             matmul_qint4_pack_b[32](
                 b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
 
     @staticmethod
     @always_inline
-    fn shape(b: InputTensor[dtype = DType.uint8, rank=2, ...]) -> IndexList[2]:
+    fn shape(b: InputTensor[dtype=DType.uint8, rank=2, ...]) -> IndexList[2]:
         return b.shape()
 
 
@@ -5870,10 +5860,10 @@ struct GGMLQ4KDequantize:
     fn execute[
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype = DType.float32, rank=2, ...],
-        input: InputTensor[dtype = DType.uint8, rank=2, ...],
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             q4_k_dequantize_impl(
                 input.to_layout_tensor(),
                 output.to_layout_tensor(),
@@ -5882,7 +5872,7 @@ struct GGMLQ4KDequantize:
     @staticmethod
     @always_inline
     fn shape(
-        input: InputTensor[dtype = DType.uint8, rank=2, ...]
+        input: InputTensor[dtype=DType.uint8, rank=2, ...]
     ) -> IndexList[2]:
         comptime block_nbytes = size_of[block_Q4_K]()
         comptime elements_per_block = block_QK_K.quantized_k
@@ -5904,11 +5894,11 @@ struct VroomQ4KMatmul:
     fn execute[
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype = DType.float32, rank=2, ...],
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             matmul_Q4_K(
                 a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
@@ -5916,8 +5906,8 @@ struct VroomQ4KMatmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5929,10 +5919,10 @@ struct VroomQ4KRepackWeights:
     fn execute[
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype = DType.uint8, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             matmul_Q4_K_pack_b(
                 b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
@@ -5940,7 +5930,7 @@ struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5957,10 +5947,10 @@ struct GGMLQ6KDequantize:
     fn execute[
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype = DType.float32, rank=2, ...],
-        input: InputTensor[dtype = DType.uint8, rank=2, ...],
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        input: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             var input_tensor = input.to_layout_tensor()
             var output_tensor = output.to_layout_tensor()
             q6_k_dequantize_impl(
@@ -5974,7 +5964,7 @@ struct GGMLQ6KDequantize:
     @staticmethod
     @always_inline
     fn shape(
-        input: InputTensor[dtype = DType.uint8, rank=2, ...]
+        input: InputTensor[dtype=DType.uint8, rank=2, ...]
     ) -> IndexList[2]:
         comptime block_nbytes = size_of[block_Q6_K]()
         comptime elements_per_block = block_QK_K.quantized_k
@@ -5996,11 +5986,11 @@ struct VroomQ6KMatmul:
     fn execute[
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype = DType.float32, rank=2, ...],
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             matmul_Q6_K(
                 a.to_layout_tensor(), b.to_layout_tensor(), c.to_layout_tensor()
             )
@@ -6008,8 +5998,8 @@ struct VroomQ6KMatmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -6021,10 +6011,10 @@ struct VroomQ6KRepackWeights:
     fn execute[
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype = DType.uint8, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
+        with Trace[TraceLevel.OP, target=StaticString("cpu")](_trace_name):
             matmul_Q6_K_pack_b(
                 b.to_layout_tensor(), b_packed.to_layout_tensor()
             )
@@ -6032,7 +6022,7 @@ struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -6050,9 +6040,9 @@ struct QMatmulGPU_b4_g32:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype = DType.bfloat16, rank=2, ...],
-        a: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -6070,8 +6060,8 @@ struct QMatmulGPU_b4_g32:
     @staticmethod
     @always_inline
     fn shape(
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -6084,9 +6074,9 @@ struct QMatmulGPU_b4_g128:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[dtype = DType.bfloat16, rank=2, ...],
-        a: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -6104,8 +6094,8 @@ struct QMatmulGPU_b4_g128:
     @staticmethod
     @always_inline
     fn shape(
-        a: InputTensor[dtype = DType.float32, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -6118,8 +6108,8 @@ struct QMatmulGPURepackGGUF:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype = DType.uint8, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -6127,14 +6117,14 @@ struct QMatmulGPURepackGGUF:
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
-            gpu_qint4_repack_Q4_0[b_shape = b.static_spec.shape, target](
+            gpu_qint4_repack_Q4_0[b_shape=b.static_spec.shape, target](
                 b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
             )
 
     @staticmethod
     @always_inline
     fn shape(
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -6147,8 +6137,8 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype = DType.uint8, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -6163,7 +6153,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     @staticmethod
     @always_inline
     fn shape(
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
     ) -> IndexList[2]:
         return IndexList[2](b.dim_size[1](), b.dim_size[0]())
 
@@ -6176,9 +6166,9 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype = DType.uint8, rank=2, ...],
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
-        perm_idx: InputTensor[dtype = DType.int32, rank=1, ...],
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
@@ -6202,8 +6192,8 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     @staticmethod
     @always_inline
     fn shape(
-        b: InputTensor[dtype = DType.uint8, rank=2, ...],
-        perm_idx: InputTensor[dtype = DType.int32, rank=1, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[2]:
         return IndexList[2](b.dim_size(1), b.dim_size(0))
 
@@ -6230,7 +6220,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1, ...],
+    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
     weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
     kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
@@ -6261,7 +6251,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1, ...],
+    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
     weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
     kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
@@ -6324,11 +6314,11 @@ struct Struct_fused_qkv_matmul_padded_paged:
         hidden_state: InputTensor[dtype=dtype, rank=3, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
-        valid_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -6368,12 +6358,12 @@ struct Struct_fused_qkv_matmul_padded_ragged:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -6410,12 +6400,12 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=weight_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -6455,12 +6445,12 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
@@ -6502,14 +6492,14 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         input_scale: InputTensor[dtype=scale_type, rank=2, ...],
         weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -6520,7 +6510,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
             max_lengths,
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            scales_granularity_mnk = IndexList[3](
+            scales_granularity_mnk=IndexList[3](
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
             target=target,
@@ -6540,7 +6530,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
                     output_type,
                     Layout.row_major(UNKNOWN_VALUE),
                     ImmutAnyOrigin,
-                    address_space = AddressSpace.GENERIC,
+                    address_space=AddressSpace.GENERIC,
                 ]
             ](),
         )
@@ -6561,15 +6551,15 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         input_scale: InputTensor[dtype=scale_type, rank=5, ...],
         weight_scale: InputTensor[dtype=scale_type, rank=5, ...],
         tensor_sf: Float32,
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -6613,14 +6603,14 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         input_scale: InputTensor[dtype=scale_type, rank=2, ...],
         weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         bias: InputTensor[dtype=output_type, rank=1, ...],
         ctx: DeviceContextPtr,
@@ -6636,12 +6626,12 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
             output_type,
             Layout.row_major(UNKNOWN_VALUE),
             ImmutAnyOrigin,
-            address_space = AddressSpace.GENERIC,
+            address_space=AddressSpace.GENERIC,
         ]
         var bias_tensor = bias.to_layout_tensor()
         var rebound_bias = rebind[ExpectedBiasType](bias_tensor)
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            scales_granularity_mnk = IndexList[3](
+            scales_granularity_mnk=IndexList[3](
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
             target=target,
@@ -6673,12 +6663,12 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=weight_type, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
@@ -6730,10 +6720,10 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     mrope_section: Optional[Coord[*mrope_types]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
-    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1, ...],
+    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
     kv_collection: PagedKVCacheCollection[cache_dtype, ...],
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2, ...],
-    position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=2, ...],
+    position_ids: ManagedTensorSlice[dtype=DType.uint32, rank=2, ...],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     context: DeviceContextPtr,
@@ -6770,13 +6760,13 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q_proj: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        position_ids: InputTensor[dtype = DType.uint32, rank=2, ...],
+        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
@@ -6788,10 +6778,10 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         )
         comptime mrope = _unsafe_str_to_coord[mrope_section]()
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-            interleaved = Self.interleaved,
+            interleaved=Self.interleaved,
             has_position_ids=True,
             target=target,
-            mrope_types = mrope.element_types,
+            mrope_types=mrope.element_types,
             mrope_section=mrope,
         ](
             q_proj,
@@ -6818,19 +6808,19 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q_proj: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
-        var dummy_position_ids = DynamicTensor[
-            dtype = DType.uint32, rank=2, ...
-        ]({}, IndexList[2](0))
+        var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
+            {}, IndexList[2](0)
+        )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
             cache_lengths,
@@ -6838,7 +6828,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             max_lengths,
         )
         generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-            interleaved = Self.interleaved,
+            interleaved=Self.interleaved,
             has_position_ids=False,
             target=target,
         ](
@@ -6865,12 +6855,12 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
         output: OutputTensor[dtype=dtype, rank=4, ...],
         q_proj: InputTensor[dtype=dtype, rank=4, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         freqs_cis: InputTensor[dtype=dtype, rank=2, ...],
         layer_idx: UInt32,
-        valid_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         context: DeviceContextPtr = DeviceContextPtr(),
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -6880,7 +6870,7 @@ struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
             max_lengths,
         )
         generic_fused_qk_rope_bshd_paged[
-            interleaved = Self.interleaved,
+            interleaved=Self.interleaved,
             target=target,
         ](
             q_proj.to_tile_tensor[DType.int64](),
@@ -6913,8 +6903,8 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
     ](
         output: FusedOutputTensor[dtype=dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -6967,7 +6957,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             comptime assert freqs_cis_tensor.flat_rank == 2
 
             rope_ragged[
-                interleaved = Self.interleaved,
+                interleaved=Self.interleaved,
                 target=target,
                 output_fn=output_fn,
             ](
@@ -7001,11 +6991,11 @@ struct Struct_mha_padded_paged:
         output: OutputTensor[dtype=dtype, rank=4, ...],
         q: InputTensor[dtype=dtype, rank=4, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
-        valid_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
@@ -7041,7 +7031,7 @@ struct Struct_mha_padded_paged:
 
 @always_inline
 fn _unmarshal_mha_decode_dispatch_metadata(
-    mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
 ) -> MHADecodeDispatchMetadata:
     return MHADecodeDispatchMetadata(
         Int(mha_decode_dispatch_metadata.unsafe_ptr()[0]),
@@ -7058,9 +7048,9 @@ struct Struct_get_mha_decode_num_partitions:
     fn execute[
         *, n_kv_heads: Int
     ](
-        num_partitions: OutputTensor[dtype = DType.int64, rank=1, ...],
+        num_partitions: OutputTensor[dtype=DType.int64, rank=1, ...],
         decode_num_partitions_request: InputTensor[
-            dtype = DType.int64, rank=1, ...
+            dtype=DType.int64, rank=1, ...
         ],
         context: DeviceContextPtr,
     ) raises:
@@ -7105,14 +7095,14 @@ fn _execute_mha_ragged_paged_scalar_args[
 ](
     output: OutputTensor[dtype=dtype, rank=3, ...],
     q: InputTensor[dtype=dtype, rank=3, ...],
-    input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
     kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-    cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-    max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
     layer_idx: UInt32,
     scale: Float32,
-    mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -7177,15 +7167,15 @@ struct Struct_mha_ragged_paged_scalar_args:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         mha_decode_dispatch_metadata: InputTensor[
-            dtype = DType.int64, rank=1, ...
+            dtype=DType.int64, rank=1, ...
         ],
         context: DeviceContextPtr,
     ) raises:
@@ -7221,16 +7211,16 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         sink_weights: InputTensor[dtype=dtype, rank=1, ...],
         mha_decode_dispatch_metadata: InputTensor[
-            dtype = DType.int64, rank=1, ...
+            dtype=DType.int64, rank=1, ...
         ],
         context: DeviceContextPtr,
     ) raises:
@@ -7281,14 +7271,14 @@ struct Struct_mla_decode_ragged_paged_capturable:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
-        scalar_args: InputTensor[dtype = DType.int64, rank=1, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         comptime assert (
@@ -7329,11 +7319,11 @@ struct Struct_mla_decode_ragged_paged:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=q_dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
@@ -7379,13 +7369,13 @@ struct Struct_mla_prefill_ragged_paged:
         q: InputTensor[dtype=dtype, rank=3, ...],
         k: InputTensor[dtype=dtype, rank=3, ...],
         v: InputTensor[dtype=dtype, rank=3, ...],
-        buffer_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
@@ -7423,14 +7413,14 @@ struct Struct_mla_prefill_ragged_plan:
         //,
         target: StaticString,
     ](
-        buffer_row_offsets: OutputTensor[dtype = DType.uint32, rank=2, ...],
-        cache_offsets: OutputTensor[dtype = DType.uint32, rank=2, ...],
-        buffer_lengths: OutputTensor[dtype = DType.int32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets: OutputTensor[dtype=DType.uint32, rank=2, ...],
+        cache_offsets: OutputTensor[dtype=DType.uint32, rank=2, ...],
+        buffer_lengths: OutputTensor[dtype=DType.int32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         buffer_tok_size: UInt32,
         context: DeviceContextPtr,
@@ -7468,14 +7458,14 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
     ](
         k_latent_buffer: OutputTensor[dtype=dtype, rank=2, ...],
         k_buffer: OutputTensor[dtype=dtype, rank=2, ...],
-        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
         buffer_length: Int32,
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) raises:
@@ -7507,11 +7497,11 @@ struct Struct_kv_cache_get_max_seq_len_paged:
         //,
         target: StaticString,
     ](
-        max_seq_len: OutputTensor[dtype = DType.uint32, rank=1, ...],
+        max_seq_len: OutputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7544,18 +7534,18 @@ struct Struct_mla_prefill_graph_paged:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
         buffer_length: Int32,
         w_k: InputTensor[dtype=fp8_dtype, rank=2, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
@@ -7613,12 +7603,12 @@ struct Struct_mla_compute_dispatch_args_scalar:
         num_heads: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype = DType.int64, rank=1, ...],
-        batch_size_tensor: InputTensor[dtype = DType.int64, rank=1, ...],
+        output: OutputTensor[dtype=DType.int64, rank=1, ...],
+        batch_size_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
         max_cache_valid_length_tensor: InputTensor[
-            dtype = DType.int64, rank=1, ...
+            dtype=DType.int64, rank=1, ...
         ],
-        q_max_seq_len_tensor: InputTensor[dtype = DType.int64, rank=1, ...],
+        q_max_seq_len_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[
@@ -7660,21 +7650,21 @@ struct Struct_mla_decode_graph_paged_fp8_capturable:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
         w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
         w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
-        scalar_args: InputTensor[dtype = DType.int64, rank=1, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7736,15 +7726,15 @@ struct Struct_mla_decode_graph_paged_fp8:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
@@ -7807,21 +7797,21 @@ struct Struct_mla_prefill_graph_bf16_paged:
         mask_str: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype = DType.bfloat16, rank=3, ...],
-        q: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
         buffer_length: Int32,
-        w_k: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        w_uv: InputTensor[dtype = DType.bfloat16, rank=3, ...],
+        w_k: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
@@ -7877,22 +7867,22 @@ struct Struct_mla_decode_graph_bf16_paged_capturable:
         mask_str: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype = DType.bfloat16, rank=3, ...],
-        q: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype = DType.bfloat16, rank=3, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        scalar_args: InputTensor[dtype = DType.int64, rank=1, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7943,18 +7933,18 @@ struct Struct_mla_decode_graph_bf16_paged:
         mask_str: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype = DType.bfloat16, rank=3, ...],
-        q: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        w_uk: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype = DType.bfloat16, rank=3, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
@@ -8019,26 +8009,26 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_capturable:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
         buffer_length: Int32,
         w_k: InputTensor[dtype=fp8_dtype, rank=2, ...],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
         w_k_scale: InputTensor[dtype=fp8_scale_dtype, rank=2, ...],
         w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
         w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
-        scalar_args: InputTensor[dtype = DType.int64, rank=1, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -8108,19 +8098,19 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
         buffer_length: Int32,
         w_k: InputTensor[dtype=fp8_dtype, rank=2, ...],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
@@ -8190,26 +8180,26 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_capturable:
         mask_str: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype = DType.bfloat16, rank=3, ...],
-        q: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
         buffer_length: Int32,
-        w_k: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        w_uk: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype = DType.bfloat16, rank=3, ...],
+        w_k: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
-        scalar_args: InputTensor[dtype = DType.int64, rank=1, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -8266,22 +8256,22 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         mask_str: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype = DType.bfloat16, rank=3, ...],
-        q: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        kv: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
-        cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
         buffer_length: Int32,
-        w_k: InputTensor[dtype = DType.bfloat16, rank=2, ...],
-        w_uk: InputTensor[dtype = DType.bfloat16, rank=3, ...],
-        w_uv: InputTensor[dtype = DType.bfloat16, rank=3, ...],
+        w_k: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         epsilon: Float32,
@@ -8331,6 +8321,85 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             )
 
 
+@compiler.register("mo.mla.graph.prefill.decode.paged.quantized.capturable")
+struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
+    @always_inline
+    @staticmethod
+    fn execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        scales_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=scales_dtype, rank=6, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
+
+        var null_ptr = UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]()
+        var null_scalar_args = TileTensor(null_ptr, row_major[4]())
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.decode.paged.quantized.capturable",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_prefill_decode_graph_bf16[
+                mask_str=mask_str,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                kv.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
+                Int(buffer_length),
+                Int(kv_collection.max_seq_length),
+                w_k.to_tile_tensor[DType.int64](),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                null_scalar_args,
+                context.get_device_context(),
+            )
+
+
 # ===-----------------------------------------------------------------------===#
 # Cross attention
 #
@@ -8352,13 +8421,13 @@ struct Struct_cross_attention_ragged_paged:
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
-        q_input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        q_max_seq_len: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        q_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_max_seq_len: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         scale: Float32,
         context: DeviceContextPtr,
@@ -8398,12 +8467,12 @@ struct Struct_moe_create_indices:
     fn execute[
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype = DType.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype = DType.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype = DType.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype = DType.uint32, rank=1, ...],
-        topk_ids: InputTensor[dtype = DType.int32, rank=1, ...],
+        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         moe_create_indices[target=target](
@@ -8433,7 +8502,7 @@ struct Struct_moe_router_group_limited:
         norm_weights: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype = DType.int32, rank=2, ...],
+        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
         expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
         expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
         expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
@@ -8454,7 +8523,7 @@ struct Struct_moe_router_group_limited:
             topk_group,
             norm_weights,
             target=target,
-            scores_input_fn = OptionalReg[
+            scores_input_fn=OptionalReg[
                 fn[
                     width: Int
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
@@ -8483,8 +8552,8 @@ struct Struct_grouped_matmul_ragged:
         c: OutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=3, ...],
-        expert_start_indices: InputTensor[dtype = DType.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype = DType.int32, rank=1, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContextPtr,
@@ -8528,10 +8597,10 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         b: InputTensor[dtype=b_type, rank=3, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
         b_scales: InputTensor[dtype=scales_type, rank=6, ...],
-        expert_start_indices: InputTensor[dtype = DType.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype = DType.int32, rank=1, ...],
-        a_scale_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        expert_scales: InputTensor[dtype = DType.float32, rank=1, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        a_scale_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_scales: InputTensor[dtype=DType.float32, rank=1, ...],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContextPtr,
@@ -8610,8 +8679,8 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         b: InputTensor[dtype=b_type, rank=3, ...],
         a_scales: InputTensor[dtype=a_scales_type, rank=2, ...],
         b_scales: InputTensor[dtype=b_scales_type, rank=3, ...],
-        expert_start_indices: InputTensor[dtype = DType.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype = DType.int32, rank=1, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContextPtr,
@@ -8817,10 +8886,10 @@ struct Struct_kv_cache_store_paged:
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) capturing raises:
@@ -8875,10 +8944,10 @@ struct Struct_kv_cache_store_k_scales_paged:
     ](
         input_k_scales: FusedInputTensor[dtype=scale_dtype, rank=3, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
         layer_idx: UInt32,
         context: DeviceContextPtr,
@@ -8938,10 +9007,12 @@ struct Struct_kv_cache_store_k_scales_paged:
         comptime if is_gpu[target]():
             cuda_ctx = context.get_device_context()
 
-        var input_row_offsets_lt = input_row_offsets.to_layout_tensor()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
+            DType.int64
+        ]()
 
         @parameter
-        @__copy_capture(k_cache, input_row_offsets_lt)
+        @__copy_capture(k_cache, input_row_offsets_tt, input_row_offsets)
         fn write_scale_to_cache[
             width: Int,
             rank: Int,
@@ -8953,11 +9024,9 @@ struct Struct_kv_cache_store_k_scales_paged:
                 rebind[IndexList[3]](idx),
             )
             var batch_idx = get_batch_from_row_offsets(
-                input_row_offsets_lt, idx[0]
+                input_row_offsets_tt, idx[0]
             )
-            var token_idx = Int(
-                UInt32(idx[0]) - input_row_offsets_lt[batch_idx]
-            )
+            var token_idx = Int(UInt32(idx[0]) - input_row_offsets[batch_idx])
             var h_idx = idx[1]
             var hd_idx = idx[2]
             var cache_length = k_cache.cache_length(batch_idx)
@@ -9001,10 +9070,10 @@ struct Struct_kv_cache_store_padded:
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=4, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        valid_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) capturing raises:
@@ -9346,14 +9415,14 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         target: StaticString,
     ](
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype],
         layer_idx: UInt32,
         total_seq_len: UInt32,
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight_offset: Scalar[dtype=dtype],
         context: DeviceContextPtr,
     ) raises:
@@ -9369,12 +9438,12 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             per_head_norm=per_head_norm,
         ](
             kv_collection,
-            gamma.to_layout_tensor(),
+            gamma.to_tile_tensor[DType.int64](),
             epsilon,
             weight_offset,
             layer_idx,
             total_seq_len,
-            input_row_offsets.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor[DType.int64](),
             context,
         )
 
@@ -9394,10 +9463,10 @@ fn print_kv_cache_paged_generic_kernel_api[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    valid_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
+    valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
-    is_print_compact: InputTensor[dtype = DType.bool, rank=1, ...],
+    is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
     context: DeviceContextPtr,
 ) raises:
     comptime if is_gpu[target]():
@@ -9427,13 +9496,13 @@ struct Struct_print_kv_cache_paged:
         //,
         target: StaticString,
     ](
-        valid_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
-        is_print_compact: InputTensor[dtype = DType.bool, rank=1, ...],
+        is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -9469,12 +9538,12 @@ struct Struct_kv_matmul_ragged_paged:
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -9512,12 +9581,12 @@ struct Struct_k_matmul_ragged_paged:
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -9552,14 +9621,14 @@ struct Struct_k_matmul_ragged_paged_scale:
         target: StaticString,
     ](
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         input_scale: InputTensor[dtype=scale_dtype, rank=2, ...],
         weight_scale: InputTensor[dtype=scale_dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=kv_cache_t, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -9571,7 +9640,7 @@ struct Struct_k_matmul_ragged_paged_scale:
         )
         k_matmul_ragged_paged_scale[
             target=target,
-            scales_granularity_mnk = IndexList[3](
+            scales_granularity_mnk=IndexList[3](
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
         ](
@@ -9595,16 +9664,16 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         quantization_encoding_k: StaticString,
         quantization_encoding_v: StaticString,
     ](
-        output: OutputTensor[dtype = DType.float32, rank=2, ...],
-        hidden_state: InputTensor[dtype = DType.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        q_weight: InputTensor[dtype = DType.uint8, rank=2, ...],
-        k_weight: InputTensor[dtype = DType.uint8, rank=2, ...],
-        v_weight: InputTensor[dtype = DType.uint8, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype = DType.float32, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        hidden_state: InputTensor[dtype=DType.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
+        k_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
+        v_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -9648,12 +9717,12 @@ struct Struct_fused_token_sampling:
         _trace_name: StaticString,
     ](
         out_idxs: OutputTensor[dtype=out_idx_type, rank=rank, ...],
-        K: InputTensor[dtype = DType.int64, rank=1, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
         max_k: Scalar,
-        temperature: InputTensor[dtype = DType.float32, rank=1, ...],
-        top_p: InputTensor[dtype = DType.float32, rank=1, ...],
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
         min_top_p: Float32,
-        seed: InputTensor[dtype = DType.uint64, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -9765,10 +9834,8 @@ struct Struct_sampler_apply_penalties:
         _trace_name: StaticString,
     ](
         logits: MutableInputTensor[dtype=logit_type, rank=rank, ...],
-        compressed_frequency_data: InputTensor[
-            dtype = DType.int32, rank=2, ...
-        ],
-        frequency_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        compressed_frequency_data: InputTensor[dtype=DType.int32, rank=2, ...],
+        frequency_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         frequency_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
         presence_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
         repetition_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
@@ -9801,9 +9868,9 @@ struct Struct_sampler_update_frequency_data:
         _trace_name: StaticString,
     ](
         compressed_frequency_data: MutableInputTensor[
-            dtype = DType.int32, rank=2, ...
+            dtype=DType.int32, rank=2, ...
         ],
-        frequency_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        frequency_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         new_tokens: InputTensor[dtype=token_type, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
@@ -9835,7 +9902,7 @@ struct Struct_swishGLU:
         c: OutputTensor[rank=2, ...],
         a: InputTensor[rank=2, ...],
         b0: InputTensor[rank=2, ...],
-        b1: InputTensor[dtype = b0.dtype, rank=2, ...],
+        b1: InputTensor[dtype=b0.dtype, rank=2, ...],
         ctx: DeviceContextPtr,
     ) raises:
         swishGLU[target=target,](
@@ -9932,7 +9999,7 @@ struct DistributedAllReduceSum:
         outputs: FusedOutputVariadicTensors[dtype, rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, ...
+            dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
@@ -10007,7 +10074,7 @@ struct DistributedAllReduceSum:
 
             allreduce[
                 ngpus=num_devices,
-                output_lambda = output_lambda[output_index=index, ...],
+                output_lambda=output_lambda[output_index=index, ...],
             ](
                 in_bufs,
                 out_bufs[index].make_dims_unknown(),
@@ -10034,7 +10101,7 @@ struct DistributedReduceScatterSum:
         outputs: FusedOutputVariadicTensors[dtype, rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, ...
+            dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
@@ -10109,7 +10176,7 @@ struct DistributedReduceScatterSum:
             var out_buf = outputs[index].to_tile_tensor[DType.int64]()
             reducescatter[
                 ngpus=num_devices,
-                output_lambda = output_lambda[output_index=index, ...],
+                output_lambda=output_lambda[output_index=index, ...],
                 axis=axis,
             ](
                 in_bufs,
@@ -10136,7 +10203,7 @@ struct DistributedAllGather:
         outputs: OutputVariadicTensors[dtype, rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, ...
+            dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
@@ -10199,11 +10266,11 @@ struct DistributedAllGather:
 struct DistributedBroadcast:
     """Distributed broadcast: copy tensor from root GPU to all GPUs.
 
-    This op is called once per target GPU. Each instance receives:
+    A single instance of this op handles all participating GPUs. It receives:
     - input: The source tensor from the root GPU (P2P accessible)
-    - output: The destination tensor on this GPU
+    - outputs: Destination tensors, one per GPU
     - signal_buffers: Synchronization buffers for all participating GPUs
-    - device_ctx: Device context for this GPU
+    - dev_ctxs_input: Device contexts for all participating GPUs
     """
 
     @staticmethod
@@ -10214,12 +10281,12 @@ struct DistributedBroadcast:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, ...
+            dtype=DType.uint8, rank=1, ...
         ],
-        device_ctx: DeviceContextPtr,
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         """Execute distributed broadcast operation.
 
@@ -10231,21 +10298,19 @@ struct DistributedBroadcast:
             _trace_name: Trace name for profiling.
 
         Args:
-            output: Output tensor for this GPU.
+            outputs: Output tensors (one per GPU) to store broadcast results.
             input: Input tensor from root GPU (P2P accessible from all GPUs).
             signal_buffers: Synchronization buffers for cross-GPU coordination.
-            device_ctx: Device context for this GPU.
-
-        Implementation Notes:
-            1. This op is called once per target GPU by the graph compiler.
-            2. All GPUs receive the same input tensor (from root) via P2P access.
-            3. Each op instance only writes to its assigned output tensor.
+            dev_ctxs_input: Device contexts for participating GPUs.
 
         Limitations:
             - Maximum of 8 GPUs supported (MAX_GPUS).
             - Requires P2P access between GPUs (NVLink or PCIe P2P).
         """
-        comptime num_devices = signal_buffers.size
+        comptime num_devices = outputs.size
+        comptime assert (
+            signal_buffers.size == num_devices
+        ), "expected 1 signal buffer per device"
         comptime assert (
             root >= 0 and root < num_devices
         ), "root GPU index must be in range [0, ngpus)"
@@ -10258,7 +10323,6 @@ struct DistributedBroadcast:
         _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
 
         var in_buf = managed_tensor_slice_to_ndbuffer(input)
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
@@ -10267,13 +10331,29 @@ struct DistributedBroadcast:
         comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        @always_inline
+        fn launch_broadcast[
+            index: Int
+        ]() raises unified {
+            read in_buf,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            var out_buf = managed_tensor_slice_to_ndbuffer(
+                outputs[index]
+            ).make_dims_unknown()
             broadcast[ngpus=num_devices](
                 in_buf.make_dims_unknown(),
-                out_buf.make_dims_unknown(),
+                out_buf,
                 rank_sigs,
-                device_ctx[],
+                dev_ctxs_input[index],
                 root,
+            )
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            _launch_device_collective[num_devices](
+                launch_broadcast, dev_ctxs_input
             )
 
 
@@ -10301,7 +10381,7 @@ struct DistributedScatter:
         outputs: FusedOutputVariadicTensors[dtype, rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, ...
+            dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
@@ -10373,7 +10453,7 @@ struct DistributedMatmulAllReduce:
         inputs: InputVariadicTensors[a_type, 2, ...],
         weights: InputVariadicTensors[b_type, 2, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, ...
+            dtype=DType.uint8, rank=1, ...
         ],
         dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
@@ -10510,7 +10590,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         output_residual: OutputTensor[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
-            dtype = DType.uint8, rank=1, ...
+            dtype=DType.uint8, rank=1, ...
         ],
         residual: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
@@ -10788,7 +10868,7 @@ struct AdvancedIndexingSetItem:
         foreach[
             func,
             target=target,
-            _trace_name = _trace_name + "_p1/2_copy",
+            _trace_name=_trace_name + "_p1/2_copy",
         ](output_tensor, ctx)
 
         # Then run the updates in-place.
@@ -10796,7 +10876,7 @@ struct AdvancedIndexingSetItem:
         var tensor = MutableInputTensor[
             dtype=input_type,
             rank=input_rank,
-            static_spec = output_tensor.static_spec,
+            static_spec=output_tensor.static_spec,
         ](
             output_tensor._ptr,
             output_tensor._spec,
@@ -10805,7 +10885,7 @@ struct AdvancedIndexingSetItem:
         AdvancedIndexingSetItemInplace.execute[
             target=target,
             start_axis=start_axis,
-            _trace_name = _trace_name + "_p2/2_update",
+            _trace_name=_trace_name + "_p2/2_update",
         ](tensor, updates, indices, ctx)
 
 
@@ -10828,10 +10908,10 @@ struct ArgSort[*, ascending: Bool]:
         var input_tensor = input.to_tile_tensor[DType.int64]()
 
         comptime if target == "cpu":
-            argsort[ascending = Self.ascending](indices_tensor, input_tensor)
+            argsort[ascending=Self.ascending](indices_tensor, input_tensor)
         else:
             var cuda_ctx = ctx.get_device_context()
-            argsort[ascending = Self.ascending, target=target](
+            argsort[ascending=Self.ascending, target=target](
                 indices_tensor, input_tensor, cuda_ctx
             )
 
@@ -10862,7 +10942,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
             DType.float8_e4m3fnuz,
         ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
         var scale_loaded = scale.cast[DType.float32]()
-        quantize_static_scaled_fp8[scale_is_inverted = Self.scale_is_inverted](
+        quantize_static_scaled_fp8[scale_is_inverted=Self.scale_is_inverted](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(input),
             scale_loaded,
@@ -10906,7 +10986,7 @@ struct QuantizeDynamicScaledFloat8:
             scales_dtype=scales_type,
             input_fn,
             group_size_or_per_token,
-            num_cols = input.static_spec.shape.get[1](),
+            num_cols=input.static_spec.shape.get[1](),
         ](
             managed_tensor_slice_to_ndbuffer(output).make_dims_unknown(),
             managed_tensor_slice_to_ndbuffer(scales).make_dims_unknown(),
@@ -10948,7 +11028,7 @@ struct BatchedQuantizeDynamicScaledFloat8:
         batched_quantize_dynamic_scaled_fp8[
             input_fn=input_fn,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols = input.static_spec.shape.get[2](),
+            num_cols=input.static_spec.shape.get[2](),
         ](
             managed_tensor_slice_to_ndbuffer(output).make_dims_unknown(),
             managed_tensor_slice_to_ndbuffer(scales).make_dims_unknown(),
@@ -11077,20 +11157,20 @@ struct MergeRaggedTensors:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
-        output_row_offsets: OutputTensor[dtype = DType.uint32, rank=1, ...],
+        output_row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
         a: InputTensor[dtype=dtype, rank=rank, ...],
-        a_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        a_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         b: InputTensor[dtype=dtype, rank=rank, ...],
-        b_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        b_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         merge_ragged_tensors[rank=rank, target=target](
-            output.to_layout_tensor(),
-            output_row_offsets.to_layout_tensor(),
-            a.to_layout_tensor(),
-            a_row_offsets.to_layout_tensor(),
-            b.to_layout_tensor(),
-            b_row_offsets.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
+            output_row_offsets.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            a_row_offsets.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_row_offsets.to_tile_tensor[DType.int64](),
             ctx,
         )
 
@@ -11114,8 +11194,8 @@ struct Struct_lora_sgmv_ragged:
         c: OutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        lora_ids: InputTensor[dtype = DType.int32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        lora_ids: InputTensor[dtype=DType.int32, rank=1, ...],
         max_seq_length: UInt32,
         context: DeviceContextPtr,
     ) raises:
@@ -11154,8 +11234,8 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         c: OutputTensor[dtype=c_type, rank=3, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=3, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        lora_ids: InputTensor[dtype = DType.int32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        lora_ids: InputTensor[dtype=DType.int32, rank=1, ...],
         max_seq_length: UInt32,
         context: DeviceContextPtr,
     ) raises:
@@ -11196,10 +11276,10 @@ struct Struct_kv_cache_ragged_paged_radd:
     ](
         a: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         batch_offset: UInt32,
         layer_idx: UInt32,
         context: DeviceContextPtr,
@@ -11237,8 +11317,8 @@ struct Learnable2DInterpPosEmb:
         output: OutputTensor[dtype=dtype, rank=2, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
         weight: InputTensor[dtype=dtype, rank=3, ...],
-        grid_thws: InputTensor[dtype = DType.int64, rank=2, ...],
-        time_weight: InputTensor[dtype = DType.float32, rank=2, ...],
+        grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+        time_weight: InputTensor[dtype=DType.float32, rank=2, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[
@@ -11268,7 +11348,7 @@ struct SpatialMerge:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         input: InputTensor[dtype=dtype, rank=2, ...],
-        grid_thw: InputTensor[dtype = DType.int64, rank=2, ...],
+        grid_thw: InputTensor[dtype=DType.int64, rank=2, ...],
         hidden_size: Int32,
         merge_size: Int32,
         ctx: DeviceContextPtr,
@@ -11298,7 +11378,7 @@ struct TPoolPatchMerger:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         input: InputTensor[dtype=dtype, rank=2, ...],
-        grid_thws: InputTensor[dtype = DType.int64, rank=2, ...],
+        grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
         kH: Int32,
         kW: Int32,
         max_h: Int32,
@@ -11352,12 +11432,12 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
     ](
         kv: InputTensor[dtype=dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1, ...],
-        lora_end_idx: InputTensor[dtype = DType.int64, rank=1, ...],
-        batch_seq_len: InputTensor[dtype = DType.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        lora_end_idx: InputTensor[dtype=DType.int64, rank=1, ...],
+        batch_seq_len: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
         context: DeviceContextPtr,
     ) raises:
@@ -11405,7 +11485,7 @@ struct Struct_sliced_add_ragged:
         c: OutputTensor[dtype=dtype, rank=2, ...],
         a: InputTensor[dtype=dtype, rank=2, ...],
         b: InputTensor[dtype=dtype, rank=2, ...],
-        lora_end_idx: InputTensor[dtype = DType.int64, rank=1, ...],
+        lora_end_idx: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         var c_tile_tensor = c.to_tile_tensor[DType.int64]()
@@ -11450,8 +11530,8 @@ struct KVCacheCopyPagesD2H:
     ](
         device_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
         host_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        src_page_ids: InputTensor[dtype = DType.int64, rank=1, ...],
-        dst_page_ids: InputTensor[dtype = DType.int64, rank=1, ...],
+        src_page_ids: InputTensor[dtype=DType.int64, rank=1, ...],
+        dst_page_ids: InputTensor[dtype=DType.int64, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -11512,9 +11592,9 @@ struct LMCacheOffload:
     ](
         output: MutableInputTensor[dtype=dtype, rank=4, ...],
         paged_cache: InputTensor[dtype=dtype, rank=6, ...],
-        slot_mapping: InputTensor[dtype = DType.int64, rank=1, ...],
-        start_token: InputTensor[dtype = DType.int64, rank=1, ...],
-        end_token: InputTensor[dtype = DType.int64, rank=1, ...],
+        slot_mapping: InputTensor[dtype=DType.int64, rank=1, ...],
+        start_token: InputTensor[dtype=DType.int64, rank=1, ...],
+        end_token: InputTensor[dtype=DType.int64, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         var gpu_ctx = ctx.get_device_context()
@@ -11573,9 +11653,9 @@ struct LMCacheOnload:
     ](
         paged_cache: MutableInputTensor[dtype=dtype, rank=6, ...],
         input: InputTensor[dtype=dtype, rank=4, ...],
-        slot_mapping: InputTensor[dtype = DType.int64, rank=1, ...],
-        start_token: InputTensor[dtype = DType.int64, rank=1, ...],
-        end_token: InputTensor[dtype = DType.int64, rank=1, ...],
+        slot_mapping: InputTensor[dtype=DType.int64, rank=1, ...],
+        start_token: InputTensor[dtype=DType.int64, rank=1, ...],
+        end_token: InputTensor[dtype=DType.int64, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         var gpu_ctx = ctx.get_device_context()
@@ -11628,7 +11708,7 @@ struct Sleep:
         # In order to prevent this kernel from being DCE'd, we pass in a mutable
         # input buffer. A fix is tracked in GEX-3080.
         duration_sec_buffer: MutableInputTensor[
-            dtype = DType.float64, rank=1, ...
+            dtype=DType.float64, rank=1, ...
         ],
         ctx: DeviceContextPtr,
     ) raises:

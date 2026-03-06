@@ -51,10 +51,10 @@ model implementations.
 
 The `max.nn` package includes common components like:
 
-- **Core modules**: [`Module`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.Module), [`Linear`](/max/api/python/nn/linear#max.nn.linear.Linear), [`Embedding`](/max/api/python/nn/module_v3/Embedding#max.nn.module_v3.Embedding), [`Sequential`](/max/api/python/nn/module_v3/sequential#max.nn.module_v3.sequential.Sequential), [`ModuleList`](/max/api/python/nn/module_v3/sequential#max.nn.module_v3.sequential.ModuleList).
-- **Normalization**: [`RMSNorm`](/max/api/python/nn/module_v3/norm/RMSNorm#max.nn.module_v3.norm.RMSNorm), [`GemmaRMSNorm`](/max/api/python/nn/module_v3/norm/GemmaRMSNorm#max.nn.module_v3.norm.GemmaRMSNorm).
-- **Positional encodings**: [`RotaryEmbedding`](/max/api/python/nn/module_v3/rope/RotaryEmbedding#max.nn.module_v3.rope.RotaryEmbedding), [`TransposedRotaryEmbedding`](/max/api/python/nn/module_v3/rope/TransposedRotaryEmbedding#max.nn.module_v3.rope.TransposedRotaryEmbedding).
-- **Utilities**: [`module_dataclass`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.module_dataclass) for creating module dataclasses.
+- **Core modules**: [`Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module), [`Linear`](/max/api/python/nn/linear#max.nn.linear.Linear), [`Embedding`](/max/api/python/experimental/nn/Embedding#max.experimental.nn.Embedding), [`Sequential`](/max/api/python/experimental/nn/sequential#max.experimental.nn.sequential.Sequential), [`ModuleList`](/max/api/python/experimental/nn/sequential#max.experimental.nn.sequential.ModuleList).
+- **Normalization**: [`RMSNorm`](/max/api/python/experimental/nn/norm/RMSNorm#max.experimental.nn.norm.RMSNorm), [`GemmaRMSNorm`](/max/api/python/experimental/nn/norm/GemmaRMSNorm#max.experimental.nn.norm.GemmaRMSNorm).
+- **Positional encodings**: [`RotaryEmbedding`](/max/api/python/experimental/nn/rope/RotaryEmbedding#max.experimental.nn.rope.RotaryEmbedding), [`TransposedRotaryEmbedding`](/max/api/python/experimental/nn/rope/TransposedRotaryEmbedding#max.experimental.nn.rope.TransposedRotaryEmbedding).
+- **Utilities**: [`module_dataclass`](/max/api/python/experimental/nn/module#max.experimental.nn.module.module_dataclass) for creating module dataclasses.
 
 These components are core to building model architectures.
 
@@ -70,13 +70,13 @@ from max.nn.attention import AttentionWithRope
 
 :::
 
-The [`Module`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.Module) base class standardizes how
+The [`Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module) base class standardizes how
 layers manage weights and devices. Here's an example of building a simple
 multi-layer perceptron:
 
 ```python
 from max.driver import Accelerator
-from max.nn.module_v3 import Module, Linear
+from max.experimental.nn import Module, Linear
 
 class MLP(Module):
     fc1: Linear
@@ -122,16 +122,16 @@ in your architecture config.
 
 Understanding the relationship between modules and pipelines is key to working
 with MAX. When you build a model for the pipeline system, you define your
-architecture using the [`Module`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.Module) class.
+architecture using the [`Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module) class.
 MAX then compiles your module into an optimized executable for the target device,
 and the pipeline orchestrates execution.
 
 Here's the workflow:
 
 1. **Define your model**: You create a
-   [`Module`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.Module) that defines your model
+   [`Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module) that defines your model
    architecture. The module's
-   [`forward`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.Module.forward) method defines what
+   [`forward`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module.forward) method defines what
    computations happen when processing inputs.
 
 2. **MAX compiles your model**: MAX compiles the module into an optimized

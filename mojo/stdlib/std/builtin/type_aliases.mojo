@@ -25,7 +25,7 @@ comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
 
 comptime AnyOrigin[*, mut: Bool] = Origin[
-    _mlir_origin = __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
     ],
 ]()
@@ -42,7 +42,7 @@ comptime MutAnyOrigin = AnyOrigin[mut=True]
 """The mutable origin that might access any memory value."""
 
 comptime ExternalOrigin[*, mut: Bool] = Origin[
-    _mlir_origin = __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         +mut._mlir_value,
         `>`,
@@ -76,7 +76,7 @@ Useful when interfacing with memory from outside the current Mojo program.
 
 # Static constants are a named subset of the global origin.
 comptime StaticConstantOrigin = Origin[
-    _mlir_origin = __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<0>`,
         `, "__constants__"> : !lit.origin<0>`,
@@ -121,7 +121,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
 
     @always_inline("builtin")
     @implicit
-    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin = v._mlir_origin]:
+    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
         """Implicitly convert an origin to an immutable one.
 
         Args:
@@ -134,7 +134,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     fn unsafe_mut_cast[
         dest_mut: Bool
     ]() -> Origin[
-        _mlir_origin = __mlir_attr[
+        _mlir_origin=__mlir_attr[
             `#lit.origin.mutcast<`,
             Self._mlir_origin,
             `> : !lit.origin<`,

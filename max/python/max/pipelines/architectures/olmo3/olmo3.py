@@ -19,6 +19,16 @@ import functools
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.common_layers.rotary_embedding import (
+    RotaryEmbedding,
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
+from max.experimental.nn.embedding import Embedding
+from max.experimental.nn.linear import Linear
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import (
@@ -26,16 +36,6 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     unflatten_ragged_attention_inputs,
 )
-from max.nn.module_v3 import Module
-from max.nn.module_v3.common_layers.mlp import MLP
-from max.nn.module_v3.common_layers.rotary_embedding import (
-    RotaryEmbedding,
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
-from max.nn.module_v3.embedding import Embedding
-from max.nn.module_v3.linear import Linear
-from max.nn.module_v3.sequential import ModuleList
 
 from .layers.attention import Olmo3Attention
 from .layers.rms_norm import Olmo3RMSNorm

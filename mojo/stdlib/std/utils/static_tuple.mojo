@@ -101,7 +101,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         _static_tuple_construction_checks[Self.size]()
         self._mlir_value = __mlir_op.`pop.array.repeat`[
-            _type = __mlir_type[
+            _type=__mlir_type[
                 `!pop.array<`,
                 Self.size._mlir_value,
                 `, `,
@@ -185,8 +185,8 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
-            _type = Self.element_type,
-            index = index._mlir_value,
+            _type=Self.element_type,
+            index=index._mlir_value,
         ](self._mlir_value)
         return val
 
@@ -239,7 +239,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
-        return UnsafePointer[origin = origin_of(self)](ptr)[]
+        return UnsafePointer[origin=origin_of(self)](ptr)[]
 
     @always_inline("nodebug")
     fn _replace[idx: Int](self, val: Self.element_type) -> Self:
@@ -257,14 +257,14 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         comptime assert idx < Self.size
 
         var array = __mlir_op.`pop.array.replace`[
-            _type = __mlir_type[
+            _type=__mlir_type[
                 `!pop.array<`,
                 Self.size._mlir_value,
                 `, `,
                 Self.element_type,
                 `>`,
             ],
-            index = idx._mlir_value,
+            index=idx._mlir_value,
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)

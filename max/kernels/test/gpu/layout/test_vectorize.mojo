@@ -104,8 +104,8 @@ fn test_vectorize_2() raises:
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,
-        linear_idx_type = DType.int32,
-        layout_int_type = DType.int32,
+        linear_idx_type=DType.int32,
+        layout_int_type=DType.int32,
     ](heap, RuntimeLayout[layout_unknown]({8, 8}, {8, 1}))
     for i in range(64):
         tensor4.ptr[i] = Int32(i)

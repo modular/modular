@@ -38,8 +38,9 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import Layout as TileLayout, row_major
+from layout.tile_layout import Layout as TileLayout
 from std.random import Random
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr
@@ -322,8 +323,8 @@ fn rms_norm_fused_residual_gpu_block[
 
     var shared_mem = external_memory[
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[dtype, simd_width]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[dtype, simd_width]](),
         name="intermediate_shared_memory",
     ]()
     with PDL():
@@ -376,7 +377,7 @@ fn rms_norm_fused_residual_gpu_block[
                 # Store in shared memory for normalization
                 shared_mem.store[
                     width=simd_width,
-                    alignment = align_of[SIMD[dtype, simd_width]](),
+                    alignment=align_of[SIMD[dtype, simd_width]](),
                 ](idx, residual_add_val)
 
         barrier()
@@ -477,7 +478,7 @@ fn rms_norm_fused_residual_gpu[
         indices[rank - 1] = col
         return residual_input_fn[simd_width](indices.canonicalize())
 
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -491,9 +492,9 @@ fn rms_norm_fused_residual_gpu[
     )
 
     comptime kernel = rms_norm_fused_residual_gpu_block[
-        mut = gamma.mut,
-        origin = gamma.origin,
-        layout = gamma.layout,
+        mut=gamma.mut,
+        origin=gamma.origin,
+        layout=gamma.layout,
         simd_width,
         max_warps_per_block,
         input_fn_2d,

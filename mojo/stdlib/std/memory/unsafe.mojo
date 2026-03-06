@@ -107,7 +107,7 @@ fn bitcast[
 
     comptime if dtype == src_dtype:
         return val._refine[dtype, width]()
-    var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
+    var res = __mlir_op.`pop.bitcast`[_type=SIMD[dtype, width]._mlir_type](
         val._mlir_value
     )
     return SIMD(mlir_value=res)
@@ -173,7 +173,7 @@ fn pack_bits[
         " target type"
     )
 
-    var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
+    var res = __mlir_op.`pop.bitcast`[_type=SIMD[dtype, width]._mlir_type](
         val._mlir_value
     )
     return SIMD(mlir_value=res)
