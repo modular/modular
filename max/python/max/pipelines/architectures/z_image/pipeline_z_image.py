@@ -531,7 +531,6 @@ class ZImagePipeline(DiffusionPipeline):
     def _prepare_timestep_broadcast(
         self,
         timesteps: np.ndarray,
-        batch_size: int,
         device: Device,
     ) -> tuple[Tensor, np.ndarray]:
         transformed_timesteps = (1.0 - timesteps).astype(np.float32, copy=False)
@@ -540,21 +539,18 @@ class ZImagePipeline(DiffusionPipeline):
             transformed_timesteps.astype(np.float32, copy=False).tobytes()
         ).hexdigest()
         timesteps_key = (
-            f"timesteps::{num_timesteps}_{batch_size}_{timesteps_digest}"
+            f"timesteps::{num_timesteps}_{timesteps_digest}"
         )
         if timesteps_key in self._cached_timesteps_batched:
             return self._cached_timesteps_batched[
                 timesteps_key
             ], transformed_timesteps
 
-        timesteps_np = np.broadcast_to(
-            transformed_timesteps[:, None], (num_timesteps, batch_size)
-        )
-        timesteps_batched = Tensor.from_dlpack(
-            np.ascontiguousarray(timesteps_np)
+        timesteps_tensor = Tensor.from_dlpack(
+            np.ascontiguousarray(transformed_timesteps)
         ).to(device)
-        self._cached_timesteps_batched[timesteps_key] = timesteps_batched
-        return timesteps_batched, transformed_timesteps
+        self._cached_timesteps_batched[timesteps_key] = timesteps_tensor
+        return timesteps_tensor, transformed_timesteps
 
     def execute(  # type: ignore[override]
         self,
@@ -660,7 +656,6 @@ class ZImagePipeline(DiffusionPipeline):
             timesteps_seq, transformed_timesteps = (
                 self._prepare_timestep_broadcast(
                     timesteps=timesteps,
-                    batch_size=batch_size,
                     device=device,
                 )
             )
@@ -680,7 +675,7 @@ class ZImagePipeline(DiffusionPipeline):
         with Tracer("denoising_loop"):
             for i in range(num_timesteps):
                 with Tracer(f"denoising_step_{i}"):
-                    timestep = timesteps_seq[i]
+                    timestep = timesteps_seq[i : i + 1]
                     apply_cfg = bool(
                         do_cfg and cfg_active is not None and cfg_active[i]
                     )
