@@ -4267,6 +4267,10 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
   auto traitType = sugarCast<TraitType>(traitToCheck.getIfTypeValue());
   SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
 
+  // Canonicalize to include the full ancestor chain so that
+  // constraintImplies can use simple set containment for subsumption.
+  canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
+
   // Fold trait symbol into a list of string, as trait type will be discarded
   // after lowering lit.
   auto stringType = KGEN::StringType::get(traitType.getContext());
