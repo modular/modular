@@ -212,3 +212,195 @@ class Conv2d(Module[[Tensor], Tensor]):
             output = F.permute(output, [0, 3, 1, 2])
 
         return output
+
+class Conv3d(Module[[Tensor], Tensor]):
+    """A 3D convolution layer.
+
+    This is a Conv3d implementation that uses Tensor instead of Weight objects.
+
+    Example:
+        .. code-block:: python
+
+            from max.nn.module_v3 import Conv3d
+            from max.experimental.tensor import Tensor
+
+            conv = Conv3d(
+                kernel_size=3,
+                in_channels=4,
+                out_channels=8,
+                has_bias=True,
+                permute=True,
+            )
+
+            x = Tensor.ones([1, 4, 8, 16, 16])
+            result = conv(x)
+    """
+
+    weight: Tensor
+    """The weight tensor with shape [out_channels, in_channels // num_groups, kernel_depth, kernel_height, kernel_width]."""
+
+    bias: Tensor | Literal[0]
+    """The bias tensor with shape [out_channels] (or 0 if bias is disabled)."""
+
+    def __init__(
+        self,
+        kernel_size: int | tuple[int, int, int],
+        in_channels: int,
+        out_channels: int,
+        dtype: DType | None = None,
+        stride: int | tuple[int, int, int] = 1,
+        padding: int
+        | tuple[int, int, int]
+        | tuple[int, int, int, int, int, int] = 0,
+        dilation: int | tuple[int, int, int] = 1,
+        num_groups: int = 1,
+        device: DeviceRef | None = None,
+        has_bias: bool = False,
+        permute: bool = False,
+        name: str | None = None,
+    ):
+        """Initialize Conv3d layer.
+
+        Args:
+            kernel_size: Size of the convolving kernel. Can be a single int (cubic kernel)
+                or tuple (depth, height, width).
+            in_channels: Number of channels in the input volume.
+            out_channels: Number of channels produced by the convolution.
+            dtype: The data type for both weights and bias. In v3, this is optional as Tensor manages dtype automatically.
+            stride: Stride of the convolution for depth, height, and width dimensions.
+                Can be int (applied to all dimensions) or tuple (stride_d, stride_h, stride_w). Default: 1
+            padding: Padding added to input. Can be int (applied to all sides),
+                tuple of 3 ints (pad_d, pad_h, pad_w), or tuple of 6 ints
+                (pad_d_before, pad_d_after, pad_h_before, pad_h_after, pad_w_before, pad_w_after)
+                to support asymmetric padding. Default: 0
+            dilation: Spacing between kernel elements for depth, height, and width dimensions.
+                Can be int (applied to all dimensions) or tuple (dilation_d, dilation_h, dilation_w). Default: 1
+            num_groups: Number of blocked connections from input channels to output channels.
+                Input channels and output channels are divided into groups. Default: 1
+            device: The target device for computation. In v3, this is optional as Tensor manages device automatically.
+            has_bias: If true, adds a learnable bias vector to the layer.
+                Defaults to :obj:`False`.
+            permute: If true, permutes weights from PyTorch format to MAX format.
+                PyTorch order: (out_channels, in_channels / num_groups, depth, height, width).
+                MAX API order: (depth, height, width, in_channels / num_groups, out_channels).
+                Defaults to :obj:`False`.
+            name: Base name for weights. In v3, this is stored but not used for Weight naming.
+                Defaults to :obj:`None`.
+        """
+        # Store configuration for easy reconstruction
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.dtype = dtype
+        self.device = device
+        self.permute = permute
+        self.num_groups = num_groups
+        self.has_bias = has_bias
+        self.name = name
+
+        # Handle kernel_size as int or tuple
+        if isinstance(kernel_size, int):
+            kernel_depth = kernel_height = kernel_width = kernel_size
+            self.kernel_size = (kernel_size, kernel_size, kernel_size)
+        else:
+            kernel_depth, kernel_height, kernel_width = kernel_size
+            self.kernel_size = kernel_size
+
+        self.weight = random.normal(
+            [
+                out_channels,
+                in_channels // num_groups,
+                kernel_depth,
+                kernel_height,
+                kernel_width,
+            ]
+            if self.permute
+            else [
+                kernel_depth,
+                kernel_height,
+                kernel_width,
+                in_channels // num_groups,
+                out_channels,
+            ],
+            dtype=self.dtype,
+            device=self.device.to_device() if self.device is not None else None,
+        )
+
+        if has_bias:
+            self.bias = random.normal(
+                [out_channels],
+                dtype=self.dtype,
+                device=self.device.to_device()
+                if self.device is not None
+                else None,
+            )
+        else:
+            self.bias = 0
+
+        # Convert scalar parameters to tuples as needed
+        self.stride = (
+            (stride, stride, stride) if isinstance(stride, int) else stride
+        )
+
+        if isinstance(padding, int):
+            padding = (padding, padding, padding, padding, padding, padding)
+        elif len(padding) == 3:
+            # Convert (pad_d, pad_h, pad_w) to
+            # (pad_d_before, pad_d_after, pad_h_before, pad_h_after, pad_w_before, pad_w_after)
+            pad_d, pad_h, pad_w = padding
+            padding = (pad_d, pad_d, pad_h, pad_h, pad_w, pad_w)
+
+        self.padding = padding
+
+        if isinstance(dilation, int):
+            dilation = (dilation, dilation, dilation)
+        self.dilation = dilation
+
+        if (
+            isinstance(self.weight, Tensor)
+            and hasattr(self.weight, "quantization_encoding")
+            and self.weight.quantization_encoding is not None
+        ):
+            raise ValueError("Conv3d not implemented with weight quantization.")
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Apply 3D convolution to input.
+
+        Args:
+            x: Input tensor. Shape depends on `permute`:
+                - If permute=True: [batch_size, in_channels, depth, height, width]
+                - If permute=False: [batch_size, depth, height, width, in_channels]
+
+        Returns:
+            Output tensor. Shape depends on `permute`:
+                - If permute=True: [batch_size, out_channels, new_depth, new_height, new_width]
+                - If permute=False: [batch_size, new_depth, new_height, new_width, out_channels]
+        """
+        # Move weight to same device as input
+        weight = self.weight.to(x.device)
+
+        if self.permute:
+            # Input: [batch_size, in_channels, depth, height, width]
+            #     -> [batch_size, depth, height, width, in_channels]
+            x = F.permute(x, [0, 2, 3, 4, 1])
+
+            # Permute weight from [out_channels, in_channels // num_groups, depth, height, width]
+            # to [depth, height, width, in_channels // num_groups, out_channels] (QRSCF)
+            weight = F.permute(weight, [2, 3, 4, 1, 0])
+
+        output = F.conv3d(
+            x,
+            weight,
+            self.stride,
+            self.dilation,
+            self.padding,
+            self.num_groups,
+            self.bias if isinstance(self.bias, Tensor) else None,
+            filter_layout=FilterLayout.QRSCF,
+        )
+
+        if self.permute:
+            # Output: [batch_size, new_depth, new_height, new_width, out_channels]
+            #      -> [batch_size, out_channels, new_depth, new_height, new_width]
+            output = F.permute(output, [0, 4, 1, 2, 3])
+
+        return output

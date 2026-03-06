@@ -18,10 +18,12 @@ from max.dtype import DType
 from max.experimental import nn
 from max.experimental.tensor import Tensor
 
-from ..flux2.layers import TimestepEmbedding, Timesteps
+from ..flux2.layers.embeddings import TimestepEmbedding, Timesteps
 
 
-class PixArtAlphaCombinedTimestepSizeEmbeddings(nn.Module):
+class PixArtAlphaCombinedTimestepSizeEmbeddings(
+    nn.Module[[Tensor, Tensor, Tensor, int, DType], Tensor]
+):
     """Combined embeddings for PixArt-Alpha (and LTX2 autoencoders)."""
 
     def __init__(
