@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """CPU implementation of stencil computation."""
 
-from std.math import ceildiv
+from std.math import ceildiv, clamp
 
 from std.utils.index import IndexList
 
@@ -100,7 +100,7 @@ fn _stencil_impl_cpu[
     var parallelism_size = total_size // shape[rank - 1]
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = clamp(simd_width // 4, 1, 8)
 
     @always_inline
     @parameter
