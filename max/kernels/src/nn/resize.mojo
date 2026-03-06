@@ -116,17 +116,17 @@ struct Interpolator[mode: InterpolationMode](
     @staticmethod
     @always_inline
     fn filter_length() -> Int:
-        comptime if Self.mode == InterpolationMode.Linear:
-            return 1
-        else:
-            comptime assert False, "InterpolationMode not supported"
+        comptime assert (
+            Self.mode == InterpolationMode.Linear
+        ), "InterpolationMode not supported"
+        return 1
 
     @always_inline
     fn filter(self, x: Float32) -> Float32:
-        comptime if Self.mode == InterpolationMode.Linear:
-            return linear_filter(x)
-        else:
-            comptime assert False, "InterpolationMode not supported"
+        comptime assert (
+            Self.mode == InterpolationMode.Linear
+        ), "InterpolationMode not supported"
+        return linear_filter(x)
 
 
 fn resize_nearest_neighbor[

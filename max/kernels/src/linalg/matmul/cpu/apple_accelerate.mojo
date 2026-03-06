@@ -353,66 +353,65 @@ fn apple_matmul[
     a: NDBuffer,
     b: NDBuffer,
 ) raises:
-    comptime if a.type == b.type == c.type == DType.float32:
-        var m = Int32(a.dim[0]())
-        var n = Int32(b.dim[0]() if transpose_b else b.dim[1]())
-        var k = Int32(a.dim[1]())
+    comptime assert (
+        a.type == b.type == c.type == DType.float32
+    ), "unsupported type in apple accelerate"
+    var m = Int32(a.dim[0]())
+    var n = Int32(b.dim[0]() if transpose_b else b.dim[1]())
+    var k = Int32(a.dim[1]())
 
-        var lda = k
-        var ldb = n if not transpose_b else k
-        var ldc = n
+    var lda = k
+    var ldb = n if not transpose_b else k
+    var ldc = n
 
-        comptime alpha = 1.0
-        comptime beta = 0.0
+    comptime alpha = 1.0
+    comptime beta = 0.0
 
-        _cblas_f32[transpose_b=transpose_b](
-            cblas_gemm_fn,
-            m,
-            n,
-            k,
-            lda,
-            ldb,
-            ldc,
-            alpha,
-            beta,
-            rebind[
-                UnsafePointer[
-                    Float32,
-                    MutAnyOrigin,
-                    address_space=c.address_space,
-                ]
-            ](c.data),
-            rebind[
-                UnsafePointer[
-                    Float32, ImmutAnyOrigin, address_space=a.address_space
-                ]
-            ](a.data),
-            rebind[
-                UnsafePointer[
-                    Float32, ImmutAnyOrigin, address_space=b.address_space
-                ]
-            ](b.data),
-        )
+    _cblas_f32[transpose_b=transpose_b](
+        cblas_gemm_fn,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        alpha,
+        beta,
+        rebind[
+            UnsafePointer[
+                Float32,
+                MutAnyOrigin,
+                address_space=c.address_space,
+            ]
+        ](c.data),
+        rebind[
+            UnsafePointer[
+                Float32, ImmutAnyOrigin, address_space=a.address_space
+            ]
+        ](a.data),
+        rebind[
+            UnsafePointer[
+                Float32, ImmutAnyOrigin, address_space=b.address_space
+            ]
+        ](b.data),
+    )
 
-        comptime if elementwise_lambda_fn:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
-            comptime epilogue = elementwise_lambda_fn.value()
-            comptime simd_size = simd_width_of[c.type]()
+    comptime if elementwise_lambda_fn:
+        var m = c.dim[0]()
+        var n = c.dim[1]()
+        comptime epilogue = elementwise_lambda_fn.value()
+        comptime simd_size = simd_width_of[c.type]()
 
-            @always_inline
-            @parameter
-            fn epilogue_on_col_chunk[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = IndexList[2](idx[0], idx[1])
-                var c_val = c.load[width=simd_width](c_coord)
-                epilogue[c.type, simd_width](c_coord, c_val)
+        @always_inline
+        @parameter
+        fn epilogue_on_col_chunk[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            var c_coord = IndexList[2](idx[0], idx[1])
+            var c_val = c.load[width=simd_width](c_coord)
+            epilogue[c.type, simd_width](c_coord, c_val)
 
-            elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
-        return
-    else:
-        comptime assert False, "unsupported type in apple accelerate"
+        elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul
@@ -422,16 +421,14 @@ fn apple_matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
-    comptime if a.type == b.type == c.type == DType.float32:
-        var cblas_gemm = get_cblas_f32_function()
+    comptime assert (
+        a.type == b.type == c.type == DType.float32
+    ), "unsupported type in apple accelerate"
+    var cblas_gemm = get_cblas_f32_function()
 
-        apple_matmul[
-            transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
-        ](cblas_gemm, c, a, b)
-
-        return
-    else:
-        comptime assert False, "unsupported type in apple accelerate"
+    apple_matmul[
+        transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
+    ](cblas_gemm, c, a, b)
 
 
 # ===-----------------------------------------------------------------------===#

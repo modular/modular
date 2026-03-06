@@ -69,15 +69,10 @@ struct CompilationTarget[value: _TargetType = _current_target()](
 
         comptime note_text = String(" Note: ", note.value() if note else "")
         comptime msg = "Current compilation target does not support"
-
-        comptime if operation:
-            comptime assert False, String(
-                msg, " operation: ", operation.value(), ".", note_text
-            )
-        else:
-            comptime assert False, String(msg, " this operation.", note_text)
-
-        os.abort()
+        comptime op_text = String(
+            " operation: ", operation.value(), "."
+        ) if operation else " this operation."
+        comptime assert False, String(msg, op_text, note_text)
 
     @always_inline("nodebug")
     @staticmethod

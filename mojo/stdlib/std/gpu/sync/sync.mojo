@@ -276,10 +276,10 @@ fn schedule_barrier(
         raise a compile time error.
     """
 
-    comptime if is_amd_gpu():
-        llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
-    else:
-        comptime assert False, "schedule_barrier is only supported on AMDGPU."
+    comptime assert (
+        is_amd_gpu()
+    ), "schedule_barrier is only supported on AMDGPU."
+    llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
 
 
 @always_inline("nodebug")
@@ -304,14 +304,12 @@ fn schedule_group_barrier(
         The sync_id parameter allows creating multiple schedule groups that can be ordered relative to each other.
     """
 
-    comptime if is_amd_gpu():
-        llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
-            Int32(Int(mask)), size, sync_id
-        )
-    else:
-        comptime assert (
-            False
-        ), "schedule_group_barrier is only supported on AMDGPU."
+    comptime assert (
+        is_amd_gpu()
+    ), "schedule_group_barrier is only supported on AMDGPU."
+    llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
+        Int32(Int(mask)), size, sync_id
+    )
 
 
 # reference for waitcnt_arg and related synchronization utilities:

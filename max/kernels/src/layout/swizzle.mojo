@@ -556,15 +556,13 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    comptime if mode in (
+    comptime assert mode in (
         TensorMapSwizzle.SWIZZLE_128B,
         TensorMapSwizzle.SWIZZLE_64B,
         TensorMapSwizzle.SWIZZLE_32B,
         TensorMapSwizzle.SWIZZLE_NONE,
-    ):
-        return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
-    else:
-        comptime assert False, "Only support 32B, 64B, 128B, or no swizzle"
+    ), "Only support 32B, 64B, 128B, or no swizzle"
+    return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
 
 
 # ===-----------------------------------------------------------------------===#
