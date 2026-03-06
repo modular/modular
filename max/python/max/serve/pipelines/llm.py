@@ -177,7 +177,7 @@ class TokenGeneratorPipeline(
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
 
-            METRICS.input_tokens(context.tokens.active_length)
+            METRICS.input_tokens(context.tokens.prompt_length)
 
             if is_still_reasoning:
                 # Check if reasoning was disabled in the prompt
@@ -306,7 +306,7 @@ class TokenGeneratorPipeline(
                         token_count=token_count,
                         token_log_probabilities=token_log_prob_values,
                         top_log_probabilities=top_token_log_prob_values,
-                        prompt_token_count=len(context.tokens),
+                        prompt_token_count=context.tokens.prompt_length,
                         reasoning_token_count=reasoning_token_count,
                         stop_sequence=stop_sequence_match,
                     )

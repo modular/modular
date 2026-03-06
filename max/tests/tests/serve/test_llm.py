@@ -257,10 +257,8 @@ async def test_ttft_recorded_once_per_chunk() -> None:
             yield [response]
 
     # Mock context returned by tokenizer
-    # Create mock tokens with proper __len__ and active_length
     mock_tokens = Mock()
-    mock_tokens.__len__ = Mock(return_value=10)
-    mock_tokens.active_length = 10
+    mock_tokens.prompt_length = 10
 
     mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
 
@@ -303,6 +301,13 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     for chunk in chunks:
         assert chunk.decoded_tokens == "chunk_text"
 
+    # Verify prompt_token_count uses prompt_length
+    for chunk in chunks:
+        assert chunk.prompt_token_count == 10
+
+    # Verify METRICS.input_tokens was called with prompt_length
+    mock_metrics.input_tokens.assert_called_once_with(10)
+
 
 THINK_START_TOKEN_ID = 1
 THINK_END_TOKEN_ID = 2
@@ -332,8 +337,7 @@ async def _run_reasoning_pipeline(
     mock_tokens.prompt = (
         prompt_tokens if prompt_tokens is not None else [99, 98]
     )
-    mock_tokens.__len__ = Mock(return_value=10)
-    mock_tokens.active_length = 10
+    mock_tokens.prompt_length = 10
 
     mock_request = Mock(request_id=test_request_id, tools=None)
     mock_request.sampling_params.stop = stop or []
