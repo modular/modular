@@ -1287,10 +1287,7 @@ struct Dict[
         print(missing_value.__str__())  # => 99
         ```
         """
-        try:
-            return self.pop(key)
-        except:
-            return default^
+        return self.unsafe_pop(key).or_else(default^)
 
     fn pop(mut self, ref key: Self.K) raises DictKeyError[Self.K] -> Self.V:
         """Remove a value from the dictionary by key.
@@ -1328,6 +1325,44 @@ struct Dict[
             self._len -= 1
             return entry^.reap_value()
         raise DictKeyError[Self.K]()
+
+    fn unsafe_pop(mut self, key: Self.K) -> Optional[Self.V]:
+        """Remove a value from the dictionary by key, returning it as an
+        `Optional`.
+
+        Unlike `pop`, this method does not raise if the key is not found.
+        Instead, it returns `None`.
+
+        Args:
+            key: The key to remove from the dictionary.
+
+        Returns:
+            The value associated with the key wrapped in an `Optional`, or
+            `None` if the key was not found.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        var value = my_dict.unsafe_pop("a")
+        print(value.value())  # => 1
+        var missing = my_dict.unsafe_pop("b")
+        print(missing.or_else(99))  # => 99
+        ```
+        """
+        var h = hash[HasherType=Self.H](key)
+        var found, slot_idx = self._find_slot(h, key)
+        if found:
+            debug_assert(
+                _is_occupied(self._ctrl[slot_idx]),
+                "_find_slot returned found=True but ctrl byte is not occupied",
+            )
+            var entry = (self._slots + slot_idx).take_pointee()
+            self._set_ctrl(slot_idx, _CTRL_DELETED)
+            self._len -= 1
+            return entry^.reap_value()
+        return None
 
     fn popitem(
         mut self,
