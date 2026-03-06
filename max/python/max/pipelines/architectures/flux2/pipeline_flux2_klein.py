@@ -19,16 +19,17 @@ from queue import Queue
 from typing import Any, Literal, cast
 
 import numpy as np
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import PixelModelInputs
+from max.profiler import Tracer
 from PIL import Image
-from tqdm import tqdm
 
-from ..qwen3.text_encoder import Qwen3TextEncoderModel
+from ..qwen3.text_encoder import Qwen3TextEncoderKleinModel
 from .pipeline_flux2 import Flux2Pipeline
 
 logger = logging.getLogger("max.pipelines")
@@ -44,6 +45,8 @@ class Flux2KleinModelInputs(PixelModelInputs):
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
     input_image: Image.Image | None = None
+    h_carrier: Tensor | None = None
+    w_carrier: Tensor | None = None
 
     @property
     def do_classifier_free_guidance(self) -> bool:
@@ -60,11 +63,9 @@ class Flux2KleinPipelineOutput:
 class Flux2KleinPipeline(Flux2Pipeline):
     """Flux2 Klein diffusion pipeline with Qwen3 text encoder."""
 
-    prompt_embedding_hidden_states_layers: tuple[int, ...] = (9, 18, 27)
-
     components = {
         "vae": Flux2Pipeline.components["vae"],
-        "text_encoder": Qwen3TextEncoderModel,
+        "text_encoder": Qwen3TextEncoderKleinModel,
         "transformer": Flux2Pipeline.components["transformer"],
     }
 
@@ -80,108 +81,57 @@ class Flux2KleinPipeline(Flux2Pipeline):
             context.input_image = pil_image  # type: ignore[assignment]
 
         result = Flux2KleinModelInputs.from_context(context)
-        context.input_image = original_input_image
-        return result
 
-    def _fuse_hidden_states(self, hidden_states: list[Tensor]) -> Tensor:
-        """Concatenate selected layer hidden states into a fused prompt embedding.
-
-        Args:
-            hidden_states: List of tensors each shaped (seq_len, hidden_dim).
-
-        Returns:
-            Fused tensor of shape (1, seq_len, num_layers * hidden_dim).
-        """
-        fused = F.concat(hidden_states, axis=-1)
-        return fused.reshape((1, int(fused.shape[0]), int(fused.shape[1])))
-
-    def _get_shape_carriers(
-        self, height: int, width: int
-    ) -> tuple[Tensor, Tensor]:
-        """Compute h/w shape-carrier tensors for ``decode_latents``."""
-        packed_h = height // (self.vae_scale_factor * 2)
-        packed_w = width // (self.vae_scale_factor * 2)
+        latent_h = context.height // self.vae_scale_factor
+        latent_w = context.width // self.vae_scale_factor
+        packed_h = latent_h // 2
+        packed_w = latent_w // 2
         for n in (packed_h, packed_w):
             if n not in self._cached_shape_carriers:
                 self._cached_shape_carriers[n] = Tensor.from_dlpack(
                     np.empty(n, dtype=np.float32)
                 )
-        return (
-            self._cached_shape_carriers[packed_h],
-            self._cached_shape_carriers[packed_w],
-        )
+        result.h_carrier = self._cached_shape_carriers[packed_h]
+        result.w_carrier = self._cached_shape_carriers[packed_w]
 
-    def encode_prompt(
+        context.input_image = original_input_image
+        return result
+
+    def prepare_prompt_embeddings(
         self,
-        tokens: TokenBuffer,
+        tokens: Tensor | TokenBuffer,
         num_images_per_prompt: int = 1,
-        hidden_states_layers: list[int] | None = None,
     ) -> tuple[Tensor, Tensor]:
-        """Encode prompt tokens into fused embeddings via the Qwen3 text encoder.
-
-        Unlike the parent ``prepare_prompt_embeddings`` (which takes a device
-        ``Tensor``), this method accepts a ``TokenBuffer`` and selects
-        intermediate hidden states from the Qwen3 encoder.
-
-        Args:
-            tokens: Token buffer produced by the tokenizer.
-            num_images_per_prompt: Number of images per prompt.
-            hidden_states_layers: Layer indices to extract (1-indexed).
-
-        Returns:
-            Tuple of (prompt_embeds, text_ids).
-        """
-        layers = hidden_states_layers or list(
-            self.prompt_embedding_hidden_states_layers
-        )
-        token_ids = np.asarray(tokens.array, dtype=np.int64)
-        if token_ids.ndim != 1:
-            raise ValueError(
-                f"Flux2Klein expects 1D tokens, got shape {token_ids.shape}."
+        if isinstance(tokens, Tensor):
+            text_input_ids = tokens.to(self.text_encoder.devices[0]).cast(
+                DType.int64
             )
-        target_seq_len = int(token_ids.shape[0])
-
-        text_input_ids = Tensor.constant(
-            token_ids,
-            dtype=DType.int64,
-            device=self.text_encoder.devices[0],
-        )
-        hidden_states_all = self.text_encoder(text_input_ids)
-
-        hidden_states_raw: list[Tensor] = []
-        all_match_target_seq_len = True
-        for i in layers:
-            hs = hidden_states_all[i - 1]
-            if hs.rank == 3:
-                hs = hs[0]
-            hidden_states_raw.append(hs)
-            if all_match_target_seq_len and int(hs.shape[0]) != target_seq_len:
-                all_match_target_seq_len = False
-
-        if all_match_target_seq_len:
-            hidden_states_selected = hidden_states_raw
         else:
-            hidden_states_selected = []
-            for hs in hidden_states_raw:
-                seq_len = int(hs.shape[0])
-                hidden_dim = int(hs.shape[1])
-                if seq_len < target_seq_len:
-                    hs = F.concat(
-                        [
-                            hs,
-                            Tensor.zeros(
-                                [target_seq_len - seq_len, hidden_dim],
-                                dtype=hs.dtype,
-                                device=hs.device,
-                            ),
-                        ],
-                        axis=0,
-                    )
-                elif seq_len > target_seq_len:
-                    hs = hs[:target_seq_len]
-                hidden_states_selected.append(hs)
+            token_ids = np.asarray(tokens.array, dtype=np.int64)
+            if token_ids.ndim != 1:
+                raise ValueError(
+                    f"Flux2Klein expects 1D tokens, got shape {token_ids.shape}."
+                )
+            text_input_ids = Tensor.constant(
+                token_ids,
+                dtype=DType.int64,
+                device=self.text_encoder.devices[0],
+            )
+        if text_input_ids.rank == 1:
+            # Ensure (seq_len,) -> (1, seq_len) for batch
+            text_input_ids = F.unsqueeze(text_input_ids, axis=0)
+        prompt_embeds = self.text_encoder(text_input_ids)
+        if prompt_embeds.rank == 2:
+            prompt_embeds = F.unsqueeze(prompt_embeds, axis=0)
+        elif prompt_embeds.rank != 3:
+            raise ValueError(
+                f"Unexpected prompt_embeds rank={prompt_embeds.rank}; "
+                "expected 2 or 3."
+            )
 
-        prompt_embeds = self._fuse_hidden_states(hidden_states_selected)
+        prompt_embeds = prompt_embeds.to(self.transformer.devices[0]).cast(
+            self.transformer.config.dtype
+        )
         batch_size = int(prompt_embeds.shape[0])
         seq_len = int(prompt_embeds.shape[1])
 
@@ -196,7 +146,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
         if text_ids_key in self._cached_text_ids:
             text_ids = self._cached_text_ids[text_ids_key]
         else:
-            text_ids = self._prepare_text_ids(
+            text_ids = Flux2Pipeline._prepare_text_ids(
                 batch_size=batch_size_final,
                 seq_len=seq_len,
                 device=self.text_encoder.devices[0],
@@ -210,149 +160,186 @@ class Flux2KleinPipeline(Flux2Pipeline):
         callback_queue: Queue[np.ndarray] | None = None,
         output_type: Literal["np", "latent"] = "np",
     ) -> Flux2KleinPipelineOutput:
-        prompt_embeds, text_ids = self.encode_prompt(
-            tokens=model_inputs.tokens,
-            num_images_per_prompt=model_inputs.num_images_per_prompt,
-        )
-
-        diff_cfg = self.pipeline_config.model.diffusers_config or {}
-        is_distilled = bool(diff_cfg.get("is_distilled", False))
-        if model_inputs.guidance_scale > 1.0 and is_distilled:
-            logger.warning(
-                "Guidance scale %s is ignored for distilled Klein models.",
-                model_inputs.guidance_scale,
-            )
-
-        negative_prompt_embeds: Tensor | None = None
-        negative_text_ids: Tensor | None = None
-        do_cfg = model_inputs.do_classifier_free_guidance and not is_distilled
-        if do_cfg and model_inputs.negative_tokens is not None:
-            negative_prompt_embeds, negative_text_ids = self.encode_prompt(
-                tokens=model_inputs.negative_tokens,
+        # 1) Encode prompts.
+        with Tracer("encode_prompt"):
+            prompt_embeds, text_ids = self.prepare_prompt_embeddings(
+                tokens=model_inputs.tokens,
                 num_images_per_prompt=model_inputs.num_images_per_prompt,
             )
-        elif do_cfg:
-            logger.warning(
-                "CFG requested but negative prompt tokens are missing; "
-                "running without CFG."
-            )
-            do_cfg = False
 
-        batch_size = int(prompt_embeds.shape[0])
-        dtype = prompt_embeds.dtype
-
-        image_latents = None
-        image_latent_ids = None
-        if model_inputs.input_image is not None:
-            img_np = np.array(model_inputs.input_image, dtype=np.uint8)
-            image_tensor = self._numpy_image_to_tensor(img_np)
-            image_latents, image_latent_ids = self.prepare_image_latents(
-                images=[image_tensor],
-                batch_size=batch_size,
-                device=self.vae.devices[0],
-                dtype=self.vae.config.dtype,
-            )
-
-        device = self.transformer.devices[0]
-        latents_tensor = Tensor.from_dlpack(model_inputs.latents).to(device)
-        latents = self.preprocess_latents(latents_tensor)
-        latent_image_ids = Tensor.from_dlpack(model_inputs.latent_image_ids).to(
-            device
-        )
-
-        guidance_key = f"zero_{batch_size}"
-        if guidance_key in self._cached_guidance:
-            guidance = self._cached_guidance[guidance_key]
-        else:
-            guidance = Tensor.zeros(
-                [latents.shape[0]],
-                device=device,
-                dtype=dtype,
-            )
-            self._cached_guidance[guidance_key] = guidance
-
-        image_seq_len = int(latents.shape[1])
-        num_inference_steps = model_inputs.num_inference_steps
-        sigmas_key = f"{num_inference_steps}_{image_seq_len}"
-        if sigmas_key in self._cached_sigmas:
-            sigmas = self._cached_sigmas[sigmas_key]
-        else:
-            sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(device)
-            self._cached_sigmas[sigmas_key] = sigmas
-        all_timesteps, all_dts = self.prepare_scheduler(sigmas)
-
-        timesteps_seq: Any = all_timesteps
-        dts_seq: Any = all_dts
-        if hasattr(timesteps_seq, "driver_tensor"):
-            timesteps_seq = timesteps_seq.driver_tensor
-        if hasattr(dts_seq, "driver_tensor"):
-            dts_seq = dts_seq.driver_tensor
-
-        is_img2img = image_latents is not None
-        for i in tqdm(range(num_inference_steps), desc="Denoising"):
-            timestep = timesteps_seq[i : i + 1]
-            dt = dts_seq[i : i + 1]
-
-            if is_img2img:
-                assert image_latents is not None
-                assert image_latent_ids is not None
-                latents_concat = F.concat([latents, image_latents], axis=1)
-                latent_image_ids_concat = F.concat(
-                    [latent_image_ids, image_latent_ids], axis=1
+            diff_cfg = self.pipeline_config.model.diffusers_config or {}
+            is_distilled = bool(diff_cfg.get("is_distilled", False))
+            if model_inputs.guidance_scale > 1.0 and is_distilled:
+                logger.warning(
+                    "Guidance scale %s is ignored for distilled Klein models.",
+                    model_inputs.guidance_scale,
                 )
+
+            negative_prompt_embeds: Tensor | None = None
+            negative_text_ids: Tensor | None = None
+            do_cfg = (
+                model_inputs.do_classifier_free_guidance and not is_distilled
+            )
+            if do_cfg and model_inputs.negative_tokens is not None:
+                negative_prompt_embeds, negative_text_ids = (
+                    self.prepare_prompt_embeddings(
+                        tokens=model_inputs.negative_tokens,
+                        num_images_per_prompt=model_inputs.num_images_per_prompt,
+                    )
+                )
+            elif do_cfg:
+                logger.warning(
+                    "CFG requested but negative prompt tokens are missing; "
+                    "running without CFG."
+                )
+                do_cfg = False
+
+        # 2) Prepare latents and conditioning tensors.
+        with Tracer("prepare_latents_and_conditioning"):
+            batch_size = int(prompt_embeds.shape[0])
+            dtype = prompt_embeds.dtype
+            device = self.transformer.devices[0]
+
+            image_latents = None
+            image_latent_ids = None
+            if model_inputs.input_image is not None:
+                image_array = np.array(model_inputs.input_image)
+                if image_array.ndim == 2:
+                    image_array = np.stack([image_array] * 3, axis=-1)
+                image_tensor = self._numpy_image_to_tensor(image_array)
+                image_latents, image_latent_ids = self.prepare_image_latents(
+                    images=[image_tensor],
+                    batch_size=batch_size,
+                    device=self.vae.devices[0],
+                    dtype=self.vae.config.dtype,
+                )
+
+            latents_tensor = Tensor(
+                storage=Buffer.from_dlpack(model_inputs.latents).to(device)
+            )
+            latent_image_ids = Tensor(
+                storage=Buffer.from_dlpack(model_inputs.latent_image_ids).to(
+                    device
+                )
+            )
+            latents = self.preprocess_latents(latents_tensor)
+            guidance_key = f"zero_{batch_size}"
+            if guidance_key in self._cached_guidance:
+                guidance = self._cached_guidance[guidance_key]
             else:
-                latents_concat = latents
-                latent_image_ids_concat = latent_image_ids
+                guidance = Tensor.zeros(
+                    [latents.shape[0]],
+                    device=device,
+                    dtype=dtype,
+                )
+                self._cached_guidance[guidance_key] = guidance
 
-            noise_pred = self.transformer(
-                latents_concat,
-                prompt_embeds,
-                timestep,
-                latent_image_ids_concat,
-                text_ids,
-                guidance,
-            )[0]
-            noise_pred = Tensor.from_dlpack(noise_pred)
-
-            if do_cfg:
-                assert negative_prompt_embeds is not None
-                assert negative_text_ids is not None
-                neg_noise_pred = self.transformer(
-                    latents_concat,
-                    negative_prompt_embeds,
-                    timestep,
-                    latent_image_ids_concat,
-                    negative_text_ids,
-                    guidance,
-                )[0]
-                neg_noise_pred = Tensor.from_dlpack(neg_noise_pred)
-                noise_pred = neg_noise_pred + model_inputs.guidance_scale * (
-                    noise_pred - neg_noise_pred
+            h_carrier = model_inputs.h_carrier
+            w_carrier = model_inputs.w_carrier
+            if h_carrier is None or w_carrier is None:
+                raise ValueError(
+                    "Missing shape carriers in Flux2KleinModelInputs."
                 )
 
-            latents = self.scheduler_step(latents, noise_pred, dt)
+        # 3) Prepare scheduler tensors.
+        with Tracer("prepare_scheduler"):
+            image_seq_len = int(latents.shape[1])
+            num_inference_steps = model_inputs.num_inference_steps
+            sigmas_key = f"{num_inference_steps}_{image_seq_len}"
+            if sigmas_key in self._cached_sigmas:
+                sigmas = self._cached_sigmas[sigmas_key]
+            else:
+                sigmas = Tensor(
+                    storage=Buffer.from_dlpack(model_inputs.sigmas).to(device)
+                )
+                self._cached_sigmas[sigmas_key] = sigmas
+            all_timesteps, all_dts = self.prepare_scheduler(sigmas)
 
-            if callback_queue is not None:
-                if hasattr(device, "synchronize"):
-                    device.synchronize()
-                if output_type == "latent":
-                    callback_queue.put_nowait(cast(np.ndarray, latents))
-                else:
-                    h_c, w_c = self._get_shape_carriers(
-                        model_inputs.height, model_inputs.width
-                    )
-                    callback_queue.put_nowait(
-                        cast(
-                            np.ndarray,
-                            self.decode_latents(latents, h_c, w_c),
+            timesteps_seq: Any = all_timesteps
+            dts_seq: Any = all_dts
+            if hasattr(timesteps_seq, "driver_tensor"):
+                timesteps_seq = timesteps_seq.driver_tensor
+            if hasattr(dts_seq, "driver_tensor"):
+                dts_seq = dts_seq.driver_tensor
+
+        # 4) Denoising loop.
+        is_img2img = image_latents is not None
+        with Tracer("denoising_loop"):
+            for i in range(num_inference_steps):
+                with Tracer(f"denoising_step_{i}"):
+                    timestep = timesteps_seq[i : i + 1]
+                    dt = dts_seq[i : i + 1]
+
+                    if is_img2img:
+                        assert image_latents is not None
+                        assert image_latent_ids is not None
+                        latents_concat = F.concat(
+                            [latents, image_latents], axis=1
                         )
-                    )
+                        latent_image_ids_concat = F.concat(
+                            [latent_image_ids, image_latent_ids], axis=1
+                        )
+                    else:
+                        latents_concat = latents
+                        latent_image_ids_concat = latent_image_ids
 
-        if output_type == "latent":
-            return Flux2KleinPipelineOutput(images=latents)
+                    with Tracer("transformer"):
+                        noise_pred = self.transformer(
+                            latents_concat,
+                            prompt_embeds,
+                            timestep,
+                            latent_image_ids_concat,
+                            text_ids,
+                            guidance,
+                        )[0]
+                        noise_pred = Tensor.from_dlpack(noise_pred)
 
-        h_carrier, w_carrier = self._get_shape_carriers(
-            model_inputs.height, model_inputs.width
-        )
-        images = self.decode_latents(latents, h_carrier, w_carrier)
-        return Flux2KleinPipelineOutput(images=images)
+                    if do_cfg:
+                        assert negative_prompt_embeds is not None
+                        assert negative_text_ids is not None
+                        with Tracer("transformer_cfg_negative"):
+                            neg_noise_pred = self.transformer(
+                                latents_concat,
+                                negative_prompt_embeds,
+                                timestep,
+                                latent_image_ids_concat,
+                                negative_text_ids,
+                                guidance,
+                            )[0]
+                            neg_noise_pred = Tensor.from_dlpack(neg_noise_pred)
+                        noise_pred = (
+                            neg_noise_pred
+                            + model_inputs.guidance_scale
+                            * (noise_pred - neg_noise_pred)
+                        )
+
+                    with Tracer("scheduler_step"):
+                        latents = self.scheduler_step(latents, noise_pred, dt)
+
+                    if callback_queue is not None:
+                        with Tracer("callback"):
+                            if hasattr(device, "synchronize"):
+                                device.synchronize()
+                            if output_type == "latent":
+                                callback_queue.put_nowait(
+                                    cast(
+                                        np.ndarray,
+                                        np.from_dlpack(latents.to(CPU())),
+                                    )
+                                )
+                            else:
+                                callback_queue.put_nowait(
+                                    cast(
+                                        np.ndarray,
+                                        self.decode_latents(
+                                            latents, h_carrier, w_carrier
+                                        ),
+                                    )
+                                )
+
+        # 5) Decode final outputs for all batch elements in a single pass.
+        with Tracer("decode_outputs"):
+            if output_type == "latent":
+                return Flux2KleinPipelineOutput(images=latents)
+            images = self.decode_latents(latents, h_carrier, w_carrier)
+            return Flux2KleinPipelineOutput(images=images)

@@ -88,7 +88,6 @@ class EncoderAttention(Module[..., Tensor]):
         Args:
             x: Input tensor with shape [total_seq_len, hidden_dim]
             rope: RotaryEmbedding module
-
         Returns:
             Output tensor with shape [total_seq_len, hidden_dim]
         """
