@@ -158,9 +158,9 @@ fn mutateInt(mut a: Int):
 
 fn initialize_in_addrspace(
     memptr: UnsafePointer[
-        MemExample, MutAnyOrigin, address_space = AddressSpace(1)
+        MemExample, AnyOrigin[mut=True], address_space = AddressSpace(1)
     ],
-    regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, AnyOrigin[mut=True], address_space = AddressSpace(1)],
 ):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
     memptr[] = MemExample()
@@ -170,12 +170,12 @@ fn initialize_in_addrspace(
 
 fn mutate_in_addrspace(
     memptr: UnsafePointer[
-        MemExample, MutAnyOrigin, address_space = AddressSpace(1)
+        MemExample, AnyOrigin[mut=True], address_space = AddressSpace(1)
     ],
     memtcptr: UnsafePointer[
-        MemExampleTriviallyCopyable, MutAnyOrigin, address_space = AddressSpace(1)
+        MemExampleTriviallyCopyable, AnyOrigin[mut=True], address_space = AddressSpace(1)
     ],
-    regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, AnyOrigin[mut=True], address_space = AddressSpace(1)],
 ):
     # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     mutateMem(memptr[])
@@ -187,9 +187,9 @@ fn mutate_in_addrspace(
 
 fn variadic_addr_space(
     memptr: UnsafePointer[
-        MemExample, MutAnyOrigin, address_space = AddressSpace(1)
+        MemExample, AnyOrigin[mut=True], address_space = AddressSpace(1)
     ],
-    regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, AnyOrigin[mut=True], address_space = AddressSpace(1)],
 ):
     # expected-error @below {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     pack_func(memptr[])
@@ -222,7 +222,7 @@ fn call_test_ref(mut s: String):
 
 
 @fieldwise_init
-struct MyMutSpan[origin: MutOrigin]:
+struct MyMutSpan[origin: Origin[mut=True]]:
     pass
 
 
@@ -237,7 +237,7 @@ struct MyStruct(ImplicitlyCopyable):
     var b: Int
 
 
-fn exclusivity[spanlife: MutOrigin](mut x: MyStruct, span: MyMutSpan[spanlife]):
+fn exclusivity[spanlife: Origin[mut=True]](mut x: MyStruct, span: MyMutSpan[spanlife]):
     # Compiler injects a temporary to make this ok.
     x = x
 
@@ -261,7 +261,7 @@ fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
     pass
 
 
-fn mutate_two_AnyLifetime(ref [MutAnyOrigin]a: Int, ref [MutAnyOrigin]b: Int):
+fn mutate_two_AnyLifetime(ref [AnyOrigin[mut=True]]a: Int, ref [AnyOrigin[mut=True]]b: Int):
     pass
 
 

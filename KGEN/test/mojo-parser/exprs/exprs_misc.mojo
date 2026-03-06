@@ -28,6 +28,7 @@ fn literal_promotion[cond: Bool]():
 # Assignment operator
 ##===----------------------------------------------------------------------===##
 
+
 struct ListInitializable[T: AnyType](ImplicitlyCopyable):
     fn __init__(out self, *elements: Self.T, __list_literal__: () = ()):
         pass
@@ -255,6 +256,7 @@ fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
     # CHECK-NEXT: lit.alias.decl *"lt4{{.*}}:origin<0> {*"x`", (mutcast mut *"z`2")}>>
     comptime lt4 = origin_of(x, z)
 
+
 def take_string_var(var x: String, y: String) raises:
     # Check mutable to immutable origin conversions + inference.
     imm_ref_to[origin_of(x)](x)
@@ -262,7 +264,8 @@ def take_string_var(var x: String, y: String) raises:
     imm_ref_to[origin_of(y)](y)
     imm_ref_to(y)
 
-fn imm_ref_to[origin: ImmutOrigin](ref [origin]to: String):
+
+fn imm_ref_to[origin: Origin[]](ref[origin] to: String):
     pass
 
 
@@ -299,10 +302,12 @@ fn test_string_literal1(cond: Bool):
     # String literals should merge.
     var _ss: StaticString = "T" if cond else "F"
 
+
 # Issue #1850: Mojo assumes string literal at start of a function is a doc comment
 fn test_expr_not_doc_string():
     # expected-warning @+1 {{'Bool' value is unused}}
     "a".__eq__("b")
+
 
 ##===----------------------------------------------------------------------===##
 # MergeWith
@@ -386,7 +391,8 @@ fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
     # CHECK-NEXT:   = kgen.param.constant: !Bool = <{:i1 0}>
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: }
-    if False and cond: # expected-warning {{unreachable code on right side of 'False and ...'}}
+    # expected-warning @+1 {{unreachable code on right side of 'False and ...'}}
+    if False and cond:
         pass
 
 
@@ -530,8 +536,10 @@ fn test_match(a: MatchExample):
 # if/else expression
 ##===----------------------------------------------------------------------===##
 
+
 struct MoveOnly(Movable):
     pass
+
 
 # CHECK-LABEL: lit.fn @"test_if_else_move
 fn test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
@@ -548,27 +556,36 @@ fn test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
     # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: }
 
+
 ##===----------------------------------------------------------------------===##
 # comptime expression
 ##===----------------------------------------------------------------------===##
 
+
 struct NotRuntimeMaterializable:
-    fn method(self) -> Int: pass
+    fn method(self) -> Int:
+        pass
+
 
 fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
     # Ok to materialize an int.
-    var b = comptime(nrm.method())
+    var b = comptime (nrm.method())
 
 
 ##===----------------------------------------------------------------------===##
 # Ellipsis.
 ##===----------------------------------------------------------------------===##
 
-fn test_ellipsis_overloading(a: Int): pass
-fn test_ellipsis_overloading(a: EllipsisType): pass
+
+fn test_ellipsis_overloading(a: Int):
+    pass
+
+
+fn test_ellipsis_overloading(a: EllipsisType):
+    pass
+
 
 fn test_ellipsis():
     var x = ...
     test_ellipsis_overloading(4)
     test_ellipsis_overloading(...)
-

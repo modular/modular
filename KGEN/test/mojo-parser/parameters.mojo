@@ -1028,7 +1028,7 @@ fn signature_inference[dt: DType, rank: Int]():
     implicit_signature[func]()
 
 
-struct ClosureParam[lt: MutOrigin, f: fn () capturing [lt._mlir_origin] -> None](Movable):
+struct ClosureParam[lt: Origin[mut=True], f: fn () capturing [lt._mlir_origin] -> None](Movable):
   pass
 
 
@@ -1090,14 +1090,14 @@ fn infer_box_type[T: AnyType, //, box: Box[T]]():
     infer_box_type[Int()]()
 
 # MOCO-1457: Support struct param inference for origins
-struct OriginStructInferenceImm[origin: ImmutOrigin]:
+struct OriginStructInferenceImm[origin: Origin[]]:
     fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
 struct OriginStructInferencePar[mut: Bool, //, origin: Origin[mut=mut]]:
     fn __init__(out self, ref [Self.origin._mlir_origin]data: Int):  pass
 struct OriginStructInferenceParWrapped[mut: Bool, //, origin: Origin[mut=mut]]:
     fn __init__(out self, ref [Self.origin]data: Int):  pass
 struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut=mut]]:
-    fn __init__[O: ImmutOrigin](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
+    fn __init__[O: Origin[]](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
 
 # CHECK-LABEL: lit.fn @"test_origin_struct_inf
 fn test_origin_struct_inf[imm_data: Int](mut data: Int):
@@ -1314,7 +1314,7 @@ fn test_optional_inference(value: ParamType[3]):
 
 # CHECK-LABEL: lit.fn @"default_inferring_param
 # CHECK: (%str: !lit.struct<#StringSlice <{{.*}} O>> = :!alias_StaticString1 apply
-fn default_inferring_param[O: ImmutOrigin](str: StringSlice[O] = StaticString("")):
+fn default_inferring_param[O: Origin[]](str: StringSlice[O] = StaticString("")):
     pass
 
 # CHECK-LABEL: lit.fn @"test_default_inferring_param
@@ -1611,7 +1611,7 @@ struct MyTypeWithOrigin[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable], //
 ]: pass
-fn testMOCO1826[o: ImmutOrigin](a: MyTypeWithOrigin[origin=o]): pass
+fn testMOCO1826[o: Origin[]](a: MyTypeWithOrigin[origin=o]): pass
 
 ##===----------------------------------------------------------------------===##
 # Origin Parameters
@@ -1758,7 +1758,7 @@ fn test_inferred_mixing[b: XOrigin](a: HasInferred):
 
 # This makes sure we can associate 'origin' back to the inferred result type of
 # the Pointer construction.
-struct FindOriginFromKGENOrigin[X: AnyType, origin: ImmutOrigin]:
+struct FindOriginFromKGENOrigin[X: AnyType, origin: Origin[]]:
     var writable: Pointer[Self.X, Self.origin]
     fn __init__(out self, ref [Self.origin]w: Self.X):
         self.writable = Pointer(to=w)
@@ -1808,3 +1808,13 @@ fn _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
     # CHECK:      lit.call tail @parameters::@"_get_element_idx2
     # CHECK-SAME: <:variadic<!Int> *"shape.values`", :!lit.struct<#DimList <:variadic<!Int> *"shape.values`">> shape>
     _get_element_idx2(src)
+
+
+# Make sure default inferred value is installed.
+
+# CHECK-LABEL: lit.alias.decl *"ImmutOrigin{{.*}}": meta<!lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> ?>, <"_mlir_origin": origin<0>, +>>>
+comptime ImmutOrigin = Origin[]
+# CHECK-LABEL: lit.alias.decl *"ImmutAnyOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> #lit.any.origin>>
+comptime ImmutAnyOrigin = AnyOrigin[]
+# CHECK-LABEL: lit.alias.decl *"ImmutExternalOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> {}>>
+comptime ImmutExternalOrigin = ExternalOrigin[]

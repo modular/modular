@@ -747,7 +747,7 @@ fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   var x : Pointer[T, b.origin] = a[]
 
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutAnyOrigin]'}}
-  var y : Pointer[T, MutAnyOrigin, a.address_space] = a[]
+  var y : Pointer[T, AnyOrigin[mut=True], a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
   # expected-error @below {{duplicate keyword parameter 'idx'}}
@@ -802,7 +802,7 @@ fn unbound_function_type():
 # Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
 # https://github.com/modular/mojo/issues/1921
 struct SomeStruct:
-  fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int, MutAnyOrigin])
+  fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int, AnyOrigin[mut=True]])
       -> Pointer[Int, origin_of(self)]:
     # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutAnyOrigin]' value to 'Pointer[Int, origin_of(self)]'}}
     return Pointer(to=ptr[])
@@ -858,13 +858,13 @@ fn test_signature():
   # expected-error @+1 {{invalid call to '__init__': expected at most 0 positional arguments, got 1}}
   HasIntParam[1].__init__(str)
 
-fn bad_union[ao: MutOrigin](ref [ao] a: String, mut b: String) -> ref [a, b] String:
+fn bad_union[ao: Origin[mut=True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String
     # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao, b}'}}
     return c
 
 # https://github.com/modular/mojo/issues/3829
-fn apply_in_memory[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
+fn apply_in_memory[o: Origin[]](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
 # expected-error @below {{value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
     f(x)
@@ -881,12 +881,12 @@ fn test3830():
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'anonymous*'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
-fn test3830_1[o: ImmutOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
+fn test3830_1[o: Origin[]](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(getSomeNonTrivRegPassable())
 
-fn test3830_2[o: ImmutOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
+fn test3830_2[o: Origin[]](f: fn(ref[o] x: Int) -> None, x: Int):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'Int' to ref 'Int'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)

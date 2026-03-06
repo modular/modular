@@ -151,7 +151,7 @@ def reuse_implicit(a: Int, cond: __mlir_type.i1) raises:
 
 
 # CHECK-LABEL: lit.fn @"addrSpaces
-fn addrSpaces[lt1: MutOrigin, lt2: ImmutOrigin, as1: AddressSpace]():
+fn addrSpaces[lt1: Origin[mut=True], lt2: Origin[], as1: AddressSpace]():
     # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut {{.*}}lt1{{.*}}, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "_mlir_value">>
     var ref1: Pointer[MemExample, lt1, as1]._mlir_type
 
@@ -160,12 +160,18 @@ fn addrSpaces[lt1: MutOrigin, lt2: ImmutOrigin, as1: AddressSpace]():
 
     # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm *"lt2._mlir_origin`1", 42>, mut
     var ref2: __mlir_type[
-        `!lit.ref<`, MemExample, `, `, lt2._mlir_origin, `, `, +as2._value._mlir_value, `>`
+        `!lit.ref<`,
+        MemExample,
+        `, `,
+        lt2._mlir_origin,
+        `, `,
+        +as2._value._mlir_value,
+        `>`,
     ]
+
 
 # https://github.com/modular/modular/issues/4765
 fn redundant_var_ref():
-  var n = 1
-  # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
-  var ref a = n
-
+    var n = 1
+    # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
+    var ref a = n

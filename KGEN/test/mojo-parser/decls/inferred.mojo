@@ -15,7 +15,7 @@ trait SomeTrait:
     pass
 
 
-struct ParamType[x: Int](TrivialRegisterPassable, SomeTrait):
+struct ParamType[x: Int](SomeTrait, TrivialRegisterPassable):
     pass
 
 
@@ -168,25 +168,31 @@ struct DefBoxInference:
 
 @fieldwise_init
 struct DefBoxInferenceIter[
-    origin: ImmutOrigin,
+    origin: Origin[],
 ]:
     @implicit
     fn __init__(out self, regex: Pointer[DefBoxInference, Self.origin]):
         pass
 
+
 # MOCO-3326: Improve inference of Origin type from !lit.origin.
 # This fails if we can't map "origin_of(list) in the ctor below to Self.origin
 # the Origin value.
 fn test_origin_inference[
-    xis_mutable: Bool, //,
+    xis_mutable: Bool,
+    //,
     xorigin: Origin[mut=xis_mutable],
-](ref [xorigin]list: String) -> MyOriginTaking[xorigin]:
+](ref[xorigin] list: String) -> MyOriginTaking[xorigin]:
     return MyOriginTaking(list)
 
+
 struct MyOriginTaking[
-    mut: Bool, //,
+    mut: Bool,
+    //,
     origin: Origin[mut=mut],
 ]:
-    fn __init__(ref [Self.origin]list: String, out self: MyOriginTaking[origin_of(list)]):
+    fn __init__(
+        ref[Self.origin] list: String, out self: MyOriginTaking[origin_of(list)]
+    ):
         pass
 

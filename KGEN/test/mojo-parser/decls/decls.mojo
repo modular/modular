@@ -1126,13 +1126,13 @@ fn closureParameterInference[
     pass
 
 
-struct HasLifetimeParam[p: MutOrigin](TrivialRegisterPassable):
+struct HasLifetimeParam[p: Origin[mut=True]](TrivialRegisterPassable):
     pass
 
 
 # CHECK-LABEL: lit.fn @"explicitLifetime
 # CHECK-SAME: #Origin <:!Bool {:i1 1}{{.*}}>> lt>
-fn explicitLifetime[lt: MutOrigin, //, arg: HasLifetimeParam[lt]]():
+fn explicitLifetime[lt: Origin[mut=True], //, arg: HasLifetimeParam[lt]]():
     pass
 
 
@@ -1174,7 +1174,7 @@ struct CapturingStructTrait(CapturingTrait, RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"inferCaptureOrigins
 fn inferCaptureOrigins[
-    lt: MutOrigin, param: HasLifetimeParam[lt]
+    lt: Origin[mut=True], param: HasLifetimeParam[lt]
 ](mut x: Int, mut y: Int, arg: HasParam):
     @parameter
     fn bareFunc():

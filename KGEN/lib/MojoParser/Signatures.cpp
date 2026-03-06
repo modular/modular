@@ -486,11 +486,6 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     // The remaining ones will stay kPositionalOrKeyword.
     for (ParsedArgument &arg : parsedArgs) {
       arg.kwArgHandling = KWArgHandling::kInferred;
-      if (arg.initExpr) {
-        p.emitError(arg.loc, "inferred parameters may not have defaults")
-            << arg.initExpr->getRange();
-        arg.initExpr = nullptr;
-      }
     }
 
     hasSlashSlashMarker = true;
@@ -714,7 +709,10 @@ static PValue emitDefault(const ParsedArgument &arg, ASTType type,
   // Diagnose an invalid missing default argument: if we have any positional
   // defaults, then we require all the rest to have defaults until the
   // keyword-only section.
+  // We allow any keyword-only/inferred parameter to have defaults: They
+  // can not cause any ambiguity since they all need to be specified by name.
   if (arg.kwArgHandling != KWArgHandling::kKeywordOnly &&
+      arg.kwArgHandling != KWArgHandling::kInferred &&
       arg.kgenConvention != ArgConvention::ByRefResult &&
       arg.kgenConvention != ArgConvention::ByRefError && hasAnyDefaults()) {
     MojoInflightDiag diag = emitOptionalAfterRequired(

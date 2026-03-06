@@ -17,7 +17,7 @@ fn infer_ref_argument():
     var s: String
     var t: String
     takeA(s, t)  # Ok.
-    takeA[MutAnyOrigin](s, t)  # Ok.
+    takeA[AnyOrigin[mut=True]](s, t)  # Ok.
 
 
 @fieldwise_init

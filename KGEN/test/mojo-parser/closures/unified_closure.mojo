@@ -127,7 +127,7 @@ fn make_closure(x: Int) -> Int:
 
 fn make_closure(x: Int) -> Int:
     fn mutate[
-        lt: MutOrigin
+        lt: Origin[mut=True]
     ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
         pass
 
@@ -328,7 +328,7 @@ fn bindIt() -> Int:
 
 fn make_closure(x: Int) -> Int:
     fn mutate[
-        lt: MutOrigin
+        lt: Origin[mut=True]
     ](a: Pointer[String, lt]._mlir_type, b: String) unified {}:
         pass
 

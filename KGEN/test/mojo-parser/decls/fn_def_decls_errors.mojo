@@ -96,9 +96,6 @@ fn invalid_inferred_kw_only[*, x: Int, //, y: Int]():
 fn invalid_inferred_argument(x: Int, //):
     pass
 
-# expected-error @below {{inferred parameters may not have defaults}}
-fn invalid_inferred_default[x: Int = 1, //]():
-    pass
 
 struct NonCopyable:
     fn __init__(out self):

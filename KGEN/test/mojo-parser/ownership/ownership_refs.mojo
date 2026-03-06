@@ -25,11 +25,11 @@ struct MemExample(ImplicitlyCopyable):
   fn mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"borrow{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, imm *"lt._mlir_origin`">
-fn borrow[lt: ImmutOrigin](a: Pointer[MemExample, lt]._mlir_type):
+fn borrow[lt: Origin[]](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"mutate{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, mut *"lt._mlir_origin`">
-fn mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_type):
+fn mutate[lt: Origin[mut=True]](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_borrow
@@ -259,11 +259,11 @@ fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[origin_of(a), origin_of(b)]:
   return TwoLifetimes[origin_of(a), origin_of(b)]()
 
-struct OneLifetime[a_origin: ImmutOrigin]:
+struct OneLifetime[a_origin: Origin[]]:
   fn __init__(out self): pass
 
-struct TwoLifetimes[a_origin: ImmutOrigin,
-                    b_origin: ImmutOrigin]:
+struct TwoLifetimes[a_origin: Origin[],
+                    b_origin: Origin[]]:
   fn __init__(out self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
@@ -311,7 +311,7 @@ fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
 
 # FIXME (Patch #48185): need to support implicit conversions to immutable reference.
 
-#fn thing_taking_immutable_ref[T: AnyType, value_origin: ImmutOrigin](a: Pointer[T, value_origin]): pass
+#fn thing_taking_immutable_ref[T: AnyType, value_origin: Origin[]](a: Pointer[T, value_origin]): pass
 #fn test_passing_mutable_ref(mut i: String):
 #    thing_taking_immutable_ref(Pointer(to=i))
 
@@ -477,7 +477,7 @@ fn test_higher_order_capture(var x: MemExample, var y: MemExample):
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
 # CHECK-SAME: !lit.ref<!Int, mut *"our_origin._mlir_origin`"> mutref)
-fn test_origin_ref_spec[our_origin: MutOrigin](ref[our_origin] a: Int):
+fn test_origin_ref_spec[our_origin: Origin[mut=True]](ref[our_origin] a: Int):
     pass
 
 # CHECK-LABEL: lit.fn @"another_min
