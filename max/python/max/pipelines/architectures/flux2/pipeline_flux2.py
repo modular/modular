@@ -649,10 +649,8 @@ class Flux2Pipeline(DiffusionPipeline):
                 slice(None),
             ],
         )
-        latents_dtype = latents.dtype
-        latents_f32 = latents.cast(DType.float32)
-        noise_pred_sliced = rebind(noise_pred_sliced, latents_f32.shape)
-        return (latents_f32 + dt * noise_pred_sliced).cast(latents_dtype)
+        noise_pred_sliced = rebind(noise_pred_sliced, latents.shape)
+        return latents + dt * noise_pred_sliced
 
     def prepare_scheduler(self, sigmas: Tensor) -> tuple[Tensor, Tensor]:
         """Precompute timesteps and dt values from sigmas in a single fused graph.
