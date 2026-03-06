@@ -966,5 +966,9 @@ fn product[
     """
     var product: Int = 1
     for i in range(start_idx, end_idx):
-        product *= tuple[i]
+        var dim = tuple[i]
+        assert (
+            dim == 0 or product <= Int.MAX // dim
+        ), "IndexList.product() overflow: dimension product exceeds Int.MAX"
+        product *= dim
     return product
