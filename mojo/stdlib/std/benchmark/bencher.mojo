@@ -323,7 +323,7 @@ struct Format(ImplicitlyCopyable, Writable):
 
 
 @fieldwise_init
-struct BenchConfig(Copyable):
+struct BenchConfig(Copyable, Writable):
     """Defines a benchmark configuration struct to control
     execution times and frequency.
     """
@@ -452,6 +452,41 @@ struct BenchConfig(Copyable):
                     i += 1
 
         argparse()
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the benchmark configuration to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            "BenchConfig(min_runtime_secs=",
+            self.min_runtime_secs,
+            ", max_runtime_secs=",
+            self.max_runtime_secs,
+            ", max_iters=",
+            self.max_iters,
+            ")",
+        )
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `BenchConfig` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            w.write_string("min_runtime_secs=")
+            w.write(self.min_runtime_secs)
+            w.write_string(", max_runtime_secs=")
+            w.write(self.max_runtime_secs)
+            w.write_string(", max_iters=")
+            w.write(self.max_iters)
+
+        fmt.FormatStruct(writer, "BenchConfig").fields[FieldsFn=fields]()
 
 
 @fieldwise_init
