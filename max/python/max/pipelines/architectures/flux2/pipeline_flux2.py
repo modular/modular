@@ -134,6 +134,8 @@ class Flux2Pipeline(DiffusionPipeline):
         - Flux2 VAE (with BatchNorm-based latent normalization)
     """
 
+    default_num_inference_steps = 28
+
     vae: AutoencoderKLFlux2Model
     text_encoder: Mistral3TextEncoderModel
     transformer: Flux2TransformerModel
