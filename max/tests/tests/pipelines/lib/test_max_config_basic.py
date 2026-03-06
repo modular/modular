@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 import yaml
@@ -24,9 +26,11 @@ from max.dtype import DType
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
+    PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
 )
+from max.pipelines.lib.tokenizer import TextAndVisionTokenizer, TextTokenizer
 from pydantic import Field, ValidationError
 
 
@@ -254,6 +258,145 @@ class TestProfilingConfigEnv:
         monkeypatch.setenv("MODULAR_ENABLE_PROFILING", "bad-value")
         config = ProfilingConfig(gpu_profiling="on")
         assert config.gpu_profiling == "on"
+
+
+def _make_text_pipeline_config(max_length: int | None) -> PipelineConfig:
+    return cast(
+        PipelineConfig,
+        SimpleNamespace(
+            model=SimpleNamespace(
+                max_length=max_length,
+                huggingface_config=SimpleNamespace(eos_token_id=None),
+            )
+        ),
+    )
+
+
+def _make_text_and_vision_pipeline_config(
+    max_length: int | None,
+) -> PipelineConfig:
+    return cast(
+        PipelineConfig,
+        SimpleNamespace(
+            model=SimpleNamespace(
+                max_length=max_length,
+                huggingface_config=SimpleNamespace(
+                    eos_token_id=None,
+                    image_token_id=151667,
+                ),
+                kv_cache=SimpleNamespace(enable_prefix_caching=False),
+            )
+        ),
+    )
+
+
+class TestTokenizerMaxLengthResolution:
+    def test_text_tokenizer_uses_pipeline_config_max_length_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded_kwargs: dict[str, object] = {}
+
+        class FakeTokenizer:
+            model_max_length = 131072
+            eos_token_id = 2
+
+            def decode(self, *_args, **_kwargs) -> str:
+                return "x"
+
+        def _fake_from_pretrained(
+            *_args: object, **kwargs: object
+        ) -> FakeTokenizer:
+            recorded_kwargs.update(kwargs)
+            return FakeTokenizer()
+
+        monkeypatch.setattr(
+            "max.pipelines.lib.tokenizer.AutoTokenizer.from_pretrained",
+            _fake_from_pretrained,
+        )
+
+        tokenizer = TextTokenizer(
+            model_path="fake-model",
+            pipeline_config=_make_text_pipeline_config(max_length=163840),
+        )
+
+        assert recorded_kwargs["model_max_length"] == 163840
+        assert tokenizer.max_length == 163840
+        assert tokenizer.delegate.model_max_length == 163840
+
+    def test_text_tokenizer_prefers_explicit_max_length(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded_kwargs: dict[str, object] = {}
+
+        class FakeTokenizer:
+            model_max_length = 131072
+            eos_token_id = 2
+
+            def decode(self, *_args, **_kwargs) -> str:
+                return "x"
+
+        def _fake_from_pretrained(
+            *_args: object, **kwargs: object
+        ) -> FakeTokenizer:
+            recorded_kwargs.update(kwargs)
+            return FakeTokenizer()
+
+        monkeypatch.setattr(
+            "max.pipelines.lib.tokenizer.AutoTokenizer.from_pretrained",
+            _fake_from_pretrained,
+        )
+
+        tokenizer = TextTokenizer(
+            model_path="fake-model",
+            pipeline_config=_make_text_pipeline_config(max_length=163840),
+            max_length=200000,
+        )
+
+        assert recorded_kwargs["model_max_length"] == 200000
+        assert tokenizer.max_length == 200000
+        assert tokenizer.delegate.model_max_length == 200000
+
+    def test_text_and_vision_tokenizer_uses_pipeline_config_max_length_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded_kwargs: dict[str, object] = {}
+
+        class FakeTokenizer:
+            model_max_length = 131072
+            eos_token_id = 2
+
+        fake_processor = SimpleNamespace(image_break_token_id=None)
+
+        def _fake_auto_tokenizer_from_pretrained(
+            *_args: object, **kwargs: object
+        ) -> FakeTokenizer:
+            recorded_kwargs.update(kwargs)
+            return FakeTokenizer()
+
+        def _fake_auto_processor_from_pretrained(
+            *_args: object, **_kwargs: object
+        ) -> SimpleNamespace:
+            return fake_processor
+
+        monkeypatch.setattr(
+            "max.pipelines.lib.tokenizer.AutoTokenizer.from_pretrained",
+            _fake_auto_tokenizer_from_pretrained,
+        )
+        monkeypatch.setattr(
+            "max.pipelines.lib.tokenizer.AutoProcessor.from_pretrained",
+            _fake_auto_processor_from_pretrained,
+        )
+
+        tokenizer = TextAndVisionTokenizer(
+            model_path="fake-model",
+            pipeline_config=_make_text_and_vision_pipeline_config(
+                max_length=163840
+            ),
+        )
+
+        assert recorded_kwargs["model_max_length"] == 163840
+        assert tokenizer.max_length == 163840
+        assert tokenizer.delegate.model_max_length == 163840
 
 
 class _StrictModel(MAXBaseModel):
