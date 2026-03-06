@@ -32,7 +32,6 @@ from .managed_tensor_slice import (
     StaticTensorSpec,
     VariadicTensors,
     _FusedComputeOutputTensor,
-    copy_tensor,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_load_from_tensor_pointer,
