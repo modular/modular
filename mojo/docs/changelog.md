@@ -320,6 +320,16 @@ what we publish.
 
 ### Library changes
 
+- `benchmark.Report` now has a `percentile(p, unit)` method that returns the
+  p-th percentile (0–100) of significant batch mean durations using linear
+  interpolation. Use it to measure tail latency, for example:
+
+  ```mojo
+  var report = benchmark.run[my_fn]()
+  print(report.percentile(50, Unit.ms))  # median
+  print(report.percentile(99, Unit.ms))  # p99
+  ```
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,
