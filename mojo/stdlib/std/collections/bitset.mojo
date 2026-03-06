@@ -249,6 +249,19 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & Int64(_bit_mask(idx))) != 0
 
+    def __contains__(self, idx: Int) -> Bool:
+        """Returns `True` if the bit at `idx` is set.
+
+        Enables `if idx in bitset:` syntax.
+
+        Args:
+            idx: The non-negative index to check (must be < `size`).
+
+        Returns:
+            True if the bit at `idx` is set, False otherwise.
+        """
+        return self.test(idx)
+
     def clear_all(mut self):
         """Clears all bits in the set, resetting the logical size to 0.
 
