@@ -1551,15 +1551,39 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     // If not specified/inferrable, variadic always have a default empty value.
     bool isInferableVA = [&]() -> bool {
-      return declaredParamPogs.isPosVarArg(idx) ||
-             (declaredParamPogs.getPogs()[idx].getPassingKind() ==
-                  PassingKind::Inferred &&
-              isa<VariadicType>(declaredParamTypes[idx]));
+      auto pog = declaredParamPogs.getPogs()[idx];
+      // Since we reached this point, the parameter binding can not have `...`,
+      // and according to the rules. It must be producing the most concrete
+      // type. So, if this is a positional variadic, we always default it to
+      // empty.
+      if (pog.isPosVarArg())
+        return true;
+
+      // What we really want to bind here is the CTAD pos_var_arg parameter
+      // which is prepended as an inferred parameter.
+      // E.g.,
+      //
+      // struct S[*values: Int]:
+      //     @staticmethod
+      //     fn foo():
+      //         pass
+      //
+      // # we should be able to infer *value to empty.
+      // S.foo()
+      //
+      // FIXME: maybe we really should preserve the variadic kind when
+      // prepending contextual parameters such that we don't need the check
+      // here? But on the other hand, what does it mean to have a
+      // inferred-pos-var-arg parameter?
+      if (isa<VariadicType>(declaredParamTypes[idx]) &&
+          pog.getPassingKind() == PassingKind::Inferred)
+        return !isInferForStruct;
+
+      return false;
     }();
 
     if (isInferableVA) {
-      // FIXME: This isn't rewriting the variadic list for dependent types.
-      auto type = declaredParamTypes[idx];
+      auto type = evaluator.getReboundType(declaredParamTypes[idx]);
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
       if (failed(setInferredValue(idx, empty)))
         return failure();

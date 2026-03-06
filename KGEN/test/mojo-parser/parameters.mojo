@@ -1789,3 +1789,22 @@ struct HasDefaultParam[strides: HasParamList[...] = HasParamList[4]()]:
 
 # CHECK-LABEL: lit.alias.decl *"WithDefaultParam{{.*}}": meta<!lit.struct<#HasDefaultParam <:variadic<!Int> [{4}], :!lit.struct<#HasParamList <:variadic<!Int> [{4}]>>
 comptime WithDefaultParam = HasDefaultParam[]
+
+
+struct DimList[*values: Int]:
+    pass
+
+
+struct NDBuffer[shape: DimList]:
+    pass
+
+
+# Make sure we don't default auto-parameterized `shape.values` to empty
+fn _get_element_idx2(buff: NDBuffer[_]):
+    pass
+
+
+fn _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
+    # CHECK:      lit.call tail @parameters::@"_get_element_idx2
+    # CHECK-SAME: <:variadic<!Int> *"shape.values`", :!lit.struct<#DimList <:variadic<!Int> *"shape.values`">> shape>
+    _get_element_idx2(src)
