@@ -538,9 +538,7 @@ class ZImagePipeline(DiffusionPipeline):
         timesteps_digest = hashlib.sha1(
             transformed_timesteps.astype(np.float32, copy=False).tobytes()
         ).hexdigest()
-        timesteps_key = (
-            f"timesteps::{num_timesteps}_{timesteps_digest}"
-        )
+        timesteps_key = f"timesteps::{num_timesteps}_{timesteps_digest}"
         if timesteps_key in self._cached_timesteps_batched:
             return self._cached_timesteps_batched[
                 timesteps_key
