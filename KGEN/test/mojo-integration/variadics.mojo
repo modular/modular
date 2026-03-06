@@ -349,8 +349,7 @@ fn test_comptime_pack():
     print("test_comptime_pack")
 
     var str1 = sum_intable(4, 5.0, 7)
-    print(str1)
-    # CHECK: 16
+    print(str1)  # CHECK: 16
 
     comptime str2 = sum_intable(4, 5.0, 7)
     print(str2)
