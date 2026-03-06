@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
+
+from .module import Module
 
 
 class Dropout(Module[[Tensor], Tensor]):

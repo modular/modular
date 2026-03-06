@@ -182,17 +182,16 @@ class LTX2AudioAttnBlock(nn.Module[[Tensor], Tensor]):
         v = self.v(h)
 
         batch, channels, height, width = q.shape
-        # Use F.bmm for attention computation
-        q = q.reshape((batch, channels, height * width)).permute((0, 2, 1))
+        q = q.reshape((batch, channels, height * width)).permute([0, 2, 1])
         k = k.reshape((batch, channels, height * width))
 
-        attn = F.bmm(q, k) * (channels ** (-0.5))
+        attn = F.matmul(q, k) * (channels ** (-0.5))
         attn = F.softmax(attn, axis=-1)
 
         v = v.reshape((batch, channels, height * width))
-        attn = attn.permute((0, 2, 1))
+        attn = attn.permute([0, 2, 1])
 
-        h = F.bmm(v, attn).reshape((batch, channels, height, width))
+        h = F.matmul(v, attn).reshape((batch, channels, height, width))
 
         return x + self.proj_out(h)
 
@@ -206,7 +205,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
         dropout: float = 0.0,
         temb_channels: int = 512,
         norm_type: str = "group",
-        causality_axis: str = "height",
+        causality_axis: str | None = "height",
     ) -> None:
         super().__init__()
         self.causality_axis = causality_axis
@@ -224,6 +223,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
         self.out_channels = out_channels
         self.use_conv_shortcut = conv_shortcut
 
+        self.norm1: nn.Module
         if norm_type == "group":
             self.norm1 = nn.GroupNorm(
                 num_groups=32, num_channels=in_channels, eps=1e-6, affine=True
@@ -252,6 +252,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
             )
         if temb_channels > 0:
             self.temb_proj = nn.Linear(temb_channels, out_channels)
+        self.norm2: nn.Module
         if norm_type == "group":
             self.norm2 = nn.GroupNorm(
                 num_groups=32, num_channels=out_channels, eps=1e-6, affine=True
@@ -349,6 +350,7 @@ class LTX2AudioUpsample(nn.Module[[Tensor], Tensor]):
         super().__init__()
         self.with_conv = with_conv
         self.causality_axis = causality_axis
+        self.conv: nn.Module
         if self.with_conv:
             if causality_axis is not None:
                 self.conv = LTX2AudioCausalConv2d(
@@ -407,7 +409,7 @@ class LTX2AudioAudioPatchifier(nn.Module[[Tensor], Tensor]):
 
     def patchify(self, audio_latents: Tensor) -> Tensor:
         batch, channels, time, freq = audio_latents.shape
-        return audio_latents.permute((0, 2, 1, 3)).reshape(
+        return audio_latents.permute([0, 2, 1, 3]).reshape(
             (batch, time, channels * freq)
         )
 
@@ -416,12 +418,28 @@ class LTX2AudioAudioPatchifier(nn.Module[[Tensor], Tensor]):
     ) -> Tensor:
         batch, time, _ = audio_latents.shape
         return audio_latents.reshape((batch, time, channels, mel_bins)).permute(
-            (0, 2, 1, 3)
+            [0, 2, 1, 3]
         )
 
     @property
     def patch_size(self) -> tuple[int, int, int]:
         return self._patch_size
+
+
+class LTX2AudioDecoderMid(nn.Module):
+    """Container for the middle block of the LTX2 Audio Decoder."""
+
+    block_1: LTX2AudioResnetBlock
+    attn_1: nn.Module[[Tensor], Tensor]
+    block_2: LTX2AudioResnetBlock
+
+
+class LTX2AudioDecoderStage(nn.Module):
+    """Container for a single stage (level) of the LTX2 Audio Decoder."""
+
+    block: nn.ModuleList[LTX2AudioResnetBlock]
+    attn: nn.ModuleList[LTX2AudioAttnBlock]
+    upsample: LTX2AudioUpsample
 
 
 class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
@@ -437,7 +455,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         base_channels: int = 128,
         output_channels: int = 1,
         num_res_blocks: int = 2,
-        attn_resolutions: tuple[int, ...] | None = None,
+        attn_resolutions: list[int] | None = None,
         in_channels: int = 2,
         resolution: int = 256,
         latent_channels: int = 8,
@@ -488,6 +506,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         base_resolution = resolution // (2 ** (self.num_resolutions - 1))
         self.z_shape = (1, latent_channels, base_resolution, base_resolution)
 
+        self.conv_in: nn.Module
         if self.causality_axis is not None:
             self.conv_in = LTX2AudioCausalConv2d(
                 latent_channels,
@@ -506,7 +525,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                 permute=True,
             )
         self.non_linearity = activation_function_from_name("silu")
-        self.mid = nn.Module()
+        self.mid = LTX2AudioDecoderMid()
         self.mid.block_1 = LTX2AudioResnetBlock(
             in_channels=base_block_channels,
             out_channels=base_block_channels,
@@ -530,12 +549,12 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
             causality_axis=self.causality_axis,
         )
 
-        self.up = nn.ModuleList()
+        self.up: nn.ModuleList[LTX2AudioDecoderStage] = nn.ModuleList()
         block_in = base_block_channels
         curr_res = self.resolution // (2 ** (self.num_resolutions - 1))
 
         for level in reversed(range(self.num_resolutions)):
-            stage = nn.Module()
+            stage = LTX2AudioDecoderStage()
             stage.block = nn.ModuleList()
             stage.attn = nn.ModuleList()
             block_out = self.base_channels * self.channel_multipliers[level]
@@ -570,6 +589,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
 
         final_block_channels = block_in
 
+        self.norm_out: nn.Module
         if self.norm_type == "group":
             self.norm_out = nn.GroupNorm(
                 num_groups=32,
@@ -582,6 +602,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         else:
             raise ValueError(f"Invalid normalization type: {self.norm_type}")
 
+        self.conv_out: nn.Module
         if self.causality_axis is not None:
             self.conv_out = LTX2AudioCausalConv2d(
                 in_channels=final_block_channels,
@@ -727,7 +748,7 @@ class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
         # TODO: Add vocoder here too?
         return decoded
 
-    def input_types(self) -> tuple[TensorType, ...]:
+    def input_types(self) -> TensorType:
         return TensorType(
             self._dtype,
             shape=[

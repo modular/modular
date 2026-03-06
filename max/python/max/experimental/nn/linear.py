@@ -97,3 +97,17 @@ class Linear(Module[[Tensor], Tensor]):
             The result of applying the linear transformation to the tensor.
         """
         return x @ self.weight.T + self.bias
+
+
+class Identity(Module[[Tensor], Tensor]):
+    """A placeholder module that returns the input as-is."""
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Returns the input tensor as-is.
+
+        Args:
+            x: The input tensor
+        Returns:
+            The input tensor as-is.
+        """
+        return x
