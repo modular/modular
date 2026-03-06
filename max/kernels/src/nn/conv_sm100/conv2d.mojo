@@ -270,8 +270,8 @@ fn conv2d_fprop[
     )
 
     filter_tma_op = create_tma_tile[
-        KernelType.FilterTmaTile.tile_layout,
-        KernelType.FilterTmaTile.desc_layout,
+        KernelType.FilterTileLayout,
+        KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode=config.b_swizzle,
     ](ctx, filter_tensor)
@@ -292,8 +292,8 @@ fn conv2d_fprop[
     ) else c_tma_tile_shape_mma128
 
     out_tma_op = create_tma_tile[
-        KernelType.OutTmaTile.tile_layout,
-        KernelType.OutTmaTile.desc_layout,
+        KernelType.OutTileLayout,
+        KernelType.OutDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, out_tensor)
@@ -520,8 +520,8 @@ fn conv2d_fprop_with_residual[
         ),
     )
     filter_tma_op = create_tma_tile[
-        KernelType.FilterTmaTile.tile_layout,
-        KernelType.FilterTmaTile.desc_layout,
+        KernelType.FilterTileLayout,
+        KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
         swizzle_mode=config.b_swizzle,
     ](ctx, filter_tensor)
@@ -541,8 +541,8 @@ fn conv2d_fprop_with_residual[
     ) else c_tma_tile_shape_mma128
 
     out_tma_op = create_tma_tile[
-        KernelType.OutTmaTile.tile_layout,
-        KernelType.OutTmaTile.desc_layout,
+        KernelType.OutTileLayout,
+        KernelType.OutDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, out_tensor)
@@ -556,8 +556,8 @@ fn conv2d_fprop_with_residual[
         ),
     )
     src_tma_op = create_tma_tile[
-        KernelType.SrcTmaTile.tile_layout,
-        KernelType.SrcTmaTile.desc_layout,
+        KernelType.SrcTileLayout,
+        KernelType.SrcDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, src_tensor)

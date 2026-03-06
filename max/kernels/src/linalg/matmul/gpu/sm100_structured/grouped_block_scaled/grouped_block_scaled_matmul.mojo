@@ -460,8 +460,8 @@ fn grouped_block_scaled_matmul[
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
     var a_tma_op = create_tma_tile[
-        KernelType.ATmaTile.tile_layout,
-        KernelType.ATmaTile.desc_layout,
+        KernelType.ATileLayout,
+        KernelType.ADescLayout,
         a_tma_tile_shape,
         swizzle_mode=config.a_swizzle,
     ](ctx, a_tensor_batched)
@@ -471,8 +471,8 @@ fn grouped_block_scaled_matmul[
         1, BN // (cluster_shape[0] // config.cta_group), BK
     )
     var b_tma_op = create_tma_tile[
-        KernelType.BTmaTile.tile_layout,
-        KernelType.BTmaTile.desc_layout,
+        KernelType.BTileLayout,
+        KernelType.BDescLayout,
         b_tma_tile_shape,
         swizzle_mode=config.b_swizzle,
     ](ctx, b_tensor_batched)
@@ -482,8 +482,8 @@ fn grouped_block_scaled_matmul[
         1, config.output_tile_shape[0], config.output_tile_shape[1]
     )
     var c_tma_op = create_tma_tile[
-        KernelType.CTmaTile.tile_layout,
-        KernelType.CTmaTile.desc_layout,
+        KernelType.CTileLayout,
+        KernelType.CDescLayout,
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
     ](ctx, c_tensor_batched)
@@ -497,8 +497,8 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfa_tma_op = create_tma_tile[
-        KernelType.SFATmaTile.tile_layout,
-        KernelType.SFATmaTile.desc_layout,
+        KernelType.SFATileLayout,
+        KernelType.SFADescLayout,
         sfa_tma_tile_shape,
     ](ctx, sfa_5d_tensor)
 
@@ -510,8 +510,8 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfb_tma_op = create_tma_tile[
-        KernelType.SFBTmaTile.tile_layout,
-        KernelType.SFBTmaTile.desc_layout,
+        KernelType.SFBTileLayout,
+        KernelType.SFBDescLayout,
         sfb_tma_tile_shape,
     ](ctx, sfb_5d_tensor)
 

@@ -53,7 +53,7 @@ from layout import TileTensor
 from layout.tile_layout import TensorLayout
 from structured_kernels.tile_types import (
     GMEMLayout1D,
-    TMATile,
+    TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
     tma_desc_layout_4d,
@@ -433,20 +433,15 @@ struct Grouped1D1DMatmulKernel[
     ]
 
     # TMA operation types
-    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime ATmaOp = Self.ATmaTile.InnerType
-    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime BTmaOp = Self.BTmaTile.InnerType
-    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
-    comptime CTmaOp = Self.CTmaTile.InnerType
-    comptime SFATmaTile = TMATile[
+    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime CTmaOp = TmaOpType[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime SFATmaOp = TmaOpType[
         Self.sfa_dtype, Self.SFATileLayout, Self.SFADescLayout
     ]
-    comptime SFATmaOp = Self.SFATmaTile.InnerType
-    comptime SFBTmaTile = TMATile[
+    comptime SFBTmaOp = TmaOpType[
         Self.sfb_dtype, Self.SFBTileLayout, Self.SFBDescLayout
     ]
-    comptime SFBTmaOp = Self.SFBTmaTile.InnerType
 
     # 1D data TileTensor types (offsets, expert IDs, scales)
     comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
