@@ -2663,6 +2663,29 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   return success();
 }
 
+/// Returns true if `expr` is (or wraps) a zero-argument call to
+/// `is_compile_time()`. Peels through unary `not` to catch
+/// `not is_compile_time()` and binary `and` (`or`) to catch
+//  `is_compile_time() and(or) xxx`as well.
+static bool containsIsCompileTimeCall(const ExprNode *expr) {
+  if (!expr)
+    return false;
+  expr = expr->getWithoutParens();
+  if (auto *call = dyn_cast<CallNode>(expr)) {
+    if (auto *ref = dyn_cast<DeclRefNode>(call->callee)) {
+      if (ref->spelling == "is_compile_time")
+        return true;
+    }
+  }
+  if (auto *unary = dyn_cast<UnaryOpNode>(expr))
+    return containsIsCompileTimeCall(unary->subExpr);
+  if (auto *binary = dyn_cast<BinOpNode>(expr)) {
+    return (containsIsCompileTimeCall(binary->lhs) ||
+            containsIsCompileTimeCall(binary->rhs));
+  }
+  return false;
+}
+
 ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
                                      size_t curIndent) {
   // We will be moving the builder into sub-regions that are created, make sure
@@ -2687,6 +2710,15 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
       return emitError(condExp->getLoc(), "'comptime if' requires a "
                                           "parameter expression as a condition")
              << condExp->getRange();
+
+    if (containsIsCompileTimeCall(condExp)) {
+      shared.emitWarning(
+          condExp->getLoc(),
+          "'is_compile_time()' is always true as a 'comptime "
+          "if' condition; use runtime 'if' for conditioning different code "
+          "execution path in comptime interpreter.")
+          << condExp->getRange();
+    }
 
     paramIfOp = ParamIfOp::create(builder, loc, condPVal.get());
     return success();
