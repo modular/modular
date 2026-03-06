@@ -24,9 +24,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.memory import memcpy, legacy_unsafe_pointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import memcpy
 from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_scale_impl,
 )
@@ -46,7 +44,9 @@ comptime block_scale = 128
 def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
-    input_row_offsets_host_ptr: UnsafePointer[Scalar[DType.uint32]],
+    input_row_offsets_host_ptr: UnsafePointer[
+        mut=True, Scalar[DType.uint32], _
+    ],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
@@ -77,9 +77,7 @@ def _initialize_ragged_inputs[
     # Initialize ragged hidden state.
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
     var ragged_size = total_length * hidden_size
-    var hidden_state_ragged_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        ragged_size
-    )
+    var hidden_state_ragged_host_ptr = alloc[Scalar[dtype]](ragged_size)
     var hidden_state_ragged_host = LayoutTensor[dtype, hidden_state_layout](
         hidden_state_ragged_host_ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -95,9 +93,7 @@ def _initialize_ragged_inputs[
 
     # Initialize padded hidden state.
     var padded_size = batch_size * max_seq_length_batch * hidden_size
-    var hidden_state_padded_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        padded_size
-    )
+    var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
 
     # Copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
@@ -240,9 +236,7 @@ def execute_matmul_k_cache_ragged_scale[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size + 1
-    )
+    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
     var init_result = _initialize_ragged_inputs[weight_dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -255,7 +249,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Initialize the weights.
     var weight_size = Int(kv_hidden_size) * hidden_size
     var weight_shape = IndexList[2](Int(kv_hidden_size), hidden_size)
-    var weight_host_ptr = UnsafePointer[Scalar[weight_dtype]].alloc(weight_size)
+    var weight_host_ptr = alloc[Scalar[weight_dtype]](weight_size)
     var weight_host = LayoutTensor[weight_dtype, weight_layout](
         weight_host_ptr,
         RuntimeLayout[weight_layout].row_major(weight_shape),

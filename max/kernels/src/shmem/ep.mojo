@@ -21,11 +21,6 @@ from std.collections import OptionalReg
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host.info import is_gpu
 from layout import Layout, LayoutTensor
-from std.memory import LegacyUnsafePointer
-
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of
@@ -54,14 +49,15 @@ from shmem.ep_comm import (
 # This should eventually be moved to ffi.mojo with a more general global cache method
 # cache key is a string and cache value is a pointer.
 @always_inline
-fn global_cache_lookup(key: String) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
-        key.unsafe_ptr(), key.byte_length()
-    )
+fn global_cache_lookup(key: String) -> OpaquePointer[ExternalOrigin[mut=True]]:
+    return external_call[
+        "KGEN_CompilerRT_GetGlobalOrNull",
+        OpaquePointer[ExternalOrigin[mut=True]],
+    ](key.unsafe_ptr(), key.byte_length())
 
 
 @always_inline
-fn global_cache_insert(key: String, value: OpaquePointer):
+fn global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,

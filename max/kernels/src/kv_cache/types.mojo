@@ -47,7 +47,6 @@ from layout.coord import (
 from layout import TileTensor, lt_to_tt
 from layout.tile_tensor import LTToTTLayout
 
-from std.memory import LegacyUnsafePointer
 from std.collections import OptionalReg
 from std.utils import Index, IndexList
 from std.sys import size_of

@@ -18,12 +18,7 @@ from std.pathlib import Path
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
-from std.memory import stack_allocation, LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
+from std.memory import stack_allocation
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -351,11 +346,11 @@ struct ClockType(Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct _DeviceImpl(Defaultable, TrivialRegisterPassable):
-    var handle: OpaquePointer
+    var handle: OpaquePointer[MutAnyOrigin]
 
     @always_inline
     fn __init__(out self):
-        self.handle = OpaquePointer()
+        self.handle = {}
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -371,7 +366,7 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetHandleByIndex_v2",
-                fn(UInt32, UnsafePointer[_DeviceImpl]) -> Result,
+                fn(UInt32, UnsafePointer[_DeviceImpl, MutAnyOrigin]) -> Result,
             ]()(UInt32(idx), UnsafePointer(to=device))
         )
         self.idx = idx
@@ -385,7 +380,7 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlSystemGetDriverVersion",
-                fn(UnsafePointer[c_char], UInt32) -> Result,
+                fn(UnsafePointer[c_char, MutAnyOrigin], UInt32) -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
         var driver_version_list = StringSlice(
@@ -398,7 +393,9 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetMaxClockInfo",
-                fn(_DeviceImpl, ClockType, UnsafePointer[UInt32]) -> Result,
+                fn(
+                    _DeviceImpl, ClockType, UnsafePointer[UInt32, MutAnyOrigin]
+                ) -> Result,
             ]()(self.device, clock_type, UnsafePointer(to=clock))
         )
         return Int(clock)
@@ -415,12 +412,14 @@ struct Device(Writable):
         var result = _get_dylib_function[
             "nvmlDeviceGetSupportedMemoryClocks",
             fn(
-                _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
+                _DeviceImpl,
+                UnsafePointer[UInt32, MutAnyOrigin],
+                UnsafePointer[UInt32, MutAnyOrigin],
             ) -> Result,
         ]()(
             self.device,
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32](),
+            UnsafePointer[UInt32, MutAnyOrigin](),
         )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -431,7 +430,9 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlDeviceGetSupportedMemoryClocks",
                 fn(
-                    _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
+                    _DeviceImpl,
+                    UnsafePointer[UInt32, MutAnyOrigin],
+                    UnsafePointer[UInt32, MutAnyOrigin],
                 ) -> Result,
             ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
@@ -450,14 +451,14 @@ struct Device(Writable):
             fn(
                 _DeviceImpl,
                 UInt32,
-                UnsafePointer[UInt32],
-                UnsafePointer[UInt32],
+                UnsafePointer[UInt32, MutAnyOrigin],
+                UnsafePointer[UInt32, MutAnyOrigin],
             ) -> Result,
         ]()(
             self.device,
             UInt32(memory_clock_mhz),
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32](),
+            UnsafePointer[UInt32, MutAnyOrigin](),
         )
 
         if result == Result.SUCCESS:
@@ -474,8 +475,8 @@ struct Device(Writable):
                 fn(
                     _DeviceImpl,
                     UInt32,
-                    UnsafePointer[UInt32],
-                    UnsafePointer[UInt32],
+                    UnsafePointer[UInt32, MutAnyOrigin],
+                    UnsafePointer[UInt32, MutAnyOrigin],
                 ) -> Result,
             ]()(
                 self.device,
@@ -508,8 +509,8 @@ struct Device(Writable):
                 "nvmlDeviceGetAutoBoostedClocksEnabled",
                 fn(
                     _DeviceImpl,
-                    UnsafePointer[_EnableState],
-                    UnsafePointer[_EnableState],
+                    UnsafePointer[_EnableState, MutAnyOrigin],
+                    UnsafePointer[_EnableState, MutAnyOrigin],
                 ) -> Result,
             ]()(
                 self.device,
@@ -537,7 +538,9 @@ struct Device(Writable):
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetPersistenceMode",
-                fn(_DeviceImpl, UnsafePointer[_EnableState]) -> Result,
+                fn(
+                    _DeviceImpl, UnsafePointer[_EnableState, MutAnyOrigin]
+                ) -> Result,
             ]()(
                 self.device,
                 UnsafePointer(to=is_enabled),

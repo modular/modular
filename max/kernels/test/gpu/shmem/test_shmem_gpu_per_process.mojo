@@ -24,9 +24,7 @@ mpirun.
 # RUN: %mpirun-gpu-per-process %t
 
 from std.gpu.host import DeviceBuffer, DeviceContext
-from std.memory import LegacyUnsafePointer, alloc
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
 from std.os.path import dirname
 from std.pathlib import Path
 from shmem import *
@@ -34,7 +32,7 @@ from std.sys.defines import get_defined_string
 from std.testing import assert_equal
 
 
-fn simple_shift_kernel(destination: UnsafePointer[Int32]):
+fn simple_shift_kernel(destination: UnsafePointer[Int32, MutAnyOrigin]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
