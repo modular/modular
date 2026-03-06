@@ -3282,12 +3282,17 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
+    comptime latent_dim = Int(k_latent_buffer.layout.shape[1])
+    var k_latent_tile = TileTensor(
+        k_latent_buffer.ptr,
+        row_major((Idx(buffer_length_int), Idx[latent_dim]())),
+    )
     _k_cache_to_buffer(
         buffer_row_offsets_1d,
         cache_offsets_1d,
         k,
         Int32(buffer_length_int),
-        k_latent_buffer,
+        k_latent_tile,
         cuda_ctx,
     )
 

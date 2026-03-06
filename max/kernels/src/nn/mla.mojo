@@ -75,6 +75,7 @@ from layout.layout_tensor import (
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -3083,23 +3084,19 @@ fn _k_cache_to_buffer[
     ],
     k_cache: cache_t,
     length: Int32,
-    buffer: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    buffer: TileTensor[mut=True, dtype=dtype, ...],
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads
     comptime assert num_heads == 1, "num_heads should be equal to 1"
+    comptime assert buffer.rank == 2, "buffer should be rank 2"
 
     @always_inline
     @parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
-    fn copy_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    fn copy_fn[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
 
-        var idx = rebind[IndexList[2]](idx_arg)
         var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
@@ -3120,11 +3117,11 @@ fn _k_cache_to_buffer[
             ).cast[dtype]()
         )
 
-        buffer.store(idx, cache_val)
+        buffer.store_linear(idx, cache_val)
 
     var launch_shape = IndexList[2](
         Int(length),
-        buffer.dim[1](),
+        Int(buffer.dim[1]()),
     )
     comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 

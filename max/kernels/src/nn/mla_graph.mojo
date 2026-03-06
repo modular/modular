@@ -828,7 +828,7 @@ fn mla_prefill_branch_fp8[
         cache_offsets.to_layout_tensor(),
         k_cache,
         Int32(buffer_length),
-        k_latent.to_layout_tensor(),
+        k_latent,
         ctx,
     )
 
@@ -1622,7 +1622,7 @@ fn mla_prefill_branch_bf16[
         cache_offsets.to_layout_tensor(),
         k_cache,
         Int32(buffer_length_int),
-        k_latent.to_layout_tensor(),
+        k_latent,
         ctx,
     )
 
