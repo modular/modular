@@ -998,6 +998,7 @@ fn _simd_max_elementwise[
     return _max(x, y.cast[acc_type]())
 
 
+@always_inline
 fn max[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the max element in a buffer.
 
@@ -1113,6 +1114,7 @@ fn _simd_min_elementwise[
     return _min(x, y.cast[acc_type]())
 
 
+@always_inline
 fn min[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the min element in a buffer.
 
@@ -1228,6 +1230,7 @@ fn _simd_sum_elementwise[
     return x + y.cast[acc_type]()
 
 
+@always_inline
 fn sum[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the sum of buffer elements.
 
@@ -1419,6 +1422,7 @@ fn _simd_product_elementwise[
     return x * y.cast[acc_type]()
 
 
+@always_inline
 fn product[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the product of the buffer elements.
 
@@ -1511,6 +1515,7 @@ fn product[
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
 fn mean[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
     """Computes the mean value of the elements in a buffer.
 
