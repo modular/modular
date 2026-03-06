@@ -21,9 +21,7 @@ from max.experimental.tensor import Tensor
 from ..flux2.layers.embeddings import TimestepEmbedding, Timesteps
 
 
-class PixArtAlphaCombinedTimestepSizeEmbeddings(
-    nn.Module[[Tensor, Tensor, Tensor, int, DType], Tensor]
-):
+class PixArtAlphaCombinedTimestepSizeEmbeddings(nn.Module[..., Tensor]):
     """Combined embeddings for PixArt-Alpha (and LTX2 autoencoders)."""
 
     def __init__(
@@ -57,8 +55,8 @@ class PixArtAlphaCombinedTimestepSizeEmbeddings(
     def forward(
         self,
         timestep: Tensor,
-        resolution: Tensor,
-        aspect_ratio: Tensor,
+        resolution: Tensor | None,
+        aspect_ratio: Tensor | None,
         batch_size: int,
         hidden_dtype: DType,
     ) -> Tensor:
