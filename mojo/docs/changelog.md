@@ -21,6 +21,21 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports a standalone `assert` statement, similar to Python's
+  `assert`. It checks a condition at runtime and aborts the program if the
+  condition is false:
+
+  ```mojo
+  assert x > 0, "x must be positive"
+  assert len(items) != 0
+  ```
+
+  The condition must be a `Bool` expression and the optional message can be any
+  `Writable` expression (`StringLiteral`, `String`, `Int`, etc.). Under the
+  hood, `assert` desugars to a call to `debug_assert`, so it respects the
+  existing `-D ASSERT` flag: assertions are active when compiled with
+  `-D ASSERT=all` and are no-ops otherwise.
+
 - Mojo now enforces a more explicit parameter bindings rules:
   - `[]` is mandatory to make type more concrete:
 
