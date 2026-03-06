@@ -19,7 +19,7 @@ from queue import Queue
 from typing import Any, Literal, cast
 
 import numpy as np
-from max.driver import Buffer, CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -307,8 +307,10 @@ class Flux2KleinPipeline(Flux2Pipeline):
                                 guidance,
                             )[0]
                             neg_noise_pred = Tensor.from_dlpack(neg_noise_pred)
-                        noise_pred = neg_noise_pred + model_inputs.guidance_scale * (
-                            noise_pred - neg_noise_pred
+                        noise_pred = (
+                            neg_noise_pred
+                            + model_inputs.guidance_scale
+                            * (noise_pred - neg_noise_pred)
                         )
 
                     with Tracer("scheduler_step"):
