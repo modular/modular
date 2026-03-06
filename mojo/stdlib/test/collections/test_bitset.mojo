@@ -771,6 +771,20 @@ def test_bitset_small_size() raises:
     )
 
 
+def test_bitset_contains() raises:
+    var bs = BitSet[128]()
+    bs.set(1)
+    bs.set(42)
+    bs.set(127)
+
+    assert_true(1 in bs)
+    assert_true(42 in bs)
+    assert_true(127 in bs)
+    assert_false(0 in bs)
+    assert_false(2 in bs)
+    assert_false(126 in bs)
+
+
 def test_bitset_operators() raises:
     var a = BitSet[128]()
     a.set(1)
