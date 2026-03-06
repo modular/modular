@@ -600,29 +600,6 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                 permute=True,
             )
 
-    def input_types(self) -> tuple[TensorType, ...]:
-        if self.dtype is None:
-            raise ValueError("dtype must be set for input_types")
-        if self.device is None:
-            raise ValueError("device must be set for input_types")
-
-        # Hardcoded for num_frames=121, frame_rate=24:
-        #   latent_channels     = 8
-        #   audio_num_frames    = round((121/24) * (16000/160/4)) = 126
-        #   latent_mel_bins     = 64 // 4 = 16
-        return (
-            TensorType(
-                self.dtype,
-                shape=[
-                    "batch_size",
-                    self.latent_channels,
-                    "audio_num_frames",
-                    "latent_mel_bins",
-                ],
-                device=self.device,
-            ),
-        )
-
     def forward(
         self,
         sample: Tensor,
@@ -716,7 +693,7 @@ class AutoencoderKLLTX2Audio(nn.Module[[Tensor], Tensor]):
 
 
 class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
-    """Fused BN-denorm + unpatchify + VAE decode in a single compiled graph.
+    """Fused BN-denorm + VAE decode in a single compiled graph.
 
     Eliminates the inter-graph boundary and intermediate tensor materialization
     that previously existed between _postprocess_latents and vae.decode().
@@ -725,12 +702,16 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
     def __init__(
         self,
         decoder: LTX2AudioDecoder,
+        bn_mean: Tensor,
+        bn_var: Tensor,
         num_channels: int,
         device: DeviceRef,
         dtype: DType,
     ) -> None:
         super().__init__()
         self.decoder = decoder
+        self.bn_mean = bn_mean
+        self.bn_var = bn_var
         self._num_channels = num_channels
         self._device = device
         self._dtype = dtype
@@ -738,11 +719,9 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
     def forward(
         self,
         latents_bclm: Tensor,
-        latents_mean: Tensor,
-        latents_std: Tensor,
     ) -> Tensor:
         # Denormalization
-        latents = latents_bclm * latents_std + latents_mean
+        latents = latents_bclm * self.bn_var + self.bn_mean
 
         decoded = self.decoder(latents)
         # TODO: Add vocoder here too?
@@ -774,7 +753,15 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
 
 
 class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
-    """ComponentModel wrapper for LTX2 Audio Autoencoder."""
+    """ComponentModel wrapper for AutoencoderKLLTX2Audio.
+
+    This class provides the ComponentModel interface for AutoencoderKLLTX2Audio,
+    handling configuration, weight loading, model compilation, and BatchNorm
+    statistics for LTX2Audio's latent patchification.
+    """
+
+    bn_running_mean: Tensor
+    bn_running_var: Tensor
 
     def __init__(
         self,
@@ -783,9 +770,14 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
         devices: list[Device],
         weights: Weights,
     ) -> None:
-        self.latents_mean: Tensor | None = None
-        self.latents_std: Tensor | None = None
+        """Initialize AutoencoderKLLTX2AudioModel.
 
+        Args:
+            config: Model configuration dictionary.
+            encoding: Supported encoding for the model.
+            devices: List of devices to use.
+            weights: Model weights.
+        """
         super().__init__(
             config=config,
             encoding=encoding,
@@ -798,7 +790,7 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
     def load_model(self) -> Any:
         """Load and compile the decoder and encoder models with BatchNorm statistics.
 
-        Extracts BatchNorm statistics (bn.*) which are specific to Flux2, then
+        Extracts BatchNorm statistics (latents_mean, latents_std) which are specific to LTX2, then
         delegates to base class for weight loading and model compilation.
 
         Returns:
@@ -819,17 +811,20 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
         bn_mean_data = bn_stats.get("latents_mean")
         bn_var_data = bn_stats.get("latents_std")
 
+        if bn_mean_data is None or bn_var_data is None:
+            raise ValueError(
+                "Latents statistics (latents_mean, latents_std) not loaded. "
+                "Make sure the model weights contain 'latents_mean' and 'latents_std'."
+            )
+
         super().load_model()
 
-        if bn_mean_data is not None or bn_var_data is not None:
-            if bn_mean_data is not None:
-                self.latents_mean = Tensor.from_dlpack(bn_mean_data).to(
-                    self.devices[0]
-                )
-            if bn_var_data is not None:
-                self.latents_std = Tensor.from_dlpack(bn_var_data).to(
-                    self.devices[0]
-                )
+        self.bn_running_mean = Tensor.from_dlpack(bn_mean_data).to(
+            self.devices[0]
+        )
+        self.bn_running_var = Tensor.from_dlpack(bn_var_data).to(
+            self.devices[0]
+        )
 
         return self.model
 
@@ -838,17 +833,13 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
     ) -> Callable[..., Any]:
         """Build a fused postprocess + VAE decode compiled graph.
 
-        Combines BN denormalization, unpatchify, and VAE decoding into a single
-        compiled graph, eliminating the intermediate tensor and device sync
-        between the two previously separate compiled graphs.
-
         Args:
             device: Target device for the compiled graph.
-            num_channels: Number of latent channels (bn.running_mean shape[0]).
+            num_channels: Number of latent channels (latents_mean shape[0]).
 
         Returns:
-            Compiled callable taking (latents_bhwc, bn_mean, bn_var) and
-            returning the decoded image tensor.
+            Compiled callable taking (latents_bsc, h_carrier, w_carrier)
+            and returning the decoded image tensor.
         """
         dtype = self.config.dtype
         device_ref = DeviceRef.from_device(device)
@@ -862,11 +853,20 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
             if key.startswith("decoder."):
                 # decoder.X -> decoder.X (PostprocessAndDecode.decoder.X)
                 fused_weights[key] = weight_data
+            elif key.startswith("post_quant_conv."):
+                # post_quant_conv.X -> decoder.post_quant_conv.X
+                fused_weights[f"decoder.{key}"] = weight_data
+            elif key == "latents_mean":
+                fused_weights["latents_mean"] = weight_data
+            elif key == "latents_std":
+                fused_weights["latents_std"] = weight_data
 
         with F.lazy():
-            autoencoder = AutoencoderKLLTX2Audio(self.config)
+            autoencoder = AutoencoderKLFlux2(self.config)
             fused = PostprocessAndDecode(
                 decoder=autoencoder.decoder,
+                bn_mean=self.bn_running_mean,
+                bn_var=self.bn_running_var,
                 num_channels=num_channels,
                 device=device_ref,
                 dtype=dtype,
@@ -887,16 +887,7 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
 
         Returns:
             SimpleNamespace: Object containing running_mean and running_var attributes.
-
-        Raises:
-            ValueError: If BatchNorm statistics are not loaded.
         """
-        if self.latents_mean is None or self.latents_std is None:
-            raise ValueError(
-                "BatchNorm statistics (running_mean, running_var) not loaded. "
-                "Make sure the model weights contain 'latents_mean' and 'latents_std'."
-            )
-
         return SimpleNamespace(
-            running_mean=self.latents_mean, running_var=self.latents_std
+            running_mean=self.bn_running_mean, running_var=self.bn_running_var
         )
