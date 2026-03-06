@@ -211,6 +211,50 @@ def test_interval_tree_write_to() raises:
     check_write_to(tree, contains="(1, 5)", is_repr=False)
 
 
+def test_interval_tree_len() raises:
+    var tree = IntervalTree[Int, MyType]()
+    assert_equal(len(tree), 0)
+
+    tree.insert((15, 20), MyType(33.0))
+    assert_equal(len(tree), 1)
+
+    tree.insert((10, 30), MyType(34.0))
+    tree.insert((17, 19), MyType(35.0))
+    assert_equal(len(tree), 3)
+
+
+def test_interval_tree_iter() raises:
+    var tree = IntervalTree[Int, MyType]()
+    tree.insert((15, 20), MyType(33.0))
+    tree.insert((10, 30), MyType(34.0))
+    tree.insert((17, 19), MyType(35.0))
+    tree.insert((5, 20), MyType(36.0))
+    tree.insert((12, 15), MyType(37.0))
+    tree.insert((30, 40), MyType(38.0))
+
+    # Collect intervals via iteration - should be in sorted order.
+    var intervals = List[Interval[Int]]()
+    for interval in tree:
+        intervals.append(interval)
+
+    assert_equal(len(intervals), 6)
+
+    # Verify in-order (sorted) traversal.
+    for i in range(len(intervals) - 1):
+        assert_true(
+            intervals[i] <= intervals[i + 1],
+            msg=String(intervals[i], " <= ", intervals[i + 1]),
+        )
+
+
+def test_interval_tree_iter_empty() raises:
+    var tree = IntervalTree[Int, MyType]()
+    var count = 0
+    for _ in tree:
+        count += 1
+    assert_equal(count, 0)
+
+
 def test_interval_tree_write_repr_to() raises:
     var tree = IntervalTree[Int, MyType]()
     tree.insert((1, 5), MyType(1.0))

@@ -477,10 +477,79 @@ struct _IntervalNode[
         return self.interval > other.interval
 
 
+struct _IntervalTreeIter[
+    T: IntervalElement,
+    U: Copyable & Comparable & Writable,
+](Iterator):
+    """Iterator for IntervalTree that yields intervals in sorted order.
+
+    Parameters:
+        T: The type of the interval bounds.
+        U: The type of the associated data.
+    """
+
+    comptime Element = Interval[Self.T]
+
+    var index: Int
+    var _intervals: List[Interval[Self.T]]
+
+    fn __init__(out self, ref tree: IntervalTree[Self.T, Self.U]):
+        """Constructs an iterator by collecting intervals via in-order traversal.
+
+        Args:
+            tree: The interval tree to iterate over.
+        """
+        self.index = 0
+        self._intervals = List[Interval[Self.T]](capacity=len(tree))
+        Self._collect_inorder(tree._root, self._intervals)
+
+    @staticmethod
+    fn _collect_inorder(
+        node: IntervalTree[Self.T, Self.U]._IntervalNodePointer,
+        mut result: List[Interval[Self.T]],
+    ):
+        """Collects intervals from the tree via in-order traversal.
+
+        Args:
+            node: The current node pointer.
+            result: The list to collect intervals into.
+        """
+        if not node:
+            return
+        Self._collect_inorder(node[].left, result)
+        result.append(node[].interval)
+        Self._collect_inorder(node[].right, result)
+
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> Interval[Self.T]:
+        """Returns the next interval from the iterator.
+
+        Raises:
+            StopIteration: When there are no more intervals.
+
+        Returns:
+            The next interval.
+        """
+        if self.index >= len(self._intervals):
+            raise StopIteration()
+        self.index += 1
+        return self._intervals[self.index - 1]
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        """Returns bounds for the remaining iterator length.
+
+        Returns:
+            A tuple of (lower_bound, upper_bound).
+        """
+        var remaining = len(self._intervals) - self.index
+        return (remaining, remaining)
+
+
 struct IntervalTree[
     T: IntervalElement,
     U: Copyable & Comparable & Writable,
-](Defaultable, Writable):
+](Defaultable, Sized, Writable):
     """An interval tree data structure for efficient range queries.
 
     Parameters:
@@ -505,12 +574,32 @@ struct IntervalTree[
         self._root = {}
         self._len = 0
 
+    fn __len__(self) -> Int:
+        """Returns the number of intervals in the tree.
+
+        Returns:
+            The number of intervals stored in the tree.
+        """
+        return self._len
+
+    fn __iter__(
+        ref self,
+    ) -> _IntervalTreeIter[Self.T, Self.U]:
+        """Iterates over intervals in the tree in sorted order.
+
+        Returns:
+            An iterator that yields `Interval[T]` values in sorted order.
+        """
+        return _IntervalTreeIter[Self.T, Self.U](self)
+
     fn __del__(deinit self):
         """Destructor that frees the interval tree's memory."""
         Self._del_helper(self._root)
 
     @staticmethod
     fn _del_helper(node: Self._IntervalNodePointer):
+        if not node:
+            return
         if node[].left:
             Self._del_helper(node[].left)
         if node[].right:
