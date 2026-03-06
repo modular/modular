@@ -268,7 +268,9 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     @always_inline
     fn __eq__[
         _E: Equatable & TrivialRegisterPassable, //
-    ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
         """Returns `True` if all elements are equal.
 
         Parameters:
@@ -289,7 +291,9 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     @always_inline
     fn __ne__[
         _E: Equatable & TrivialRegisterPassable, //
-    ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
         """Returns `True` if any element differs.
 
         Parameters:
@@ -307,7 +311,9 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     @always_inline
     fn __lt__[
         _E: Comparable & TrivialRegisterPassable, //
-    ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
         """Returns `True` if `self` is lexicographically less than `other`.
 
         Parameters:
@@ -330,7 +336,9 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     @always_inline
     fn __le__[
         _E: Comparable & TrivialRegisterPassable, //
-    ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
         """Returns `True` if `self` is lexicographically less than or equal to
         `other`.
 
@@ -349,7 +357,9 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     @always_inline
     fn __gt__[
         _E: Comparable & TrivialRegisterPassable, //
-    ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
         """Returns `True` if `self` is lexicographically greater than `other`.
 
         Parameters:
@@ -367,7 +377,9 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
     @always_inline
     fn __ge__[
         _E: Comparable & TrivialRegisterPassable, //
-    ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
         """Returns `True` if `self` is lexicographically greater than or equal
         to `other`.
 
