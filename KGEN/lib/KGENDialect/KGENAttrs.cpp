@@ -252,7 +252,7 @@ VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 TypedAttr VariadicZipAttr::get(VariadicType type, TypedAttr variadics) {
   auto va = sugarDynCast<VariadicAttr>(variadics);
-  if (!va)
+  if (!va || va.getValues().empty())
     return Base::get(type.getContext(), type, variadics);
 
   size_t zipLen = std::numeric_limits<size_t>::max();

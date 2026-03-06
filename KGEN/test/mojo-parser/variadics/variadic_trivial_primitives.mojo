@@ -10,10 +10,10 @@ from std.builtin.variadics import *
 
 # CHECK-LABEL: lit.alias.decl *"T`0x": meta<!lit.struct<#Tuple <:variadic<!AnyType>
 # CHECH-SAME: [!Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int]
-comptime T = Tuple[*VariadicSplat[Int, 10]]
+comptime T = Tuple[*Variadic.splat[type=Int, count=10]]
 
 
-comptime VA_SIZE[*Ts: AnyType] = variadic_size(Ts)
+comptime VA_SIZE[*Ts: AnyType] = Variadic.size(Ts)
 # CHECK: lit.alias.decl *"Folded`{{.*}}": !Int = <{3}>
 comptime Folded = VA_SIZE[Int, Int, Int]
 
@@ -23,6 +23,6 @@ fn foo(
     t1: Tuple[Int, Int, Int], t2: Tuple[FloatDyn, FloatDyn, FloatDyn]
 ) -> Tuple[
     # CHECK: %__result__: !lit.ref<{{.*}}> [!Int, !Int, !Int, !FloatDyn, !FloatDyn, !FloatDyn]>
-    *VariadicConcat[type_of(t1).element_types, type_of(t2).element_types]
+    *Variadic.concat_types[T=AnyType, type_of(t1).element_types, type_of(t2).element_types]
 ]:
     pass
