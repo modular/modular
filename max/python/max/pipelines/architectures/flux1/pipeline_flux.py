@@ -230,7 +230,10 @@ class FluxPipeline(DiffusionPipeline):
         self, latents: Tensor, noise_pred: Tensor, dt: Tensor
     ) -> Tensor:
         """Apply a single Euler update step in sigma space."""
-        return latents + dt * noise_pred
+        latents_dtype = latents.dtype
+        latents = latents.cast(DType.float32)
+        latents = latents + dt * noise_pred
+        return latents.cast(latents_dtype)
 
     def _postprocess_latents(self, latents: Tensor) -> Tensor:
         """Unpack and denormalize 6D latents to (B, C//4, H, W)."""
