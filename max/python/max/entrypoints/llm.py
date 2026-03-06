@@ -255,6 +255,7 @@ async def _async_worker(
 
                 # Generate this request until complete
                 chunks = await pipeline.all_tokens(gen_request)
+                # TODO: (MODELS-1120) determine whether to include reasoning tokens
                 return "".join(
                     chunk.decoded_tokens
                     if chunk.decoded_tokens is not None

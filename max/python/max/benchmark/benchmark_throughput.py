@@ -298,6 +298,7 @@ def print_results(
         if isinstance(outputs, EmbeddingsGenerationOutput):
             output_text = str(outputs.embeddings)
         else:
+            # TODO: (MODELS-1119) determine whether to include reasoning tokens in print
             output_text = "".join(
                 chunk.decoded_tokens
                 for chunk in outputs
