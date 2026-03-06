@@ -42,7 +42,6 @@ from linalg.utils import (
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import TileTensor
 from layout.tile_layout import RowMajorLayout, row_major as tt_row_major
 from layout.coord import RuntimeInt

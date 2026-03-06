@@ -70,7 +70,6 @@ from layout import (
     RuntimeTuple,
     TileTensor,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import blocked_product, make_layout, flatten, coalesce
 from layout.layout_tensor import LayoutTensorIter
