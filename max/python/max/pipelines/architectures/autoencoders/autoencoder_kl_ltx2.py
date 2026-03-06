@@ -1116,6 +1116,9 @@ class PostprocessAndDecode(nn.Module[..., Tensor]):
 class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
     """ComponentModel wrapper for LTX2 Video Autoencoder."""
 
+    latents_mean: Tensor
+    latents_std: Tensor
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -1123,9 +1126,6 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
         devices: list[Device],
         weights: Weights,
     ) -> None:
-        self.latents_mean: Tensor | None = None
-        self.latents_std: Tensor | None = None
-
         super().__init__(
             config=config,
             encoding=encoding,
