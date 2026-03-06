@@ -724,7 +724,7 @@ fn mla_decoding[
             num_partitions,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -2086,7 +2086,7 @@ fn mla_prefill[
             k_rope,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 

@@ -136,7 +136,7 @@ fn barrier():
         # threadgroup_barrier(mem_flags::mem_threadgroup)
         llvm_intrinsic["llvm.air.wg.barrier", NoneType](Int32(2), Int32(1))
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -471,7 +471,7 @@ fn syncwarp(mask: Int = -1):
         )
         return
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -530,7 +530,7 @@ fn async_copy_arrive[
     comptime if is_nvidia_gpu():
         _mbarrier_impl(address)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="async_copy_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -563,7 +563,7 @@ fn mbarrier_init[
             shared_mem, num_threads
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_init() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -597,8 +597,7 @@ fn mbarrier_arrive[
             shared_mem
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            Int,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -634,8 +633,7 @@ fn mbarrier_test_wait[
             shared_mem, state
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            Bool,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_test_wair() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -666,7 +664,7 @@ fn mbarrier_arrive_expect_tx_shared[
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_shared() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -730,12 +728,10 @@ fn mbarrier_arrive_expect_tx_relaxed[
             has_side_effect=True,
         ](addr, tx_count)
     else:
-        return CompilationTarget.unsupported_target_error[
-            UInt64,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_relaxed() is only supported when targeting NVIDIA GPUs",
         ]()
-    return 0
 
 
 @always_inline("nodebug")
@@ -765,7 +761,7 @@ fn mbarrier_try_wait_parity_shared[
             to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_try_wait_parity_shared() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -818,7 +814,7 @@ fn cp_async_bulk_commit_group():
     comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.cp.async.bulk.commit.group`[_type=None]()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="cp_async_bulk_commit_group() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -868,7 +864,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
         ](n)
 
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="cp_async_bulk_wait_group() is only supported when targeting NVIDIA GPUs",
         ]()

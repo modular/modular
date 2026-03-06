@@ -48,23 +48,17 @@ struct CompilationTarget[value: _TargetType = _current_target()](
     @always_inline("nodebug")
     @staticmethod
     fn unsupported_target_error[
-        result: AnyType = NoneType._mlir_type,
         *,
         operation: Optional[String] = None,
         note: Optional[String] = None,
-    ]() -> result:
+    ]() -> Never:
         """Produces a constraint failure when called indicating that some
         operation is not supported by the current compilation target.
 
         Parameters:
-            result: The never-returned result type of this function.
             operation: Optional name of the operation that is not supported.
                 Should be a function name or short description.
             note: Optional additional note to print.
-
-        Returns:
-            This function does not return normally, however a return type
-            can be specified to satisfy Mojo type checking.
         """
 
         comptime note_text = String(" Note: ", note.value() if note else "")
@@ -390,9 +384,7 @@ fn platform_map[
     elif CompilationTarget.is_linux() and linux:
         return linux.value().copy()
     else:
-        return CompilationTarget.unsupported_target_error[
-            T, operation=operation
-        ]()
+        CompilationTarget.unsupported_target_error[operation=operation]()
 
 
 @always_inline("nodebug")

@@ -112,10 +112,7 @@ fn _gpu_clock_inst() -> StaticString:
     elif is_amd_gpu():
         return "llvm.amdgcn.s.memtime"
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString,
-            operation="_gpu_clock",
-        ]()
+        CompilationTarget.unsupported_target_error[operation="_gpu_clock",]()
 
 
 @always_inline
@@ -374,7 +371,7 @@ fn sleep(sec: Float64):
             return
         else:
             # Other GPUs are not supported.
-            return CompilationTarget.unsupported_target_error[
+            CompilationTarget.unsupported_target_error[
                 operation="time.sleep()",
                 note="time.sleep() is only supported on NVIDIA and AMD GPUs",
             ]()

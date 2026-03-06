@@ -286,7 +286,7 @@ fn _printf[
         else:
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.
-            return CompilationTarget.unsupported_target_error[
+            CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name()
             ]()
 
@@ -426,7 +426,7 @@ fn print[
                 var msg = printf_begin()
                 _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
             else:
-                return CompilationTarget.unsupported_target_error[
+                CompilationTarget.unsupported_target_error[
                     operation=__get_current_function_name()
                 ]()
         else:

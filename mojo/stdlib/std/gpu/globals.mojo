@@ -113,7 +113,6 @@ fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
         # That attribute is used to represent Metal's [[max_total_threads_per_threadgroup(x)]]
         return "pop.air.max_work_group_size".value
     else:
-        return CompilationTarget.unsupported_target_error[
-            __mlir_type.`!kgen.string`,
+        CompilationTarget.unsupported_target_error[
             operation="MAX_THREADS_PER_BLOCK_METADATA",
         ]()

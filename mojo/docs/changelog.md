@@ -673,6 +673,9 @@ what we publish.
   print(a.__floordiv__(b))
   ```
 
+- Changed `CompilationTarget.unsupported_target_error()` to return `Never`, and
+  removed it's `result` type parameter.
+
 - Remove `DType.get_dtype[T]()` and `DType.is_scalar[T]()`. These were low-level
   operations for extracting the `DType` of a `SIMD` in generic code. There are
   better alternatives available in Mojo today using reflection capabilities.

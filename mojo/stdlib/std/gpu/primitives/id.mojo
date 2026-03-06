@@ -122,8 +122,7 @@ fn lane_id() -> UInt:
         )
 
     else:
-        return CompilationTarget.unsupported_target_error[
-            UInt,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -180,8 +179,7 @@ fn sm_id() -> UInt:
             )
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            UInt,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="sm_id() is only supported when targeting NVIDIA GPUs.",
         ]()
@@ -217,8 +215,7 @@ struct _ThreadIdx[ResultType: _FromInt = UInt](
         elif is_apple_gpu():
             return "llvm.air.thread_position_in_threadgroup." + dim
         else:
-            return CompilationTarget.unsupported_target_error[
-                StaticString,
+            CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
             ]()
 
@@ -272,8 +269,7 @@ struct _BlockIdx[ResultType: _FromInt = UInt](
         elif is_apple_gpu():
             return "llvm.air.threadgroup_position_in_grid." + dim
         else:
-            return CompilationTarget.unsupported_target_error[
-                StaticString,
+            CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
             ]()
 
@@ -353,8 +349,7 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
             return _get_gcn_idx[_get_offset(), DType.uint16]()
 
         else:
-            return CompilationTarget.unsupported_target_error[
-                UInt,
+            CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
             ]()
 
@@ -423,8 +418,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
             # by block_dim.dim
             return gridDim // block_dim.__getattr__[dim]()
         else:
-            return CompilationTarget.unsupported_target_error[
-                UInt,
+            CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
             ]()
 

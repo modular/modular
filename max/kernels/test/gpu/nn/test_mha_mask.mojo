@@ -110,7 +110,7 @@ def test_causal_mask_asm() raises:
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -229,7 +229,7 @@ def test_sliding_window_causal_mask_asm() raises:
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 

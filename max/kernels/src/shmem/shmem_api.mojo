@@ -225,7 +225,7 @@ fn shmem_init() raises:
     comptime if has_nvidia_gpu_accelerator():
         nvshmemx_init()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -272,8 +272,7 @@ fn shmem_create_uniqueid(
     comptime if has_amd_gpu_accelerator():
         return rocshmem_create_uniqueid(server_ip, server_port)
     else:
-        return CompilationTarget.unsupported_target_error[
-            SHMEMUniqueID,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -397,7 +396,7 @@ fn shmem_finalize():
     elif has_amd_gpu_accelerator():
         rocshmem_finalize()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -416,8 +415,8 @@ fn shmem_my_pe() -> c_int:
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return rocshmem_my_pe()
     else:
-        return CompilationTarget.unsupported_target_error[
-            c_int, operation=__get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -433,8 +432,8 @@ fn shmem_n_pes() -> c_int:
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return rocshmem_n_pes()
     else:
-        return CompilationTarget.unsupported_target_error[
-            c_int, operation=__get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -483,7 +482,6 @@ fn shmem_malloc[
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
-        return {}
 
 
 fn shmem_calloc[
@@ -527,8 +525,7 @@ fn shmem_calloc[
     elif has_amd_gpu_accelerator():
         return rocshmem_calloc[dtype](count, size)
     else:
-        return CompilationTarget.unsupported_target_error[
-            UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -559,7 +556,7 @@ fn shmem_free[
     elif has_amd_gpu_accelerator():
         rocshmem_free(ptr)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -594,8 +591,8 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
     elif has_amd_gpu_accelerator():
         return c_int(Int(rocshmem_team_my_pe(c_int(team))))
     else:
-        return CompilationTarget.unsupported_target_error[
-            c_int, operation=__get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -692,8 +689,8 @@ fn shmem_g[
     elif is_amd_gpu():
         return rocshmem_g(source, pe)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype], operation=__get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -1041,7 +1038,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
     elif has_amd_gpu_accelerator():
         rocshmem_barrier_all_on_stream(HIP(stream))
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 

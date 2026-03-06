@@ -21,9 +21,7 @@ fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
     elif CompilationTarget.is_macos():
         result = external_call["__error", type_of(result)]()
     else:
-        result = CompilationTarget.unsupported_target_error[
-            type_of(result), operation="get_errno"
-        ]()
+        CompilationTarget.unsupported_target_error[operation="get_errno"]()
 
 
 fn get_errno() -> ErrNo:

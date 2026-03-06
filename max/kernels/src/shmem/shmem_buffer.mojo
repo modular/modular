@@ -58,9 +58,6 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             CompilationTarget.unsupported_target_error[
                 operation="SHMEMBuffer.__init__",
             ]()
-            self._data = {}
-            self._ctx_ptr = ctx._handle
-            self._size = size
 
     @doc_private
     @always_inline
