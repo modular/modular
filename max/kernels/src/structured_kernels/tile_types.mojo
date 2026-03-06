@@ -35,11 +35,16 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
+    Layout as LegacyLayout,
     LayoutTensor,
     TileTensor,
+    UNKNOWN_VALUE,
     row_major,
+    lt_to_tt,
 )
+from buffer import Dim, DimList
 from layout.int_tuple import IntTuple
+from layout.coord import _DimsToCoordLike
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -526,6 +531,83 @@ def create_tma_tile[
         __tile_shape=_to_index_list[tma_tile_layout](),
         __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
     ](ctx, tensor)
+
+
+# ============================================================================
+# GMEMTile -- TileTensor type for global memory kernel parameters
+# ============================================================================
+
+
+@parameter
+fn _int_to_dim(value: Int) -> Dim:
+    if value != UNKNOWN_VALUE:
+        return Dim(value)
+    return Dim()
+
+
+comptime _LTDims1[it: IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+)
+comptime _LTDims2[it: IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+)
+comptime _LTDims3[it: IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+    _int_to_dim(it[2].value()),
+)
+comptime _LTDims4[it: IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+    _int_to_dim(it[2].value()),
+    _int_to_dim(it[3].value()),
+)
+comptime _LTDims5[it: IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+    _int_to_dim(it[2].value()),
+    _int_to_dim(it[3].value()),
+    _int_to_dim(it[4].value()),
+)
+comptime _LTDims6[it: IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+    _int_to_dim(it[2].value()),
+    _int_to_dim(it[3].value()),
+    _int_to_dim(it[4].value()),
+    _int_to_dim(it[5].value()),
+)
+
+comptime _LTDims[it: IntTuple] = _LTDims1[it] if len(it) == 1 else _LTDims2[
+    it
+] if len(it) == 2 else _LTDims3[it] if len(it) == 3 else _LTDims4[it] if len(
+    it
+) == 4 else _LTDims5[
+    it
+] if len(
+    it
+) == 5 else _LTDims6[
+    it
+]
+
+comptime LTToTTLayout[lt_layout: LegacyLayout] = Layout[
+    shape_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.shape]],
+    stride_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.stride]],
+]
+
+comptime GMEMTile[
+    dtype: DType,
+    lt_layout: LegacyLayout,
+] = TileTensor[
+    dtype,
+    LTToTTLayout[lt_layout],
+    MutAnyOrigin,
+]
+"""Global memory TileTensor derived from a legacy Layout.
+
+Used for kernel parameter types, replacing LayoutTensor parameters.
+"""
 
 
 # ============================================================================

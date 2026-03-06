@@ -20,6 +20,7 @@ from layout import (
     Layout,
     RuntimeLayout,
     TileTensor,
+    TensorLayout,
     UNKNOWN_VALUE,
     row_major,
 )
@@ -85,12 +86,12 @@ fn apply_mask_kernel[
 fn fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
     iro_origin: ImmutOrigin,
-    cache_lengths_layout: Layout,
+    cache_lengths_layout: TensorLayout,
     use_causal_mask: Bool,
 ](
     output_indices: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     input_row_offsets: TileTensor[DType.uint32, IROLayoutType, iro_origin],
-    cache_lengths: LayoutTensor[
+    cache_lengths: TileTensor[
         DType.uint32, cache_lengths_layout, ImmutAnyOrigin
     ],
     total_seq_len: Int,
@@ -113,6 +114,8 @@ fn fill_invalid_topk_kernel[
     Without causal masking, each token can see all keys in the batch:
         num_keys = cache_len + seq_len
     """
+    comptime assert cache_lengths.flat_rank == 1
+
     var token_idx = Int(block_idx.x)
     var k_idx = Int(thread_idx.x)
 
@@ -141,7 +144,7 @@ fn fill_invalid_topk_kernel[
     var seq_len = q_end - q_start
     var local_seq_idx = token_idx - q_start
 
-    var cache_len = Int(cache_lengths[batch_idx][0])
+    var cache_len = Int(cache_lengths[batch_idx])
 
     # Compute num_keys based on mask type
     var num_keys: Int
@@ -387,7 +390,7 @@ fn mla_indexer_ragged_float8_paged[
     comptime fill_kernel = fill_invalid_topk_kernel[
         input_row_offsets.LayoutType,
         ImmutOrigin(input_row_offsets.origin),
-        type_of(cache_lengths).layout,
+        type_of(cache_lengths).LayoutType,
         use_causal_mask,
     ]
 
