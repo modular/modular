@@ -54,6 +54,12 @@ class DiffusionPipeline(ABC):
 
     components: dict[str, type[ComponentModel]] | None = None
 
+    default_num_inference_steps: int = 50
+    """Default number of denoising steps when the user does not specify one.
+
+    Subclasses may override this to provide a model-appropriate default.
+    """
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,

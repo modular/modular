@@ -124,9 +124,11 @@ class PixelGenerationTokenizer(
         secondary_max_length: int | None = None,
         trust_remote_code: bool = False,
         context_validators: list[Callable[[PixelContext], None]] | None = None,
+        default_num_inference_steps: int = 50,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
+        self._default_num_inference_steps = default_num_inference_steps
 
         if max_length is None:
             raise ValueError(
@@ -872,7 +874,11 @@ class PixelGenerationTokenizer(
         latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
         image_seq_len = (latent_height // 2) * (latent_width // 2)
 
-        num_inference_steps = image_options.steps
+        num_inference_steps = (
+            image_options.steps
+            if "steps" in image_options.model_fields_set
+            else self._default_num_inference_steps
+        )
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
             image_seq_len, num_inference_steps
         )
