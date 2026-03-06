@@ -397,6 +397,48 @@ struct Variadic:
     ```
     """
 
+    comptime _ValueIdxToValueGeneratorType[
+        From: AnyType, To: AnyType
+    ] = __mlir_type[
+        `!lit.generator<<"From": `,
+        +From,
+        `, "Idx":`,
+        Int,
+        `>`,
+        +To,
+        `>`,
+    ]
+    """This specifies a generator to generate a generator type for the reducer of
+    values. The result generator type is [From, idx: Int] -> To,
+    """
+
+    comptime _ValueToValueMapper[
+        FromType: AnyType,
+        ToType: AnyType,
+        //,
+        Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
+        Prev: Variadic.ValuesOfType[ToType],
+        From: Variadic.ValuesOfType[FromType],
+        idx: Int,
+    ] = Variadic.concat_values[
+        Prev,
+        Variadic.values[Mapper[From[idx], idx]],
+    ]
+    comptime _ValueToValueVariadicMapper[
+        FromType: AnyType,
+        ToType: AnyType,
+        //,
+        Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
+        From: Variadic.ValuesOfType[FromType],
+    ] = _ReduceVariadicValueAndIdxToVariadic[
+        BaseVal=Variadic.empty_of_type[ToType],
+        VariadicType=From,
+        Reducer=Variadic._ValueToValueMapper[Mapper, ...],
+    ]
+    """Given a mapping function for an element+index and a variadic list of that
+    element, this applies the function to each entry in the list and returns a new
+    list of results."""
+
 
 # ===-----------------------------------------------------------------------===#
 # VariadicParamList
