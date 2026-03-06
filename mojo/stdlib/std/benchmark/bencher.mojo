@@ -459,16 +459,11 @@ struct BenchConfig(Copyable, Writable):
             writer: The writer to write to.
         """
 
-        @parameter
-        fn fields(mut w: Some[Writer]):
-            w.write_string("min_runtime_secs=")
-            w.write(self.min_runtime_secs)
-            w.write_string(", max_runtime_secs=")
-            w.write(self.max_runtime_secs)
-            w.write_string(", max_iters=")
-            w.write(self.max_iters)
-
-        fmt.FormatStruct(writer, "BenchConfig").fields[FieldsFn=fields]()
+        fmt.FormatStruct(writer, "BenchConfig").fields(
+            fmt.Named("min_runtime_secs", self.min_runtime_secs),
+            fmt.Named("max_runtime_secs", self.max_runtime_secs),
+            fmt.Named("max_iters", self.max_iters),
+        )
 
 
 @fieldwise_init
