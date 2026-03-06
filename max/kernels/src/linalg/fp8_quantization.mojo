@@ -1275,8 +1275,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 fn convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: LayoutTensor[DType.float8_e4m3fn, ...],
-    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, ...],
+    input_buffer: TileTensor[dtype=DType.float8_e4m3fn, ...],
+    output_buffer: TileTensor[mut=True, dtype=DType.float8_e4m3fnuz, ...],
     context: DeviceContext,
 ) raises:
     """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.
@@ -1289,21 +1289,23 @@ fn convert_e4m3fn_to_e4m3fnuz(
         output_buffer: Output tensor to store E4M3FNUZ format.
         context: Device context for kernel execution.
     """
-    comptime assert (
-        input_buffer.layout.shape == output_buffer.layout.shape
-    ), "Input and output shapes must match"
+    comptime assert input_buffer.rank == 2, "expected rank-2 input"
+    comptime assert output_buffer.rank == 2, "expected rank-2 output"
+    debug_assert(
+        Int(input_buffer.dim[0]()) == Int(output_buffer.dim[0]())
+        and Int(input_buffer.dim[1]()) == Int(output_buffer.dim[1]()),
+        "Input and output shapes must match",
+    )
 
     @always_inline
     @parameter
     @__copy_capture(input_buffer, output_buffer)
     fn convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    ](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
 
-        var idx = rebind[IndexList[2]](idx_arg)
-
-        var input_vec_e4m3fn = input_buffer.load[width=width](idx)
+        var input_vec_e4m3fn = input_buffer.load_linear[width](idx)
         var input_vec_int8 = bitcast[DType.int8](input_vec_e4m3fn)
 
         comptime ROCM_FP8_NAN_AS_INT = -128
@@ -1312,7 +1314,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
             Int8(0), input_vec_int8
         )
         var output_vec = bitcast[DType.float8_e4m3fnuz](input_vec_int8)
-        output_buffer.store(idx, output_vec)
+        output_buffer.store_linear(idx, output_vec)
 
     comptime target_simd_width = simd_width_of[
         DType.float8_e4m3fn, target=get_gpu_target()
@@ -1320,7 +1322,10 @@ fn convert_e4m3fn_to_e4m3fnuz(
 
     _elementwise_impl_gpu[
         func=convert_kernel, simd_width=UInt(target_simd_width)
-    ](IndexList[2](input_buffer.dim[0](), input_buffer.dim[1]()), context)
+    ](
+        IndexList[2](Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())),
+        context,
+    )
 
 
 ########################################################
