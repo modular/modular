@@ -30,14 +30,13 @@ Packages and modules
 * :code_link:`/max/api/python/dtype|dtype`: Unified data type system supporting various numeric formats.
 * :code_link:`/max/api/python/engine|engine`: Model execution runtime with automatic optimization.
 * :code_link:`/max/api/python/entrypoints|entrypoints`: Command-line tools and serving infrastructure.
-* :code_link:`/max/api/python/experimental|experimental`: Experimental eager-execution APIs: tensor, functional, and random.
+* :code_link:`/max/api/python/experimental|experimental`: Experimental eager-execution APIs: tensor, functional, nn, random, and torch.
 * :code_link:`/max/api/python/graph|graph`: Computational graph construction with 100+ operations for complete model control.
 * :code_link:`/max/api/python/interfaces|interfaces`: Universal interfaces for consistent API integration.
 * :code_link:`/max/api/python/kv_cache|kv_cache`: KV cache management for efficient attention computation.
-* :code_link:`/max/api/python/nn|nn`: Graph-based neural network API (default). Eager API available in ``max.nn.module_v3``.
+* :code_link:`/max/api/python/nn|nn`: Graph-based neural network API. Eager API available in ``max.experimental.nn``.
 * :code_link:`/max/api/python/pipelines|pipelines`: Pre-built, optimized model architectures for immediate deployment.
 * :code_link:`/max/api/python/profiler|profiler`: Performance profiling and tracing utilities.
-* :code_link:`/max/api/python/torch|torch`: PyTorch integration for custom operations and interoperability.
 
 .. toctree::
    :hidden:
@@ -51,7 +50,6 @@ Packages and modules
    interfaces
    kv_cache/index.rst
    profiler
-   torch
    graph/index.rst
    pipelines/index.rst
    nn/index.rst

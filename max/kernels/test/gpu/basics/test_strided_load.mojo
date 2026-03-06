@@ -24,7 +24,7 @@ fn strided_load_kernel[
     *, dtype: DType = DType.uint32, width: Int = 1
 ](
     output: UnsafePointer[SIMD[dtype, width]],
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC],
+    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.GENERIC],
     stride: Int,
 ):
     output[] = strided_load[width](ptr, stride)

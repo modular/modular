@@ -310,8 +310,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             writer: The object to write to.
         """
         self._write_counter_body[
-            f_key = fmt.write_to[Self.V],
-            f_val = fmt.write_to[Int],
+            f_key=fmt.write_to[Self.V],
+            f_val=fmt.write_to[Int],
         ](writer)
 
     @no_inline
@@ -328,8 +328,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         @parameter
         fn write_fields(mut w: Some[Writer]):
             self._write_counter_body[
-                f_key = fmt.write_repr_to[Self.V],
-                f_val = fmt.write_repr_to[Int],
+                f_key=fmt.write_repr_to[Self.V],
+                f_val=fmt.write_repr_to[Int],
             ](w)
 
         fmt.FormatStruct(writer, "Counter").params(

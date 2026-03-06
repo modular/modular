@@ -102,7 +102,7 @@ struct Element[
         index_type: The integer type of the index pointing to each element.
     """
 
-    comptime element_data_type = SIMD[Self.dtype, size = Self.layout.size()]
+    comptime element_data_type = SIMD[Self.dtype, size=Self.layout.size()]
     """The SIMD type used to store and process the element data.
 
     This type alias defines a SIMD vector with the specified data type and size
@@ -118,8 +118,8 @@ struct Element[
 
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type = DType.int32,
-        linear_idx_type = Self.index_type,
+        element_type=DType.int32,
+        linear_idx_type=Self.index_type,
     ]
     """The runtime layout information for memory access patterns.
 
@@ -142,8 +142,8 @@ struct Element[
         element_data: Self.element_data_type,
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type = DType.int32,
-            linear_idx_type = Self.index_type,
+            element_type=DType.int32,
+            linear_idx_type=Self.index_type,
         ],
     ):
         """Initializes an Element with the given SIMD data and runtime layout.
@@ -161,12 +161,12 @@ struct Element[
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type = DType.int32,
-            linear_idx_type = Self.index_type,
+            element_type=DType.int32,
+            linear_idx_type=Self.index_type,
         ] = RuntimeLayout[
             Self.layout,
-            element_type = DType.int32,
-            linear_idx_type = Self.index_type,
+            element_type=DType.int32,
+            linear_idx_type=Self.index_type,
         ](),
     ) -> Self:
         """Loads data from memory according to the specified layout.
@@ -195,7 +195,7 @@ struct Element[
                 comptime alignment = align_of[Self.element_data_type]()
                 return Self(
                     ptr.load[
-                        width = Self.element_data_type.size, alignment=alignment
+                        width=Self.element_data_type.size, alignment=alignment
                     ]()
                 )
 
@@ -213,7 +213,7 @@ struct Element[
                 var vec_i = ptr.load[width=size, alignment=alignment](
                     _get_offset[0, i](runtime_layout)
                 )
-                element_data = element_data.insert[offset = i * size](vec_i)
+                element_data = element_data.insert[offset=i * size](vec_i)
             return Element(element_data, runtime_layout)
 
         elif is_contiguous_dim(flat_layout, 1):
@@ -226,7 +226,7 @@ struct Element[
                 var vec_i = ptr.load[width=size, alignment=alignment](
                     _get_offset[i, 0](runtime_layout)
                 )
-                element_data = element_data.insert[offset = i * size](vec_i)
+                element_data = element_data.insert[offset=i * size](vec_i)
             return Element(element_data, runtime_layout)
 
         comptime dim_0 = Int(flat_layout.shape[0])
@@ -245,12 +245,12 @@ struct Element[
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type = DType.int32,
-            linear_idx_type = Self.index_type,
+            element_type=DType.int32,
+            linear_idx_type=Self.index_type,
         ] = RuntimeLayout[
             Self.layout,
-            element_type = DType.int32,
-            linear_idx_type = Self.index_type,
+            element_type=DType.int32,
+            linear_idx_type=Self.index_type,
         ](),
     ) -> Self:
         """Loads data from memory with masking for partial loads.
@@ -285,7 +285,7 @@ struct Element[
 
                 return Self(
                     ptr.load[
-                        width = Self.element_data_type.size, alignment=alignment
+                        width=Self.element_data_type.size, alignment=alignment
                     ](0)
                 )
 
@@ -324,7 +324,7 @@ struct Element[
                 var vec_i = ptr.load[width=size](
                     _get_offset[0, i](runtime_layout)
                 )
-                element_data = element_data.insert[offset = i * size](vec_i)
+                element_data = element_data.insert[offset=i * size](vec_i)
             return Element(element_data, runtime_layout)
 
         elif Self.layout.stride[1] == 1:
@@ -355,7 +355,7 @@ struct Element[
                 var vec_i = ptr.load[width=size](
                     _get_offset[i, 0](runtime_layout)
                 )
-                element_data = element_data.insert[offset = i * size](vec_i)
+                element_data = element_data.insert[offset=i * size](vec_i)
             return Element(element_data, runtime_layout)
 
         comptime dim_0 = Int(Self.layout.shape[0])
@@ -419,7 +419,7 @@ struct Element[
             comptime for i in range(elements):
                 ptr.store[alignment=alignment](
                     _get_offset[0, i](self.runtime_layout),
-                    self.element_data.slice[size, offset = i * size](),
+                    self.element_data.slice[size, offset=i * size](),
                 )
             return
 
@@ -432,7 +432,7 @@ struct Element[
             comptime for i in range(elements):
                 ptr.store[alignment=alignment](
                     _get_offset[i, 0](self.runtime_layout),
-                    self.element_data.slice[size, offset = i * size](),
+                    self.element_data.slice[size, offset=i * size](),
                 )
             return
 
@@ -518,7 +518,7 @@ struct Element[
                 (ptr + _get_offset[i, 0](self.runtime_layout)).store[
                     alignment=alignment
                 ](
-                    self.element_data.slice[size, offset = i * size](),
+                    self.element_data.slice[size, offset=i * size](),
                 )
             return
 
@@ -549,7 +549,7 @@ struct Element[
                 (ptr + _get_offset[i, 0](self.runtime_layout)).store[
                     alignment=alignment
                 ](
-                    self.element_data.slice[size, offset = i * size](),
+                    self.element_data.slice[size, offset=i * size](),
                 )
             return
 
@@ -626,13 +626,13 @@ struct MemoryElement[
         Self.layout,
         mut_origin,
         Self.address_space,
-        index_type = Self.index_type,
+        index_type=Self.index_type,
     ]
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype],
         Self.origin,
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]
     """Pointer to the memory location where the data is stored.
 
@@ -643,8 +643,8 @@ struct MemoryElement[
 
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type = DType.int32,
-        linear_idx_type = Self.index_type,
+        element_type=DType.int32,
+        linear_idx_type=Self.index_type,
     ]
     """Runtime layout information used for memory access calculations.
 
@@ -658,12 +658,12 @@ struct MemoryElement[
         ptr: UnsafePointer[
             Scalar[Self.dtype],
             Self.origin,
-            address_space = Self.address_space,
+            address_space=Self.address_space,
         ],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type = DType.int32,
-            linear_idx_type = Self.index_type,
+            element_type=DType.int32,
+            linear_idx_type=Self.index_type,
         ],
     ):
         """Initializes a `MemoryElement` with the given pointer and runtime layout.
@@ -679,7 +679,7 @@ struct MemoryElement[
     fn load(
         self,
         out result: Element[
-            Self.dtype, Self.layout, index_type = Self.index_type
+            Self.dtype, Self.layout, index_type=Self.index_type
         ],
     ):
         """Loads data from memory according to the specified layout.
@@ -735,7 +735,7 @@ struct MemoryElement[
         # Load source element and convert to destination dtype if needed
         var src_element = src.load()
         var converted_element = Element[
-            Self.dtype, src.layout, index_type = src.index_type
+            Self.dtype, src.layout, index_type=src.index_type
         ](
             src_element.element_data.cast[Self.dtype](),
             src_element.runtime_layout,
@@ -743,7 +743,7 @@ struct MemoryElement[
         self.store(
             rebind[
                 Element[
-                    Self.dtype, Self.layout, index_type = src_element.index_type
+                    Self.dtype, Self.layout, index_type=src_element.index_type
                 ]
             ](converted_element)
         )

@@ -15,7 +15,7 @@
 from pathlib import Path
 
 import torch
-from max.torch import CustomOpLibrary
+from max.experimental.torch import CustomOpLibrary
 
 # Load the Mojo custom operations from the `operations` directory.
 mojo_kernels = Path(__file__).parent / "operations"

@@ -256,6 +256,7 @@ class DeepseekV3NextN(Module):
                 ]
             )
 
+        kv_scales: list[BufferValue] = []
         h = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
@@ -264,6 +265,7 @@ class DeepseekV3NextN(Module):
             [kv_collection.cache_lengths for kv_collection in kv_collections],
             [kv_collection.lookup_table for kv_collection in kv_collections],
             [kv_collection.max_lengths for kv_collection in kv_collections],
+            kv_scales,
             freqs_cis=freqs_cis,
             mla_prefill_metadata_flat=mla_inputs,
             input_row_offsets=input_row_offsets_,

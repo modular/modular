@@ -106,8 +106,8 @@ fn mha_sm100_dispatch[
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
         swizzle_mode,
-        BM = BM // 2,
-        BN = fa4_config.depth,
+        BM=BM // 2,
+        BN=fa4_config.depth,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
@@ -119,24 +119,24 @@ fn mha_sm100_dispatch[
 
     q_tma_op = q_tma[
         swizzle_mode,
-        BM = BM // 2,
-        depth = fa4_config.depth,
-        q_num_heads = fa4_config.num_q_heads,
-        group = fa4_config.group,
+        BM=BM // 2,
+        depth=fa4_config.depth,
+        q_num_heads=fa4_config.num_q_heads,
+        group=fa4_config.group,
         decoding=False,
-        num_qk_stages = fa4_config.num_qk_stages,
+        num_qk_stages=fa4_config.num_qk_stages,
     ](ctx, q, num_rows_q)
     k_tma_op = k.create_tma_tile[
         fa4_config.swizzle_mode,
-        BN = fa4_config.BN,
-        depth = fa4_config.depth,
-        BK = fa4_config.BK0,
+        BN=fa4_config.BN,
+        depth=fa4_config.depth,
+        BK=fa4_config.BK0,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         fa4_config.swizzle_mode,
-        BN = fa4_config.BN,
-        depth = fa4_config.depth,
-        BK = fa4_config.padded_depth,
+        BN=fa4_config.BN,
+        depth=fa4_config.depth,
+        BK=fa4_config.padded_depth,
     ](ctx)
     comptime assert BM == 256
     comptime SchedulerType = TransientScheduler[

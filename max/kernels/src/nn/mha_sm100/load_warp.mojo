@@ -51,9 +51,9 @@ fn fa4_load[
     MaxSeqLenType: OptionallyStaticInt,
 ](
     mbars: FA4MiscMBars[
-        num_qk_stages = config.num_qk_stages,
-        num_pv_stages = config.num_pv_stages,
-        num_kv_stages = config.num_kv_stages,
+        num_qk_stages=config.num_qk_stages,
+        num_pv_stages=config.num_pv_stages,
+        num_kv_stages=config.num_kv_stages,
         separate_kv=True,
         use_order_barriers=EnableForcedOrdering,
     ],
@@ -65,23 +65,23 @@ fn fa4_load[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BM = config.BM // 2,
-        depth = config.depth,
-        group = config.group,
+        BM=config.BM // 2,
+        depth=config.depth,
+        group=config.group,
         decoding=False,
-        num_qk_stages = config.num_qk_stages,
+        num_qk_stages=config.num_qk_stages,
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BN = config.BN,
-        BK = config.BK0,
+        BN=config.BN,
+        BK=config.BK0,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BN = config.BN,
-        BK = config.padded_depth,
+        BN=config.BN,
+        BK=config.padded_depth,
     ],
     kv_lut: KVLUTType,
 ):
@@ -122,9 +122,15 @@ fn fa4_load[
     # If two-qo, we produce qkv in a pattern of
     # q0 & k0, q1, v0, k1, v1, k2, v2...
     comptime SMemTensorLT[layout: Layout] = SharedMemLT[KVLUTType.dtype, layout]
-    comptime QType = SMemTensorLT[type_of(q_tma_op).layout]
-    comptime KType = SMemTensorLT[type_of(k_tma_op).layout]
-    comptime VType = SMemTensorLT[type_of(v_tma_op).layout]
+    comptime QType = SMemTensorLT[
+        Layout.row_major(type_of(q_tma_op).tile_shape)
+    ]
+    comptime KType = SMemTensorLT[
+        Layout.row_major(type_of(k_tma_op).tile_shape)
+    ]
+    comptime VType = SMemTensorLT[
+        Layout.row_major(type_of(v_tma_op).tile_shape)
+    ]
 
     var kv_head_idx: UInt32 = seq_info.head_idx // UInt32(group)
 
@@ -156,7 +162,7 @@ fn fa4_load[
         mbark0.mbar[].expect_bytes(Int32(qk_bytes))
     # copy q0
     if e != 0:
-        q_tma_op.async_copy[eviction_policy = CacheEviction.EVICT_FIRST](
+        q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
             QType(q_smem),
             mbark0.mbar[],
             StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
@@ -180,7 +186,7 @@ fn fa4_load[
         if e != 0:
             mbark.mbar[].expect_bytes(Int32(qk_bytes))
         if e != 0:
-            q_tma_op.async_copy[eviction_policy = CacheEviction.EVICT_FIRST](
+            q_tma_op.async_copy[eviction_policy=CacheEviction.EVICT_FIRST](
                 QType(q_smem + q_elements * qk_stage),
                 mbark.mbar[],
                 StaticTuple[UInt32, 3](UInt32(d_idx), q_head_idx, q_gmem_row),
@@ -228,8 +234,8 @@ fn fa4_load[
         comptime if check_mask:
             if (
                 mask.status(
-                    Index[dtype = DType.int32](Int(score_row), Int(kv_row)),
-                    Index[dtype = DType.int32](BM, BN),
+                    Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
+                    Index[dtype=DType.int32](BM, BN),
                 )
                 == TileMaskStatus.FULL_MASK
             ):

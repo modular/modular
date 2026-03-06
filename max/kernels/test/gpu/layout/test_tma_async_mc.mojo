@@ -22,9 +22,15 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    _idx_product,
+    create_tma_tile,
+)
 from std.memory import stack_allocation
 from std.testing import assert_equal
+from std.utils.index import Index, IndexList
 
 
 # Test loading a single 2d tile.
@@ -32,17 +38,20 @@ from std.testing import assert_equal
 fn test_tma_mcast_load_kernel[
     dtype: DType,
     layout: Layout,
-    tile_layout: Layout,
+    tile_rank: Int,
+    tile_shape: IndexList[tile_rank],
     thread_layout: Layout,
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
 ](
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tile_layout],
+    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape],
 ):
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
-    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_shape[0]
+    comptime tileN = tile_shape[1]
+    comptime expected_bytes = _idx_product[tile_rank, tile_shape]() * size_of[
+        dtype
+    ]()
 
     var block_rank = block_rank_in_cluster()
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
@@ -52,12 +61,13 @@ fn test_tma_mcast_load_kernel[
 
     var tma_multicast_mask = (1 << CLUSTER_N) - 1
 
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = (
         LayoutTensor[
             dtype,
-            tile_layout,
+            __tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -69,7 +79,7 @@ fn test_tma_mcast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -129,11 +139,15 @@ def test_tma_multicast_load_row_major[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
+    comptime __tileM = type_of(tma_tensor).tile_shape[0]
+    comptime __tileN = type_of(tma_tensor).tile_shape[1]
+    comptime __thread_layout = Layout.row_major(__tileM, __tileN)
     comptime kernel = test_tma_mcast_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        type_of(tma_tensor).layout,  # smem layout
-        type_of(tma_tensor).layout,  # thread layout
+        type_of(tma_tensor).rank,  # tile rank
+        type_of(tma_tensor).tile_shape,  # tile shape
+        __thread_layout,  # thread layout
         UInt32(CLUSTER_M),
         UInt32(CLUSTER_N),
     ]
@@ -170,10 +184,11 @@ fn test_tma_sliced_multicast_load_kernel[
     thread_layout: Layout,
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
-    tma_layout: Layout,
+    tma_rank: Int,
+    tma_tile_shape: IndexList[tma_rank],
 ](
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tma_layout],
+    tma_tile: TMATensorTile[dtype, tma_rank, tma_tile_shape],
 ):
     comptime tileM = tile_layout.shape[0].value()
     comptime tileN = tile_layout.shape[1].value()
@@ -192,7 +207,7 @@ fn test_tma_sliced_multicast_load_kernel[
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]
         .stack_allocation()
@@ -204,7 +219,7 @@ fn test_tma_sliced_multicast_load_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -279,7 +294,8 @@ def test_tma_sliced_multicast_load_row_major[
         Layout.row_major(tileM, tileN),
         UInt32(CLUSTER_M),
         UInt32(CLUSTER_N),
-        type_of(tma_tensor).layout,  # smem layout
+        type_of(tma_tensor).rank,  # tma rank
+        type_of(tma_tensor).tile_shape,  # tma tile shape
     ]
 
     ctx.enqueue_function[kernel, kernel](
@@ -309,46 +325,46 @@ def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_multicast_load_row_major")
         test_tma_multicast_load_row_major[
-            src_layout = Layout.row_major(8, 8),
-            tile_layout = Layout.row_major(4, 8),
-            dst_layout = Layout.row_major(8, 16),
+            src_layout=Layout.row_major(8, 8),
+            tile_layout=Layout.row_major(4, 8),
+            dst_layout=Layout.row_major(8, 16),
             CLUSTER_M=1,
             CLUSTER_N=2,
         ](ctx)
         test_tma_multicast_load_row_major[
-            src_layout = Layout.row_major(16, 8),
-            tile_layout = Layout.row_major(4, 8),
-            dst_layout = Layout.row_major(16, 16),
+            src_layout=Layout.row_major(16, 8),
+            tile_layout=Layout.row_major(4, 8),
+            dst_layout=Layout.row_major(16, 16),
             CLUSTER_M=2,
             CLUSTER_N=2,
         ](ctx)
 
         print("test_tma_sliced_multicast_load_row_major")
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(8, 16),
-            tile_layout = Layout.row_major(4, 16),
-            dst_layout = Layout.row_major(8, 32),
+            src_layout=Layout.row_major(8, 16),
+            tile_layout=Layout.row_major(4, 16),
+            dst_layout=Layout.row_major(8, 32),
             CLUSTER_M=1,
             CLUSTER_N=2,
         ](ctx)
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(16, 16),
-            tile_layout = Layout.row_major(4, 16),
-            dst_layout = Layout.row_major(16, 32),
+            src_layout=Layout.row_major(16, 16),
+            tile_layout=Layout.row_major(4, 16),
+            dst_layout=Layout.row_major(16, 32),
             CLUSTER_M=2,
             CLUSTER_N=2,
         ](ctx)
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(32, 16),
-            tile_layout = Layout.row_major(4, 16),
-            dst_layout = Layout.row_major(32, 32),
+            src_layout=Layout.row_major(32, 16),
+            tile_layout=Layout.row_major(4, 16),
+            dst_layout=Layout.row_major(32, 32),
             CLUSTER_M=4,
             CLUSTER_N=2,
         ](ctx)
         test_tma_sliced_multicast_load_row_major[
-            src_layout = Layout.row_major(32, 16),
-            tile_layout = Layout.row_major(16, 16),
-            dst_layout = Layout.row_major(32, 64),
+            src_layout=Layout.row_major(32, 16),
+            tile_layout=Layout.row_major(16, 16),
+            dst_layout=Layout.row_major(32, 64),
             CLUSTER_M=2,
             CLUSTER_N=4,
         ](ctx)

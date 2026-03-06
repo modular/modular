@@ -108,7 +108,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             a.dtype,
             Layout.row_major(kernel_rows * 4),
             MutAnyOrigin,
-            address_space = a.address_space,
+            address_space=a.address_space,
         ].stack_allocation()
         var a_base_ptr = a.ptr + (global_offset.M * K + global_k)
         var a_ptr = a_local.ptr if (

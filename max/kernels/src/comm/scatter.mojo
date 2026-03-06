@@ -63,7 +63,7 @@ fn scatter_pull_kernel[
     ngpus: Int,
     tp_size: Int,
     dp_size: Int,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -162,7 +162,7 @@ fn scatter[
             max_elems = chunk_num_elems[i]
 
     comptime BLOCK_SIZE = 256
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     var grid_size = ceildiv(ceildiv(max_elems, simd_width), BLOCK_SIZE)
 
     comptime kernel = scatter_pull_kernel[

@@ -79,8 +79,8 @@ fn named_barrier[
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
-        _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
-        _type = __mlir_type.i32,
+        _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
+        _type=__mlir_type.i32,
     ](to_i32(id), to_i32(num_threads))
 
 
@@ -137,7 +137,7 @@ fn barrier():
         llvm_intrinsic["llvm.air.wg.barrier", NoneType](Int32(2), Int32(1))
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -464,7 +464,7 @@ fn syncwarp(mask: Int = -1):
 
     comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.bar.warp.sync`(
-            __mlir_op.`index.casts`[_type = __mlir_type.i32](mask._mlir_value)
+            __mlir_op.`index.casts`[_type=__mlir_type.i32](mask._mlir_value)
         )
     elif is_amd_gpu():
         # In AMD GPU this is a nop (everything executed in lock-step).
@@ -477,7 +477,7 @@ fn syncwarp(mask: Int = -1):
         return
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -536,7 +536,7 @@ fn async_copy_arrive[
         _mbarrier_impl(address)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="async_copy_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -546,7 +546,7 @@ fn mbarrier_init[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
-        mut=True, type, _, address_space = AddressSpace.SHARED
+        mut=True, type, _, address_space=AddressSpace.SHARED
     ],
     num_threads: Int32,
 ):
@@ -569,7 +569,7 @@ fn mbarrier_init[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="mbarrier_init() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -579,7 +579,7 @@ fn mbarrier_arrive[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
-        mut=True, type, _, address_space = AddressSpace.SHARED
+        mut=True, type, _, address_space=AddressSpace.SHARED
     ]
 ) -> Int:
     """Signal thread arrival at a shared memory barrier.
@@ -604,7 +604,7 @@ fn mbarrier_arrive[
     else:
         return CompilationTarget.unsupported_target_error[
             Int,
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="mbarrier_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -614,7 +614,7 @@ fn mbarrier_test_wait[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
-        mut=True, type, _, address_space = AddressSpace.SHARED
+        mut=True, type, _, address_space=AddressSpace.SHARED
     ],
     state: Int,
 ) -> Bool:
@@ -641,7 +641,7 @@ fn mbarrier_test_wait[
     else:
         return CompilationTarget.unsupported_target_error[
             Bool,
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="mbarrier_test_wair() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -650,7 +650,7 @@ fn mbarrier_test_wait[
 fn mbarrier_arrive_expect_tx_shared[
     type: AnyType  # The type of the memory barrier
 ](
-    addr: UnsafePointer[mut=True, type, _, address_space = AddressSpace.SHARED],
+    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     tx_count: Int32,
 ):
     """Configure a shared memory barrier to expect additional async transactions.
@@ -667,12 +667,12 @@ fn mbarrier_arrive_expect_tx_shared[
     """
 
     comptime if is_nvidia_gpu():
-        _ = __mlir_op.`nvvm.mbarrier.arrive.expect_tx`[_type = __mlir_type.i64](
+        _ = __mlir_op.`nvvm.mbarrier.arrive.expect_tx`[_type=__mlir_type.i64](
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_shared() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -683,7 +683,7 @@ fn mbarrier_arrive_expect_tx_relaxed[
     scope: Scope = Scope.BLOCK,
     space: Scope = Scope.BLOCK,
 ](
-    addr: UnsafePointer[mut=True, type, _, address_space = AddressSpace.SHARED],
+    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     tx_count: Int32,
 ) -> UInt64:
     """Configure a shared memory barrier to expect additional async transactions.
@@ -737,7 +737,7 @@ fn mbarrier_arrive_expect_tx_relaxed[
     else:
         return CompilationTarget.unsupported_target_error[
             UInt64,
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_relaxed() is only supported when targeting NVIDIA GPUs",
         ]()
     return 0
@@ -747,7 +747,7 @@ fn mbarrier_arrive_expect_tx_relaxed[
 fn mbarrier_try_wait_parity_shared[
     type: AnyType  # The type of the memory barrier
 ](
-    addr: UnsafePointer[mut=True, type, _, address_space = AddressSpace.SHARED],
+    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     phase: Int32,
     ticks: Int32,
 ):
@@ -771,7 +771,7 @@ fn mbarrier_try_wait_parity_shared[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="mbarrier_try_wait_parity_shared() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -781,7 +781,7 @@ fn umma_arrive_leader_cta[
     type: AnyType
 ](
     mbar_ptr: UnsafePointer[
-        mut=True, type, _, address_space = AddressSpace.SHARED
+        mut=True, type, _, address_space=AddressSpace.SHARED
     ]
 ):
     """Signal arrival at the barrier to the leader CTA of the pair.
@@ -824,7 +824,7 @@ fn cp_async_bulk_commit_group():
         __mlir_op.`nvvm.cp.async.bulk.commit.group`[_type=None]()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="cp_async_bulk_commit_group() is only supported when targeting NVIDIA GPUs",
         ]()
 
@@ -874,6 +874,6 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
 
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
             note="cp_async_bulk_wait_group() is only supported when targeting NVIDIA GPUs",
         ]()

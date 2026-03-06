@@ -112,7 +112,7 @@ struct AddOne:
         target: StaticString,
     ](
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         # See below for the rest
@@ -159,7 +159,7 @@ struct AddOne:
         target: StaticString,
     ](
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -314,9 +314,9 @@ struct VectorAddition:
     fn execute[
         target: StaticString,
     ](
-        output: OutputTensor[rank=1],
-        lhs: InputTensor[dtype = output.dtype, rank = output.rank],
-        rhs: InputTensor[dtype = output.dtype, rank = output.rank],
+        output: OutputTensor[rank=1, ...],
+        lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime if target == "cpu":
@@ -339,9 +339,9 @@ The `_vector_addition_gpu()` function looks like this:
 
 ```mojo title="kernels/vector_addition.mojo"
 fn _vector_addition_gpu(
-    output: ManagedTensorSlice[mut=True],
-    lhs: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
-    rhs: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
+    output: ManagedTensorSlice[mut=True, ...],
+    lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     ctx: DeviceContextPtr,
 ) raises:
     alias BLOCK_SIZE = 16

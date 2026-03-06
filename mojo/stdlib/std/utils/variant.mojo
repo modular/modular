@@ -326,8 +326,8 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         comptime assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.bitcast`[
-            _type = UnsafePointer[T, origin_of(self)]._mlir_type,
-            index = idx._mlir_value,
+            _type=UnsafePointer[T, origin_of(self)]._mlir_type,
+            index=idx._mlir_value,
         ](ptr)
         return discr_ptr
 
@@ -335,7 +335,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     fn _get_discr(ref self) -> ref[self] UInt8:
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
-            _type = __mlir_type.`!kgen.pointer<scalar<ui8>>`
+            _type=__mlir_type.`!kgen.pointer<scalar<ui8>>`
         ](ptr)
         return UnsafePointer[mut=True](discr_ptr).bitcast[UInt8]()[]
 

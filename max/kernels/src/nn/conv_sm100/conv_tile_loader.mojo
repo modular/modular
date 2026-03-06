@@ -23,13 +23,15 @@ from std.gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
 from layout.tile_tensor import TileTensor, TensorLayout
+from std.utils.index import IndexList
 
 
 struct TileLoaderTMAIm2col[
     tma_origin: ImmutOrigin,
     dtype: DType,
-    gmem_layout: Layout,
-    desc_layout: Layout,
+    tma_rank: Int,
+    tile_shape: IndexList[tma_rank],
+    desc_shape: IndexList[tma_rank],
     /,
     *,
     cta_group: Int,
@@ -44,13 +46,14 @@ struct TileLoaderTMAIm2col[
     Parameters:
         tma_origin: Origin of the TMA descriptor pointer.
         dtype: Element data type.
-        gmem_layout: Global memory layout of activation tensor (NHWC).
-        desc_layout: TMA descriptor layout.
+        tma_rank: Rank of the TMA tile/descriptor shapes.
+        tile_shape: TMA tile shape as IndexList.
+        desc_shape: TMA descriptor shape as IndexList.
         cta_group: CTA group size (1 or 2 for SM100).
     """
 
     comptime TmaOp = TMATensorTileIm2col[
-        Self.dtype, Self.gmem_layout, Self.desc_layout
+        Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
@@ -73,7 +76,7 @@ struct TileLoaderTMAIm2col[
             Self.dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=alignment,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
@@ -104,7 +107,7 @@ struct TileLoaderTMAIm2col[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: UInt,

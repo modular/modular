@@ -384,7 +384,7 @@ fn bench_dispatch[
 
     comptime if token_dtype == DType.bfloat16:
         comptime token_fmt_type = BF16TokenFormat[
-            output_layout = Layout(), hidden_size, top_k, gpu_alignment
+            output_layout=Layout(), hidden_size, top_k, gpu_alignment
         ]
 
         var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
@@ -407,8 +407,8 @@ fn bench_dispatch[
         comptime token_fmt_type = BlockwiseFP8TokenFormat[
             fp8_dtype=token_dtype,
             scales_dtype=scales_dtype,
-            output_layout = Layout(),
-            scales_layout = Layout(),
+            output_layout=Layout(),
+            scales_layout=Layout(),
             hidden_size,
             top_k,
             gpu_alignment,
@@ -460,7 +460,7 @@ def main() raises:
             scales_dtype=scales_dtype,
             hidden_size=hidden_size,
             top_k=top_k,
-            n_experts = min(num_gpus * 32, n_experts),
+            n_experts=min(num_gpus * 32, n_experts),
             n_ranks=n_ranks,
             n_tokens_per_rank=n_tokens_per_rank,
         ](shmem_ctx.get_device_context(), m, Int(mype_node))

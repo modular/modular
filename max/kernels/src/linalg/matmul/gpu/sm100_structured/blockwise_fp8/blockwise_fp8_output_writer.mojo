@@ -37,8 +37,8 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import row_major
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
@@ -55,7 +55,7 @@ from ..structured_kernels.epilogue_components import (
     tma_wait_pipelined,
 )
 from structured_kernels.barriers import WarpGroupBarrier
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 
@@ -150,8 +150,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn write[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -164,11 +165,13 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM."""
-        Self._write_impl[c_layout, c_desc_layout, cluster_size](
+        Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
 
@@ -177,8 +180,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn _write_impl[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -191,7 +195,9 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Internal implementation for writing accumulated register tiles."""
@@ -242,7 +248,7 @@ struct BlockwiseFP8TileWriter[
                 Self.stageN,  # stage_contiguous_size
                 Self.c_swizzle,
             ]
-            StoreExec.execute[c_layout, c_desc_layout](
+            StoreExec.execute[c_rank, c_tile_shape, c_desc_shape](
                 c_smem_tile,
                 store_coords,
                 c_tma_op,
@@ -251,8 +257,9 @@ struct BlockwiseFP8TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                c_layout,
-                c_desc_layout,
+                c_rank,
+                c_tile_shape,
+                c_desc_shape,
                 stage == Self.num_stages - 1,
             ](c_tma_op)
 
@@ -357,7 +364,7 @@ struct BlockwiseFP8TileWriter[
                 Self.data_paths, Self.stageN
             ](0, 0)
             stsm_helper[
-                swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
+                swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
             ](upper_frag.cast[Self.c_type](), c_smem_warp_tile_upper)
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
@@ -366,7 +373,7 @@ struct BlockwiseFP8TileWriter[
 
             comptime if Self.is_lower_frag_required:
                 stsm_helper[
-                    swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
+                    swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
                 ](lower_frag.cast[Self.c_type](), c_smem_warp_tile_lower)
 
             named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
@@ -439,7 +446,7 @@ struct BlockwiseFP8TileWriter[
             comptime for j in range(zipped.shape[1][0].value()):
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
-                    element_type = DType.uint32,
+                    element_type=DType.uint32,
                 ](Int(thread_idx.x), j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
@@ -453,9 +460,9 @@ struct BlockwiseFP8TileWriter[
                 ) * UInt32(
                     simd_size
                 )
-                var cmem_crd = split_layout_new.idx2crd[
-                    out_dtype = DType.uint32
-                ](Int(linear_idx))
+                var cmem_crd = split_layout_new.idx2crd[out_dtype=DType.uint32](
+                    Int(linear_idx)
+                )
                 var local_i = cmem_crd[0].value()
                 var local_j = cmem_crd[1].value()
                 var coord_m = m_abs + UInt32(i * TMA_BM)

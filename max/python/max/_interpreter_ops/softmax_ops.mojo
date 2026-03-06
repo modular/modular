@@ -21,8 +21,7 @@ from std.sys.info import has_accelerator, simd_width_of
 from std.math import exp, log
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
-from layout import Idx, TileTensor
-from layout._layout import row_major
+from layout import Idx, TileTensor, row_major
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
 from std.runtime.asyncrt import DeviceContextPtr
 

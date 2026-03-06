@@ -26,8 +26,13 @@ from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
 from std.testing import assert_almost_equal, assert_equal
@@ -204,7 +209,7 @@ fn bench_topk_batched[
             topk_idxs_cpu_ptr, row_major((Idx(batch_size), Idx(K)))
         )
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_buffer,
             max_k,
             rank - 1,
@@ -375,7 +380,7 @@ fn bench_topk_multi_rank[
             topk_idxs_cpu_ptr, row_major(Coord(out_idxs_shape))
         )
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_buffer,
             max_k,
             rank - 1,

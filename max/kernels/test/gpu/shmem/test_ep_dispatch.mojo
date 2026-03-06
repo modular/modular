@@ -105,7 +105,7 @@ fn test_dispatch[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
     comptime token_fmt_type = BF16TokenFormat[
-        output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        output_layout=Layout(), hidden_size, top_k, gpu_alignment
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime n_local_experts = n_experts // n_ranks
@@ -523,7 +523,7 @@ def main() raises:
             test_dispatch[
                 hidden_size=3584,  # equivalent to send 7168 FP8s.
                 top_k=8,
-                n_experts = min(num_gpus * 32, 256),
+                n_experts=min(num_gpus * 32, 256),
                 n_ranks=num_gpus,
                 n_tokens_per_rank=128,
             ](shmem_ctx.get_device_context(), Int(mype_node))

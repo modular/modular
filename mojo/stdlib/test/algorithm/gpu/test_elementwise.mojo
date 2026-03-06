@@ -47,7 +47,7 @@ fn _strided_index[
 
 
 fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_host_stack = InlineArray[Scalar[dtype], 16](fill=0)
     var in_host = Span(in_host_stack)
@@ -126,7 +126,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
     var in_host_stack = InlineArray[Scalar[dtype], 9](fill=0)
     var in_host = Span(in_host_stack)
     var out_host_stack = InlineArray[Scalar[dtype], 9](fill=0)
@@ -195,7 +195,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
     var in_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
     var in_host = Span(in_host_stack)
     var out_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
@@ -306,7 +306,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
 def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     """Test elementwise operations with zero dimension in 3D tensor."""
     comptime dtype = DType.float32
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var input_device_ptr = ctx.enqueue_create_buffer[dtype](1)
     var output_device_ptr = ctx.enqueue_create_buffer[dtype](1)

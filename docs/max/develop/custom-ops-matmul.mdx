@@ -448,13 +448,13 @@ var a_smem = LayoutTensor[
     dtype,
     Layout.row_major(BM, BK),
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ].stack_allocation()
 var b_smem = LayoutTensor[
     dtype,
     Layout.row_major(BK, BN),
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ].stack_allocation()
 
 var dst_reg: c.element_type = 0
@@ -760,10 +760,10 @@ fn tensor_core_matrix_multiplication[
         A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
         B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
         )
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             B_sram_tile.vectorize[1, 4](), B_dram_tile.vectorize[1, 4]()
         )
 

@@ -396,7 +396,7 @@ def main() raises:
             MMA_K_SWAPAB=16,
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
-            elementwise_compute_lambda_fn = Optional[
+            elementwise_compute_lambda_fn=Optional[
                 elementwise_compute_lambda_type
             ](coord_lambda),
             use_vendor_reference=True,
@@ -422,7 +422,7 @@ def main() raises:
             MMA_K_SWAPAB=16,
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
-            elementwise_compute_lambda_fn = Optional[
+            elementwise_compute_lambda_fn=Optional[
                 elementwise_compute_lambda_type
             ](coord_lambda),
             use_vendor_reference=True,
