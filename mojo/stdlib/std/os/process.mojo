@@ -124,10 +124,14 @@ struct Pipe:
 
         if in_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[0]):
+                _ = close(pipe_fds[0])
+                _ = close(pipe_fds[1])
                 raise Error("Failed to configure input pipe close on exec")
 
         if out_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[1]):
+                _ = close(pipe_fds[0])
+                _ = close(pipe_fds[1])
                 raise Error("Failed to configure output pipe close on exec")
 
         self.fd_in = FileDescriptor(Int(pipe_fds[0]))
