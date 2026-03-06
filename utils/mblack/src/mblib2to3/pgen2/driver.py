@@ -176,6 +176,38 @@ def _join_string_continuation(prev: str, line: str) -> str | None:
     return None
 
 
+# Matches a line whose first non-whitespace token is a dot followed by an
+# identifier (method chain).  The identifier requirement excludes ``...``
+# (Mojo's ellipsis / pass equivalent).
+_LEADING_DOT = re.compile(r"^\s+\.[A-Za-z_]")
+
+
+def _join_dot_continuation(prev: str, line: str) -> str | None:
+    """Join a dot-prefixed method call from a continuation line.
+
+    In Mojo, method chains can start on a further-indented continuation
+    line::
+
+        var text = String("hello")
+               .upper()
+
+    The lib2to3-based parser requires them on the same logical line.
+    """
+    if not _LEADING_DOT.match(line):
+        return None
+    cur_indent = len(line) - len(line.lstrip())
+    prev_indent = len(prev) - len(prev.lstrip())
+    if (
+        prev
+        and cur_indent > prev_indent
+        and not prev.endswith(":")
+        and not prev.endswith("\\")
+        and not prev.lstrip().startswith("#")
+    ):
+        return prev + line.lstrip()
+    return None
+
+
 # Normalizers are applied in order; each receives the previous result line
 # (with any trailing comment already stripped) and the current raw line,
 # and returns a replacement for the previous line or None to skip.
@@ -184,6 +216,7 @@ _MOJO_LINE_NORMALIZERS = [
     _join_multiline_ternary,
     _join_trailing_operator,
     _join_string_continuation,
+    _join_dot_continuation,
 ]
 
 # Matches the trailing comment portion of a line: optional whitespace then #
