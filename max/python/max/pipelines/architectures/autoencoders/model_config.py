@@ -64,64 +64,6 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
         return AutoencoderKLConfig(**init_dict)
 
 
-class AutoencoderKLLTX2AudioConfig(AutoencoderKLConfigBase):
-    base_channels: int = 128
-    in_channels: int = 2
-    output_channels: int = 2
-    ch_mult: tuple[int, ...] = (1, 2, 4)
-    num_res_blocks: int = 2
-    attn_resolutions: list[int] | None = None
-    resolution: int = 256
-    latent_channels: int = 8
-    norm_type: str = "pixel"
-    causality_axis: str | None = "height"
-    dropout: float = 0.0
-    mid_block_add_attention: bool = False
-    sample_rate: int = 16000
-    mel_hop_length: int = 160
-    is_causal: bool = True
-    mel_bins: int | None = 64
-    double_z: bool = True
-
-    @staticmethod
-    def generate(
-        config_dict: dict[str, Any],
-        encoding: SupportedEncoding,
-        devices: list[Device],
-    ) -> "AutoencoderKLLTX2AudioConfig":
-        init_dict = {
-            key: value
-            for key, value in config_dict.items()
-            if key in AutoencoderKLLTX2AudioConfig.__annotations__
-        }
-        # Add LTX-2-specific parameters if present
-        ltx2_params = [
-            "base_channels",
-            "ch_mult",
-            "num_res_blocks",
-            "attn_resolutions",
-            "resolution",
-            "norm_type",
-            "causality_axis",
-            "dropout",
-            "sample_rate",
-            "mel_hop_length",
-            "is_causal",
-            "mel_bins",
-            "double_z",
-        ]
-        for param in ltx2_params:
-            if param in config_dict:
-                init_dict[param] = config_dict[param]
-        init_dict.update(
-            {
-                "dtype": supported_encoding_dtype(encoding),
-                "device": DeviceRef.from_device(devices[0]),
-            }
-        )
-        return AutoencoderKLLTX2AudioConfig(**init_dict)
-
-
 class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
     patch_size: tuple[int, int] = (2, 2)
     batch_norm_eps: float = 1e-4
@@ -161,3 +103,62 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
             }
         )
         return AutoencoderKLFlux2Config(**init_dict)
+
+
+class AutoencoderKLLTX2AudioConfig(AutoencoderKLConfigBase):
+    base_channels: int = 128
+    in_channels: int = 2
+    output_channels: int = 2
+    ch_mult: tuple[int, ...] = (1, 2, 4)
+    num_res_blocks: int = 2
+    attn_resolutions: list[int] | None = None
+    resolution: int = 256
+    latent_channels: int = 8
+    norm_type: str = "pixel"
+    causality_axis: str | None = "height"
+    dropout: float = 0.0
+    mid_block_add_attention: bool = False
+    sample_rate: int = 16000
+    mel_hop_length: int = 160
+    is_causal: bool = True
+    mel_bins: int | None = 64
+    double_z: bool = True
+
+    @staticmethod
+    def generate(
+        config_dict: dict[str, Any],
+        encoding: SupportedEncoding,
+        devices: list[Device],
+    ) -> "AutoencoderKLLTX2AudioConfig":
+        init_dict = {
+            key: value
+            for key, value in config_dict.items()
+            if key in AutoencoderKLConfigBase.__annotations__
+        }
+        # Add LTX-2-specific parameters if present
+        ltx2_params = [
+            "base_channels",
+            "output_channels",
+            "ch_mult",
+            "num_res_blocks",
+            "attn_resolutions",
+            "resolution",
+            "norm_type",
+            "causality_axis",
+            "dropout",
+            "sample_rate",
+            "mel_hop_length",
+            "is_causal",
+            "mel_bins",
+            "double_z",
+        ]
+        for param in ltx2_params:
+            if param in config_dict:
+                init_dict[param] = config_dict[param]
+        init_dict.update(
+            {
+                "dtype": supported_encoding_dtype(encoding),
+                "device": DeviceRef.from_device(devices[0]),
+            }
+        )
+        return AutoencoderKLLTX2AudioConfig(**init_dict)
