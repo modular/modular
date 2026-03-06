@@ -40,7 +40,7 @@ from max.pipelines.lib.interfaces import (
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.profiler import traced
 
-from ..sampling import token_sampler
+from ..sampling import PenaltyInputs, SamplerInputs, token_sampler
 from .base import SpeculativeDecodingPipelineBase
 from .eagle_hidden_state_graphs import build_gather_graph
 
@@ -124,10 +124,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         Returns:
             Buffer of sampled tokens with shape [batch_size, 1]
         """
-        top_k, max_k, temperature, top_p, min_top_p, seed = (
-            self._create_sampling_parameters(
-                context_batch, self.target_devices[0]
-            )
+        sampler_inputs = SamplerInputs.create(
+            context_batch, self.target_devices[0]
         )
 
         prev_tokens = Buffer.zeros(
@@ -144,23 +142,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         graph_inputs: list[Buffer] = [
             target_outputs.logits,
             prev_tokens,
-            top_k,
-            max_k,
-            temperature,
-            top_p,
-            min_top_p,
-            seed,
+            *sampler_inputs.as_list(),
             prev_logits,
         ]
 
-        penalty_inputs = self._create_penalty_inputs(
-            context_batch, self.target_devices[0]
+        need_penalties = any(
+            context.sampling_params.needs_penalties for context in context_batch
         )
-        if penalty_inputs is not None:
-            freq_data, freq_pen, pres_pen, rep_pen = penalty_inputs
-            for fd in freq_data:
-                graph_inputs.extend([fd.data, fd.offsets])
-            graph_inputs.extend([freq_pen, pres_pen, rep_pen])
+        if need_penalties and self.pipeline_config.sampling.enable_penalties:
+            penalty_inputs = PenaltyInputs.create(
+                context_batch, self.target_devices[0]
+            )
+            graph_inputs.extend(penalty_inputs.as_list())
 
         sampled_tokens, _, _ = self._target_sampler(*graph_inputs)[:3]
         assert isinstance(sampled_tokens, Buffer)
@@ -514,23 +507,17 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> tuple[int, Buffer, Buffer, Buffer | None, Buffer | list[Buffer]]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
-        top_k, max_k, temperature, top_p, min_top_p, seed = (
-            self._create_sampling_parameters(batch, self.draft_devices[0])
-        )
+        sampler_inputs = SamplerInputs.create(batch, self.draft_devices[0])
 
         # Build penalty inputs once for the entire draft generation loop
-        penalty_inputs = self._create_penalty_inputs(
-            batch, self.draft_devices[0], num_steps=num_steps
+        need_penalties = any(
+            context.sampling_params.needs_penalties for context in batch
         )
-        penalty_kwargs: dict[str, Any] = {}
-        if penalty_inputs is not None:
-            freq_data, freq_pen, pres_pen, rep_pen = penalty_inputs
-            penalty_kwargs = {
-                "frequency_data": freq_data,
-                "frequency_penalty": freq_pen,
-                "presence_penalty": pres_pen,
-                "repetition_penalty": rep_pen,
-            }
+        penalty_inputs: PenaltyInputs | None = None
+        if need_penalties and self.pipeline_config.sampling.enable_penalties:
+            penalty_inputs = PenaltyInputs.create(
+                batch, self.draft_devices[0], num_steps=num_steps
+            )
 
         generated_tokens = Buffer.zeros(
             (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
@@ -567,13 +554,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     model_outputs,
                     generated_tokens,
                     generated_logits,
-                    top_k,
-                    max_k,
-                    temperature,
-                    top_p,
-                    min_top_p,
-                    seed,
-                    **penalty_kwargs,
+                    sampler_inputs=sampler_inputs,
+                    penalty_inputs=penalty_inputs,
                 )
             )
 
@@ -913,6 +895,17 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         context_batch = inputs.flat_batch
         replica_batches = inputs.batches
         data_parallel_splits_np = compute_data_parallel_splits(replica_batches)
+
+        need_penalties = any(
+            context.sampling_params.needs_penalties for context in context_batch
+        )
+        if (
+            need_penalties
+            and not self.pipeline_config.sampling.enable_penalties
+        ):
+            logger.warning(
+                "Penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
+            )
 
         # If any request is in prefill (generated_length == 0), route entire batch
         # through context encoding path

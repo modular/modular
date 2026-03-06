@@ -20,10 +20,16 @@ from .sampling import (
     typical_acceptance_sampler,
 )
 from .sampling_config import SamplingConfig
-from .sampling_logits_processor import FusedSamplingProcessor
+from .sampling_logits_processor import (
+    FusedSamplingProcessor,
+    PenaltyInputs,
+    SamplerInputs,
+)
 
 __all__ = [
     "FusedSamplingProcessor",
+    "PenaltyInputs",
+    "SamplerInputs",
     "SamplingConfig",
     "apply_logits_processors",
     "greedy_acceptance_sampler",
