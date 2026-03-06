@@ -148,12 +148,13 @@ class PostprocessAndDecode(Module[..., Tensor]):
         latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
 
         decoded = self.decoder(latents, None)
-        decoded = F.cast(decoded, DType.float32)
         decoded = F.permute(
             decoded, (0, 2, 3, 1)
         )  # (B, C, H, W) -> (B, H, W, C)
         # Denormalize [-1, 1] -> [0, 1], scale to [0, 255], cast to uint8.
-        # Doing this on GPU shrinks the PCIe transfer 4x (float32 -> uint8).
+        # Keeping in the decoder's native dtype (bfloat16/float16): all values
+        # in [0, 255] are exactly representable, and avoiding the float32 upcast
+        # reduces GPU compute and memory bandwidth for the post-processing ops.
         decoded = decoded * 0.5 + 0.5
         decoded = F.max(decoded, 0.0)
         decoded = F.min(decoded, 1.0)
