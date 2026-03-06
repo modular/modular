@@ -357,7 +357,7 @@ DEFAULT_PIXEL_GENERATION_PROMPTS = [
     "Dramatic news broadcast scene in a Teahupoʻo wave's where a cow surfing, mimicking pro surf rider poses. Yogis laugh and take pictures. The news banner reads: 'COW win Olympics!!'",
     "Full body shot of a handsome tattooed short dark haired man wearing a jean and a white tee-shirt in 'Chiaroscuro Chronicles', lost in a captivating, slate gray monochromatic realm of masterful lighting and careful shading, emphasizing the emotional depth of the narrative, abrasive authenticity, ambient occlusion",
     "A beautiful woman in a red dress walking down a street",
-    'The image show the fourth elements, each one in a part of the picture, first part is at top left and show a splashing multicolor water text with many water reflections, the text is made of water, the water word is "WATER", the background is splashing water, the second part of the image is a top right and show a soil rounded text, the word made of soil is "EARTH", the background is planet earth, the third part of the image is at bottom left and show a cloud multicolor rounded text, the word is "AIR" made of colorfull cloud the background is a sunset, and the last part of the image in the bottom right shows a red fire rounded text made of lava, the colorfull big word made of fire is "FIRE", the background is the closeup eruptive sun',
+    'Four elements split into quadrants: top-left shows splashing water forming the word "WATER" on a water background, top-right shows soil forming "EARTH" with planet earth behind, bottom-left shows colorful clouds forming "AIR" at sunset, bottom-right shows fiery lava forming "FIRE" against the sun',
 ]
 
 DEFAULT_PIXEL_GENERATION = [
