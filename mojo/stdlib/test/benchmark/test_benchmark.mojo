@@ -21,9 +21,10 @@ from std.benchmark.bencher import (
     BenchId,
     BenchMetric,
     Format,
+    Mode,
     ThroughputMeasure,
 )
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from test_utils import check_write_to
 
 
@@ -315,6 +316,34 @@ def test_bench_function_no_arg_unified() raises:
 
     bench.bench_function(my_func, BenchId("test_noarg_unified"))
     assert_true(count > 0)
+
+
+def test_mode_equatable() raises:
+    assert_true(Mode.Benchmark == Mode.Benchmark)
+    assert_true(Mode.Test == Mode.Test)
+    assert_false(Mode.Benchmark == Mode.Test)
+    assert_true(Mode.Benchmark != Mode.Test)
+    assert_false(Mode.Benchmark != Mode.Benchmark)
+
+
+def test_mode_write_to() raises:
+    var s = String()
+    Mode.Benchmark.write_to(s)
+    assert_equal(s, "Benchmark")
+
+    s = String()
+    Mode.Test.write_to(s)
+    assert_equal(s, "Test")
+
+
+def test_mode_write_repr_to() raises:
+    var s = String()
+    Mode.Benchmark.write_repr_to(s)
+    assert_equal(s, "Mode.Benchmark")
+
+    s = String()
+    Mode.Test.write_repr_to(s)
+    assert_equal(s, "Mode.Test")
 
 
 def main() raises:
