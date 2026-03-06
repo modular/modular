@@ -30,11 +30,14 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import B200, H100
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
     TileTensor,
     coord_to_index_list,
+    row_major,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from std.logger import Logger
@@ -1399,17 +1402,13 @@ fn blockwise_scaled_fp8_with_epilogue[
                 simd_width_of[c_type, target=get_gpu_target()]()
             )
 
-            var c_ndbuf = NDBuffer[c_type, 2](
-                c.ptr, IndexList[2](Int(c.dim[0]()), Int(c.dim[1]()))
-            )
-
             @parameter
-            @__copy_capture(c_ndbuf)
+            @__copy_capture(c)
             fn epilogue_wrapper[
                 simd_width: Int, rank: Int, alignment: Int = 1
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
-                var c_val = c_ndbuf.load[width=simd_width](c_coord)
+                var c_val = c.load_linear[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
                     c_coord, c_val
                 )
@@ -1436,13 +1435,10 @@ fn blockwise_scaled_fp8_with_epilogue[
             var c_m = Int(c.dim[0]())
             var c_n = Int(c.dim[1]())
             var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_m * c_n)
-            var c_tmp_ndbuf = NDBuffer[c_type, 2, MutExternalOrigin](
-                rebind[UnsafePointer[Scalar[c_type], origin=MutExternalOrigin]](
-                    tmp_device_buffer.unsafe_ptr()
-                ),
-                IndexList[2](c_m, c_n),
+            var c_tmp = TileTensor(
+                tmp_device_buffer.unsafe_ptr(),
+                row_major(Coord(Idx(c_m), Idx(c_n))),
             )
-            var c_tmp = TileTensor(c_tmp_ndbuf)
 
             blockwise_scaled_fp8_with_epilogue[
                 transpose_b=transpose_b,
@@ -1453,6 +1449,8 @@ fn blockwise_scaled_fp8_with_epilogue[
             _ = tmp_device_buffer^
 
     else:
+        # TODO(MSTDL-2368): Migrate naive_blockwise_scaled_fp8_matmul to
+        # TileTensor.
         # For non B200 GPUs, we use the naive blockwise scaled fp8 matmul
         # which supports normal epilogue natively. Construct NDBuffers for
         # the NDBuffer overload.
