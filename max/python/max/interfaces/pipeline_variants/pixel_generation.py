@@ -34,7 +34,7 @@ from typing_extensions import TypeVar
 
 @dataclass(frozen=True)
 class PixelGenerationRequest:
-    """An immutable request for pixel (image) generation from a pipeline."""
+    """An immutable request for visual (image/video) generation from a pipeline."""
 
     request_id: RequestID = field()
     """A unique identifier for the request."""
@@ -81,7 +81,7 @@ class PixelGenerationRequest:
     """
     Number of denoising steps. More steps = higher quality but slower.
     """
-    num_images_per_prompt: int = 1
+    num_visuals_per_prompt: int = 1
     """
     Number of images/videos to generate per prompt.
     """
@@ -106,7 +106,7 @@ class PixelGenerationRequest:
         if self.num_inference_steps <= 0:
             raise ValueError("Number of inference steps must be positive.")
 
-        if self.num_images_per_prompt <= 0:
+        if self.num_visuals_per_prompt <= 0:
             raise ValueError("Number of images per prompt must be positive.")
 
 
@@ -149,8 +149,18 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def num_images_per_prompt(self) -> int:
+    def num_visuals_per_prompt(self) -> int:
         """Number of images to generate."""
+        ...
+
+    @property
+    def num_frames(self) -> int | None:
+        """Number of frames to generate for video output."""
+        ...
+
+    @property
+    def frame_rate(self) -> int | None:
+        """Frame rate for generated video."""
         ...
 
 
@@ -200,6 +210,11 @@ class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """The generated pixel data, if available."""
+
+    audio_data: npt.NDArray[np.float32] = msgspec.field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Optional generated audio data for video+audio pixel generation models."""
 
     @property
     def is_done(self) -> bool:
