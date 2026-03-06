@@ -45,7 +45,6 @@ from layout.tma_async import (
     RaggedTMA3DTile,
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
-    _split_last_layout,
     TMATensorTile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus

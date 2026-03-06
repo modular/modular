@@ -38,7 +38,7 @@ from std.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
-from layout.tma_async import _tma_desc_tile_layout
+from layout.tma_async import _tma_desc_tile_shape
 from std.memory import stack_allocation, LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -6437,15 +6437,16 @@ fn cp_async_k_major[
     comptime src_shape0 = src_layout.shape[0].value()
     comptime src_shape1 = src_layout.shape[1].value()
 
-    comptime desc_layout = _tma_desc_tile_layout[
+    comptime tile_desc_shape = _tma_desc_tile_shape[
         dtype,
         2,
         Index(src_shape0, src_shape1),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ]()
-    comptime desc_shape0 = desc_layout.shape[0].value()
-    comptime desc_shape1 = desc_layout.shape[1].value()
-    comptime desc_size = desc_layout.size()
+    comptime desc_shape0 = tile_desc_shape[0]
+    comptime desc_shape1 = tile_desc_shape[1]
+    comptime desc_size = desc_shape0 * desc_shape1
+    comptime desc_layout = Layout.row_major(desc_shape0, desc_shape1)
 
     comptime assert (
         desc_shape0 == src_shape0
