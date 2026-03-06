@@ -73,6 +73,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_pipelines_cli_lightweight",
+    size = "large",
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
         "//max/python/max/entrypoints:pipelines",
