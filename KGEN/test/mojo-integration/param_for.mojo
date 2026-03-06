@@ -12,14 +12,14 @@ fn test_for_list():
 
     comptime for i in [1, 2, 3]:
         cnt += i
-    debug_assert(cnt == 6)
+    assert cnt == 6
 
     # Test for floating point numbers.
     fp_cnt = 0.0
 
     comptime for i in [1.0, 2.0, 3.0]:
         fp_cnt += i
-    debug_assert(fp_cnt == 6.0)
+    assert fp_cnt == 6.0
 
     # Test for strings
     concated = ""
@@ -27,7 +27,7 @@ fn test_for_list():
     # MOCO-2091
     comptime for str in ["a", "b", "c"]:
         concated += str
-    debug_assert(concated == "abc")
+    assert concated == "abc"
 
 
 # derived from https://github.com/modular/modular/issues/4566
@@ -36,7 +36,7 @@ fn test_critical_edge():
 
     comptime for i in range(10):
         a = i  # Compiler hung here
-    debug_assert(a == 9)
+    assert a == 9
 
 
 # derived from https://github.com/modular/modular/issues/4836
@@ -47,13 +47,13 @@ fn test_else_block():
         pass
     else:
         a = 1  # This should execute.
-    debug_assert(a == 1)
+    assert a == 1
 
     comptime for i in range(10):
         if i == 4:
             break
     else:
-        debug_assert(False)  # This should NOT execute.
+        assert False  # This should NOT execute.
 
 
 fn test_tuple_unpack():
@@ -65,12 +65,12 @@ fn test_tuple_unpack():
 
     # Additional loop with `i` to make sure the name shadowing works
     comptime for i in range(0, 1):
-        debug_assert(i == 0)
+        assert i == 0
 
         comptime for _, i, (j, k) in zip(lst0, lst1, lst2):
             ret = ret * 1000 + i * 100 + j * 10 + k
 
-    debug_assert(ret == 123456)
+    assert ret == 123456
 
 
 fn main():
