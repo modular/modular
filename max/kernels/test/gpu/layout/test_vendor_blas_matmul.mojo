@@ -19,7 +19,9 @@ from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
 
@@ -82,9 +84,24 @@ fn test_matmul[
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    var c_tensor_ref = from_ndbuffer_row_major(c_device_ref_nd)
-    var a_tensor = from_ndbuffer_row_major(a_device_nd)
-    var b_tensor = from_ndbuffer_row_major(b_device_nd)
+    from std.memory import UnsafePointer
+
+    var c_ref_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(N), Idx(K))),
+    )
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16
@@ -92,16 +109,16 @@ fn test_matmul[
         DType.float32,
         input_type,
         input_type,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
         transpose_b=True,
     ]
     ctx.enqueue_function_experimental[kernel](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,

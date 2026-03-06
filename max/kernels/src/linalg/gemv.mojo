@@ -52,6 +52,7 @@ from layout import (
     RuntimeTuple,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_tensor import TileTensor
 from std.logger import Logger
 from std.memory import LegacyUnsafePointer, stack_allocation
 
@@ -711,21 +712,25 @@ fn gemv_gpu_dispatch[
         logger.info("Executing: MATMUL_NAIVE kernel")
         comptime BLOCK_DIM = 16
 
+        var c_tt = TileTensor(c)
+        var a_tt = TileTensor(a)
+        var b_tt = TileTensor(b)
+
         comptime kernel = matmul_kernel_naive[
             c.type,
             a.type,
             b.type,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            type_of(c_tt).LayoutType,
+            type_of(a_tt).LayoutType,
+            type_of(b_tt).LayoutType,
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         ctx.enqueue_function[kernel, kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c_tt,
+            a_tt,
+            b_tt,
             m,
             n,
             k,

@@ -26,7 +26,6 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tile_tensor import TileTensor
 from std.logger import Logger
 
@@ -1624,26 +1623,26 @@ fn _vendor_blas_matmul_sm100[
             comptime BLOCK_DIM = 16
             logger.info("Executing Naive matmul kernel")
 
-            var c_layout_tensor = from_ndbuffer_row_major(c)
-            var a_layout_tensor = from_ndbuffer_row_major(a)
-            var b_layout_tensor = from_ndbuffer_row_major(b)
+            var c_tensor = TileTensor(c)
+            var a_tensor = TileTensor(a)
+            var b_tensor = TileTensor(b)
 
             comptime kernel = matmul_kernel_naive[
                 c_type,
                 a_type,
                 b_type,
-                c_layout_tensor.layout,
-                a_layout_tensor.layout,
-                b_layout_tensor.layout,
+                type_of(c_tensor).LayoutType,
+                type_of(a_tensor).LayoutType,
+                type_of(b_tensor).LayoutType,
                 BLOCK_DIM,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[kernel, kernel](
-                c_layout_tensor,
-                a_layout_tensor,
-                b_layout_tensor,
+                c_tensor,
+                a_tensor,
+                b_tensor,
                 m,
                 n,
                 k,

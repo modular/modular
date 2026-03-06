@@ -800,9 +800,12 @@ tiles), compute the layout internally.
     `blocked_product`)
 11. **Migrate conv2d** -- im2col TMA is a separate concern.
 12. **Extend `lt_to_tt` to arbitrary ranks** (currently only 2D)
-13. **Compiler bug**: `TileTensor(NDBuffer)` crashes when NDBuffer
+13. ~~**Compiler bug**: `TileTensor(NDBuffer)` crashes when NDBuffer
     DimList contains complex expressions like `ceildiv(...)`.
-    Workaround: create NDBuffer with `DimList.create_unknown[rank]()`.
+    Workaround: create NDBuffer with `DimList.create_unknown[rank]()`.~~
+    **Resolved**: Use `TileTensor(ptr, row_major(Coord(...)))` directly
+    instead of going through NDBuffer. This avoids the compiler bug entirely
+    and removes the NDBuffer dependency.
 
 ## Gotchas (continued)
 

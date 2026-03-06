@@ -17,8 +17,10 @@ from std.random import random_si64
 from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma, st_matrix
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, TileTensor
 from layout.runtime_layout import RuntimeLayout
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import LegacyUnsafePointer, stack_allocation
@@ -26,7 +28,6 @@ from std.memory import LegacyUnsafePointer, stack_allocation
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
 
@@ -216,27 +217,45 @@ fn check_stmatrix_gen[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = LayoutTensor[output_type, Layout.row_major(M, N)](
-        c_device_ref
-    )
-    var a_tensor = LayoutTensor[input_type, Layout.row_major(M, K)](a_device)
-    var b_tensor = LayoutTensor[input_type, Layout.row_major(K, N)](b_device)
-
     # Run naive matmul.
     comptime BLOCK_DIM = 16
+
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
+
+    var c_ref_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
+    )
+
     comptime kernel_naive_type = matmul_kernel_naive[
         output_type,
         input_type,
         input_type,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
     ctx.enqueue_function_experimental[kernel_naive_type](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,
@@ -317,36 +336,42 @@ fn check_stmatrix(
     # Run naive matmul.
     comptime BLOCK_DIM = 16
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
 
-    var c_tensor_ref = LayoutTensor[DType.float32, layout](
-        c_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    var c_ref_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
     )
-
-    var a_tensor = LayoutTensor[DType.float32, layout](
-        a_device,
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-
-    var b_tensor = LayoutTensor[DType.float32, layout](
-        b_device,
-        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
     )
 
     comptime kernel = matmul_kernel_naive[
         DType.float32,
         DType.float32,
         DType.float32,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
     ctx.enqueue_function_experimental[kernel](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,

@@ -25,7 +25,9 @@ from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 
 from std.utils import IndexList
@@ -212,19 +214,22 @@ fn bench_matmul_naive[
         shape_b_dim[0] * shape_b_dim[1]
     )
 
-    var mat_c = NDBuffer[out_type, 2, _, shape_c](
-        mat_c_buf.unsafe_ptr(), shape_c_dim
+    var c_tt = TileTensor(
+        mat_c_buf.unsafe_ptr(),
+        row_major(Coord(Idx(shape_c_dim[0]), Idx(shape_c_dim[1]))),
     )
-    var mat_a = NDBuffer[in_type, 2, _, shape_a](
-        mat_a_buf.unsafe_ptr(), shape_a_dim
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(mat_a_buf.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(shape_a_dim[0]), Idx(shape_a_dim[1]))),
     )
-    var mat_b = NDBuffer[in_type, 2, _, shape_b](
-        mat_b_buf.unsafe_ptr(), shape_b_dim
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(mat_b_buf.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(shape_b_dim[0]), Idx(shape_b_dim[1]))),
     )
-
-    var c_tensor = from_ndbuffer_row_major(mat_c)
-    var a_tensor = from_ndbuffer_row_major(mat_a)
-    var b_tensor = from_ndbuffer_row_major(mat_b)
 
     var M = shape_c_dim[0]
     var N = shape_c_dim[1]
@@ -244,15 +249,15 @@ fn bench_matmul_naive[
                 out_type,
                 in_type,
                 in_type,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
+                type_of(c_tt).LayoutType,
+                type_of(a_tt).LayoutType,
+                type_of(b_tt).LayoutType,
                 BLOCK_DIM,
             ]
             ctx.enqueue_function[kernel, kernel](
-                c_tensor,
-                a_tensor,
-                b_tensor,
+                c_tt,
+                a_tt,
+                b_tt,
                 M,
                 N,
                 K,

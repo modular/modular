@@ -17,7 +17,9 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import Semaphore, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import LegacyUnsafePointer
 
@@ -493,26 +495,43 @@ fn run_matmul_stream_k[
 
     comptime BLOCK_DIM = 16
 
-    var c_buf_n = NDBuffer[dtype, 2](c_device_n.unsafe_ptr(), Index(M, N))
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
 
-    var c_tensor = from_ndbuffer_row_major(c_buf_n)
-    var a_tensor = from_ndbuffer_row_major(a_buf)
-    var b_tensor = from_ndbuffer_row_major(b_buf)
+    var c_tt = TileTensor(
+        c_device_n.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
+    )
 
     comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,
-        c_tensor.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
 
     ctx.enqueue_function_experimental[kernel](
-        c_tensor,
-        a_tensor,
-        b_tensor,
+        c_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,
