@@ -183,6 +183,25 @@ def test_pop_default() raises:
     assert_equal(-1, dict.pop("c", -1))
 
 
+def test_unsafe_pop() raises:
+    var dict: Dict[String, Int] = {}
+    dict["a"] = 1
+    dict["b"] = 2
+
+    var a = dict.unsafe_pop("a")
+    assert_true(a)
+    assert_equal(1, a.value())
+    assert_equal(1, len(dict))
+
+    var b = dict.unsafe_pop("b")
+    assert_true(b)
+    assert_equal(2, b.value())
+    assert_equal(0, len(dict))
+
+    var c = dict.unsafe_pop("c")
+    assert_false(c)
+
+
 def test_key_error() raises:
     var dict: Dict[String, Int] = {}
 
