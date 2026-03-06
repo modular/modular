@@ -37,7 +37,7 @@ from .mask_config import MHAMaskVariant
 def num_heads_for_device(
     *, num_heads: int, device_idx: int, num_devices: int
 ) -> int:
-    """Compute the number of attention heads assigned to a specific device.
+    """Computes the number of attention heads assigned to a specific device.
 
     Distributes heads across devices, handling cases where the total is not
     evenly divisible by the number of devices. Earlier devices receive one
@@ -58,7 +58,19 @@ def num_heads_for_device(
 
 
 class MultiheadAttention(Module):
-    """Multihead attention that handles both single and distributed computation."""
+    """Multihead attention that handles both single and distributed computation.
+
+    Args:
+        num_attention_heads: The number of attention heads.
+        hidden_size: The dimension of the hidden states (embed_dim).
+        devices: Device(s) to place the weights and run the computation.
+            If multiple devices provided, uses distributed computation.
+        dtype: DType of the QKV and output projection weights.
+        scale: Value used to scale the results of the attention output.
+        qkv_has_bias: Whether to use an attention bias.
+        o_proj_has_bias: Whether to use a bias on the output projection.
+        stacked_qkv: Whether to use a single stacked QKV weight matrix.
+    """
 
     def __init__(
         self,
@@ -71,18 +83,6 @@ class MultiheadAttention(Module):
         o_proj_has_bias: bool = False,
         stacked_qkv: bool = False,
     ) -> None:
-        """Initializes the attention layer.
-
-        Args:
-            num_attention_heads: The number of attention heads.
-            hidden_size: The dimension of the hidden states (embed_dim).
-            devices: Device(s) to place the weights and run the computation.
-                If multiple devices provided, uses distributed computation.
-            dtype: DType of the QKV and output projection weights.
-            scale: Value used to scale the results of the attention output.
-            has_bias: Whether to use an attention bias.
-            stacked_qkv: Whether to use a single stacked QKV weight matrix.
-        """
         super().__init__()
 
         if hidden_size % num_attention_heads != 0:
@@ -114,7 +114,7 @@ class MultiheadAttention(Module):
             self._init_distributed()
 
     def _init_weights(self, dtype: DType) -> None:
-        """Initialize the attention weights."""
+        """Initializes the attention weights."""
         if self.stacked_qkv:
             self.qkv_proj = Weight(
                 name="qkv_proj.weight",
@@ -162,7 +162,7 @@ class MultiheadAttention(Module):
         )
 
     def _init_distributed(self) -> None:
-        """Initialize distributed components."""
+        """Initializes distributed components."""
         if len(self.devices) < 2:
             raise ValueError(
                 f"Must provide at least 2 devices for distributed attention, got {self.devices}"
@@ -197,7 +197,7 @@ class MultiheadAttention(Module):
         self._create_device_modules()
 
     def _create_device_modules(self) -> None:
-        """Create per-device attention modules for distributed computation."""
+        """Creates per-device attention modules for distributed computation."""
         self.device_modules = []
         sharded_num_heads = self.num_heads // len(self.devices)
 
@@ -241,7 +241,7 @@ class MultiheadAttention(Module):
             self.device_modules.append(module)
 
     def _create_device_module(self, **kwargs) -> MultiheadAttention:
-        """Create a single-device module instance.
+        """Creates a single-device module instance.
 
         Override this method in subclasses to use a different module type
         for per-device computation.
@@ -285,9 +285,9 @@ class MultiheadAttention(Module):
     def _compute_qkv(
         self, x: TensorValue
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        """Compute Q, K, V projections.
+        """Computes Q, K, V projections.
 
-        Override this method to customize QKV computation (e.g., for quantization).
+        Override this method to customize QKV computation (for example, for quantization).
         """
         # Fused in-projection for Q, K, V
         wqkv = self.wqkv
@@ -313,9 +313,9 @@ class MultiheadAttention(Module):
     def _apply_attention(
         self, q: TensorValue, k: TensorValue, v: TensorValue, **kwargs
     ) -> TensorValue:
-        """Apply attention mechanism to Q, K, V.
+        """Applies attention mechanism to Q, K, V.
 
-        Override this method to customize attention computation (e.g., add RoPE).
+        Override this method to customize attention computation (for example, add RoPE).
         """
         mask_variant = kwargs.get("mask_variant", MHAMaskVariant.NULL_MASK)
 

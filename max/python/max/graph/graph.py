@@ -312,9 +312,9 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 class Graph:
     """Represents a single MAX graph.
 
-    A `Graph` is a callable routine in MAX. Like functions, graphs have a
+    A :class:`Graph` is a callable routine in MAX. Like functions, graphs have a
     name and signature. Unlike a function, which follows an imperative
-    programming model, a `Graph` follows a dataflow programming model, using
+    programming model, a :class:`Graph` follows a dataflow programming model, using
     lazily-executed, parallel operations instead of sequential instructions.
 
     When you instantiate a graph, you must specify the input shapes as one or
@@ -922,7 +922,7 @@ class Graph:
         Args:
             block: The MLIR block to build into
             block_fn: Callable that generates the block's operations and returns results
-            block_terminator_op: Operation to terminate the block (e.g. mo.YieldOp)
+            block_terminator_op: The operation to terminate the block (for example, ``mo.YieldOp``)
             block_name: Name of the block for error reporting
             expected_output_types: List of expected output types for the block
             add_chain: Whether to append the current chain to block results

@@ -114,7 +114,7 @@ def head_aware_col_sharding_strategy(
     where the number of heads is not evenly divisible by the number of devices.
     It splits columns according to how heads are distributed across devices.
 
-    Supports packed weights (e.g. NVFP4 float4-e2m1fnx2) where the stored
+    Supports packed weights (for example, NVFP4 float4-e2m1fnx2) where the stored
     columns are in_dim // 2; in that case column indices are halved.
 
     Args:
@@ -578,11 +578,20 @@ class _ShardingStrategyContainer:
 # TODO: Make Weight explicitly inherit from Shardable. We currently do not do this
 # because importing Shardable from nn causes a circular dependency.
 class Weight(TensorValue):
-    """Represents a value in a Graph that can be loaded at a later time.
+    """Represents a value in a :class:`Graph` that can be loaded at a later time.
 
-    Weights can be initialized outside of a `Graph` and are lazily-added to
-    the parent graph when used. If there is no parent graph when a weight is
+    Weights can be initialized outside of a :class:`Graph` and are lazily-added
+    to the parent graph when used. If there is no parent graph when a weight is
     used, an error will be raised.
+
+    Args:
+        name: The name of the weight.
+        dtype: The data type of the weight.
+        shape: The shape of the weight.
+        device: The device where the weight resides.
+        quantization_encoding: Optional quantization encoding for the weight.
+        align: Optional alignment requirement in bytes.
+        sharding_strategy: Optional sharding strategy for distributed execution.
     """
 
     _dtype: DType
@@ -596,8 +605,8 @@ class Weight(TensorValue):
     def __new__(cls, *args, **kwargs):
         """Create a new Weight instance.
 
-        Skip the `Value.__new__` method to avoid staging a `TensorValue`.
-        A `Weight` can be initialized outside of a graph, but must be located
+        Skips the ``Value.__new__`` method to avoid staging a ``TensorValue``.
+        A ``Weight`` can be initialized outside of a graph, but must be located
         within a graph when operating on it.
         """
         return super(Value, Weight).__new__(cls)
@@ -614,19 +623,6 @@ class Weight(TensorValue):
         _placeholder: bool = False,
         _has_alias: bool = False,
     ) -> None:
-        """Initialize a Weight.
-
-        Args:
-            name: The name of the weight.
-            dtype: The data type of the weight.
-            shape: The shape of the weight.
-            device: The device where the weight resides.
-            quantization_encoding: Optional quantization encoding for the weight.
-            align: Optional alignment requirement in bytes.
-            sharding_strategy: Optional sharding strategy for distributed execution.
-            _placeholder: Internal flag indicating if this is a placeholder weight.
-            _has_alias: Internal flag indicating if this weight has an alias.
-        """
         self.name = name
         self._dtype = dtype
         self._shape = shape
@@ -720,8 +716,8 @@ class Weight(TensorValue):
     def shard(self, devices: Iterable[DeviceRef]) -> list[Weight]:
         """Creates sharded views of this Weight across multiple devices.
 
-        This `Weight` must have `sharding_strategy` defined. The shard objects
-        returned are also `Weight` objects, but cannot be sharded further.
+        This :class:`Weight` must have ``sharding_strategy`` defined. The shard objects
+        returned are also :class:`Weight` objects, but cannot be sharded further.
 
         Args:
             devices: Iterable of devices to place the shards on.

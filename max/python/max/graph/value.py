@@ -56,17 +56,17 @@ _SliceIndices: TypeAlias = "Sequence[_SliceIndex | builtins.ellipsis]"
 
 
 class Value(Generic[MlirType]):
-    """Represents a symbolic value within a `Graph`.
+    """Represents a symbolic value within a :class:`Graph`.
 
-    A `Value` can represent the output of a node, the arguments of a
-    `Graph` (as seen from within its body), and more generally any symbolic
-    value available within the `Graph`. Other nodes receive `Value`
+    A :class:`Value` can represent the output of a node, the arguments of a
+    :class:`Graph` (as seen from within its body), and more generally any symbolic
+    value available within the :class:`Graph`. Other nodes receive :class:`Value`
     values as inputs to form a computation graph.
 
-    A `Value` may also refer to an existing input or output of a node,
-    and you can change them, such as by swapping a new `Value`.
+    A :class:`Value` may also refer to an existing input or output of a node,
+    and you can change them, such as by swapping a new :class:`Value`.
 
-    Conceptually, think of a `Value` as an edge in the dataflow graph,
+    Conceptually, think of a :class:`Value` as an edge in the dataflow graph,
     with the other end being the user of that value.
 
     The following example shows how to work with Values in a graph to create a simple computation:
@@ -90,7 +90,7 @@ class Value(Generic[MlirType]):
             print(f"Type of c: {type(c)}")
             print(f"Is c a Value? {isinstance(c, Value)}")
 
-    Similar to a regular variable, a `Value` has a data type.
+    Similar to a regular variable, a :class:`Value` has a data type.
     """
 
     _mlir_value: _Value[MlirType]
@@ -193,7 +193,7 @@ class _ChainValue(Value[mo.ChainType]):
 
 
 class _OpaqueValue(Value[mo.OpaqueType]):
-    """Represents an opaque value within a `Graph`."""
+    """Represents an opaque value within a ``Graph``."""
 
     def __init__(self, value: Value[Any] | _Value[mo.OpaqueType]) -> None:
         if isinstance(value, _Value):
@@ -218,7 +218,7 @@ class _OpaqueValue(Value[mo.OpaqueType]):
 
 
 class BufferValue(Value[mo.BufferType]):
-    """Represents a mutable semantic tensor within a `Graph`."""
+    """Represents a mutable semantic tensor within a :class:`Graph`."""
 
     def __init__(
         self, value: Value[Any] | _Value[mo.BufferType] | HasBufferValue
@@ -649,7 +649,7 @@ class TensorValue(Value[mo.TensorType]):
                 print(f"Casted dtype: {casted_tensor.dtype}")  # Output: DType.int32
 
         Args:
-            dtype: The target data type (e.g., ``DType.int32``, ``DType.float64``).
+            dtype: The target data type (for example, ``DType.int32``, ``DType.float64``).
 
         Returns:
             A new :obj:`TensorValue` with the casted data type.
@@ -790,7 +790,7 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             axis: The axis along which to compute the reduction. If negative,
-                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+                indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
             A :obj:`TensorValue` of dtype ``DType.int64`` with the same rank as the input,
@@ -819,7 +819,7 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             axis: The axis along which to compute the reduction. If negative,
-                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+                indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
             A :obj:`TensorValue` with the same rank as the input and the same
@@ -848,7 +848,7 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             axis: The axis along which to compute the reduction. If negative,
-                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+                indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
             A :obj:`TensorValue` with the same rank as the input and the same
@@ -878,7 +878,7 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             axis: The axis along which to compute the reduction. If negative,
-                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+                indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
             A :obj:`TensorValue` with the same rank as the input and the same
@@ -910,7 +910,7 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             axis: The axis along which to compute the reduction. If negative,
-                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+                indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
             A :obj:`TensorValue` with the same rank as the input and the same
@@ -942,7 +942,7 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             axis: The axis along which to compute the reduction. If negative,
-                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+                indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
             A :obj:`TensorValue` with the same rank as the input and the same

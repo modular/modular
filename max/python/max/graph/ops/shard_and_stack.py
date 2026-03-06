@@ -37,7 +37,7 @@ def shard_and_stack(
     """Shards a list of input tensors along a specified axis, producing multiple outputs.
 
     This operation takes multiple input tensors, splits each along the specified axis
-    into `len(devices)` chunks, and returns one output tensor per device. Each output
+    into ``len(devices)`` chunks, and returns one output tensor per device. Each output
     contains the chunks at the corresponding index stacked from all inputs along
     a new dimension 0.
 
@@ -62,10 +62,10 @@ def shard_and_stack(
             will be placed on the corresponding device. This enables direct
             host-to-device transfer without intermediate CPU storage.
         axis: The axis along which to split each input tensor. Defaults to 0.
-            Supports negative indexing (e.g., -1 for last axis).
+            Supports negative indexing (for example, -1 for last axis).
 
     Returns:
-        A list of `len(devices)` tensors, each with shape
+        A list of ``len(devices)`` tensors, each with shape
         [num_inputs, D0, ..., Daxis//len(devices), ..., Dn-1] where the input
         shape is [D0, ..., Daxis, ..., Dn-1]. Output i contains the stacked
         chunks at position i from all input tensors, placed on devices[i].
