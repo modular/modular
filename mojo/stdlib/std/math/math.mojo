@@ -2452,7 +2452,6 @@ def cbrt[
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: implement for variadic inputs as Python.
 def hypot[
     dtype: DType, width: Int, //
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
@@ -2492,6 +2491,105 @@ def hypot[
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
     return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
+
+
+fn hypot[dtype: DType](args: Span[Scalar[dtype], _]) -> Scalar[dtype]:
+    """Computes the n-dimensional Euclidean distance, i.e.
+    `sqrt(sum(x**2 for x in args))`.
+
+    This matches Python's `math.hypot(*coordinates)` for n-dimensional
+    distance computation.
+
+    Constraints:
+        The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input values.
+
+    Args:
+        args: A span of scalar values.
+
+    Returns:
+        The Euclidean distance: `sqrt(sum(x**2 for x in args))`.
+    """
+    comptime assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
+    if len(args) == 0:
+        return Scalar[dtype](0)
+    if len(args) == 1:
+        return abs(args[0])
+    if len(args) == 2:
+        return hypot(args[0], args[1])
+
+    # Find the maximum absolute value to scale and avoid overflow/underflow.
+    var max_abs = Scalar[dtype](0)
+    for i in range(len(args)):
+        var a = abs(args[i])
+        if a > max_abs:
+            max_abs = a
+
+    if max_abs == 0:
+        return Scalar[dtype](0)
+
+    # Scale values by max_abs, sum squares, then unscale.
+    var sum_sq = Scalar[dtype](0)
+    for i in range(len(args)):
+        var scaled = args[i] / max_abs
+        sum_sq += scaled * scaled
+
+    return max_abs * sqrt(sum_sq)
+
+
+fn hypot[dtype: DType](*args: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes the n-dimensional Euclidean distance, i.e.
+    `sqrt(sum(x**2 for x in args))`.
+
+    This matches Python's `math.hypot(*coordinates)` for n-dimensional
+    distance computation.
+
+    Constraints:
+        The input must be a floating-point type.
+
+    Parameters:
+        dtype: The `dtype` of the input values.
+
+    Args:
+        args: A variadic list of scalar values.
+
+    Returns:
+        The Euclidean distance: `sqrt(sum(x**2 for x in args))`.
+    """
+    # TODO: Deduplicate when we can create a Span from VariadicParamList
+    comptime assert (
+        dtype.is_floating_point()
+    ), "input type must be floating point"
+
+    if len(args) == 0:
+        return Scalar[dtype](0)
+    if len(args) == 1:
+        return abs(args[0])
+    if len(args) == 2:
+        return hypot(args[0], args[1])
+
+    # Find the maximum absolute value to scale and avoid overflow/underflow.
+    var max_abs = Scalar[dtype](0)
+    for i in range(len(args)):
+        var a = abs(args[i])
+        if a > max_abs:
+            max_abs = a
+
+    if max_abs == 0:
+        return Scalar[dtype](0)
+
+    # Scale values by max_abs, sum squares, then unscale.
+    var sum_sq = Scalar[dtype](0)
+    for i in range(len(args)):
+        var scaled = args[i] / max_abs
+        sum_sq += scaled * scaled
+
+    return max_abs * sqrt(sum_sq)
 
 
 # ===----------------------------------------------------------------------=== #
