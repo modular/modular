@@ -14,9 +14,6 @@
 from layout import *
 from layout.int_tuple import product
 from layout.layout_tensor import *
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 
@@ -100,7 +97,7 @@ fn test_vectorize_2() raises:
     comptime layout_unknown = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
-    var heap = UnsafePointer[Int32].alloc(64, alignment=8)
+    var heap = alloc[Int32](64, alignment=8)
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,

@@ -28,9 +28,6 @@ from linalg.fp8_quantization import (
     quantize_static_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal
 
@@ -50,8 +47,8 @@ fn test_static_scaled_fp8_quant[
 
     comptime layout_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var in_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(total_size)
-    var out_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(total_size)
+    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
 
     var in_host = LayoutTensor[in_dtype, layout_2d](
         in_host_ptr,
@@ -136,9 +133,9 @@ fn test_dynamic_fp8_quant[
         N.or_else(UNKNOWN_VALUE) // group_size, M.or_else(UNKNOWN_VALUE)
     )
 
-    var in_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(total_size)
-    var out_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(total_size)
-    var scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(scales_size)
+    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
 
     var in_host = LayoutTensor[in_dtype, layout_2d](
         in_host_ptr,
@@ -284,9 +281,9 @@ fn test_batched_dynamic_fp8_quant[
         M.or_else(UNKNOWN_VALUE),
     )
 
-    var in_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(total_size)
-    var out_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(total_size)
-    var scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(scales_size)
+    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
 
     var in_host = LayoutTensor[in_dtype, layout_3d](
         in_host_ptr,

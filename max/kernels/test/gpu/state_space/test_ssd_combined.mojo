@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
@@ -80,35 +77,25 @@ fn run_ssd_combined_gpu[
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
-    var output_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var output_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var x_cpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * n_chunks * 2 * dstate
-    )
-    var x_gpu_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * dim * n_chunks * 2 * dstate
-    )
-    var out_z_cpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var out_z_gpu_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var residual_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var u_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var delta_h = UnsafePointer[Scalar[dtype]].alloc(batch * dim * seqlen)
-    var A_h = UnsafePointer[Scalar[dtype]].alloc(dim * dstate)
-    var B_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * n_groups * dstate * seqlen
-    )
-    var C_h = UnsafePointer[Scalar[dtype]].alloc(
-        batch * n_groups * dstate * seqlen
-    )
+    var output_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var output_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var x_cpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
+    var x_gpu_h = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
+    var out_z_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var out_z_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var residual_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var u_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var delta_h = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var A_h = alloc[Scalar[dtype]](dim * dstate)
+    var B_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var C_h = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
     var D_size = dim if has_D else 0
-    var D_h = UnsafePointer[Scalar[dtype]].alloc(max(D_size, 1))
+    var D_h = alloc[Scalar[dtype]](max(D_size, 1))
     var z_size = batch * dim * seqlen if has_z else 0
-    var z_h = UnsafePointer[Scalar[dtype]].alloc(max(z_size, 1))
+    var z_h = alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_h = UnsafePointer[Scalar[dtype]].alloc(
-        max(delta_bias_size, 1)
-    )
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(dim)
+    var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
+    var gamma_h = alloc[Scalar[dtype]](dim)
 
     # Create LayoutTensors for initialization
     var u_init = LayoutTensor[dtype, layout_3d](
@@ -477,8 +464,8 @@ fn run_ssd_combined_gpu[
             )
 
     # Reference implementation for numerical verification
-    var output_ref_h = UnsafePointer[Scalar[dtype]].alloc(flattened_size)
-    var out_z_ref_h = UnsafePointer[Scalar[dtype]].alloc(flattened_size)
+    var output_ref_h = alloc[Scalar[dtype]](flattened_size)
+    var out_z_ref_h = alloc[Scalar[dtype]](flattened_size)
     for i in range(flattened_size):
         output_ref_h[i] = Scalar[dtype](0)
         out_z_ref_h[i] = Scalar[dtype](0)

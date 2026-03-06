@@ -22,9 +22,6 @@ from std.random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn test_matmul[
@@ -36,14 +33,14 @@ fn test_matmul[
     comptime static_b_shape = DimList(N, K)
     comptime static_c_shape = DimList(M, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(M * K)
+    var a_host_ptr = alloc[Scalar[input_type]](M * K)
     var a_host = NDBuffer[input_type, 2, _, static_a_shape](a_host_ptr)
     var b_size = N * K
-    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[input_type]](b_size)
     var b_host = NDBuffer[input_type, 2, _, static_b_shape](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
+    var c_host_ptr = alloc[Scalar[DType.float32]](M * N)
     var c_host = NDBuffer[DType.float32, 2, _, static_c_shape](c_host_ptr)
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](M * N)
     var c_host_ref = NDBuffer[DType.float32, 2, _, static_c_shape](
         c_host_ref_ptr
     )

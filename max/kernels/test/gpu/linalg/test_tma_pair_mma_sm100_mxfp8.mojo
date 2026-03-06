@@ -54,9 +54,6 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from std.utils.static_tuple import StaticTuple
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.math import ceildiv
@@ -809,13 +806,13 @@ def test_blockscaled_pair_cta_mxfp8[
         k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var a_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_a_scales_size
     )
     var a_scales_host_ref = NDBuffer[
         ref_scales_type, 2, _, static_ref_a_scales_shape
     ](a_scales_host_ref_ptr, dynamic_ref_a_scales_shape)
-    var b_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var b_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_b_scales_size
     )
     var b_scales_host_ref = NDBuffer[
@@ -932,15 +929,11 @@ def test_blockscaled_pair_cta_mxfp8[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_total
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_total)
     var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_total
-    )
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_total)
     var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
@@ -958,19 +951,19 @@ def test_blockscaled_pair_cta_mxfp8[
     var b_size = n.value * k
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )

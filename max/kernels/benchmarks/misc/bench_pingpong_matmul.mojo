@@ -31,9 +31,6 @@ from std.benchmark import (
 from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,

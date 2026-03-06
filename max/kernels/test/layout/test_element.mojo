@@ -19,9 +19,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils import IndexList
 
 
@@ -167,7 +164,7 @@ fn test_element_dynamic_layout() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = alloc[Float32](dynamic_layout.size())
 
     var tensor_8x8 = LayoutTensor[
         DType.float32,

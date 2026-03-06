@@ -32,9 +32,6 @@ from internal_utils import (
     int_list_to_tuple,
     update_bench_config_args,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 from std.utils import IndexList, StaticTuple
@@ -69,12 +66,10 @@ fn run_reduce[
     var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
     # Allocate & initialize host data
-    var expected_vals = UnsafePointer[Scalar[dtype]].alloc(
-        out_size, alignment=align
-    )
+    var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
 
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(cb_in.alloc_size())
-    var res_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    var in_host = alloc[Scalar[dtype]](cb_in.alloc_size())
+    var res_host = alloc[Scalar[dtype]](out_size)
 
     for i in range(cb_in.alloc_size()):
         in_host[i] = 1

@@ -17,10 +17,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import grid_dim
 from std.gpu.host import DeviceContext, FuncAttribute
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from internal_utils import assert_almost_equal
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
@@ -49,10 +45,10 @@ fn test_fp8_multistage_gemm[
     comptime b_size = b_size_0 * b_size_1
     comptime c_size = M * N
 
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[DType.float32]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
 
     var a_host = NDBuffer[dtype, 2, _, static_a_shape](a_host_ptr)
     var b_host = NDBuffer[dtype, 2, _, static_b_shape](b_host_ptr)
@@ -147,9 +143,7 @@ fn test_fp8_multistage_gemm[
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
         comptime b_col_major_size = N * K
-        var b_host_col_major_ptr = UnsafePointer[Scalar[dtype]].alloc(
-            b_col_major_size
-        )
+        var b_host_col_major_ptr = alloc[Scalar[dtype]](b_col_major_size)
         var b_host_col_major = NDBuffer[dtype, 2, _, DimList(N, K)](
             b_host_col_major_ptr
         )

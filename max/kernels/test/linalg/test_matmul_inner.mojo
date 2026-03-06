@@ -31,9 +31,6 @@ from linalg.utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 from std.utils import IndexList
@@ -159,14 +156,14 @@ fn test_micro_kernel[
 
     comptime alignment = align_of[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(m * k, alignment=alignment)
-    var b_packed_ptr = UnsafePointer[Scalar[b_type]].alloc(
+    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_packed_ptr = alloc[Scalar[b_type]](
         (np // config.kernel_cols)
         * (kh // factor)
         * (factor * config.kernel_cols),
         alignment=alignment,
     )
-    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(m * n, alignment=alignment)
+    var c_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
     var a = LayoutTensor[a_type, a_layout](
         a_ptr, RuntimeLayout[a_layout].row_major(Index(m, k))
     )

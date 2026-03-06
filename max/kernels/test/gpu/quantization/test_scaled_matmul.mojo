@@ -17,9 +17,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -79,16 +76,12 @@ fn test_matmul_dynamic_scaled_fp8[
     ) if transpose_b else Layout.row_major(1, N.or_else(UNKNOWN_VALUE))
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(c_size)
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_size
-    )
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[in_dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
 
     var a_host = LayoutTensor[in_dtype, a_layout](
         a_host_ptr,
