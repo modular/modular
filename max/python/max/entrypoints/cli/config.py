@@ -415,6 +415,16 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 and all(isinstance(x, int) for x in value)
             )
 
+        ctx = click.get_current_context(silent=True)
+        if ctx is not None:
+            # Preserve CLI parameter sources so PipelineConfig can distinguish
+            # Click-injected defaults from explicitly provided flags.
+            kwargs["__cli_param_sources__"] = {
+                name: source.name
+                for name in kwargs
+                if (source := ctx.get_parameter_source(name)) is not None
+            }
+
         # Remove the options from kwargs and replace with unified device_specs.
         devices = kwargs.pop("devices")
         draft_devices = kwargs.pop("draft_devices")

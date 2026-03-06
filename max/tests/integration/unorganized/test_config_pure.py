@@ -89,9 +89,23 @@ class TestClickFlagParsing:
 class TestPipelineConfigUtilityMethods:
     """Test suite for the refactored utility methods in PipelineConfig."""
 
+    _MULTI_GPU_DEVICE_COUNTS = (2, 3, 8)
+
     @staticmethod
-    def _arch_with_name(name: str) -> SupportedArchitecture:
-        return replace(DUMMY_LLAMA_ARCH, name=name)
+    def _arch_with_parallel_defaults(
+        *,
+        name: str = "LlamaForCausalLM",
+        default_ep_size_to_num_devices: bool = False,
+        default_data_parallel_degree_to_num_devices: bool = False,
+    ) -> SupportedArchitecture:
+        return replace(
+            DUMMY_LLAMA_ARCH,
+            name=name,
+            default_ep_size_to_num_devices=default_ep_size_to_num_devices,
+            default_data_parallel_degree_to_num_devices=(
+                default_data_parallel_degree_to_num_devices
+            ),
+        )
 
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_basic(self) -> None:
@@ -449,103 +463,255 @@ class TestPipelineConfigUtilityMethods:
             "DeepseekV3ForCausalLMNextN",
         ),
     )
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
     @mock_pipeline_config_resolve
-    def test_apply_deepseek_defaults_multi_gpu(self, arch_name: str) -> None:
+    def test_apply_multi_gpu_defaults_for_enabled_arch(
+        self, arch_name: str, num_devices: int
+    ) -> None:
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()] * 8,
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
             )
         )
-        config.ep_size = 1
-        config.model.data_parallel_degree = 1
 
-        config._apply_deepseek_multi_gpu_parallelism_defaults(
-            self._arch_with_name(arch_name), config.model, 8
-        )
-
-        assert config.ep_size == 8
-        assert config.model.data_parallel_degree == 8
-
-    @mock_pipeline_config_resolve
-    def test_apply_deepseek_defaults_multi_gpu_ep_only(self) -> None:
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()] * 8,
-            )
-        )
-        config.ep_size = 8
-        config.model.data_parallel_degree = 1
-
-        config._apply_deepseek_multi_gpu_parallelism_defaults(
-            self._arch_with_name("DeepseekV3ForCausalLM"),
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name=arch_name,
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
             config.model,
-            8,
+            num_devices,
         )
 
-        assert config.ep_size == 8
-        assert config.model.data_parallel_degree == 8
+        assert config.runtime.ep_size == num_devices
+        assert config.model.data_parallel_degree == num_devices
 
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
     @mock_pipeline_config_resolve
-    def test_apply_deepseek_defaults_multi_gpu_dp_only(self) -> None:
+    def test_apply_multi_gpu_defaults_for_enabled_arch_ep_only(
+        self, num_devices: int
+    ) -> None:
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()] * 8,
-            )
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
+            ),
+            runtime=PipelineRuntimeConfig(ep_size=num_devices),
         )
-        config.ep_size = 1
-        config.model.data_parallel_degree = 8
 
-        config._apply_deepseek_multi_gpu_parallelism_defaults(
-            self._arch_with_name("DeepseekV3ForCausalLM"),
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name="DeepseekV3ForCausalLM",
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
             config.model,
-            8,
+            num_devices,
         )
 
-        assert config.ep_size == 8
-        assert config.model.data_parallel_degree == 8
+        assert config.runtime.ep_size == num_devices
+        assert config.model.data_parallel_degree == num_devices
 
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
     @mock_pipeline_config_resolve
-    def test_apply_deepseek_defaults_non_deepseek_unchanged(self) -> None:
+    def test_apply_multi_gpu_defaults_for_enabled_arch_dp_only(
+        self, num_devices: int
+    ) -> None:
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path="test/model",
-                device_specs=[DeviceSpec.accelerator()] * 8,
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
+                data_parallel_degree=num_devices,
             )
         )
-        config.ep_size = 1
-        config.model.data_parallel_degree = 1
 
-        arch = self._arch_with_name("LlamaForCausalLM")
-        if config._is_deepseek_arch(arch):
-            config._apply_deepseek_multi_gpu_parallelism_defaults(
-                arch, config.model, 8
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name="DeepseekV3ForCausalLM",
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
+            config.model,
+            num_devices,
+        )
+
+        assert config.runtime.ep_size == num_devices
+        assert config.model.data_parallel_degree == num_devices
+
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
+    @mock_pipeline_config_resolve
+    def test_apply_multi_gpu_defaults_for_non_enabled_arch_unchanged(
+        self,
+        num_devices: int,
+    ) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
             )
+        )
 
-        assert config.ep_size == 1
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(name="LlamaForCausalLM"),
+            config.model,
+            num_devices,
+        )
+
+        assert config.runtime.ep_size == 1
         assert config.model.data_parallel_degree == 1
 
     @mock_pipeline_config_resolve
-    def test_apply_deepseek_defaults_single_gpu_unchanged(self) -> None:
+    def test_apply_multi_gpu_defaults_single_gpu_unchanged(self) -> None:
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path="test/model",
                 device_specs=[DeviceSpec.accelerator()],
             )
         )
-        config.ep_size = 1
-        config.model.data_parallel_degree = 1
 
-        config._apply_deepseek_multi_gpu_parallelism_defaults(
-            self._arch_with_name("DeepseekV3ForCausalLM"),
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name="DeepseekV3ForCausalLM",
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
             config.model,
             1,
         )
 
-        assert config.ep_size == 1
+        assert config.runtime.ep_size == 1
         assert config.model.data_parallel_degree == 1
+
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
+    @mock_pipeline_config_resolve
+    def test_apply_multi_gpu_defaults_respects_explicit_ep(
+        self, num_devices: int
+    ) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
+            ),
+            runtime=PipelineRuntimeConfig(ep_size=1),
+        )
+
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name="DeepseekV3ForCausalLM",
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
+            config.model,
+            num_devices,
+        )
+
+        assert config.runtime.ep_size == 1
+        assert config.model.data_parallel_degree == num_devices
+
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
+    @mock_pipeline_config_resolve
+    def test_apply_multi_gpu_defaults_respects_explicit_dp(
+        self, num_devices: int
+    ) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
+                data_parallel_degree=1,
+            ),
+            runtime=PipelineRuntimeConfig(ep_size=num_devices),
+        )
+
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name="DeepseekV3ForCausalLM",
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
+            config.model,
+            num_devices,
+        )
+
+        assert config.runtime.ep_size == num_devices
+        assert config.model.data_parallel_degree == 1
+
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
+    @mock_pipeline_config_resolve
+    def test_apply_multi_gpu_defaults_click_default_sources(
+        self, num_devices: int
+    ) -> None:
+        # Simulate Click passing default-valued flags in kwargs.
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
+                data_parallel_degree=1,
+            ),
+            runtime=PipelineRuntimeConfig(ep_size=1),
+        )
+        config._cli_param_sources = {
+            "ep_size": "DEFAULT",
+            "data_parallel_degree": "DEFAULT",
+        }
+
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name="DeepseekV3ForCausalLM",
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
+            config.model,
+            num_devices,
+        )
+
+        assert config.runtime.ep_size == num_devices
+        assert config.model.data_parallel_degree == num_devices
+
+    @pytest.mark.parametrize("num_devices", _MULTI_GPU_DEVICE_COUNTS)
+    @mock_pipeline_config_resolve
+    def test_apply_multi_gpu_defaults_click_commandline_source_wins(
+        self, num_devices: int
+    ) -> None:
+        # Simulate user explicitly setting --ep-size=1 on CLI.
+        # EP should stay fixed, while DP can still auto-default from DEFAULT.
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * num_devices,
+                data_parallel_degree=1,
+            ),
+            runtime=PipelineRuntimeConfig(ep_size=1),
+        )
+        config._cli_param_sources = {
+            "ep_size": "COMMANDLINE",
+            "data_parallel_degree": "DEFAULT",
+        }
+
+        config._apply_multi_gpu_parallelism_defaults(
+            self._arch_with_parallel_defaults(
+                name="DeepseekV3ForCausalLM",
+                default_ep_size_to_num_devices=True,
+                default_data_parallel_degree_to_num_devices=True,
+            ),
+            config.model,
+            num_devices,
+        )
+
+        assert config.runtime.ep_size == 1
+        assert config.model.data_parallel_degree == num_devices
+
+    @mock_pipeline_config_resolve
+    def test_pipeline_config_accepts_cli_param_sources_hidden_kwarg(
+        self,
+    ) -> None:
+        config_kwargs: dict[str, Any] = {
+            "model": MAXModelConfig(model_path="test/model"),
+            "__cli_param_sources__": {"ep_size": "DEFAULT"},
+        }
+        config = PipelineConfig(**config_kwargs)
+        assert config._cli_param_sources == {"ep_size": "DEFAULT"}
 
 
 @prepare_registry

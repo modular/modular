@@ -138,6 +138,13 @@ class PipelineConfig(ConfigFileModel):
     """Temporary storage for unmatched kwargs during initialization.
     This is used to pass unmatched kwargs from the before validator to the after validator."""
 
+    _cli_param_sources: dict[str, str] | None = PrivateAttr(default=None)
+    """Click parameter source metadata passed from CLI entrypoints.
+
+    Keys are parameter names and values are ``click.ParameterSource.name``
+    strings (for example, ``"DEFAULT"`` or ``"COMMANDLINE"``).
+    """
+
     def configure_session(self, session: InferenceSession) -> None:
         """Configures a :class:`~max.engine.InferenceSession` with standard pipeline settings."""
         session.gpu_profiling(self.profiling.gpu_profiling)
@@ -384,6 +391,7 @@ class PipelineConfig(ConfigFileModel):
             return handler(data)
 
         kwargs = data.copy()
+        cli_param_sources = kwargs.pop("__cli_param_sources__", None)
         # Merge config file values before separating pydantic vs unmatched
         # kwargs, so sub-config fields (e.g. model_path) from the YAML are
         # visible to _postprocess_configs.
@@ -406,6 +414,10 @@ class PipelineConfig(ConfigFileModel):
         model = handler(pydantic_kwargs)
         # `_unmatched_kwargs` is a PrivateAttr, so set it on the instance.
         model._unmatched_kwargs = unmatched_kwargs
+        if isinstance(cli_param_sources, dict):
+            model._cli_param_sources = {
+                str(k): str(v) for k, v in cli_param_sources.items()
+            }
         return model
 
     @model_validator(mode="after")
@@ -550,55 +562,72 @@ class PipelineConfig(ConfigFileModel):
                 # We should be able to override this value for all config objects.
                 continue
 
-    @staticmethod
-    def _is_deepseek_arch(architecture: SupportedArchitecture) -> bool:
-        return architecture.name in {
-            "DeepseekV3ForCausalLM",
-            "DeepseekV32ForCausalLM",
-            "DeepseekV3ForCausalLMNextN",
-        }
-
-    def _apply_deepseek_multi_gpu_parallelism_defaults(
+    def _apply_multi_gpu_parallelism_defaults(
         self,
         architecture: SupportedArchitecture,
         model_config: MAXModelConfig,
         num_devices: int,
     ) -> None:
-        """Auto-resolve DeepSeek EP/DP defaults for multi-GPU.
-
-        DeepSeek V3/V3.2/NextN require multi-GPU launches to run with
-        expert parallelism and data-parallel attention on all local devices.
-        """
-        assert self._is_deepseek_arch(architecture)
+        """Auto-resolve architecture-defined EP/DP defaults for multi-GPU."""
         if num_devices <= 1:
             return
 
-        old_ep = self.ep_size
+        ep_was_provided = self._is_param_explicitly_provided(
+            "ep_size", "ep_size" in self.runtime.model_fields_set
+        )
+        dp_was_provided = self._is_param_explicitly_provided(
+            "data_parallel_degree",
+            "data_parallel_degree" in model_config.model_fields_set,
+        )
+
+        old_ep = self.runtime.ep_size
         old_dp = model_config.data_parallel_degree
 
-        if self.ep_size == 1 and model_config.data_parallel_degree in (
-            1,
-            num_devices,
+        if (
+            architecture.default_ep_size_to_num_devices
+            and not ep_was_provided
+            and self.runtime.ep_size == 1
+            and model_config.data_parallel_degree in (1, num_devices)
         ):
-            self.ep_size = num_devices
+            self.runtime.ep_size = num_devices
 
         # If user provide an invalid ep_size > 1, we will not fix it here
-        # but let downstream codes to handle it
-        if self.ep_size > 1 and model_config.data_parallel_degree == 1:
+        # but let downstream codes to handle it.
+        if (
+            architecture.default_data_parallel_degree_to_num_devices
+            and not dp_was_provided
+            and model_config.data_parallel_degree == 1
+        ):
             model_config.data_parallel_degree = num_devices
 
         if (
-            self.ep_size != old_ep
+            self.runtime.ep_size != old_ep
             or model_config.data_parallel_degree != old_dp
         ):
             logger.info(
-                "Auto-configured DeepSeek multi-GPU parallelism: "
+                "Auto-configured %s multi-GPU parallelism defaults: "
                 "ep_size %s -> %s, data_parallel_degree %s -> %s",
+                architecture.name,
                 old_ep,
-                self.ep_size,
+                self.runtime.ep_size,
                 old_dp,
                 model_config.data_parallel_degree,
             )
+
+    def _is_param_explicitly_provided(
+        self, param_name: str, fallback: bool
+    ) -> bool:
+        """Returns whether a parameter was explicitly set by the user.
+
+        ``fallback`` is the non-CLI explicitness signal (typically from
+        ``model_fields_set``) used when Click source metadata is unavailable.
+        """
+        if (
+            self._cli_param_sources is None
+            or param_name not in self._cli_param_sources
+        ):
+            return fallback
+        return self._cli_param_sources[param_name] != "DEFAULT"
 
     def resolve(self) -> None:
         """Validates and resolves the config.
@@ -925,10 +954,10 @@ class PipelineConfig(ConfigFileModel):
             )
 
         devices = load_devices(model_config.device_specs)
-        # This resolver runs for both primary and draft models. Apply DeepSeek
-        # EP/DP auto-defaulting only to the primary model pass.
-        if model_config is self.model and self._is_deepseek_arch(arch):
-            self._apply_deepseek_multi_gpu_parallelism_defaults(
+        # This resolver runs for both primary and draft models. Apply
+        # architecture default parallelism only to the primary model pass.
+        if model_config is self.model:
+            self._apply_multi_gpu_parallelism_defaults(
                 arch, model_config, len(devices)
             )
 
