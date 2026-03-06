@@ -1144,5 +1144,44 @@ def test_inplace_rehash_via_update() raises:
         assert_equal(d[200 + i], 200 + i)
 
 
+def test_reserve_noop_when_sufficient() raises:
+    """reserve() is a no-op when current capacity is already sufficient."""
+    var d = Dict[Int, Int](capacity=64)
+    var cap_before = d._reserved()
+    d.reserve(10)
+    assert_equal(d._reserved(), cap_before)
+
+
+def test_reserve_grows_capacity() raises:
+    """Grows capacity to accommodate the requested minimum."""
+    var d = Dict[Int, Int]()
+    d.reserve(100)
+    # capacity * 7 // 8 must be >= 100, so capacity >= ceil(100*8/7) = 115 -> next power of 2 = 128
+    assert_true(d._reserved() >= 128)
+    assert_true(d._reserved() * 7 // 8 >= 100)
+
+
+def test_reserve_preserves_entries() raises:
+    """Preserves all existing entries after calling reserve()."""
+    var d = Dict[String, Int]()
+    for i in range(10):
+        d[String(i)] = i
+    d.reserve(500)
+    assert_equal(len(d), 10)
+    for i in range(10):
+        assert_equal(d[String(i)], i)
+
+
+def test_reserve_prevents_rehash() raises:
+    """Inserting up to reserved capacity triggers no resize."""
+    var d = Dict[Int, Int]()
+    d.reserve(200)
+    var cap_after_reserve = d._reserved()
+    for i in range(200):
+        d[i] = i
+    assert_equal(d._reserved(), cap_after_reserve)
+    assert_equal(len(d), 200)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
