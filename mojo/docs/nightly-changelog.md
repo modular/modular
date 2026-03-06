@@ -19,6 +19,13 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `SIMD[DType.bool, N]` now has two new methods:
+  - `first_true()` -- returns the index of the first `True` lane, or `-1` if
+    all lanes are `False`. Replaces the manual `pack_bits` +
+    `count_trailing_zeros` pattern.
+  - `count_true()` -- returns the number of `True` lanes. A bool-specific
+    alias for `reduce_bit_count()`.
+
 ## Tooling changes
 
 ## GPU programming
