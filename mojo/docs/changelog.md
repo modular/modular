@@ -336,9 +336,10 @@ what we publish.
 
 ### Library changes
 
-- `Dict` now uses real conditional conformances for `Writable`. The `Dict` type
-  only conforms to `Writable` when both its key and value types do, enforced at
-  compile time via `where` clauses.
+- Standard library types now use conditional conformances, replacing previous
+  `_constrained_conforms_to` checks:
+  - `Dict`: `Writable`
+  - `List`: `Equatable`, `Writable`
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
