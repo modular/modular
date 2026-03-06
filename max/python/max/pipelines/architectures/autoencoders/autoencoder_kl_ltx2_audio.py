@@ -850,12 +850,8 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
 
         super().load_model()
 
-        self.latents_mean = Tensor.from_dlpack(bn_mean_data).to(
-            self.devices[0]
-        )
-        self.latents_std = Tensor.from_dlpack(bn_std_data).to(
-            self.devices[0]
-        )
+        self.latents_mean = Tensor.from_dlpack(bn_mean_data).to(self.devices[0])
+        self.latents_std = Tensor.from_dlpack(bn_std_data).to(self.devices[0])
 
         return self.model
 
