@@ -330,6 +330,7 @@ struct StmtParser : public ParserBase {
                                           size_t curIndent, SMLoc kwLoc);
   ParseResult parseReturnStmt(size_t returnIndent);
   ParseResult parseRaiseStmt(size_t raiseIndent);
+  ParseResult parseAssertStmt(size_t assertIndent);
   ParseResult parseBreakOrContinueStmt(Token::Kind kind, StringRef name,
                                        StringRef opName);
 
@@ -757,6 +758,9 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_raise:
     rejectDecorator(); // Decorators not allowed.
     return parseRaiseStmt(stmtIndent);
+  case Token::kw_assert:
+    rejectDecorator(); // Decorators not allowed.
+    return parseAssertStmt(stmtIndent);
   case Token::kw___comptime_assert: {
     rejectDecorator(); // Decorators not allowed.
     SMLoc kwLoc = consumeToken(Token::kw___comptime_assert).getLoc();
@@ -1390,6 +1394,60 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     emitter.checkInferredErrorType(errSlot.getRValueType(), loc.Start);
 
   LIT::RaiseOp::create(builder, translateLocation(loc.Start));
+  return success();
+}
+
+/// assert_stmt ::= "assert" expression ["," expression]
+///
+/// Desugars into a call to debug_assert[assert_mode="safe"](cond, msg).
+ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
+  SMLoc kwLoc = consumeToken(Token::kw_assert).getLoc();
+
+  // Must be inside a function body.
+  if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+    emitError(kwLoc, "'assert' statements must be inside a function");
+    return success();
+  }
+
+  // Parse the condition expression.
+  ExprNode *condExpr = nullptr;
+  if (parseExpression(condExpr, assertIndent))
+    return failure();
+
+  // Parse optional message expression.
+  ExprNode *messageExpr = nullptr;
+  if (consumeIf(Token::comma))
+    if (parseExpression(messageExpr, assertIndent))
+      return failure();
+
+  // Look up the debug_assert function from the standard library.
+  ArrayRef<ASTDecl *> debugAssertFns = shared.getBuiltinFunction(
+      getDeclScope(), "std.builtin.debug_assert", "debug_assert", kwLoc);
+  if (debugAssertFns.empty())
+    return success(); // Error already emitted.
+
+  // Emit the condition expression as an AnyValue.
+  auto emitter = getEmitter();
+  AnyValue condVal = emitter.emitExpr(condExpr, EC_TopLevelStmt);
+  if (!condVal)
+    return success();
+
+  // Build the call operands: debug_assert(cond[, msg]).
+  CallOperands operands(CallSyntax::kDirectCall, condExpr);
+  operands.add({condVal, condExpr});
+  if (messageExpr) {
+    AnyValue msgVal = emitter.emitExpr(messageExpr, EC_TopLevelStmt);
+    if (!msgVal)
+      return success();
+    operands.add({msgVal, messageExpr});
+  }
+
+  // Create the overload set and emit the call.
+  ParamBindings bindings(getDeclScope(), condExpr);
+  OverloadSet call("debug_assert", debugAssertFns, std::move(bindings),
+                   CallSyntax::kDirectCall);
+  ValueDest dest(EC_TopLevelStmt);
+  call.emitCall(std::move(operands), dest, emitter);
   return success();
 }
 

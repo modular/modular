@@ -67,6 +67,7 @@ bool Token::isStatementKeyword() const {
   case kw_continue:
   case kw_return:
   case kw_raise:
+  case kw_assert:
   case kw_try:
   case kw_except:
   case kw_finally:
