@@ -630,7 +630,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         """Returns the expected input types for the decoder."""
         return (
             TensorType(
-                self.dtype,
+                self.dtype if self.dtype is not None else DType.bfloat16,
                 shape=[
                     "batch_size",
                     self.latent_channels,
