@@ -246,6 +246,9 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `math.hypot()` now supports variadic and `Span` overloads for computing the
+  Euclidean norm of N values, matching Python's `math.hypot(*coordinates)`.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
