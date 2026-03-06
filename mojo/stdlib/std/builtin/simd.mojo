@@ -42,7 +42,7 @@ domain-specific libraries for machine learning and scientific computing.
 
 import std.math
 from std.collections import InlineArray
-from std.collections.string.string import _calc_initial_buffer_size
+from std.collections.string.string import _calc_initial_buffer_size, StringSlice
 from std.hashlib.hasher import Hasher
 from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.math.math import _call_ptx_intrinsic, trunc
@@ -101,6 +101,60 @@ from .dtype import (
 # ===----------------------------------------------------------------------=== #
 # Type Aliases
 # ===----------------------------------------------------------------------=== #
+
+
+# Compute a scalar alias name for `SIMD[dtype, 1]`.
+# Maps the DType short name to the usual alias (e.g. "uint32" -> "UInt32",
+# "int64" -> "Int64", otherwise Capitalize(first)).  Runs at comptime.
+@always_inline("nodebug")
+fn _scalar_alias_from_dtype(dtype: DType) -> String:
+    var name = String()
+    dtype.write_to(name)
+
+    # Prefer explicit aliases for common integral dtypes for readability.
+    if dtype == DType.uint8:
+        return String("UInt8")
+    elif dtype == DType.int8:
+        return String("Int8")
+    elif dtype == DType.uint16:
+        return String("UInt16")
+    elif dtype == DType.int16:
+        return String("Int16")
+    elif dtype == DType.uint32:
+        return String("UInt32")
+    elif dtype == DType.int32:
+        return String("Int32")
+    elif dtype == DType.uint64:
+        return String("UInt64")
+    elif dtype == DType.int64:
+        return String("Int64")
+    elif dtype == DType.uint128:
+        return String("UInt128")
+    elif dtype == DType.int128:
+        return String("Int128")
+    elif dtype == DType.uint256:
+        return String("UInt256")
+    elif dtype == DType.int256:
+        return String("Int256")
+    elif dtype == DType.uint:
+        return String("UInt")
+    elif dtype == DType.int:
+        return String("Int")
+
+    # Fallback: capitalize the printed dtype name, e.g. "float32" -> "Float32".
+    var s = StringSlice(name)
+    if len(s) > 0:
+        var iter = s.codepoint_slices()
+        var first_slice = iter.peek_next().value()
+        var first_upper = first_slice.upper()
+        var total = s.byte_length()
+        var first_len = first_slice.byte_length()
+        var rest = StringSlice(
+            ptr=s.unsafe_ptr() + first_len, length=total - first_len
+        )
+        return String(first_upper, rest)
+    return String()
+
 
 comptime Scalar = SIMD[_, size=1]
 """Represents a scalar dtype."""
@@ -2191,6 +2245,14 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             writer: The value to write to.
         """
+
+        comptime if Self.size == 1:
+            writer.write_string(
+                StringSlice(_scalar_alias_from_dtype(Self.dtype))
+            )
+            writer.write("(", self[0], ")")
+            return
+
         writer.write_string("SIMD[")
         Self.dtype.write_repr_to(writer)
         writer.write(", ", Self.size, "](")
