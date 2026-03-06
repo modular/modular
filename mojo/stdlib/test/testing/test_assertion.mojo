@@ -294,31 +294,31 @@ def test_assert_equal_with_unicode() raises:
 
 
 def test_assert_in_passes() raises:
-    """assert_in succeeds when the value is in the container."""
+    """Succeeds when the value is in the container."""
     assert_in(2, [1, 2, 3])
     assert_in("b", ["a", "b", "c"])
 
 
 def test_assert_in_fails() raises:
-    """assert_in raises AssertionError when the value is not in the container."""
+    """Raises AssertionError when the value is not in the container."""
     with assert_raises(contains="AssertionError"):
         assert_in(99, [1, 2, 3])
 
 
 def test_assert_in_error_message() raises:
-    """assert_in error message contains value and container."""
+    """Error message contains value and container."""
     with assert_raises(contains="value in container"):
         assert_in(99, [1, 2, 3])
 
 
 def test_assert_in_custom_msg() raises:
-    """assert_in includes the custom message on failure."""
+    """Includes the custom message on failure."""
     with assert_raises(contains="not there"):
         assert_in(99, [1, 2, 3], msg="not there")
 
 
 def test_assert_not_in_passes() raises:
-    """assert_not_in succeeds when the value is not in the container."""
+    """Succeeds when the value is not in the container."""
     assert_not_in(99, [1, 2, 3])
     assert_not_in("z", ["a", "b", "c"])
 
