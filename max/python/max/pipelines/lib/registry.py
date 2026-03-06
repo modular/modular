@@ -741,6 +741,9 @@ class PipelineRegistry:
                 f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
             )
 
+        arch_config = arch.config.initialize(pipeline_config)
+        max_length = arch_config.get_max_seq_len()
+
         # For pixel generation (diffusion models), we don't need HuggingFace transformers config
         if task == PipelineTask.PIXEL_GENERATION:
             # Pixel generation pipelines use a different tokenizer with subfolder parameters
@@ -752,22 +755,25 @@ class PipelineRegistry:
                     "tokenizer_2" in diffusers_config["components"]
                 )
 
-            # Standard max_length for CLIP tokenizer (primary)
-            # and T5 tokenizer (secondary, if present)
             tokenizer_kwargs = {
                 "model_path": pipeline_config.model.model_path,
                 "pipeline_config": pipeline_config,
                 "subfolder": "tokenizer",
-                "max_length": 77,  # Standard for CLIP
+                "max_length": max_length,
                 "revision": pipeline_config.model.huggingface_model_revision,
                 "trust_remote_code": pipeline_config.model.trust_remote_code,
             }
 
             if has_tokenizer_2:
                 tokenizer_kwargs["subfolder_2"] = "tokenizer_2"
-                tokenizer_kwargs["secondary_max_length"] = (
-                    512  # Standard for T5
+                secondary_max_length = getattr(
+                    arch_config, "secondary_max_seq_len", None
                 )
+                if secondary_max_length is None:
+                    raise ValueError(
+                        "secondary_max_seq_len must be set in ArchConfig if tokenizer_2 is present"
+                    )
+                tokenizer_kwargs["secondary_max_length"] = secondary_max_length
 
             # Pass per-architecture default for num_inference_steps
             # when the pipeline class declares one.
@@ -807,9 +813,6 @@ class PipelineRegistry:
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-
-        arch_config = arch.config.initialize(pipeline_config)
-        max_length = arch_config.get_max_seq_len()
 
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix

@@ -31,16 +31,17 @@ from .pipeline_flux2_klein import Flux2KleinPipeline
 class Flux2ArchConfig(ArchConfig):
     """Pipeline-level config for Flux2 (implements ArchConfig; no KV cache)."""
 
-    pipeline_config: PipelineConfig
+    max_seq_len: int = 512
 
     def get_max_seq_len(self) -> int:
-        return 0  # Not used for pixel generation.
+        """Returns the maximum sequence length for the tokenizer."""
+        return self.max_seq_len
 
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:
         if len(pipeline_config.model.device_specs) != 1:
             raise ValueError("Flux2 is only supported on a single device")
-        return cls(pipeline_config=pipeline_config)
+        return cls()
 
 
 flux2_arch = SupportedArchitecture(
