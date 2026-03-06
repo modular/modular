@@ -385,7 +385,7 @@ fn run_test_blockwise_fp8[
         kv_type,
         kv_params,
         page_size,
-        scale_dtype_ = DType.float32,
+        scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
         LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
@@ -870,7 +870,7 @@ fn run_bench_blockwise_fp8[
         kv_type,
         kv_params,
         page_size,
-        scale_dtype_ = DType.float32,
+        scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
         LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](

@@ -33,7 +33,7 @@ fn test_cp_async_bulk_wait_group():
     print(
         _compile_code[
             cp_async_bulk_wait_group_kernel[2],
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -49,7 +49,7 @@ fn test_cp_async_bulk_commit_group():
     print(
         _compile_code[
             cp_async_bulk_commit_group_kernel,
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -65,7 +65,7 @@ fn test_named_barrier():
     print(
         _compile_code[
             test_test_named_barrier_kernel,
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 

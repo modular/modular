@@ -97,14 +97,14 @@ fn tiled_matmul_kernel(
         float_dtype,
         tile_a_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var tile_b_shared = LayoutTensor[
         float_dtype,
         tile_b_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Initialize accumulator and start tiling loop

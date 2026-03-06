@@ -120,9 +120,7 @@ def test_short_nvptx_ptr() raises:
     print("== test_short_nvptx_ptr")
 
     fn do_some_shared_mem_op(src: UnsafePointer[Int32]):
-        var a = stack_allocation[
-            20, Int32, address_space = AddressSpace.SHARED
-        ]()
+        var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
         a[thread_idx.x] = src[0]
         barrier()
 

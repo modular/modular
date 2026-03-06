@@ -320,7 +320,7 @@ fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     Args:
         desc_ptr: Pointer to the TMA descriptor to prefetch.
     """
-    __mlir_op.`nvvm.prefetch`[tensormap = __mlir_attr.unit](
+    __mlir_op.`nvvm.prefetch`[tensormap=__mlir_attr.unit](
         to_llvm_ptr(desc_ptr),
     )
 

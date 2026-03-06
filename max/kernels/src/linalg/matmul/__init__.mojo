@@ -54,9 +54,9 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     return matmul[

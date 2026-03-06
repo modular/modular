@@ -54,8 +54,7 @@ from nn.sm100_attention_utils import (
     elect,
     elect_mma_arrive,
 )
-from layout._layout import row_major
-from layout import stack_allocation as tt_stack_allocation
+from layout import row_major, stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 
 from nn.mla_decode_sm100_utils import (
@@ -120,14 +119,14 @@ struct MLA_SM100_Decode_KV_FP8[
         4 // size_of[Self.output_type]()
     )
     comptime UMMAQKTSS = DecodeSM100QKTSS[
-        operand_type = Self.q_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.q_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
     comptime UMMAPVSS = DecodeSM100PVSS[
-        operand_type = Self.q_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.q_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
 
     # Number of producer arrivals for kv_load2cvt pipeline:
@@ -242,29 +241,29 @@ struct MLA_SM100_Decode_KV_FP8[
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn kernel(
         q_tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.q_type,
+            BM=Self.config.BM,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
         ],
         o_tma: QOTMATile[
-            dtype = Self.output_type,
-            BM = Self.config.out_rows,
-            BK = Self.config.BN,
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.output_type,
+            BM=Self.config.out_rows,
+            BK=Self.config.BN,
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         mla_decode_pack: MLA_Decode_Pack[
-            ValidLengthType = Self.ValidLengthType,
-            MaskType = Self.MaskType,
-            SplitAccumType = Self.SplitAccumType,
+            ValidLengthType=Self.ValidLengthType,
+            MaskType=Self.MaskType,
+            SplitAccumType=Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: LayoutTensor[
@@ -341,7 +340,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 return  # This query position doesn't exist for this batch
         q_smem = external_memory[
             Scalar[Self.q_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -398,7 +397,7 @@ struct MLA_SM100_Decode_KV_FP8[
         var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
 
         var kv_cvt2mma_pipe = KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,  # 128
             num_consumer=2,
@@ -448,10 +447,10 @@ struct MLA_SM100_Decode_KV_FP8[
         mbar_base = corr_done_bars.end()  # barrier total [23]
         # This is used for the pipeline between Load and convert fp8 to bf16
         var kv_load2cvt_pipe = KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
-            num_producer = Self.load2cvt_num_producer,
-            num_consumer = WARPGROUP_SIZE + 2,  # 128 + 2 mma
+            num_producer=Self.load2cvt_num_producer,
+            num_consumer=WARPGROUP_SIZE + 2,  # 128 + 2 mma
         ](
             mbar_base
         )  # kv_load2cvt_pipe uses 23..26
@@ -460,7 +459,7 @@ struct MLA_SM100_Decode_KV_FP8[
         # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
-            num_out_stages = OutPipeType.num_out_stages,
+            num_out_stages=OutPipeType.num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ](
@@ -594,26 +593,26 @@ struct MLA_SM100_Decode_KV_FP8[
     @always_inline
     fn load(
         q_tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.q_type,
+            BM=Self.config.BM,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma_fp8: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
         kv_smem_fp8: SharedMemPointer[Scalar[Self.kv_type]],
         mbar_q: MBarType,
         kv_load2cvt_pipe: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
-            num_producer = Self.load2cvt_num_producer,
-            num_consumer = WARPGROUP_SIZE + 2,  # 128 + 2 mma
+            num_producer=Self.load2cvt_num_producer,
+            num_consumer=WARPGROUP_SIZE + 2,  # 128 + 2 mma
         ],
         offset_position: OffsetPosition[
             Self.config,
@@ -799,13 +798,13 @@ struct MLA_SM100_Decode_KV_FP8[
         kv_smem_fp8: SharedMemPointer[Scalar[Self.kv_type]],
         kv_smem_bf16: SharedMemPointer[Scalar[Self.q_type]],
         kv_load2cvt_pipe: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
-            num_producer = Self.load2cvt_num_producer,
-            num_consumer = WARPGROUP_SIZE + 2,  # 128 + 2 mma
+            num_producer=Self.load2cvt_num_producer,
+            num_consumer=WARPGROUP_SIZE + 2,  # 128 + 2 mma
         ],
         kv_cvt2mma_pipe: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,  # 128
             num_consumer=2,
@@ -876,16 +875,16 @@ struct MLA_SM100_Decode_KV_FP8[
             # then stores ALL blocks. This will significantly reduce the number of barriers.
             # and improve the performance (18 barriers vs 1 barrier here).
             var p0a_all = tt_stack_allocation[
-                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+                dtype=DType.uint32, address_space=AddressSpace.LOCAL
             ](row_major[4, NumBlocks]())
             var p0b_all = tt_stack_allocation[
-                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+                dtype=DType.uint32, address_space=AddressSpace.LOCAL
             ](row_major[4, NumBlocks]())
             var p1a_all = tt_stack_allocation[
-                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+                dtype=DType.uint32, address_space=AddressSpace.LOCAL
             ](row_major[4, NumBlocks]())
             var p1b_all = tt_stack_allocation[
-                dtype = DType.uint32, address_space = AddressSpace.LOCAL
+                dtype=DType.uint32, address_space=AddressSpace.LOCAL
             ](row_major[4, NumBlocks]())
 
             comptime for b in range(NumBlocks):
@@ -895,23 +894,23 @@ struct MLA_SM100_Decode_KV_FP8[
                 var q1 = ld_shared_v4_u32(src_block_u8, phys_fp8_1)
 
                 var p0a = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                    fp8_dtype = Self.kv_type,
-                    out_dtype = Self.q_type,
+                    fp8_dtype=Self.kv_type,
+                    out_dtype=Self.q_type,
                 ](q0[0], q0[1])
 
                 var p0b = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                    fp8_dtype = Self.kv_type,
-                    out_dtype = Self.q_type,
+                    fp8_dtype=Self.kv_type,
+                    out_dtype=Self.q_type,
                 ](q0[2], q0[3])
 
                 var p1a = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                    fp8_dtype = Self.kv_type,
-                    out_dtype = Self.q_type,
+                    fp8_dtype=Self.kv_type,
+                    out_dtype=Self.q_type,
                 ](q1[0], q1[1])
 
                 var p1b = cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
-                    fp8_dtype = Self.kv_type,
-                    out_dtype = Self.q_type,
+                    fp8_dtype=Self.kv_type,
+                    out_dtype=Self.q_type,
                 ](q1[2], q1[3])
 
                 # Blockwise scaling: multiply converted BF16 values by the
@@ -944,22 +943,22 @@ struct MLA_SM100_Decode_KV_FP8[
             comptime for b in range(NumBlocks):
                 var dst_block = dst + b * BlockElems
 
-                st_shared_v4_b32_at_bf16_elem_off[out_dtype = Self.q_type](
+                st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0a,
                     p0a_all.ptr.load[width=4](b * 4),
                 )
-                st_shared_v4_b32_at_bf16_elem_off[out_dtype = Self.q_type](
+                st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0b,
                     p0b_all.ptr.load[width=4](b * 4),
                 )
-                st_shared_v4_b32_at_bf16_elem_off[out_dtype = Self.q_type](
+                st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1a,
                     p1a_all.ptr.load[width=4](b * 4),
                 )
-                st_shared_v4_b32_at_bf16_elem_off[out_dtype = Self.q_type](
+                st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1b,
                     p1b_all.ptr.load[width=4](b * 4),
@@ -1030,16 +1029,16 @@ struct MLA_SM100_Decode_KV_FP8[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_cvt2mma_pipe: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,  # 128
             num_consumer=2,
         ],
         kv_load2cvt_pipe: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
-            num_producer = Self.load2cvt_num_producer,
-            num_consumer = WARPGROUP_SIZE + 2,  # 128 + 2 mma
+            num_producer=Self.load2cvt_num_producer,
+            num_consumer=WARPGROUP_SIZE + 2,  # 128 + 2 mma
         ],
         offset_position: OffsetPosition[
             Self.config,
@@ -1111,16 +1110,16 @@ struct MLA_SM100_Decode_KV_FP8[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_cvt2mma_pipe: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=WARPGROUP_SIZE,  # 128
             num_consumer=2,
         ],
         kv_load2cvt_pipe: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
-            num_producer = Self.load2cvt_num_producer,
-            num_consumer = WARPGROUP_SIZE + 2,  # 128 + 2 mma
+            num_producer=Self.load2cvt_num_producer,
+            num_consumer=WARPGROUP_SIZE + 2,  # 128 + 2 mma
         ],
         offset_position: OffsetPosition[
             Self.config,

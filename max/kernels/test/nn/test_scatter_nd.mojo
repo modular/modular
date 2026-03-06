@@ -15,8 +15,7 @@ from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from layout._layout import row_major
-from layout import TileTensor
+from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_nd_generator, ScatterOobIndexStrategy
 from std.testing import assert_equal
 

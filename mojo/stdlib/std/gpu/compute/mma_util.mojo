@@ -722,5 +722,5 @@ fn store_matrix_d[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()

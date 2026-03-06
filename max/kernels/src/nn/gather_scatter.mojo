@@ -21,8 +21,14 @@ from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
-from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+    row_major,
+)
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -714,7 +720,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype](),
+                simd_width=simd_width_of[dtype](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
@@ -827,7 +833,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype, target=compile_target](),
+                simd_width=simd_width_of[dtype, target=compile_target](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -886,13 +892,11 @@ fn scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1119,13 +1123,11 @@ fn scatter_nd[
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1134,7 +1136,7 @@ fn scatter_nd[
         output_type,
         indices_type,
         single_thread_blocking_override,
-        oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
+        oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
         target=target,
         reduce_fn=None,
     ](data, indices, updates, output, context)

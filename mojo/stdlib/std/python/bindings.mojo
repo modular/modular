@@ -50,7 +50,7 @@ from std.utils import Variant
 # ===-----------------------------------------------------------------------===#
 
 comptime MOJO_PYTHON_TYPE_OBJECTS = _Global[
-    StorageType = Dict[StaticString, PythonObject],
+    StorageType=Dict[StaticString, PythonObject],
     "MOJO_PYTHON_TYPE_OBJECTS",
     Dict[StaticString, PythonObject].__init__,
 ]

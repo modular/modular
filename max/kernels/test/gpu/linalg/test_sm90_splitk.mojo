@@ -180,7 +180,7 @@ fn test_warp_specialize_gemm_with_multicasting[
         config=matmul_config,
         use_tma_store=use_tma_store,
         splits=splits,
-        raster_order = RasterOrder.AlongN,
+        raster_order=RasterOrder.AlongN,
     ](
         c_device_nd,
         a_device_nd,

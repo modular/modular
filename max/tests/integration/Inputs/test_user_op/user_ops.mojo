@@ -27,8 +27,8 @@ from std.utils.index import IndexList
 struct ReduceBuffers:
     @staticmethod
     fn execute(
-        output: OutputTensor[dtype = DType.float32, rank=1, ...],
-        inputs: MutableInputVariadicTensors[dtype = DType.float32, rank=1, ...],
+        output: OutputTensor[dtype=DType.float32, rank=1, ...],
+        inputs: MutableInputVariadicTensors[dtype=DType.float32, rank=1, ...],
     ) -> None:
         print("Success!")
 
@@ -54,7 +54,7 @@ struct ParameterizedOpaqueType:
     fn execute[
         P0: Int
     ](
-        output: OutputTensor[dtype = DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=DType.int32, rank=1, ...],
         x: SIMDPair[P0, _],
     ) capturing:
         output.store(IndexList[1](0), x.x)

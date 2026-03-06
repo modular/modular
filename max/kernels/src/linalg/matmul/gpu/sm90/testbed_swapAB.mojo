@@ -268,7 +268,7 @@ fn test_matmul_sm90_swapAB_comparison[
     warp_specialize_gemm_with_multicasting[
         transpose_b=transpose_b,
         config=base_config,
-        schedule = MatmulSchedule.NONE,
+        schedule=MatmulSchedule.NONE,
         swapAB=False,
     ](
         c_normal_device,
@@ -287,7 +287,7 @@ fn test_matmul_sm90_swapAB_comparison[
     warp_specialize_gemm_with_multicasting[
         transpose_b=transpose_b,
         config=base_config_swapAB,
-        schedule = MatmulSchedule.NONE,
+        schedule=MatmulSchedule.NONE,
         swapAB=True,
     ](
         c_swapAB_device,
@@ -758,7 +758,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,
             config=base_config,
-            schedule = MatmulSchedule.NONE,
+            schedule=MatmulSchedule.NONE,
             swapAB=False,
             elementwise_lambda_fn=elf_normal,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -782,7 +782,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     warp_specialize_gemm_with_multicasting[
         transpose_b=transpose_b,
         config=base_config_swapAB,
-        schedule = MatmulSchedule.NONE,
+        schedule=MatmulSchedule.NONE,
         swapAB=True,
         elementwise_lambda_fn=elf_swapAB,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,

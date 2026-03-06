@@ -266,10 +266,10 @@ struct Q4sym[
     @staticmethod
     fn quantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         input_shape: IndexList[input_tensor.rank],
     ):
@@ -320,9 +320,9 @@ struct Q4sym[
                 var flat_index_input = (
                     input_inner_stride * i + j * Self.group_size
                 )
-                var loaded_group = input_tensor.ptr.load[
-                    width = Self.group_size
-                ](flat_index_input)
+                var loaded_group = input_tensor.ptr.load[width=Self.group_size](
+                    flat_index_input
+                )
 
                 var flat_index_output = output_inner_stride * i + j
                 var output_ptr = base_block_ptr + flat_index_output
@@ -344,10 +344,10 @@ struct Q4sym[
     @staticmethod
     fn dequantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            DType.uint8, address_space = AddressSpace.GENERIC, ...
+            DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_shape: IndexList[output_tensor.rank],
     ):
@@ -431,9 +431,7 @@ struct block_Q4_K:
 
 
 fn scale_min_k4(
-    src_ptr: UnsafePointer[
-        block_Q4_K, address_space = AddressSpace.GENERIC, ...
-    ],
+    src_ptr: UnsafePointer[block_Q4_K, address_space=AddressSpace.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
     if g < 4:
@@ -454,10 +452,10 @@ fn scale_min_k4(
 
 fn q4_k_dequantize_impl(
     input_tensor: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, ...
+        DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     output_tensor: LayoutTensor[
-        mut=True, DType.float32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     comptime group_nelems = block_Q4_K.group_size

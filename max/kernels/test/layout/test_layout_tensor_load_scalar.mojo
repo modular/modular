@@ -59,10 +59,10 @@ fn test_load_scalar_dynamic_layout() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](3, 4),
-        RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](3, 4),
+        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
     var storage = InlineArray[Float32, 12](uninitialized=True)
@@ -72,8 +72,8 @@ fn test_load_scalar_dynamic_layout() raises:
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar at various positions
@@ -92,10 +92,10 @@ fn test_load_scalar_with_runtime_tuple() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](4, 4),
-        RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](4, 4),
+        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
     var storage = InlineArray[Float32, 16](uninitialized=True)
@@ -105,12 +105,12 @@ fn test_load_scalar_with_runtime_tuple() raises:
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar with RuntimeTuple
-    var coord = RuntimeTuple[layout.shape, element_type = DType.int32](2, 3)
+    var coord = RuntimeTuple[layout.shape, element_type=DType.int32](2, 3)
     var val: Scalar[DType.float32] = tensor.load_scalar(coord)
     assert_equal(val, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 

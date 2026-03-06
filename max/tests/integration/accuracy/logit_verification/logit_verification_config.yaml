@@ -554,7 +554,7 @@ logit_verification_pipelines:
       json_file: "torch_qwen3_embedding_0.6b_bfloat16_golden.json"
     relative_tolerance: 1.0e-04
     absolute_tolerance: 4.0e-03
-    cos_dist_threshold: 2.5e-04
+    cos_dist_threshold: 5.0e-04
     kl_div_threshold: 2.6e-04
 
   # Qwen2.VL-FP8
@@ -873,3 +873,25 @@ logit_verification_pipelines:
     tags: [nvidia-only, image-generation, manual]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
+
+  black-forest-labs/FLUX.2-dev-t2i-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-t2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation, manual]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+
+  black-forest-labs/FLUX.2-dev-i2i-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-i2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation, manual]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600

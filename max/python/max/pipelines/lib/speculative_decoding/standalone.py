@@ -115,7 +115,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         batch: list[TextContext],
         num_steps: int,
         model_inputs: ModelInputs,
-    ) -> tuple[int, Buffer, Buffer, ModelInputs, Buffer]:
+    ) -> tuple[int, Buffer, Buffer, ModelInputs, Buffer | None]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
         top_k, max_k, temperature, top_p, min_top_p, seed = (
@@ -134,11 +134,14 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         # Multi-step execution
         curr_step_inputs = model_inputs
 
-        # num_steps first so that slice indexing is contiguous
-        all_draft_logits = Buffer.zeros(
-            (num_steps, len(batch), self.vocab_size),
-            dtype=DType.float32,
-            device=self.draft_devices[0],
+        all_draft_logits = (
+            Buffer.zeros(
+                (num_steps, len(batch), self.vocab_size),
+                dtype=DType.float32,
+                device=self.draft_devices[0],
+            )
+            if self._needs_all_draft_logits
+            else None
         )
 
         for i in range(num_steps):
@@ -147,7 +150,10 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 model_inputs=curr_step_inputs
             )
 
-            all_draft_logits[i, :, :].inplace_copy_from(model_outputs.logits)
+            if all_draft_logits is not None:
+                all_draft_logits[i, :, :].inplace_copy_from(
+                    model_outputs.logits
+                )
 
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
@@ -199,7 +205,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         draft_logits: Buffer,
         merged_draft_tokens: Buffer,
         merged_draft_offsets: Buffer,
-        all_draft_logits: Buffer,
+        all_draft_logits: Buffer | None,
     ) -> tuple[Buffer, Buffer, Buffer | None]:
         """Verifies draft tokens against the target model and returns merged outputs."""
         # # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run.
@@ -238,6 +244,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 target_outputs.logits,
                 target_outputs.logit_offsets,
                 all_draft_logits,
+                context_batch=context_batch,
             )
         )
 

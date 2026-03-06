@@ -225,3 +225,12 @@ def main() raises:
         test_index_fp8[num_heads=128, depth=128](4, 722, 722, ctx)
         test_index_fp8[num_heads=128, depth=128](5, 32, 64, ctx)
         test_index_fp8[num_heads=128, depth=128](2, 128, 256, ctx)
+
+        test_index_fp8[num_heads=64, depth=128](2, 128, 128, ctx)
+        test_index_fp8[num_heads=64, depth=128](2, 32, 32, ctx)
+        test_index_fp8[num_heads=64, depth=128](4, 200, 200, ctx)
+        test_index_fp8[num_heads=64, depth=128](1, 501, 501, ctx)
+        test_index_fp8[num_heads=64, depth=128](3, 600, 600, ctx)
+        test_index_fp8[num_heads=64, depth=128](4, 722, 722, ctx)
+        test_index_fp8[num_heads=64, depth=128](5, 32, 64, ctx)
+        test_index_fp8[num_heads=64, depth=128](2, 128, 256, ctx)

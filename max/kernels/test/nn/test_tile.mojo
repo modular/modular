@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, TileTensor
-from layout._layout import row_major
+from layout import Coord, TileTensor, row_major
 from nn.tile import tile
 from std.testing import assert_equal
 

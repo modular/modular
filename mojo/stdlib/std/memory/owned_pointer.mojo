@@ -151,7 +151,7 @@ struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
         _constrained_conforms_to[
             conforms_to(Self.T, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
@@ -245,7 +245,7 @@ struct OwnedPointer[T: AnyType](RegisterPassable, Writable):
         _constrained_conforms_to[
             conforms_to(Self.T, Writable),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="Writable",
         ]()
         trait_downcast[Writable](self[]).write_to(writer)
