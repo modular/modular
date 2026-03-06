@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s --verify-diagnostics | FileCheck %s
 
 # ===----------------------------------------------------------------------=== #
 # comptime if
@@ -56,6 +56,7 @@ fn comptime_if_else[a: __mlir_type.i1]():
 # CHECK-LABEL: lit.fn @"param_if{{.*}}"<a: i1, b: !Bool>()
 fn param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: kgen.param.if <a> {
+    #expected-warning @+1 {{'@parameter if' is deprecated, use 'comptime if' instead}}
     @parameter
     if a:
         # CHECK: lit.var.decl "inside_1" var
@@ -74,6 +75,7 @@ fn param_if[a: __mlir_type.i1, b: Bool]():
 # CHECK-LABEL: lit.fn @"param_if_andor_i1{{.*}}"<a: i1, b: i1>()
 fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
     # CHECK: kgen.param.if <cond(a, b, a)>
+    #expected-warning @+1 {{'@parameter if' is deprecated, use 'comptime if' instead}}
     @parameter
     if a and b:
         # CHECK:   lit.var.decl "v" var
@@ -89,9 +91,60 @@ fn param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 # CHECK-LABEL: lit.fn @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 fn param_if_and[a: Bool, b: Bool]():
     # CHECK: kgen.param.if <#lit.struct.extract<:!Bool cond(#lit.struct.extract<:!Bool a, "_mlir_value">, b, a), "_mlir_value">>
+    #expected-warning @+1 {{'@parameter if' is deprecated, use 'comptime if' instead}}
     @parameter
     if a and b:
         # CHECK:   lit.var.decl "v" var
         var v: Int
     # CHECK:   kgen.param.yield
     # CHECK: }
+
+# Minimal local stand-in for std.sys.is_compile_time, matching its definition.
+@always_inline("nodebug")
+fn is_compile_time() -> Bool:
+    return __mlir_op.`kgen.is_compile_time`()
+
+
+# Warnings appear on stderr before IR output, so all CHECK/CHECK-NOT lines
+# for warnings must be ordered before any CHECK-LABEL that matches IR.
+
+fn test_direct_call():
+    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_compile_time():
+        var x: Int
+
+
+fn test_negated_call():
+    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if not is_compile_time():
+        var x: Int
+
+
+# No warning for a regular compile-time parameter.
+fn test_no_warning_for_regular_param[cond: __mlir_type.i1]():
+    comptime if cond:
+        var x: Int
+
+
+fn test_elif_also_warns[cond: __mlir_type.i1]():
+    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_compile_time():
+        var x: Int
+    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    elif is_compile_time():
+        var y: Int
+
+fn test_and_call():
+    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_compile_time() and True:
+        var x: Int
+
+fn test_or_call():
+    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_compile_time() or False:
+        var x: Int
+
+fn test_nested_call():
+    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if ((not (is_compile_time() and True)) or (not is_compile_time())):
+        var x: Int
