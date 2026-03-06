@@ -52,7 +52,10 @@ def _apply_flux2_qk_rope(
         [cos.shape[0], cos.shape[1]],
     )
     position_ids = F.arange(0, seq_len, dtype=DType.uint32, device=query.device)
-    position_ids = F.tile(position_ids[None, :], (batch_size, 1))
+    # broadcast_to instead of tile: tile has no GPU kernel and forces a
+    # CPU round-trip. broadcast_to expands [1, seq_len] -> [batch_size, seq_len]
+    # entirely on GPU.
+    position_ids = F.broadcast_to(position_ids[None, :], [batch_size, seq_len])
     position_ids = F.reshape(position_ids, [batch_size * seq_len])
 
     query_out = rope_ragged_with_position_ids(
