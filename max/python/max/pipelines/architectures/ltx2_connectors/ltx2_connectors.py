@@ -22,7 +22,7 @@ from max.experimental.tensor import Tensor
 from max.graph import TensorType
 
 from ..ltx2.ltx2 import LTX2Attention
-from .model_config import LTX2TextConnectorsConfig
+from .model_config import LTX2TextConnectorsConfigBase
 
 
 class LTX2RotaryPosEmbed1d(
@@ -301,7 +301,7 @@ class LTX2ConnectorTransformer1d(
 
 
 class LTX2TextConnectors(
-    nn.Module[[Tensor, Tensor, bool], tuple[Tensor, Tensor, Tensor]]
+    nn.Module[[Tensor, Tensor], tuple[Tensor, Tensor, Tensor]]
 ):
     """
     Text connector stack used by LTX 2.0 to process the packed text encoder hidden states for both the video and audio
@@ -310,7 +310,7 @@ class LTX2TextConnectors(
 
     def __init__(
         self,
-        config: LTX2TextConnectorsConfig,
+        config: LTX2TextConnectorsConfigBase,
     ):
         super().__init__()
         self.config = config
