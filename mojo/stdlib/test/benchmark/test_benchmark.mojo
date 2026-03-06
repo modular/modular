@@ -319,7 +319,9 @@ def test_bench_function_no_arg_unified() raises:
 
 
 def test_bench_config_write_to() raises:
-    var cfg = BenchConfig(min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000)
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
     var s = String()
     cfg.write_to(s)
     assert_true("min_runtime_secs=0.5" in s)
@@ -328,7 +330,9 @@ def test_bench_config_write_to() raises:
 
 
 def test_bench_config_write_repr_to() raises:
-    var cfg = BenchConfig(min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000)
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
     var s = String()
     cfg.write_repr_to(s)
     assert_true(s.startswith("BenchConfig("))
