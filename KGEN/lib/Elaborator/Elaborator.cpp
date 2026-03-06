@@ -2858,7 +2858,8 @@ LogicalResult Elaborator::run(
       rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
                               failed, errorLimit,
                               options.elaborationErrorIncludePrelude);
-    } else if (auto isCompileTime = dyn_cast<IsCompileTimeOp>(op)) {
+    } else if (auto isCompileTime =
+                   dyn_cast<IsRunInComptimeInterpreterOp>(op)) {
       // Rewrite IsCompileTimeOp to runtime value as always false.
       OpBuilder b(op);
       isCompileTime->replaceAllUsesWith(ParamConstantOp::create(

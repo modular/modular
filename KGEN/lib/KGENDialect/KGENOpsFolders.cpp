@@ -885,17 +885,17 @@ CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
 // IsCompileTimeOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess IsCompileTimeOp::interpret(ArrayRef<Attribute> operands,
-                                              InterpreterState &state) {
+ErrorTreeOrSuccess
+IsRunInComptimeInterpreterOp::interpret(ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
   // Always return true during interpreting time.
   Builder builder(getContext());
   state.mapResults(builder.getBoolAttr(true));
   return success();
 }
 
-ErrorTreeOrSuccess
-IsCompileTimeOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      ParametricInterpreterState &state) {
+ErrorTreeOrSuccess IsRunInComptimeInterpreterOp::parametric_interpret(
+    ArrayRef<Attribute> operands, ParametricInterpreterState &state) {
   // Always return true during interpreting time.
   Builder builder(getContext());
   state.mapResults(builder.getBoolAttr(true));
