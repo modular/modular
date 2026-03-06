@@ -49,7 +49,9 @@ class LTX2TextConnectorsModel(ComponentModel):
         with F.lazy():
             connectors = LTX2TextConnectors(self.config)  # type: ignore[arg-type]
             connectors.to(self.devices[0])
-        self.model: Model = connectors.compile(*connectors.input_types(), weights=state_dict)  # type: ignore[assignment]
+        self.model: Model = connectors.compile(
+            *connectors.input_types(), weights=state_dict
+        )  # type: ignore[assignment]
         return self.model
 
     def __call__(self, *args, **kwargs):
