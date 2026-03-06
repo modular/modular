@@ -515,7 +515,9 @@ class OverlapTextGenerationPipeline(
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
-    def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
+    def _warmup_model_inputs(
+        self, batch_size: int, q_max_seq_len: int = 1
+    ) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
         for _replica_idx in range(dp_size):
@@ -523,7 +525,9 @@ class OverlapTextGenerationPipeline(
                 [
                     TextContext(
                         max_length=self._pipeline_model.max_seq_len,
-                        tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
+                        tokens=TokenBuffer(
+                            np.zeros(q_max_seq_len, dtype=np.int64)
+                        ),
                         eos_token_ids=self._eos_token_id,
                         model_name=self._pipeline_config.model.model_name,
                     )

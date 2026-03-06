@@ -25,7 +25,9 @@ from max.engine import Model
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice
 from max.pipelines.lib import ModelInputs, ModelOutputs
-from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
+from max.pipelines.lib.graph_capture import (
+    ServeGraphCaptureRunner,
+)
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
     mock_huggingface_config,
@@ -87,21 +89,15 @@ def _make_runner(
 
 @pytest.fixture
 def _mock_graph_key() -> Any:
-    """Patches ``_resolve_replay_key`` and ``attention_graph_key_from_inputs``.
+    """Patches ``_resolve_replay_key``.
 
     Used by tests that exercise replay/capture plumbing without real KV cache
     inputs.
     """
-    with (
-        patch.object(
-            ServeGraphCaptureRunner,
-            "_resolve_replay_key",
-            side_effect=lambda mi: (int(mi.buffers[0].shape[0]), 1),
-        ),
-        patch(
-            "max.pipelines.lib.graph_capture.attention_graph_key_from_inputs",
-            side_effect=lambda mi: (int(mi.buffers[0].shape[0]), 1),
-        ),
+    with patch.object(
+        ServeGraphCaptureRunner,
+        "_resolve_replay_key",
+        side_effect=lambda mi: (int(mi.buffers[0].shape[0]), 1, 1),
     ):
         yield
 
@@ -135,7 +131,7 @@ def test_pipeline_model_capture_replay(
     runner = _make_runner(capture_model, max_batch_size=1)
 
     trace_inputs = inputs.buffers
-    runner.graph_entries[(1, 1)] = (
+    runner.graph_entries[(1, 1, 1)] = (
         trace_inputs,
         ModelOutputs(*capture_model.model.capture(1, *trace_inputs)),
     )
@@ -169,7 +165,7 @@ def test_pipeline_model_debug_verify_uses_runtime_inputs(
     runner = _make_runner(capture_model, max_batch_size=1)
 
     trace_inputs = replay_inputs.buffers
-    runner.graph_entries[(1, 1)] = (
+    runner.graph_entries[(1, 1, 1)] = (
         trace_inputs,
         ModelOutputs(*capture_model.model.capture(1, *trace_inputs)),
     )
@@ -194,7 +190,7 @@ def test_pipeline_model_debug_verify_rejects_mismatched_graph_keys(
     runner = _make_runner(capture_model, max_batch_size=1)
 
     trace_inputs = replay_inputs.buffers
-    runner.graph_entries[(1, 1)] = (
+    runner.graph_entries[(1, 1, 1)] = (
         trace_inputs,
         ModelOutputs(*capture_model.model.capture(1, *trace_inputs)),
     )
@@ -218,12 +214,17 @@ def test_pipeline_model_debug_verify_rejects_mismatched_graph_keys(
 
 
 def _make_kv_per_device(
-    max_cache_len: int, num_partitions: int
+    max_cache_len: int,
+    num_partitions: int,
+    q_max_seq_len: int = 1,
 ) -> KVCacheInputsPerDevice:
     """Creates a ``KVCacheInputsPerDevice`` with configurable metadata."""
     max_lengths = np.array([[0, max_cache_len]], dtype=np.uint32)
-    # attention_dispatch_metadata layout: [batch_size, max_cache_len, np]
-    dispatch = np.array([1, max_cache_len, num_partitions], dtype=np.int64)
+    # attention_dispatch_metadata layout:
+    # [batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]
+    dispatch = np.array(
+        [1, q_max_seq_len, num_partitions, max_cache_len], dtype=np.int64
+    )
     return KVCacheInputsPerDevice(
         blocks=Buffer.zeros((1,), dtype=DType.float32),
         cache_lengths=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
@@ -273,17 +274,17 @@ def _make_runner_for_resolve(
 def test_resolve_replay_key_single_device() -> None:
     runner = _make_runner_for_resolve()
     dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
-    runner.graph_entries[(1, 5)] = ((), ModelOutputs(logits=dummy_buf))
+    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
 
     kv = _make_kv_per_device(max_cache_len=100, num_partitions=5)
     inputs = _make_mock_inputs_with_kv(1, [kv])
-    assert runner._resolve_replay_key(inputs) == (1, 5)
+    assert runner._resolve_replay_key(inputs) == (1, 5, 1)
 
 
 def test_resolve_replay_key_dp_syncs_metadata() -> None:
     runner = _make_runner_for_resolve(data_parallel_degree=2)
     dummy_buf = Buffer.zeros((4,), dtype=DType.float32)
-    runner.graph_entries[(1, 7)] = ((), ModelOutputs(logits=dummy_buf))
+    runner.graph_entries[(1, 7, 1)] = ((), ModelOutputs(logits=dummy_buf))
 
     kv0 = _make_kv_per_device(max_cache_len=50, num_partitions=3)
     kv1 = _make_kv_per_device(max_cache_len=100, num_partitions=7)
@@ -292,7 +293,7 @@ def test_resolve_replay_key_dp_syncs_metadata() -> None:
     key = runner._resolve_replay_key(inputs)
 
     # np should be max(3, 7) = 7
-    assert key == (1, 7)
+    assert key == (1, 7, 1)
 
 
 def test_resolve_replay_key_mha_miss_raises() -> None:
@@ -308,13 +309,13 @@ def test_resolve_replay_key_mla_buckets_up() -> None:
     runner = _make_runner_for_resolve(is_mla=True)
     output_buf = Buffer.zeros((4,), dtype=DType.float32)
     # Capture graphs for np=5 and np=10.
-    runner.graph_entries[(1, 5)] = ((), ModelOutputs(logits=output_buf))
-    runner.graph_entries[(1, 10)] = ((), ModelOutputs(logits=output_buf))
+    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=output_buf))
+    runner.graph_entries[(1, 10, 1)] = ((), ModelOutputs(logits=output_buf))
 
     # Runtime np=7 should bucket up to 10.
     kv = _make_kv_per_device(max_cache_len=100, num_partitions=7)
     inputs = _make_mock_inputs_with_kv(1, [kv])
-    assert runner._resolve_replay_key(inputs) == (1, 10)
+    assert runner._resolve_replay_key(inputs) == (1, 10, 1)
 
 
 def test_replay_mla_buckets_to_captured_graph() -> None:
@@ -325,7 +326,7 @@ def test_replay_mla_buckets_to_captured_graph() -> None:
     # Capture a graph for np=10.
     kv_capture = _make_kv_per_device(max_cache_len=100, num_partitions=10)
     capture_inputs = _make_mock_inputs_with_kv(1, [kv_capture])
-    runner.graph_entries[(1, 10)] = (
+    runner.graph_entries[(1, 10, 1)] = (
         capture_inputs.buffers,
         ModelOutputs(logits=output_buf),
     )
@@ -342,7 +343,7 @@ def test_resolve_replay_key_mla_miss_raises() -> None:
     runner = _make_runner_for_resolve(is_mla=True)
     output_buf = Buffer.zeros((4,), dtype=DType.float32)
     # Only np=5 captured — runtime np=99 has no bucket >= 99.
-    runner.graph_entries[(1, 5)] = ((), ModelOutputs(logits=output_buf))
+    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=output_buf))
 
     kv = _make_kv_per_device(max_cache_len=200, num_partitions=99)
     inputs = _make_mock_inputs_with_kv(1, [kv])
@@ -355,7 +356,7 @@ def test_replay_mha_miss_raises() -> None:
     output_buf = Buffer.zeros((4,), dtype=DType.float32)
     kv_capture = _make_kv_per_device(max_cache_len=100, num_partitions=5)
     capture_inputs = _make_mock_inputs_with_kv(1, [kv_capture])
-    runner.graph_entries[(1, 5)] = (
+    runner.graph_entries[(1, 5, 1)] = (
         capture_inputs.buffers,
         ModelOutputs(logits=output_buf),
     )
@@ -369,3 +370,39 @@ def test_replay_mha_miss_raises() -> None:
         match=r"No captured device graph for",
     ):
         runner.replay(model_inputs=miss_inputs)
+
+
+def test_resolve_replay_key_q_seq_len_skip() -> None:
+    runner = _make_runner_for_resolve()
+    dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
+    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
+
+    # q_max_seq_len=2 (anything != 1) raises RuntimeError.
+    kv = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=2
+    )
+    inputs = _make_mock_inputs_with_kv(1, [kv])
+    with pytest.raises(RuntimeError, match=r"q_max_seq_len=2 != 1"):
+        runner._resolve_replay_key(inputs)
+
+
+def test_resolve_replay_key_q_seq_len_only_1_captured() -> None:
+    runner = _make_runner_for_resolve()
+    dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
+    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
+
+    # q_max_seq_len=1 resolves successfully.
+    kv = _make_kv_per_device(
+        max_cache_len=100, num_partitions=5, q_max_seq_len=1
+    )
+    inputs = _make_mock_inputs_with_kv(1, [kv])
+    assert runner._resolve_replay_key(inputs) == (1, 5, 1)
+
+    # q_max_seq_len > 1 raises RuntimeError.
+    for q in (2, 3, 4, 5):
+        kv = _make_kv_per_device(
+            max_cache_len=100, num_partitions=5, q_max_seq_len=q
+        )
+        inputs = _make_mock_inputs_with_kv(1, [kv])
+        with pytest.raises(RuntimeError, match=rf"q_max_seq_len={q} != 1"):
+            runner._resolve_replay_key(inputs)

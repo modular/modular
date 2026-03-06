@@ -207,10 +207,6 @@ class KVCacheParams(KVCacheParamInterface):
     """Number of query attention heads. Required when ``is_mla`` is True so
     that the attention dispatch resolver can call the MLA-specific kernel."""
 
-    q_max_seq_len: int = 1
-    """Number of query tokens per sequence during decode.  1 for standard
-    auto-regressive decode, >1 for Multi-Token Prediction (MTP)."""
-
     data_parallel_degree: int = 1
     """Degree of data parallelism. Must be 1 or equal to n_devices (DP+TP not yet supported)."""
 
@@ -443,7 +439,6 @@ class KVCacheParams(KVCacheParamInterface):
             devices=devices_per_replica[replica_idx],
             is_mla=self.is_mla,
             num_q_heads=self.num_q_heads,
-            q_max_seq_len=self.q_max_seq_len,
             data_parallel_degree=1,
             kvcache_quant_config=self.kvcache_quant_config,
             disk_offload_dir=os.path.join(
