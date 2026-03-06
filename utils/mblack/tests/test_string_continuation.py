@@ -145,3 +145,42 @@ def test_implicit_string_concat_fmt_off():
         "    print(s)\n"
     )
     assert _normalize_mojo_source(source) == source
+
+
+def test_trailing_operator_then_string_not_duplicated():
+    """A string on a continuation line after a trailing operator should be
+    joined once."""
+    source = (
+        "def main():\n"
+        '    var a = "hello"\n'
+        "    var result = a +\n"
+        '        " world"\n'
+    )
+    expected = (
+        "def main():\n"
+        '    var a = "hello"\n'
+        '    var result = a + " world"\n'
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_trailing_operator_then_ternary_not_duplicated():
+    """Ternary continuation after a trailing operator should be joined once."""
+    source = (
+        "def main():\n"
+        "    var a = 1\n"
+        "    var b = 2\n"
+        "    var cond = True\n"
+        "    var c = 3\n"
+        "    var x = a +\n"
+        "        b if cond else c\n"
+    )
+    expected = (
+        "def main():\n"
+        "    var a = 1\n"
+        "    var b = 2\n"
+        "    var cond = True\n"
+        "    var c = 3\n"
+        "    var x = a + b if cond else c\n"
+    )
+    assert_mojo_format(source, expected)
