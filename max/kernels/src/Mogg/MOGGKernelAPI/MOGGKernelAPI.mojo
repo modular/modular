@@ -308,6 +308,7 @@ from tensor import (
     OutputTensor,
     OutputVariadicTensors,
     VariadicTensors,
+    copy_tensor,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
@@ -10072,7 +10073,7 @@ struct DistributedAllReduceSum:
         _trace_name: StaticString,
     ](
         outputs: FusedOutputVariadicTensors[dtype, rank, ...],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        inputs: FusedInputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10098,12 +10099,11 @@ struct DistributedAllReduceSum:
         )
 
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), input_size_bytes * 2
+        )
 
         # Marshal input tensors, output tensors, and signal buffers into the expected format.
-        var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], num_devices
-        ](fill={})
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutAnyOrigin], num_devices
         ](fill={})
@@ -10112,24 +10112,53 @@ struct DistributedAllReduceSum:
         ](fill={})
 
         comptime for i in range(num_devices):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(
                 outputs[i]
             ).make_dims_unknown()
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+            # Split the signal_buffers slab in half: lower half for the
+            # stable input copy, upper half for the Signal struct and
+            # any payload.
+            var half = signal_buffers[i].size() // 2
+            var _, signal_buffer = signal_buffers[i].split(half)
+            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
 
         @always_inline
         fn launch_allreduce[
             index: Int
         ]() raises unified {
-            read in_bufs,
-            read out_bufs,
-            read rank_sigs,
             read dev_ctxs_input,
+            read inputs,
+            read out_bufs,
             read outputs,
+            read rank_sigs,
+            read signal_buffers,
         }:
+            var stable_input = (
+                signal_buffers[index]
+                .split(signal_buffers[index].size() // 2)[0]
+                .like(inputs[index])
+            )
+
+            copy_tensor[target=target, _trace_name=_trace_name](
+                stable_input, inputs[index], dev_ctxs_input[index]
+            )
+
+            var stable_inputs = InlineArray[
+                NDBuffer[dtype, rank, ImmutAnyOrigin], num_devices
+            ](fill={})
+
+            comptime for i in range(num_devices):
+                stable_inputs[i] = (
+                    managed_tensor_slice_to_ndbuffer(
+                        signal_buffers[i]
+                        .split(signal_buffers[i].size() // 2)[0]
+                        .like(inputs[i])
+                    )
+                    .make_dims_unknown()
+                    .get_immutable()
+                )
+
             @always_inline
             @parameter
             fn output_lambda[
@@ -10151,7 +10180,7 @@ struct DistributedAllReduceSum:
                 ngpus=num_devices,
                 output_lambda=output_lambda[output_index=index, ...],
             ](
-                in_bufs,
+                stable_inputs,
                 out_bufs[index].make_dims_unknown(),
                 rank_sigs,
                 dev_ctxs_input[index],
@@ -10276,7 +10305,7 @@ struct DistributedAllGather:
         _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype, rank, ...],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        inputs: FusedInputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10303,20 +10332,7 @@ struct DistributedAllGather:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        var dev_ctxs = List[DeviceContext]()
-        for i in range(len(dev_ctxs_input)):
-            dev_ctxs.append(dev_ctxs_input[i])
-
-        # Marshal input and output variadic tensors into the expected format.
-        var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
-        ](fill={})
-
-        comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
-
+        # Marshal output variadic tensors into the expected format.
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutAnyOrigin], num_devices * num_devices
         ](fill={})
@@ -10326,15 +10342,61 @@ struct DistributedAllGather:
                 outputs[i]
             ).make_dims_unknown()
 
+        # Split the signal_buffers slab in half: lower half for the stable
+        # input copy, upper half for the Signal struct and any payload.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(signal_buffers.size):
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+        comptime for i in range(num_devices):
+            var half = signal_buffers[i].size() // 2
+            var _, signal_buffer = signal_buffers[i].split(half)
+            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
+
+        @always_inline
+        fn copy_input[
+            index: Int
+        ]() raises unified {
+            read dev_ctxs_input,
+            read inputs,
+            read signal_buffers,
+        }:
+            var stable_input = (
+                signal_buffers[index]
+                .split(signal_buffers[index].size() // 2)[0]
+                .like(inputs[index])
+            )
+
+            copy_tensor[target=target, _trace_name=_trace_name](
+                stable_input, inputs[index], dev_ctxs_input[index]
+            )
+
+        _launch_device_collective[num_devices](copy_input, dev_ctxs_input)
+
+        # Build stable_inputs from signal buffer stable regions.
+        var stable_inputs = InlineArray[
+            NDBuffer[dtype, rank, ImmutAnyOrigin], num_devices
+        ](fill={})
+
+        comptime for i in range(num_devices):
+            stable_inputs[i] = (
+                managed_tensor_slice_to_ndbuffer(
+                    signal_buffers[i]
+                    .split(signal_buffers[i].size() // 2)[0]
+                    .like(inputs[i])
+                )
+                .make_dims_unknown()
+                .get_immutable()
+            )
+
+        var dev_ctxs = List[DeviceContext]()
+        for i in range(len(dev_ctxs_input)):
+            dev_ctxs.append(dev_ctxs_input[i])
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+            allgather[ngpus=num_devices](
+                stable_inputs, out_bufs, rank_sigs, dev_ctxs
+            )
 
 
 @compiler.register("mo.distributed.broadcast")
@@ -10357,7 +10419,7 @@ struct DistributedBroadcast:
         _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10395,16 +10457,40 @@ struct DistributedBroadcast:
         # Use 2-stage requirement as upper bound.
         var input_size_bytes = input.size() * size_of[dtype]()
         var payload_size = ceildiv(input_size_bytes, num_devices)
-        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), input_size_bytes + payload_size
+        )
 
-        var in_buf = managed_tensor_slice_to_ndbuffer(input)
-
+        # Split the signal_buffers slab in half: lower half for the stable
+        # input copy, upper half for the Signal struct and any payload.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
         comptime for i in range(signal_buffers.size):
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+            var half = signal_buffers[i].size() // 2
+            var _, signal_buffer = signal_buffers[i].split(half)
+            rank_sigs[i] = signal_buffer._ptr.bitcast[Signal]()
+
+        # Only the root device copies the input to its signal buffer's
+        # stable region. The broadcast barrier inside the kernel ensures
+        # this copy is visible to all GPUs before they read from it.
+        var stable_input = (
+            signal_buffers[root]
+            .split(signal_buffers[root].size() // 2)[0]
+            .like(input)
+        )
+
+        copy_tensor[target=target, _trace_name=_trace_name](
+            stable_input, input, dev_ctxs_input[root]
+        )
+
+        # Build in_buf from root's signal buffer stable region.
+        var in_buf = managed_tensor_slice_to_ndbuffer(
+            signal_buffers[root]
+            .split(signal_buffers[root].size() // 2)[0]
+            .like(input)
+        ).get_immutable()
 
         @always_inline
         fn launch_broadcast[
