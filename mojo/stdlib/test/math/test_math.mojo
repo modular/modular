@@ -32,6 +32,7 @@ from std.math import (
     fma,
     frexp,
     gcd,
+    hypot,
     iota,
     isclose,
     lcm,
@@ -601,6 +602,50 @@ def test_log1p_accuracy() raises:
     assert_equal(log1p(Float64(0)), Float64(0))
     assert_true(isinf(log1p(Float64(-1))))
     assert_true(isnan(log1p(Float64(-2))))
+
+
+def test_hypot_variadic() raises:
+    # Zero arguments: returns 0.
+    assert_equal(hypot[DType.float64](), Float64(0))
+
+    # One argument: returns abs(x).
+    assert_almost_equal(hypot(Float64(3.0)), Float64(3.0))
+    assert_almost_equal(hypot(Float64(-4.0)), Float64(4.0))
+
+    # Two arguments: delegates to existing SIMD hypot.
+    assert_almost_equal(hypot(Float64(3.0), Float64(4.0)), Float64(5.0))
+
+    # Three arguments: 3D distance.
+    assert_almost_equal(
+        hypot(Float64(1.0), Float64(2.0), Float64(2.0)), Float64(3.0)
+    )
+
+    # Four arguments.
+    assert_almost_equal(
+        hypot(Float64(1.0), Float64(2.0), Float64(3.0), Float64(4.0)),
+        sqrt(Float64(30.0)),
+    )
+
+    # Span overload.
+    var values: List[Float64] = [3.0, 4.0]
+    assert_almost_equal(hypot(Span(values)), Float64(5.0))
+
+    var values_3d: List[Float64] = [1.0, 2.0, 2.0]
+    assert_almost_equal(hypot(Span(values_3d)), Float64(3.0))
+
+    # All zeros.
+    assert_equal(hypot(Float64(0), Float64(0), Float64(0)), Float64(0))
+
+    # Large values (tests overflow protection via scaling).
+    assert_almost_equal(
+        hypot(Float64(1e300), Float64(1e300)),
+        Float64(1e300) * sqrt(Float64(2.0)),
+    )
+
+    # Float32.
+    assert_almost_equal(
+        hypot(Float32(3.0), Float32(4.0), Float32(0.0)), Float32(5.0)
+    )
 
 
 def test_gcd() raises:
