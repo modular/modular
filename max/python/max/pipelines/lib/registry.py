@@ -254,6 +254,12 @@ class SupportedArchitecture:
     multi_gpu_supported: bool = False
     """Whether the architecture supports multi-GPU execution."""
 
+    default_ep_size_to_num_devices: bool = False
+    """Whether expert parallelism should default to local multi-GPU width."""
+
+    default_data_parallel_degree_to_num_devices: bool = False
+    """Whether data parallel attention should default to local multi-GPU width."""
+
     required_arguments: dict[str, bool | int | float] = field(
         default_factory=dict
     )
