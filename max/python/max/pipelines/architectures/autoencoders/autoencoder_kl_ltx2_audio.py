@@ -140,6 +140,7 @@ class LTX2AudioAttnBlock(nn.Module[[Tensor], Tensor]):
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
+        self.norm: nn.Module[[Tensor], Tensor]
 
         if norm_type == "group":
             self.norm = nn.GroupNorm(
@@ -185,7 +186,7 @@ class LTX2AudioAttnBlock(nn.Module[[Tensor], Tensor]):
         q = q.reshape((batch, channels, height * width)).permute([0, 2, 1])
         k = k.reshape((batch, channels, height * width))
 
-        attn = F.matmul(q, k) * (channels ** (-0.5))
+        attn = F.matmul(q, k) * (int(channels) ** (-0.5))
         attn = F.softmax(attn, axis=-1)
 
         v = v.reshape((batch, channels, height * width))
@@ -223,7 +224,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
         self.out_channels = out_channels
         self.use_conv_shortcut = conv_shortcut
 
-        self.norm1: nn.Module
+        self.norm1: nn.Module[[Tensor], Tensor]
         if norm_type == "group":
             self.norm1 = nn.GroupNorm(
                 num_groups=32, num_channels=in_channels, eps=1e-6, affine=True
@@ -233,6 +234,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
         else:
             raise ValueError(f"Invalid normalization type: {norm_type}")
         self.non_linearity = activation_function_from_name("silu")
+        self.conv1: nn.Module[[Tensor], Tensor]
         if causality_axis is not None:
             self.conv1 = LTX2AudioCausalConv2d(
                 in_channels,
@@ -252,7 +254,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
             )
         if temb_channels > 0:
             self.temb_proj = nn.Linear(temb_channels, out_channels)
-        self.norm2: nn.Module
+        self.norm2: nn.Module[[Tensor], Tensor]
         if norm_type == "group":
             self.norm2 = nn.GroupNorm(
                 num_groups=32, num_channels=out_channels, eps=1e-6, affine=True
@@ -262,6 +264,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
         else:
             raise ValueError(f"Invalid normalization type: {norm_type}")
         self.dropout = nn.Dropout(dropout)
+        self.conv2: nn.Module[[Tensor], Tensor]
         if causality_axis is not None:
             self.conv2 = LTX2AudioCausalConv2d(
                 out_channels,
@@ -281,6 +284,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
             )
         if self.in_channels != self.out_channels:
             if self.use_conv_shortcut:
+                self.conv_shortcut: nn.Module[[Tensor], Tensor]
                 if causality_axis is not None:
                     self.conv_shortcut = LTX2AudioCausalConv2d(
                         in_channels,
@@ -299,6 +303,7 @@ class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
                         permute=True,
                     )
             else:
+                self.nin_shortcut: nn.Module[[Tensor], Tensor]
                 if causality_axis is not None:
                     self.nin_shortcut = LTX2AudioCausalConv2d(
                         in_channels,
@@ -350,7 +355,7 @@ class LTX2AudioUpsample(nn.Module[[Tensor], Tensor]):
         super().__init__()
         self.with_conv = with_conv
         self.causality_axis = causality_axis
-        self.conv: nn.Module
+        self.conv: nn.Module[[Tensor], Tensor]
         if self.with_conv:
             if causality_axis is not None:
                 self.conv = LTX2AudioCausalConv2d(
@@ -426,7 +431,7 @@ class LTX2AudioAudioPatchifier(nn.Module[[Tensor], Tensor]):
         return self._patch_size
 
 
-class LTX2AudioDecoderMid(nn.Module):
+class LTX2AudioDecoderMid(nn.Module[Any, Any]):
     """Container for the middle block of the LTX2 Audio Decoder."""
 
     block_1: LTX2AudioResnetBlock
@@ -434,7 +439,7 @@ class LTX2AudioDecoderMid(nn.Module):
     block_2: LTX2AudioResnetBlock
 
 
-class LTX2AudioDecoderStage(nn.Module):
+class LTX2AudioDecoderStage(nn.Module[Any, Any]):
     """Container for a single stage (level) of the LTX2 Audio Decoder."""
 
     block: nn.ModuleList[LTX2AudioResnetBlock]
@@ -506,7 +511,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         base_resolution = resolution // (2 ** (self.num_resolutions - 1))
         self.z_shape = (1, latent_channels, base_resolution, base_resolution)
 
-        self.conv_in: nn.Module
+        self.conv_in: nn.Module[[Tensor], Tensor]
         if self.causality_axis is not None:
             self.conv_in = LTX2AudioCausalConv2d(
                 latent_channels,
@@ -589,7 +594,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
 
         final_block_channels = block_in
 
-        self.norm_out: nn.Module
+        self.norm_out: nn.Module[[Tensor], Tensor]
         if self.norm_type == "group":
             self.norm_out = nn.GroupNorm(
                 num_groups=32,
@@ -602,7 +607,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
         else:
             raise ValueError(f"Invalid normalization type: {self.norm_type}")
 
-        self.conv_out: nn.Module
+        self.conv_out: nn.Module[[Tensor], Tensor]
         if self.causality_axis is not None:
             self.conv_out = LTX2AudioCausalConv2d(
                 in_channels=final_block_channels,
@@ -748,16 +753,18 @@ class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
         # TODO: Add vocoder here too?
         return decoded
 
-    def input_types(self) -> TensorType:
-        return TensorType(
-            self._dtype,
-            shape=[
-                "batch_size",
-                self._num_channels,
-                "audio_num_frames",
-                "num_mel_bins",
-            ],
-            device=self._device,
+    def input_types(self) -> tuple[TensorType, ...]:
+        return (
+            TensorType(
+                self._dtype,
+                shape=[
+                    "batch_size",
+                    self._num_channels,
+                    "audio_num_frames",
+                    "num_mel_bins",
+                ],
+                device=self._device,
+            ),
         )
 
 
