@@ -69,7 +69,7 @@ from std.sys.info import (
 )
 from std.sys.intrinsics import _type_is_eq
 
-from std.bit import bit_width, byte_swap, pop_count
+from std.bit import bit_width, byte_swap, count_trailing_zeros, pop_count
 from std.builtin._format_float import _write_float
 from std.builtin.device_passable import DevicePassable
 from std.builtin.format_int import _write_int
@@ -2988,6 +2988,56 @@ struct SIMD[dtype: DType, size: Int](
                 return Int(count)
         else:
             return Int(pop_count(self).reduce_add())
+
+    def first_true(self) -> Int:
+        """Returns the index of the first `True` lane in a boolean SIMD vector.
+
+        Constraints:
+            The element type must be `DType.bool`.
+
+        Returns:
+            The index of the first `True` lane, or `-1` if all lanes are `False`.
+
+        Example:
+
+        ```mojo
+        var mask = SIMD[DType.bool, 4](False, False, True, False)
+        print(mask.first_true())  # 2
+        mask = SIMD[DType.bool, 4](False, False, False, False)
+        print(mask.first_true())  # -1
+        ```
+        """
+        comptime assert (
+            Self.dtype == DType.bool
+        ), "first_true requires SIMD[DType.bool, N]"
+        comptime if Self.size == 1:
+            return 0 if self[0] else -1
+        else:
+            var mask = pack_bits(rebind[SIMD[DType.bool, Self.size]](self))
+            if not mask:
+                return -1
+            return Int(count_trailing_zeros(mask))
+
+    def count_true(self) -> Int:
+        """Returns the number of `True` lanes in a boolean SIMD vector.
+
+        Constraints:
+            The element type must be `DType.bool`.
+
+        Returns:
+            The count of `True` lanes.
+
+        Example:
+
+        ```mojo
+        var mask = SIMD[DType.bool, 4](True, False, True, True)
+        print(mask.count_true())  # 3
+        ```
+        """
+        comptime assert (
+            Self.dtype == DType.bool
+        ), "count_true requires SIMD[DType.bool, N]"
+        return self.reduce_bit_count()
 
     # ===------------------------------------------------------------------=== #
     # select
