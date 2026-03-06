@@ -577,8 +577,10 @@ fn assert_in[
         raise _assert_error(
             String(
                 "`value in container` assertion failed",
-                "\n  value: ", value,
-                "\n  container: ", container,
+                "\n  value: ",
+                value,
+                "\n  container: ",
+                container,
                 ("\n  reason: " + msg) if msg else "",
             ),
             location.or_else(call_location()),
@@ -621,8 +623,10 @@ fn assert_not_in[
         raise _assert_error(
             String(
                 "`value not in container` assertion failed",
-                "\n  value: ", value,
-                "\n  container: ", container,
+                "\n  value: ",
+                value,
+                "\n  container: ",
+                container,
                 ("\n  reason: " + msg) if msg else "",
             ),
             location.or_else(call_location()),
