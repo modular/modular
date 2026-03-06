@@ -37,7 +37,6 @@ Value elements must be `Copyable`. As with `KeyElement`, the
 See the `Dict` docs for more details.
 """
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.compile import get_type_name
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
@@ -566,7 +565,7 @@ struct Dict[
     Defaultable,
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(K, Writable) and conforms_to(V, Writable),
 ):
     """A container that stores key-value pairs.
 
@@ -1057,7 +1056,11 @@ struct Dict[
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(
+        self,
+    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
+        Self.V, Writable
+    ):
         """Returns a string representation of a `Dict`.
 
         Returns:
@@ -1069,7 +1072,11 @@ struct Dict[
 
     @no_inline
     @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
+    fn __str__(
+        self,
+    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
+        Self.V, Writable
+    ):
         """Returns a string representation of a `Dict`.
 
         Returns:
@@ -1093,10 +1100,9 @@ struct Dict[
 
     fn _write_dict_body[
         f_key: fn(Self.K, mut Some[Writer]), f_val: fn(Self.V, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
-        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.K, Writable
+    ) and conforms_to(Self.V, Writable):
         writer.write_string("{")
 
         var i = 0
@@ -1112,7 +1118,9 @@ struct Dict[
         writer.write_string("}")
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
         """Write this `Dict` to the writer.
 
         Args:
@@ -1124,7 +1132,9 @@ struct Dict[
         ](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
         """Write this `Dict`'s representation to the writer.
 
         Args:
