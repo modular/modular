@@ -185,6 +185,9 @@ class Float8Config:
     quant_algo: str | None = None
     """Additional differentiator within same quant_method (for example, modelopt NVFP4 vs FP8)."""
 
+    can_use_fused_mlp: bool = False
+    """Whether the quantization scales can be used with fused MLP operations."""
+
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
         """The weight and input scale granularities on the M, N, and K axes."""

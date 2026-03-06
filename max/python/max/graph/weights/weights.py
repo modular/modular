@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterator
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import numpy.typing as npt
-from max.driver import CPU, DLPackArray, is_virtual_device_mode
+from max.driver import CPU, Buffer, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 
 from ..buffer_utils import cast_dlpack_to
@@ -210,6 +210,14 @@ class WeightData(DLPackArray):
 
     def __dlpack_device__(self) -> Any:
         return self.data.__dlpack_device__()
+
+    def to_buffer(self) -> Buffer:
+        """Mutates the data into a Buffer."""
+        # We store the result of Buffer.from_dlpack because it may copy the
+        # data.
+        if not isinstance(self.data, Buffer):
+            self.data = Buffer.from_dlpack(self.data)
+        return self.data
 
     @classmethod
     def from_numpy(cls, arr: npt.NDArray[Any], name: str) -> WeightData:

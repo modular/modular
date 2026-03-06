@@ -31,6 +31,7 @@ from max.nn.float8_config import (
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
+from max.nn.float8_scale_stacking import can_use_fused_mlp
 from transformers import AutoConfig
 
 
@@ -631,7 +632,7 @@ def parse_float8_config(  # TODO: rename to generic
     """
     # uint8 is packed fp4 (float4_e2m1fnx2) in NVFP4 checkpoints.
     if dtype in _FP4_DTYPES:
-        return _parse_float4_config(
+        config = _parse_float4_config(
             huggingface_config,
             state_dict,
             dtype,
@@ -639,7 +640,7 @@ def parse_float8_config(  # TODO: rename to generic
             ignored_modules_prefix,
         )
     elif dtype == DType.float8_e4m3fn:
-        return _parse_float8_config(
+        config = _parse_float8_config(
             huggingface_config,
             state_dict,
             dtype,
@@ -647,4 +648,14 @@ def parse_float8_config(  # TODO: rename to generic
             ignored_modules_prefix,
         )
     else:
-        return None
+        config = None
+
+    if config is not None:
+        config.can_use_fused_mlp = can_use_fused_mlp(state_dict)
+        if not config.can_use_fused_mlp:
+            logger.warning(
+                "Fused MLP is not supported for this model. "
+                "This may impact performance."
+            )
+
+    return config
