@@ -639,5 +639,48 @@ def test_write_repr_to() raises:
     )
 
 
+def test_index_basic() raises:
+    """Returns the index of the first occurrence."""
+    var ll = LinkedList[Int](1, 2, 3)
+    assert_equal(ll.index(1), 0)
+    assert_equal(ll.index(2), 1)
+    assert_equal(ll.index(3), 2)
+
+
+def test_index_first_occurrence() raises:
+    """Returns the first occurrence when there are duplicates."""
+    var ll = LinkedList[Int](1, 2, 3, 2, 1)
+    assert_equal(ll.index(2), 1)
+    assert_equal(ll.index(1), 0)
+
+
+def test_index_with_start() raises:
+    """Respects the start bound."""
+    var ll = LinkedList[Int](1, 2, 3, 2, 1)
+    assert_equal(ll.index(2, start=2), 3)
+
+
+def test_index_with_stop() raises:
+    """Respects the stop bound (exclusive)."""
+    var ll = LinkedList[Int](1, 2, 3, 2, 1)
+    assert_equal(ll.index(2, stop=3), 1)
+    with assert_raises(contains="ValueError"):
+        _ = ll.index(3, stop=2)
+
+
+def test_index_negative_bounds() raises:
+    """Negative start/stop are normalized from the end."""
+    var ll = LinkedList[Int](1, 2, 3, 2, 1)
+    assert_equal(ll.index(2, start=-4), 1)
+    assert_equal(ll.index(2, start=-3, stop=-1), 3)
+
+
+def test_index_not_found() raises:
+    """Raises ValueError when the value is not present."""
+    var ll = LinkedList[Int](1, 2, 3)
+    with assert_raises(contains="ValueError"):
+        _ = ll.index(99)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

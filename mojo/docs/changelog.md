@@ -327,6 +327,10 @@ what we publish.
   `lane_group_sum_and_broadcast()`, `lane_group_max_and_broadcast()` functions
   are deprecated — use the short names instead.
 
+- `LinkedList` now has an `index(value, start=0, stop=None)` method returning
+  the position of the first occurrence of `value`, consistent with `List.index()`.
+  Raises `ValueError` if the value is not found.
+
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
