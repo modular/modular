@@ -372,7 +372,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     @always_inline("nodebug")
     fn canonicalize(
         self,
-        out result: IndexList[Self.size, element_type = DType.int64],
+        out result: IndexList[Self.size, element_type=DType.int64],
     ):
         """Canonicalizes the IndexList.
 

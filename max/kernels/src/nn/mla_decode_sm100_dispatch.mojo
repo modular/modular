@@ -17,7 +17,6 @@ from std.sys import size_of
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
-from layout import UNKNOWN_VALUE
 from layout.layout import (
     Layout,
 )
@@ -324,9 +323,9 @@ struct MLADispatchScalarArgs[
         self.q_max_seq_len = q_max_seq_len
         self.max_cache_valid_length = max_cache_len
         compute_mla_dispatch_scalar_args[
-            num_heads = Self.num_heads,
-            _is_cache_length_accurate = Self._is_cache_length_accurate,
-            is_fp8_kv = Self.is_fp8_kv,
+            num_heads=Self.num_heads,
+            _is_cache_length_accurate=Self._is_cache_length_accurate,
+            is_fp8_kv=Self.is_fp8_kv,
         ](
             self.gpu_buf.unsafe_ptr()
             .bitcast[Scalar[DType.int64]]()
@@ -367,20 +366,18 @@ fn mla_decode_sm100_dispatch[
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
     output: LayoutTensor[
-        output_type, output_layout, address_space = AddressSpace.GENERIC, ...
+        output_type, output_layout, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
     scalar_args_buf: LayoutTensor[
-        DType.int64, address_space = AddressSpace.GENERIC, ...
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     q_max_seq_len: Int,
@@ -510,21 +507,19 @@ fn _mla_decode_sm100_dispatch_impl[
     decoding_warp_split_k: Bool = False,
     split_page_size: Int = 128,
 ](
-    q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
     output: LayoutTensor[
-        output_type, output_layout, address_space = AddressSpace.GENERIC, ...
+        output_type, output_layout, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     scalar_args_buf: LayoutTensor[
-        DType.int64, address_space = AddressSpace.GENERIC, ...
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     q_max_seq_len: Int,
@@ -808,11 +803,9 @@ fn mla_decode_sm100_sink_split_k[
     decoding_warp_split_k: Bool,
     split_page_size: Int = 128,
 ](
-    q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[address_space=AddressSpace.GENERIC, ...],
     lse_accum_split_ptr: SplitAccumType,
     scale: Float32,
     batch_size: Int,
@@ -820,12 +813,12 @@ fn mla_decode_sm100_sink_split_k[
     num_partitions: Int,
     q_max_seq_len: Int,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     scalar_args_buf: LayoutTensor[
-        DType.int64, address_space = AddressSpace.GENERIC, ...
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -865,20 +858,20 @@ fn mla_decode_sm100_sink_split_k[
     var num_rows_q = num_matrix_view_rows_decode(q)
 
     k_tma_op = k.create_tma_tile[
-        BN = mla_config.BK1,  # tile_m =64
-        depth = mla_config.q_depth,
-        BK = mla_config.BK0,  # tile_n =576
-        swizzle_mode = mla_config.kv_tma_swizzle_mode,
+        BN=mla_config.BK1,  # tile_m =64
+        depth=mla_config.q_depth,
+        BK=mla_config.BK0,  # tile_n =576
+        swizzle_mode=mla_config.kv_tma_swizzle_mode,
     ](ctx)
     o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
         output.to_device_buffer(ctx).unsafe_ptr()
     )
     var num_rows_o = num_matrix_view_rows_decode(output)
     o_tma_op = tma_tile_qo[
-        swizzle_mode = mla_config.swizzle_mode,
-        BM = mla_config.out_rows,
-        BK = mla_config.BN,
-        depth = mla_config.depth,
+        swizzle_mode=mla_config.swizzle_mode,
+        BM=mla_config.out_rows,
+        BK=mla_config.BN,
+        depth=mla_config.depth,
     ](ctx, o_ptr, num_rows_o)
 
     # For native FP8: Q data is already FP8 in the Q buffer (like FlashInfer).
@@ -890,10 +883,10 @@ fn mla_decode_sm100_sink_split_k[
             UnsafePointer[Scalar[k_t.dtype], origin=MutAnyOrigin]
         ](q.to_device_buffer(ctx).unsafe_ptr())
         q_tma_fp8 = tma_tile_qo[
-            swizzle_mode = mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
-            BM = mla_config.BM,
-            BK = mla_config.BK0,
-            depth = mla_config.q_depth,
+            swizzle_mode=mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+            BM=mla_config.BM,
+            BK=mla_config.BK0,
+            depth=mla_config.q_depth,
         ](ctx, q_ptr_fp8, num_rows_q)
 
         if ragged:
@@ -964,10 +957,10 @@ fn mla_decode_sm100_sink_split_k[
             q.to_device_buffer(ctx).unsafe_ptr()
         )
         q_tma_op = tma_tile_qo[
-            swizzle_mode = mla_config.swizzle_mode,
-            BM = mla_config.BM,
-            BK = mla_config.BK0,
-            depth = mla_config.q_depth,
+            swizzle_mode=mla_config.swizzle_mode,
+            BM=mla_config.BM,
+            BK=mla_config.BK0,
+            depth=mla_config.q_depth,
         ](ctx, q_ptr, num_rows_q)
 
         if ragged:
@@ -1048,21 +1041,21 @@ fn launch_mla_sm100_decode_enqueue_kernel[
 ](
     q_tma: QOTMATile[
         dtype=q_type,
-        BM = config.BM,  # tile_m =64
-        BK = config.BK0,  # tile_n =576
-        swizzle_mode = config.swizzle_mode,
+        BM=config.BM,  # tile_m =64
+        BK=config.BK0,  # tile_n =576
+        swizzle_mode=config.swizzle_mode,
     ],
     k_tma: KVTMATile[
-        dtype = KVLUTType.dtype,
-        swizzle_mode = config.kv_tma_swizzle_mode,
-        BN = config.BK1,  # tile_m =64
-        BK = config.BK0,  # tile_n =576
+        dtype=KVLUTType.dtype,
+        swizzle_mode=config.kv_tma_swizzle_mode,
+        BN=config.BK1,  # tile_m =64
+        BK=config.BK0,  # tile_n =576
     ],
     o_tma: QOTMATile[
         dtype=output_type,
-        BM = config.out_rows,
-        BK = config.BN,
-        swizzle_mode = config.swizzle_mode,
+        BM=config.out_rows,
+        BK=config.BN,
+        swizzle_mode=config.swizzle_mode,
     ],
     kv_lut: KVLUTType,
     lse_accum_split_ptr: SplitAccumType,
@@ -1075,7 +1068,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     mask: MaskType,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     scalar_args_buf: LayoutTensor[
-        DType.int64, address_space = AddressSpace.GENERIC, ...
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1215,22 +1208,22 @@ fn launch_mla_sm100_decode_native_fp8[
     ragged: Bool = False,
 ](
     q_tma: QOTMATile[
-        dtype = KVLUTType.dtype,  # FP8 Q TMA
-        BM = config.BM,
-        BK = config.BK0,
-        swizzle_mode = config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+        dtype=KVLUTType.dtype,  # FP8 Q TMA
+        BM=config.BM,
+        BK=config.BK0,
+        swizzle_mode=config.kv_tma_swizzle_mode,  # SWIZZLE_64B
     ],
     k_tma: KVTMATile[
-        dtype = KVLUTType.dtype,
-        swizzle_mode = config.kv_tma_swizzle_mode,
-        BN = config.BK1,
-        BK = config.BK0,
+        dtype=KVLUTType.dtype,
+        swizzle_mode=config.kv_tma_swizzle_mode,
+        BN=config.BK1,
+        BK=config.BK0,
     ],
     o_tma: QOTMATile[
         dtype=output_type,
-        BM = config.out_rows,
-        BK = config.BN,
-        swizzle_mode = config.swizzle_mode,
+        BM=config.out_rows,
+        BK=config.BN,
+        swizzle_mode=config.swizzle_mode,
     ],
     kv_lut: KVLUTType,
     lse_accum_split_ptr: SplitAccumType,
@@ -1243,7 +1236,7 @@ fn launch_mla_sm100_decode_native_fp8[
     mask: MaskType,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     scalar_args_buf: LayoutTensor[
-        DType.int64, address_space = AddressSpace.GENERIC, ...
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:

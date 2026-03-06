@@ -22,8 +22,13 @@ from std.benchmark import (
 )
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from layout._fillers import random
 from std.math import ceildiv, iota, exp, log
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi
@@ -793,7 +798,7 @@ fn test_case_batched[
                     fn run_func_cpu(ctx: DeviceContext) raises:
                         _top_k_cpu[
                             dtype=dtype,
-                            out_idx_type = DType.int64,
+                            out_idx_type=DType.int64,
                             largest=largest,
                         ](
                             in_host_tensor,
@@ -808,7 +813,7 @@ fn test_case_batched[
                     time_kernel[run_func_cpu](m, ctx, "topk-cpu")
 
                 _top_k_cpu[
-                    dtype=dtype, out_idx_type = DType.int64, largest=largest
+                    dtype=dtype, out_idx_type=DType.int64, largest=largest
                 ](
                     in_host_tensor,
                     K,
@@ -1139,7 +1144,7 @@ def main() raises:
         test_case_batched[
             float32_dtype,
             fill_random,
-            out_idx_type = DType.uint64,
+            out_idx_type=DType.uint64,
         ](ctx, test_case0)
 
         comptime test_case1 = TestCase[
@@ -1153,7 +1158,7 @@ def main() raises:
         test_case_batched[
             float32_dtype,
             fill_random,
-            out_idx_type = DType.uint64,
+            out_idx_type=DType.uint64,
         ](ctx, test_case1)
 
         comptime test_case2 = TestCase[
@@ -1217,7 +1222,7 @@ def main() raises:
         test_case_batched[
             bf16_type,
             fill_random,
-            out_idx_type = DType.uint64,
+            out_idx_type=DType.uint64,
         ](ctx, test_case7)
 
         comptime test_case8 = TestCase[

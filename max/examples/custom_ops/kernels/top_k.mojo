@@ -58,9 +58,9 @@ struct TopK:
         K: Int,
         target: StaticString,
     ](
-        out_vals: OutputTensor[dtype=dtype, rank=rank],
-        out_idxs: OutputTensor[dtype = DType.int32, rank=rank],
-        in_vals: InputTensor[dtype=dtype, rank=rank],
+        out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
+        out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
+        in_vals: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert rank == 2, "rank must be 2"
@@ -90,8 +90,8 @@ struct TopK:
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
                 TopKElement[dtype],
-                address_space = AddressSpace.SHARED,
-                alignment = align_of[TopKElement[dtype]](),
+                address_space=AddressSpace.SHARED,
+                alignment=align_of[TopKElement[dtype]](),
             ]()
 
             # Threads put their corresponding index and value into shared memory

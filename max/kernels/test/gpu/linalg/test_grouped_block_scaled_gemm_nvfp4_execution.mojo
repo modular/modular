@@ -915,13 +915,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),  # Logical K (actual data is K/2 bytes)
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),  # Logical K (actual data is K/2 bytes)
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 2: Larger dimensions (1SM mode)
@@ -930,13 +930,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[512](),
+        m=static[512](),
+        n=static[512](),
+        k=static[512](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 3: Multi-group with different pointers (1SM mode)
@@ -945,13 +945,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # 2SM tests
@@ -963,13 +963,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 5: 2SM larger dimensions
@@ -978,13 +978,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[512](),
+        m=static[512](),
+        n=static[512](),
+        k=static[512](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 6: 2SM multi-group with different pointers
@@ -993,13 +993,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     print("\n" + "=" * 60)

@@ -12,8 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer, Dim, DimList
-from layout._layout import Layout, row_major
-from layout import ComptimeInt, Coord, Idx, RuntimeInt, TileTensor
+from std.utils.index import IndexList
+from layout.tile_layout import Layout
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
 from std.math import ceildiv
@@ -84,7 +92,7 @@ fn test_distribute_with_swizzle() raises:
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
-    var layout_tensor = TileTensor[dtype = DType.uint32](
+    var layout_tensor = TileTensor[dtype=DType.uint32](
         ptr=ptr,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -142,7 +150,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
 
-    var tensor_no_swizzle = TileTensor[dtype = DType.uint32](
+    var tensor_no_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_no_swizzle,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -150,7 +158,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
         ),
     )
 
-    var tensor_with_swizzle = TileTensor[dtype = DType.uint32](
+    var tensor_with_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_with_swizzle,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -653,6 +661,35 @@ fn test_to_nd_buffer_partially_dynamic() raises:
     assert_equal(buffer.shape.at[1](), Dim(4))
     assert_equal(buffer.dynamic_shape[0], 4)
     assert_equal(buffer.dynamic_shape[1], 4)
+
+
+fn test_from_ndbuffer_row_major_strides() raises:
+    """Verify TileTensor(NDBuffer) computes static row-major strides.
+
+    When an NDBuffer has mixed static/dynamic shape dims (e.g. shape=(?, 128)),
+    the constructor should produce static strides where possible:
+    strides=(128, 1). This is critical for kernels that read static_stride
+    (e.g. BlackwellMatmulSM100FallbackKernel).
+    """
+    var stack = InlineArray[Float32, 256](fill=0)
+    var ptr = stack.unsafe_ptr()
+
+    # Mixed shape: dim 0 dynamic, dim 1 static (128).
+    comptime shape = DimList(Dim(), 128)
+    var ndbuf = NDBuffer[DType.float32, 2, _, shape](ptr, IndexList[2](2, 128))
+    var tt = TileTensor(ndbuf)
+
+    # Runtime values correct.
+    assert_equal(Int(tt.dim[0]()), 2)
+    assert_equal(Int(tt.dim[1]()), 128)
+
+    # Compile-time stride types: stride[0]=128 (static), stride[1]=1.
+    assert_equal(tt.layout.static_stride[0], 128)
+    assert_equal(tt.layout.static_stride[1], 1)
+
+    # Shape types: dim 0 is runtime (-1), dim 1 is static (128).
+    assert_equal(tt.layout.static_shape[0], -1)
+    assert_equal(tt.layout.static_shape[1], 128)
 
 
 fn test_to_nd_buffer_fully_dynamic() raises:

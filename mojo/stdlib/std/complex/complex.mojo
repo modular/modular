@@ -101,7 +101,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         comptime T = Self.element_type
         self.re = rebind[T](from_deinterleaved.slice[Self.size]())
         self.im = rebind[T](
-            from_deinterleaved.slice[Self.size, offset = Self.size]()
+            from_deinterleaved.slice[Self.size, offset=Self.size]()
         )
 
     # ===-------------------------------------------------------------------===#

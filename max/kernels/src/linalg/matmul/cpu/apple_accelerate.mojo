@@ -377,17 +377,17 @@ fn apple_matmul[
             beta,
             rebind[
                 LegacyUnsafePointer[
-                    mut=True, Float32, address_space = c.address_space
+                    mut=True, Float32, address_space=c.address_space
                 ]
             ](c.data),
             rebind[
                 LegacyUnsafePointer[
-                    mut=True, Float32, address_space = a.address_space
+                    mut=True, Float32, address_space=a.address_space
                 ]
             ](a.data),
             rebind[
                 LegacyUnsafePointer[
-                    mut=True, Float32, address_space = b.address_space
+                    mut=True, Float32, address_space=b.address_space
                 ]
             ](b.data),
         )
@@ -457,13 +457,13 @@ fn apple_batched_matmul[
     var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
-        var c2 = NDBuffer[c.type, 2, address_space = c.address_space](
+        var c2 = NDBuffer[c.type, 2, address_space=c.address_space](
             c3.data + (c_shape[0] * c_shape[1]) * batch, c_shape
         )
-        var a2 = NDBuffer[a.type, 2, address_space = a.address_space](
+        var a2 = NDBuffer[a.type, 2, address_space=a.address_space](
             a3.data + (a_shape[0] * a_shape[1]) * batch, a_shape
         )
-        var b2 = NDBuffer[b.type, 2, address_space = b.address_space](
+        var b2 = NDBuffer[b.type, 2, address_space=b.address_space](
             b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
         )
 
@@ -486,7 +486,7 @@ fn apple_batched_matmul[
 
         apple_matmul[
             transpose_b=transpose_b,
-            elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
+            elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
                 elementwise_lambda_2d
             ) if elementwise_epilogue_fn else None,
         ](cblas_gemm, c2, a2, b2)

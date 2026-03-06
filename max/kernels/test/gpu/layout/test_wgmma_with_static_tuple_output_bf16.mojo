@@ -57,14 +57,14 @@ fn wgmma_kernel_ss[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
@@ -101,8 +101,8 @@ fn wgmma_kernel_ss[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()

@@ -129,13 +129,13 @@ fn flash_attention[
     naive_kernel: Bool = False,
     sink: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
-    mask: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    mask: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: Optional[Int] = None,
@@ -160,10 +160,10 @@ fn flash_attention[
 
     var ctx = context.get_device_context()
 
-    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
         "flash_attention",
         Trace[
-            TraceLevel.OP, target = ctx.default_device_info.api
+            TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
@@ -313,15 +313,15 @@ fn flash_attention[
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -387,10 +387,10 @@ fn flash_attention[
             )
         )
 
-    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
         "flash_attention",
         Trace[
-            TraceLevel.OP, target = ctx.default_device_info.api
+            TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
@@ -425,7 +425,7 @@ fn flash_attention[
         var v_operand = KVCacheMHAOperand(v)
 
         flash_attention_dispatch[
-            kv_num_heads = Int(kv_num_heads),
+            kv_num_heads=Int(kv_num_heads),
             config=config,
             ragged=ragged,
             sink=sink,
@@ -497,9 +497,9 @@ fn flash_attention_dispatch[
     _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
     k: k_t,
     v: v_t,
@@ -568,7 +568,7 @@ fn flash_attention_dispatch[
                 comptime if is_sm90:
                     mha_sm90_dispatch[
                         config=config,
-                        group = Int(group),
+                        group=Int(group),
                         ragged=ragged,
                         sink=sink,
                         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -597,7 +597,7 @@ fn flash_attention_dispatch[
                     ]():
                         mha_sm100_1q_dispatch[
                             config=config,
-                            group = Int(group),
+                            group=Int(group),
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -621,7 +621,7 @@ fn flash_attention_dispatch[
                     else:
                         mha_sm100_2q_dispatch[
                             config=config,
-                            group = Int(group),
+                            group=Int(group),
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -656,7 +656,7 @@ fn flash_attention_dispatch[
                     mask_t,
                     type_of(valid_length.value()).layout,
                     config,
-                    group = Int(group),
+                    group=Int(group),
                     ragged=ragged,
                     is_shared_kv=is_shared_kv,
                     sink=sink,
@@ -805,13 +805,13 @@ fn flash_attention_dispatch[
                     type_of(valid_length.value()).layout,
                     BM=BM,
                     BN=BN,
-                    BK = UInt(BK),
+                    BK=UInt(BK),
                     WM=WM,
                     WN=WN,
                     depth=depth,
                     num_heads=num_heads,
-                    num_threads = UInt(num_threads),
-                    num_pipeline_stages = UInt(num_pipeline_stages),
+                    num_threads=UInt(num_threads),
+                    num_pipeline_stages=UInt(num_pipeline_stages),
                     group=group,
                     ragged=ragged,
                     is_shared_kv=is_shared_kv,
@@ -828,7 +828,7 @@ fn flash_attention_dispatch[
                         comptime if is_sm90:
                             mha_sm90_dispatch[
                                 config=config,
-                                group = Int(group),
+                                group=Int(group),
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -852,7 +852,7 @@ fn flash_attention_dispatch[
                         else:
                             mha_sm100_1q_dispatch[
                                 config=config,
-                                group = Int(group),
+                                group=Int(group),
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -992,7 +992,7 @@ fn flash_attention_dispatch[
                         comptime if is_sm90:
                             mha_sm90_dispatch[
                                 config=config,
-                                group = Int(group),
+                                group=Int(group),
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -1019,7 +1019,7 @@ fn flash_attention_dispatch[
                         else:
                             mha_sm100_1q_dispatch[
                                 config=config,
-                                group = Int(group),
+                                group=Int(group),
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -1054,13 +1054,13 @@ fn flash_attention_dispatch[
                             type_of(valid_length.value()).layout,
                             BM=BM,
                             BN=BN,
-                            BK = UInt(BK),
+                            BK=UInt(BK),
                             WM=WM,
                             WN=WN,
                             depth=depth,
                             num_heads=num_heads,
-                            num_threads = UInt(num_threads),
-                            num_pipeline_stages = UInt(num_pipeline_stages),
+                            num_threads=UInt(num_threads),
+                            num_pipeline_stages=UInt(num_pipeline_stages),
                             group=group,
                             ragged=ragged,
                             is_shared_kv=is_shared_kv,
@@ -1104,7 +1104,7 @@ fn flash_attention_dispatch[
                         output.dtype,
                         depth=depth,
                         num_heads=num_heads,
-                        num_threads = UInt(WARP_SIZE),
+                        num_threads=UInt(WARP_SIZE),
                         group=group,
                         use_exp2=use_fa3_kernel,
                     ]
@@ -1193,12 +1193,12 @@ fn flash_attention[
     naive_kernel: Bool = False,
     sink: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
@@ -1294,17 +1294,17 @@ fn flash_attention_ragged[
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
-    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
-        mut=False, type, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, type, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
         mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     max_prompt_len: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
     scale: Float32,
@@ -1593,7 +1593,7 @@ fn mha[
             attention.mha_prefill()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -1673,14 +1673,14 @@ fn mha_single_batch[
     comptime q_smem_size = config.q_smem_size()
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -1690,7 +1690,7 @@ fn mha_single_batch[
                     q_type,
                     Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -1705,7 +1705,7 @@ fn mha_single_batch[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
@@ -1718,7 +1718,7 @@ fn mha_single_batch[
         v_type,
         Layout.row_major(Int(BK), Int(BN)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -1741,18 +1741,16 @@ fn mha_single_batch[
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
+        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
+            RuntimeTuple[q_gmem_layout.shape, element_type=DType.int32](
                 Int(q_tile_num_rows), Int(depth)
             ),
-            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[q_gmem_layout.stride, element_type=DType.int32](
                 Int(num_heads * depth), 1
             ),
         ),
@@ -1781,7 +1779,7 @@ fn mha_single_batch[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
@@ -1789,7 +1787,7 @@ fn mha_single_batch[
             accum_type,
             Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0)
@@ -1833,7 +1831,7 @@ fn mha_single_batch[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -1844,7 +1842,7 @@ fn mha_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * Int(num_warps_n), Int(BM)),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
@@ -1876,7 +1874,7 @@ fn mha_single_batch[
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
             swizzle=True,
-            num_threads = Int(num_threads),
+            num_threads=Int(num_threads),
         ](
             q_smem_tile.vectorize[1, simd_size](),
             q_gmem_iter[].vectorize[1, simd_size](),
@@ -1903,11 +1901,11 @@ fn mha_single_batch[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,
                 ),
-                Index[dtype = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype=DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -1929,9 +1927,9 @@ fn mha_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             k.block_paged_ptr[Int(BN)](
                 UInt32(batch_idx),
@@ -1948,9 +1946,9 @@ fn mha_single_batch[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             v.block_paged_ptr[Int(BN)](
                 UInt32(batch_idx),
@@ -2001,7 +1999,7 @@ fn mha_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
                 swizzle=True,
-                num_threads = Int(num_threads),
+                num_threads=Int(num_threads),
             ](
                 k_smem_tile.vectorize[1, simd_size](),
                 k_gmem_iter[].vectorize[1, simd_size](),
@@ -2025,8 +2023,8 @@ fn mha_single_batch[
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
-            static_num_iters = Int(depth // BK),
-            k_group_size = config.k_group_size,
+            static_num_iters=Int(depth // BK),
+            k_group_size=config.k_group_size,
         ](
             p_reg_tile,
             q_smem_iter,
@@ -2082,7 +2080,7 @@ fn mha_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32](
+                                IndexList[4, element_type=DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -2102,10 +2100,10 @@ fn mha_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -2114,11 +2112,11 @@ fn mha_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,
                 ),
-                Index[dtype = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype=DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -2171,8 +2169,8 @@ fn mha_single_batch[
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_v_layout,
-                swizzle = v_smem_tile.dtype.is_half_float(),
-                num_threads = Int(num_threads),
+                swizzle=v_smem_tile.dtype.is_half_float(),
+                num_threads=Int(num_threads),
             ](
                 v_smem_tile.vectorize[1, simd_size](),
                 v_tensor.vectorize[1, simd_size](),
@@ -2209,8 +2207,8 @@ fn mha_single_batch[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
-                static_num_iters = Int(BN // BK),
-                k_group_size = config.k_group_size,
+                static_num_iters=Int(BN // BK),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2241,8 +2239,8 @@ fn mha_single_batch[
                 False,  # transpose_b
                 swizzle_a=False,
                 prefetch_init=False,
-                static_num_iters = Int(BN // BK),
-                k_group_size = config.k_group_size,
+                static_num_iters=Int(BN // BK),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -2272,18 +2270,16 @@ fn mha_single_batch[
     var output_gmem_tile = LayoutTensor[
         output_type,
         output_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         output_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
+        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
+            RuntimeTuple[output_gmem_layout.shape, element_type=DType.int32](
                 Int(q_tile_num_rows), Int(depth)
             ),
-            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[output_gmem_layout.stride, element_type=DType.int32](
                 Int(num_heads * depth), 1
             ),
         ),
@@ -2295,20 +2291,20 @@ fn mha_single_batch[
     # Write to global memory.
     comptime if output_type.is_half_float():
         comptime swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size = Int(WN), access_size=MMA_N
+            num_rows=MMA_M // 2, row_size=Int(WN), access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(Int(BM), Int(depth)),
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[Int(WM), Int(WN)](
             Int(warp_y), Int(warp_x)
         )
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
@@ -2321,7 +2317,7 @@ fn mha_single_batch[
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
-            thread_layout = Layout.row_major(
+            thread_layout=Layout.row_major(
                 Int(num_threads * UInt(simd_size) // depth),
                 Int(depth // UInt(simd_size)),
             ),
@@ -2331,7 +2327,7 @@ fn mha_single_batch[
             accum_smem_tile.vectorize[1, simd_size](),
         )
     else:
-        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
             output_gmem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -2413,14 +2409,14 @@ fn mha_single_batch_pipelined[
     comptime q_smem_size = config.q_smem_size()
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -2430,7 +2426,7 @@ fn mha_single_batch_pipelined[
                     q_type,
                     Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -2445,7 +2441,7 @@ fn mha_single_batch_pipelined[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
@@ -2468,18 +2464,16 @@ fn mha_single_batch_pipelined[
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
+        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
+            RuntimeTuple[q_gmem_layout.shape, element_type=DType.int32](
                 Int(q_tile_num_rows), Int(depth)
             ),
-            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[q_gmem_layout.stride, element_type=DType.int32](
                 Int(num_heads * depth), 1
             ),
         ),
@@ -2508,7 +2502,7 @@ fn mha_single_batch_pipelined[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
@@ -2516,7 +2510,7 @@ fn mha_single_batch_pipelined[
             accum_type,
             Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0)
@@ -2566,7 +2560,7 @@ fn mha_single_batch_pipelined[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -2577,7 +2571,7 @@ fn mha_single_batch_pipelined[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(p_frag_simdwidth * Int(num_warps_n), Int(BM)),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
@@ -2611,11 +2605,11 @@ fn mha_single_batch_pipelined[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,
                 ),
-                Index[dtype = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype=DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -2630,12 +2624,12 @@ fn mha_single_batch_pipelined[
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
+            element_type=DType.int32, linear_idx_type=DType.int32
         ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
+            RuntimeTuple[kv_gmem_layout.shape, element_type=DType.int32](
                 kv_tile_num_rows, Int(depth)
             ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[kv_gmem_layout.stride, element_type=DType.int32](
                 Int(kv_num_heads * depth), 1
             ),
         )
@@ -2643,9 +2637,9 @@ fn mha_single_batch_pipelined[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             k.block_paged_ptr[Int(BN)](
                 UInt32(batch_idx),
@@ -2662,9 +2656,9 @@ fn mha_single_batch_pipelined[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             v.block_paged_ptr[Int(BN)](
                 UInt32(batch_idx),
@@ -2698,15 +2692,11 @@ fn mha_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
                 continue_prefetch_b=True,
-                b_next_smem_layout = Layout.row_major(Int(BK), Int(BN)),
-                next_op_b_iter_masked = type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type = type_of(
-                    v_gmem_iter
-                ).layout_int_type,
-                next_op_b_linear_idx_type = type_of(
-                    v_gmem_iter
-                ).linear_idx_type,
-                k_group_size = config.k_group_size,
+                b_next_smem_layout=Layout.row_major(Int(BK), Int(BN)),
+                next_op_b_iter_masked=type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
+                next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
+                k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
                 q_gmem_iter,
@@ -2733,15 +2723,11 @@ fn mha_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
                 continue_prefetch_b=True,
-                b_next_smem_layout = Layout.row_major(Int(BK), Int(BN)),
-                next_op_b_iter_masked = type_of(v_gmem_iter).masked,
-                next_op_b_layout_int_type = type_of(
-                    v_gmem_iter
-                ).layout_int_type,
-                next_op_b_linear_idx_type = type_of(
-                    v_gmem_iter
-                ).linear_idx_type,
-                k_group_size = config.k_group_size,
+                b_next_smem_layout=Layout.row_major(Int(BK), Int(BN)),
+                next_op_b_iter_masked=type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
+                next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
+                k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
                 # Pass shared memory iterator to hint not loading from global memory.
@@ -2803,7 +2789,7 @@ fn mha_single_batch_pipelined[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32](
+                                IndexList[4, element_type=DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -2826,22 +2812,22 @@ fn mha_single_batch_pipelined[
                             p_reg_vec2[mma_id, i] = _kernel_mask(
                                 IndexList[
                                     2,
-                                    element_type = DType.uint32,
+                                    element_type=DType.uint32,
                                 ](Int(score_row), Int(score_col)),
                                 IndexList[
                                     2,
-                                    element_type = DType.uint32,
+                                    element_type=DType.uint32,
                                 ](seq_len, num_keys),
                                 p_reg_vec2[mma_id, i],
                             )
 
         unswitch[_apply_mask](
             mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,
                 ),
-                Index[dtype = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype=DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -2904,7 +2890,7 @@ fn mha_single_batch_pipelined[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
-                k_group_size = config.k_group_size,
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2931,9 +2917,9 @@ fn mha_single_batch_pipelined[
                 Int(num_pipeline_stages),
                 False,  # transpose_b
                 swizzle_a=True,
-                static_num_iters = Int(BN // BK),
+                static_num_iters=Int(BN // BK),
                 prefetch_init=False,
-                k_group_size = config.k_group_size,
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -2963,18 +2949,16 @@ fn mha_single_batch_pipelined[
     var output_gmem_tile = LayoutTensor[
         output_type,
         output_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         output_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
+        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
+            RuntimeTuple[output_gmem_layout.shape, element_type=DType.int32](
                 Int(q_tile_num_rows), Int(depth)
             ),
-            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[output_gmem_layout.stride, element_type=DType.int32](
                 Int(num_heads * depth), 1
             ),
         ),
@@ -2989,7 +2973,7 @@ fn mha_single_batch_pipelined[
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(Int(BM), Int(depth)),
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[Int(WM), Int(WN)](
@@ -2997,17 +2981,17 @@ fn mha_single_batch_pipelined[
         )
 
         comptime swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size = Int(WN), access_size=MMA_N
+            num_rows=MMA_M // 2, row_size=Int(WN), access_size=MMA_N
         ]()
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
         barrier()
         copy_sram_to_dram[
-            thread_layout = Layout.row_major(
+            thread_layout=Layout.row_major(
                 Int(num_threads * UInt(simd_size) // depth),
                 Int(depth // UInt(simd_size)),
             ),
@@ -3026,7 +3010,7 @@ fn mha_single_batch_pipelined[
         # vector and stored using 16B store instruction.
 
     else:
-        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
             output_gmem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -3299,7 +3283,7 @@ fn mha_decoding[
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -3315,7 +3299,7 @@ fn scale_and_mask_helper[
     simd_width: Int,
 ](
     p_reg_tile: LayoutTensor[
-        mut=True, p_type, p_layout, _, address_space = AddressSpace.LOCAL
+        mut=True, p_type, p_layout, _, address_space=AddressSpace.LOCAL
     ],
     scale_log2e: Float32,
     num_keys: UInt,
@@ -3465,14 +3449,14 @@ fn mha_decoding_single_batch[
     comptime q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -3482,7 +3466,7 @@ fn mha_decoding_single_batch[
                     q_type,
                     Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -3496,7 +3480,7 @@ fn mha_decoding_single_batch[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
@@ -3509,7 +3493,7 @@ fn mha_decoding_single_batch[
         v_type,
         Layout.row_major(Int(BK), Int(BN)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -3536,7 +3520,7 @@ fn mha_decoding_single_batch[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation[stack_alignment=p_frag_align]()
 
     # Note that
@@ -3550,7 +3534,7 @@ fn mha_decoding_single_batch[
             accum_type,
             Layout.row_major(Int(num_output_rows_full), p_frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0.0)
@@ -3594,7 +3578,7 @@ fn mha_decoding_single_batch[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
@@ -3604,7 +3588,7 @@ fn mha_decoding_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * Int(num_warps_n), Int(BM)),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     # Mask global memory iterator
@@ -3619,18 +3603,16 @@ fn mha_decoding_single_batch[
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
+        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
+            RuntimeTuple[q_gmem_layout.shape, element_type=DType.int32](
                 Int(group), Int(depth)
             ),
-            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[q_gmem_layout.stride, element_type=DType.int32](
                 Int(depth), 1
             ),
         ),
@@ -3666,7 +3648,7 @@ fn mha_decoding_single_batch[
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
             swizzle=True,
-            num_threads = Int(num_threads),
+            num_threads=Int(num_threads),
         ](
             q_smem_tile.vectorize[1, simd_size](),
             q_gmem_iter[].vectorize[1, simd_size](),
@@ -3697,7 +3679,7 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked = not not_last_iter,
+            masked=not not_last_iter,
         ](k_ptr)
         var k_gmem_iter = k_gmem_block.tiled_iterator[Int(BN), Int(BK), axis=1](
             0, 0
@@ -3731,7 +3713,7 @@ fn mha_decoding_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
                 swizzle=True,
-                num_threads = Int(num_threads),
+                num_threads=Int(num_threads),
             ](
                 k_smem_tile.vectorize[1, simd_size](),
                 k_tensor.vectorize[1, simd_size](),
@@ -3755,7 +3737,7 @@ fn mha_decoding_single_batch[
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
-            static_num_iters = Int(depth // BK),
+            static_num_iters=Int(depth // BK),
         ](
             p_reg_tile,
             q_smem_iter,
@@ -3766,11 +3748,11 @@ fn mha_decoding_single_batch[
         )
 
         scale_and_mask_helper[
-            num_n_mmas = Int(num_n_mmas),
-            WN = Int(WN),
+            num_n_mmas=Int(num_n_mmas),
+            WN=Int(WN),
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
-            group = Int(group),
+            group=Int(group),
         ](
             p_reg_tile,
             scale_log2e,
@@ -3848,7 +3830,7 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked = not not_last_iter,
+            masked=not not_last_iter,
         ](v_ptr)
         var v_gmem_iter = v_gmem_block.tiled_iterator[Int(BK), Int(BN), axis=0](
             0, 0
@@ -3875,8 +3857,8 @@ fn mha_decoding_single_batch[
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_v_layout,
-                swizzle = v_smem_tile.dtype.is_half_float(),
-                num_threads = Int(num_threads),
+                swizzle=v_smem_tile.dtype.is_half_float(),
+                num_threads=Int(num_threads),
             ](
                 v_smem_tile.vectorize[1, simd_size](),
                 v_tensor.vectorize[1, simd_size](),
@@ -3918,7 +3900,7 @@ fn mha_decoding_single_batch[
                 v_type,
                 Layout.row_major(Int(WN), Int(BN)),
                 _,
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
                 circular=True,
             ]
             var v_smem_sub = IteratorTypeVSub(
@@ -3957,7 +3939,7 @@ fn mha_decoding_single_batch[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
-                static_num_iters = Int(BN // BK),
+                static_num_iters=Int(BN // BK),
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -3979,7 +3961,7 @@ fn mha_decoding_single_batch[
         var scratch = LayoutTensor[
             accum_type,
             Layout.row_major(2 * Int(num_warps_n), Int(BM)),
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN)
 
         # Note: Sink handling is done after warp reduction in partition-specific logic below.
@@ -4038,16 +4020,16 @@ fn mha_decoding_single_batch[
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
         Layout.row_major(Int(WM), Int(WN)),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](accum_smem_warp_ptr)
 
     comptime swizzle = make_swizzle[
-        num_rows = MMA_M // 2, row_size = Int(WN), access_size=MMA_N
+        num_rows=MMA_M // 2, row_size=Int(WN), access_size=MMA_N
     ]()
 
     comptime if decoding_warp_split_k:
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.tile[Int(num_output_rows), p_frag_size](0, 0)
@@ -4056,7 +4038,7 @@ fn mha_decoding_single_batch[
         )
     else:
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
@@ -4073,8 +4055,8 @@ fn mha_decoding_single_batch[
     var output_gmem_tile = LayoutTensor[
         output_type,
         output_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](output_ptr + q_offset, output_gmem_runtime_layout)
     var output_gmem_warp_tile = output_gmem_tile.tile[Int(WM), Int(WN)](
@@ -4082,7 +4064,7 @@ fn mha_decoding_single_batch[
     )
 
     copy_sram_to_dram[
-        thread_layout = Layout.row_major(
+        thread_layout=Layout.row_major(
             WARP_SIZE * simd_size // Int(WN), Int(WN // UInt(simd_size))
         ),
         swizzle=swizzle,
@@ -4161,14 +4143,14 @@ fn mha_decoding_single_batch_pipelined[
     comptime q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -4178,7 +4160,7 @@ fn mha_decoding_single_batch_pipelined[
                     q_type,
                     Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -4194,7 +4176,7 @@ fn mha_decoding_single_batch_pipelined[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
@@ -4219,7 +4201,7 @@ fn mha_decoding_single_batch_pipelined[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
@@ -4227,7 +4209,7 @@ fn mha_decoding_single_batch_pipelined[
             accum_type,
             Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0.0)
@@ -4276,7 +4258,7 @@ fn mha_decoding_single_batch_pipelined[
         v_type,
         Layout.row_major(Int(BK), Int(BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -4291,7 +4273,7 @@ fn mha_decoding_single_batch_pipelined[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -4303,7 +4285,7 @@ fn mha_decoding_single_batch_pipelined[
         accum_type,
         Layout.row_major(p_frag_simdwidth * Int(num_warps_n), Int(BM)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     # Mask global memory iterator, seq_len = 1
@@ -4315,18 +4297,16 @@ fn mha_decoding_single_batch_pipelined[
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
+        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
+            RuntimeTuple[q_gmem_layout.shape, element_type=DType.int32](
                 Int(group), Int(depth)
             ),
-            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[q_gmem_layout.stride, element_type=DType.int32](
                 Int(depth), 1
             ),
         ),
@@ -4361,7 +4341,7 @@ fn mha_decoding_single_batch_pipelined[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked = not not_last_iter,
+            masked=not not_last_iter,
         ](k_ptr)
         var k_gmem_iter = k_gmem_block.tiled_iterator[Int(BN), Int(BK), axis=1](
             0, 0
@@ -4413,11 +4393,11 @@ fn mha_decoding_single_batch_pipelined[
             )
 
         scale_and_mask_helper[
-            num_n_mmas = Int(num_n_mmas),
-            WN = Int(WN),
+            num_n_mmas=Int(num_n_mmas),
+            WN=Int(WN),
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
-            group = Int(group),
+            group=Int(group),
         ](
             p_reg_tile,
             scale_log2e,
@@ -4463,7 +4443,7 @@ fn mha_decoding_single_batch_pipelined[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked = not not_last_iter,
+            masked=not not_last_iter,
         ](v_ptr)
         var v_gmem_iter = v_gmem_block.tiled_iterator[Int(BK), Int(BN), axis=0](
             0, 0
@@ -4519,15 +4499,13 @@ fn mha_decoding_single_batch_pipelined[
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
         Layout.row_major(Int(WM), Int(WN)),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
 
     comptime swizzle = make_swizzle[
-        num_rows = MMA_M // 2, row_size = Int(WN), access_size=MMA_N
+        num_rows=MMA_M // 2, row_size=Int(WN), access_size=MMA_N
     ]()
-    copy_local_to_shared[
-        thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-    ](
+    copy_local_to_shared[thread_layout=Layout.row_major(8, 4), swizzle=swizzle](
         accum_smem_warp_tile.vectorize[1, 2](),
         output_reg_tile.vectorize[1, 2]().transpose(),
     )
@@ -4535,27 +4513,27 @@ fn mha_decoding_single_batch_pipelined[
     barrier()
     comptime output_gmem_layout = Layout.row_major(Int(BM), Int(depth))
     var output_gmem_runtime_layout = RuntimeLayout[
-        element_type = DType.int32, linear_idx_type = DType.int32
+        element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
+        RuntimeTuple[output_gmem_layout.shape, element_type=DType.int32](
             Int(group), Int(depth)
         ),
-        RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
+        RuntimeTuple[output_gmem_layout.stride, element_type=DType.int32](
             Int(depth), 1
         ),
     )
     var output_gmem_tile = LayoutTensor[
         output_type,
         Layout.row_major(Int(BM), Int(depth)),
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](output_ptr + q_offset, output_gmem_runtime_layout)
     var output_gmem_warp_tile = output_gmem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
     )
     copy_sram_to_dram[
-        thread_layout = Layout.row_major(
+        thread_layout=Layout.row_major(
             WARP_SIZE * simd_size // Int(WN), Int(WN // UInt(simd_size))
         ),
         swizzle=swizzle,
@@ -4623,7 +4601,7 @@ fn mha_splitk_reduce[
         accum_type,
         Layout(WARP_SIZE),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime intermediate_layout = Layout.row_major(
@@ -4690,8 +4668,8 @@ fn mha_splitk_reduce[
         comptime for i in range(simd_width):
             var ptr = base_ptr + (partition_idx + i) * partition_stride
             var x_load = ptr.load[
-                width = Int(width),
-                alignment = Int(width) * size_of[intermediate_type](),
+                width=Int(width),
+                alignment=Int(width) * size_of[intermediate_type](),
             ]().cast[accum_type]()
             var scale = partition_exp_sum[i]
             var mask = SIMD[DType.bool, Int(width)](fill=scale > 0)
@@ -4714,7 +4692,7 @@ fn mha_splitk_reduce[
         var ptr = output.ptr_at_offset(
             IndexList[3](Int(batch_idx), Int(q_head_idx), Int(depth_idx))
         )
-        ptr.store[alignment = Int(width) * size_of[output_type](),](
+        ptr.store[alignment=Int(width) * size_of[output_type](),](
             acc.cast[output_type]()
         )
 
@@ -4745,15 +4723,15 @@ fn mha_gpu_naive[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    q: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5108,20 +5086,14 @@ fn mha_gpu_naive[
     //,
     sink: Bool = False,
 ](
-    q: LayoutTensor[
-        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, k_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    v: LayoutTensor[
-        mut=False, v_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, q_type, address_space=AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, k_type, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, v_type, address_space=AddressSpace.GENERIC, ...],
     mask: LayoutTensor[
-        mut=False, mask_type, address_space = AddressSpace.GENERIC, ...
+        mut=False, mask_type, address_space=AddressSpace.GENERIC, ...
     ],
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5173,18 +5145,12 @@ fn mha_gpu_naive[
     //,
     sink: Bool = False,
 ](
-    q: LayoutTensor[
-        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, k_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    v: LayoutTensor[
-        mut=False, v_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, q_type, address_space=AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, k_type, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, v_type, address_space=AddressSpace.GENERIC, ...],
     mask: MaskType,
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5249,17 +5215,15 @@ fn mha_gpu_naive[
     ragged: Bool = False,
     sink: Bool = False,
 ](
-    q: LayoutTensor[
-        mut=False, q_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, q_type, address_space=AddressSpace.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -5307,19 +5271,13 @@ fn _naive_attention_with_transpose[
     transpose_k: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    v: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     mask: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
 ) raises:
@@ -5466,19 +5424,13 @@ fn _naive_attention[
     transpose_k: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    q: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    k: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    v: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     mask: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
 ) raises:

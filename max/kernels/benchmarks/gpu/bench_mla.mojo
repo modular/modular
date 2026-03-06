@@ -361,7 +361,7 @@ fn bench_prefill[
                 ),
             )
 
-            flare_mla_prefill[rank = q_device.rank](
+            flare_mla_prefill[rank=q_device.rank](
                 output_device,
                 q_device,
                 k_device,
@@ -521,7 +521,7 @@ def main() raises:
             cfg.cache_depth,
             cfg.cache_num_heads,
             use_causal_mask=True,
-            cache_busting = cfg.cache_busting,
+            cache_busting=cfg.cache_busting,
         ](m, seq_len, num_keys, batch_size, ctx)
 
     m.dump_report()

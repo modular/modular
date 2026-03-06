@@ -366,7 +366,9 @@ mojo_test(
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + ["test_matmul_pdl_race.mojo"],
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + [
+            "test_matmul_pdl_race.mojo",
+        ],
     )
 ]
 

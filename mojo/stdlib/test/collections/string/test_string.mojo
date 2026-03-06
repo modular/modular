@@ -254,8 +254,8 @@ def test_string_indexing() raises:
     var str = "Hello Mojo!!"
 
     assert_equal("H", str[byte=0])
-    assert_equal("!", str[byte= -1])
-    assert_equal("H", str[byte = -len(str)])
+    assert_equal("!", str[byte=-1])
+    assert_equal("H", str[byte=-len(str)])
     assert_equal("llo Mojo!!", str[2:])
     assert_equal("lo Mojo!", str[3:-1])
     assert_equal("lo Moj", str[3:-3])
@@ -1091,7 +1091,7 @@ def test_string_mul() raises:
 def test_indexing() raises:
     a = "abc"
     assert_equal(a[byte=0], "a")
-    assert_equal(a[byte = Int(1)], "b")
+    assert_equal(a[byte=Int(1)], "b")
     assert_equal(a[byte=2], "c")
 
 

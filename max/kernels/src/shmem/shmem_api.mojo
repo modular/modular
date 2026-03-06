@@ -226,7 +226,7 @@ fn shmem_init() raises:
         nvshmemx_init()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -248,7 +248,7 @@ fn shmem_init_thread_mpi(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
         nvshmemx_init_thread(ctx, gpus_per_node)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -274,7 +274,7 @@ fn shmem_create_uniqueid(
     else:
         return CompilationTarget.unsupported_target_error[
             SHMEMUniqueID,
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -360,7 +360,7 @@ fn shmem_init_thread_tcp(
         )
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -398,7 +398,7 @@ fn shmem_finalize():
         rocshmem_finalize()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -417,7 +417,7 @@ fn shmem_my_pe() -> c_int:
         return rocshmem_my_pe()
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int, operation = __get_current_function_name()
+            c_int, operation=__get_current_function_name()
         ]()
 
 
@@ -434,7 +434,7 @@ fn shmem_n_pes() -> c_int:
         return rocshmem_n_pes()
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int, operation = __get_current_function_name()
+            c_int, operation=__get_current_function_name()
         ]()
 
 
@@ -481,7 +481,7 @@ fn shmem_malloc[
         return rocshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
         return {}
 
@@ -529,7 +529,7 @@ fn shmem_calloc[
     else:
         return CompilationTarget.unsupported_target_error[
             UnsafePointer[Scalar[dtype], MutExternalOrigin],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -560,7 +560,7 @@ fn shmem_free[
         rocshmem_free(ptr)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -595,7 +595,7 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
         return c_int(Int(rocshmem_team_my_pe(c_int(team))))
     else:
         return CompilationTarget.unsupported_target_error[
-            c_int, operation = __get_current_function_name()
+            c_int, operation=__get_current_function_name()
         ]()
 
 
@@ -632,7 +632,7 @@ fn shmem_get[
         nvshmem_get[scope](dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -667,7 +667,7 @@ fn shmem_get_nbi[
         rocshmem_get_nbi(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -693,7 +693,7 @@ fn shmem_g[
         return rocshmem_g(source, pe)
     else:
         return CompilationTarget.unsupported_target_error[
-            Scalar[dtype], operation = __get_current_function_name()
+            Scalar[dtype], operation=__get_current_function_name()
         ]()
 
 
@@ -730,7 +730,7 @@ fn shmem_put[
         rocshmem_put(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -769,7 +769,7 @@ fn shmem_put_nbi[
         rocshmem_put_nbi(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -800,7 +800,7 @@ fn shmem_p[
         rocshmem_p(dest, value, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -880,7 +880,7 @@ fn shmem_put_signal_nbi[
         )
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -911,7 +911,7 @@ fn shmem_barrier_all():
         rocshmem_barrier_all()
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -950,7 +950,7 @@ fn shmem_signal_wait_until(
         rocshmem_signal_wait_until(sig_addr, cmp, cmp_value)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -976,7 +976,7 @@ fn shmem_fence():
         rocshmem_fence()
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -1014,7 +1014,7 @@ fn shmem_signal_op(
         rocshmemx_signal_op(sig_addr, signal, sig_op, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -1042,7 +1042,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
         rocshmem_barrier_all_on_stream(HIP(stream))
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -1072,7 +1072,7 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
         rocshmemx_hipmodule_init(hip_module)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -1098,5 +1098,5 @@ fn shmem_module_finalize(device_function: DeviceFunction) raises:
         pass
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()

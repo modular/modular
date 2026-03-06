@@ -87,7 +87,7 @@ fn shared_to_global_2D[
 ](
     smem_tile: LayoutTensor,
     dst: LayoutTensor,
-    tiled_coordinate: IndexList[2, element_type = DType.uint32],
+    tiled_coordinate: IndexList[2, element_type=DType.uint32],
 ):
     comptime smem_dim0 = product(smem_tile.layout.shape[0])
     comptime smem_dim1 = product(smem_tile.layout.shape[1])
@@ -129,7 +129,7 @@ fn shared_to_global_3D[
 ](
     smem_tile: LayoutTensor,
     dst: LayoutTensor,
-    tiled_coordinate: IndexList[3, element_type = DType.uint32],
+    tiled_coordinate: IndexList[3, element_type=DType.uint32],
 ):
     comptime smem_dim0 = product(smem_tile.layout.shape[0])
     comptime smem_dim1 = product(smem_tile.layout.shape[1])
@@ -191,14 +191,14 @@ fn test_tma_load_kernel[
         dtype,
         smem_layout,
         MutAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space=_GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var mbar_ptr = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space=_GPUAddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -509,7 +509,7 @@ def main() raises:
             smem_layout[SwizzleMode._32B, Major.K],
             load_tile_shape_32B_K,
             DType.bfloat16,
-            swizzle_mode = SwizzleMode._32B,
+            swizzle_mode=SwizzleMode._32B,
         ](ctx)
 
         test_tma_load[
@@ -517,7 +517,7 @@ def main() raises:
             smem_layout[SwizzleMode._64B, Major.K],
             load_tile_shape_64B_K,
             DType.bfloat16,
-            swizzle_mode = SwizzleMode._64B,
+            swizzle_mode=SwizzleMode._64B,
         ](ctx)
 
         test_tma_load[
@@ -525,7 +525,7 @@ def main() raises:
             smem_layout[SwizzleMode._128B, Major.K],
             load_tile_shape_128B_K,
             DType.bfloat16,
-            swizzle_mode = SwizzleMode._128B,
+            swizzle_mode=SwizzleMode._128B,
         ](ctx)
 
         print("TMA swizzle mn-major")
@@ -535,7 +535,7 @@ def main() raises:
             smem_layout[SwizzleMode._128B, Major.K],
             load_tile_shape_128B_MN,
             DType.bfloat16,
-            swizzle_mode = SwizzleMode._128B,
+            swizzle_mode=SwizzleMode._128B,
         ](ctx)
 
         print("TMA OOB access")

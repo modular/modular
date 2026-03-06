@@ -50,7 +50,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TileTensor
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from structured_kernels.tile_types import (
     GMEMLayout1D,
     TMATile,
@@ -58,7 +58,7 @@ from structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout._layout import RowMajorLayout, _IntToComptimeInt
+from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
@@ -208,7 +208,7 @@ struct Grouped1D1DMatmulKernel[
         Self.sfa_dtype,
         Self.sfb_dtype,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -222,12 +222,12 @@ struct Grouped1D1DMatmulKernel[
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Tile Pipeline Types ==========
@@ -271,8 +271,8 @@ struct Grouped1D1DMatmulKernel[
         Self.sfa_dtype,
         Self.BM,
         Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
-        num_sf_k_tiles = Self.config.num_sf_k_tiles,
+        cta_group=Self.cta_group,
+        num_sf_k_tiles=Self.config.num_sf_k_tiles,
     ]
 
     comptime OutputPipeline = OutputTilePipeline[Self.opc]
@@ -300,27 +300,27 @@ struct Grouped1D1DMatmulKernel[
     # ========== Tile Writer Type ==========
 
     comptime TileWriterType = TileWriter[
-        a_type = Self.a_type,
-        accum_type = Self.accum_type,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        opc = Self.opc,
-        c_swizzle = Self.config.c_swizzle,
-        transpose_c = Self.config.AB_swapped,
-        c_smem_dim0 = Self.SmemType.Core.OutputM,
-        c_smem_dim1 = Self.SmemType.Core.OutputN,
-        num_output_stages = Self.config.num_output_stages,
-        num_output_warps = Self.num_output_warps,
+        a_type=Self.a_type,
+        accum_type=Self.accum_type,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        opc=Self.opc,
+        c_swizzle=Self.config.c_swizzle,
+        transpose_c=Self.config.AB_swapped,
+        c_smem_dim0=Self.SmemType.Core.OutputM,
+        c_smem_dim1=Self.SmemType.Core.OutputN,
+        num_output_stages=Self.config.num_output_stages,
+        num_output_warps=Self.num_output_warps,
         batched=False,  # 1D-1D uses 2D coordinates with bounds checking
     ]
 
     # ========== Work Iterator Type ==========
 
     comptime WorkIterator = GroupedWorkIterator1D1D[
-        static_N = Self.static_N,
-        tile_shape = Self.config.block_tile_shape,
-        cluster = Self.config.cluster_shape,
-        cta_group = Self.cta_group,
+        static_N=Self.static_N,
+        tile_shape=Self.config.block_tile_shape,
+        cluster=Self.config.cluster_shape,
+        cta_group=Self.cta_group,
     ]
 
     # ========== TMA Load Size Constants ==========
@@ -355,7 +355,7 @@ struct Grouped1D1DMatmulKernel[
         Self.CLUSTER_M,
         Self.CLUSTER_N,
         Self.cta_group,
-        AB_swapped = Self.config.AB_swapped,
+        AB_swapped=Self.config.AB_swapped,
     ]()
     comptime a_tile_dim0 = Self._tma_tile_dims[0]
     comptime b_tile_dim0 = Self._tma_tile_dims[1]
@@ -557,7 +557,7 @@ struct Grouped1D1DMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

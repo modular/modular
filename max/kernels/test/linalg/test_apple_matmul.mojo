@@ -477,9 +477,9 @@ fn bmm_naive(
 def test_batched_matmul[
     has_lambda: Bool
 ](
-    c: NDBuffer[mut=True, _, 3],
-    a: NDBuffer[mut=True, _, 3],
-    b: NDBuffer[mut=True, _, 3],
+    c: NDBuffer[mut=True, _, 3, _],
+    a: NDBuffer[mut=True, _, 3, _],
+    b: NDBuffer[mut=True, _, 3, _],
     batches: Int,
     m: Int,
     n: Int,

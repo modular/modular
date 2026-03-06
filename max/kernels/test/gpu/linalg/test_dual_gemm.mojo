@@ -72,12 +72,12 @@ fn multistage_gemm_simple[
         b_type,
         b_layout,
         transpose_b,
-        c_layout_int_type = c.layout_int_type,
-        c_linear_idx_type = c.linear_idx_type,
-        a_layout_int_type = a.layout_int_type,
-        a_linear_idx_type = a.linear_idx_type,
-        b_layout_int_type = b.layout_int_type,
-        b_linear_idx_type = b.linear_idx_type,
+        c_layout_int_type=c.layout_int_type,
+        c_linear_idx_type=c.linear_idx_type,
+        a_layout_int_type=a.layout_int_type,
+        a_linear_idx_type=a.linear_idx_type,
+        b_layout_int_type=b.layout_int_type,
+        b_linear_idx_type=b.linear_idx_type,
         config=config,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
@@ -121,7 +121,7 @@ fn naive_dual_gemm[
         ](c01, a, b01, ctx)
 
         comptime simd_width = simd_width_of[
-            c_type, target = get_gpu_target["sm_80"]()
+            c_type, target=get_gpu_target["sm_80"]()
         ]()
         comptime align = align_of[SIMD[c_type, simd_width]]()
 
@@ -159,7 +159,7 @@ fn runtime_row_major[
     ],
 ):
     return type_of(res).row_major(
-        IndexList[2, element_type = res.element_type](rows, cols)
+        IndexList[2, element_type=res.element_type](rows, cols)
     )
 
 

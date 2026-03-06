@@ -89,12 +89,12 @@ struct MatmulTileWriter[
         Self.dtype,
         Self.layout,
         MutAnyOrigin,
-        address_space = Self.address_space,
-        element_layout = Self.element_layout,
-        layout_int_type = Self.layout_int_type,
-        linear_idx_type = Self.linear_idx_type,
-        masked = Self.masked,
-        alignment = Self.alignment,
+        address_space=Self.address_space,
+        element_layout=Self.element_layout,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
+        masked=Self.masked,
+        alignment=Self.alignment,
     ]
     comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1](
         IndexList[2], mut SIMD[dtype, width]
@@ -244,13 +244,13 @@ struct MatmulTileWriter[
             max_row = UInt32(self.tensor.dim[0]())
 
         var reg_writer = RegisterToGMemWriter[
-            wgmma_shape = Self.wgmma_shape,
-            num_consumer = Self.num_consumer,
-            N = Self.N,
-            epilogue_fn = Self.elementwise_lambda_fn,
-            compute_lambda_fn = Self.elementwise_compute_lambda_fn,
+            wgmma_shape=Self.wgmma_shape,
+            num_consumer=Self.num_consumer,
+            N=Self.N,
+            epilogue_fn=Self.elementwise_lambda_fn,
+            compute_lambda_fn=Self.elementwise_compute_lambda_fn,
             check_runtime_bounds=check_runtime_bounds,
-            swapAB = Self.swapAB,
+            swapAB=Self.swapAB,
         ](
             consumer_tile,
             self.warp_group_thread_idx,
@@ -269,14 +269,17 @@ struct MatmulTileWriter[
 
     @always_inline
     fn _write_tile_stmatrix[
-        tma_layout: Layout,
-        desc_layout: Layout,
+        tma_rank: Int,
+        tma_tile_shape: IndexList[tma_rank],
+        tma_desc_shape: IndexList[tma_rank],
         accum_type: DType,
         reg_tile_layout: Layout,
         //,
     ](
         self,
-        tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
+        tma_op: TMATensorTile[
+            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
+        ],
         reg_tile: RegTile[accum_type, reg_tile_layout],
         output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
         tile_origin: Self.CTensorType.CornerCoordsType,
@@ -284,13 +287,13 @@ struct MatmulTileWriter[
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
 
-        comptime TMA_BN_regular = tma_layout.shape[
+        comptime TMA_BN_regular = tma_tile_shape[
             1
-        ].value() if Self.use_tma_store else Self.WG_BN
+        ] if Self.use_tma_store else Self.WG_BN
 
-        comptime TMA_BN_swapAB = tma_layout.shape[
+        comptime TMA_BN_swapAB = tma_tile_shape[
             0
-        ].value() if Self.use_tma_store else Self.WG_BM
+        ] if Self.use_tma_store else Self.WG_BM
 
         comptime TMA_BN = TMA_BN_swapAB if Self.swapAB else TMA_BN_regular
 
@@ -312,13 +315,13 @@ struct MatmulTileWriter[
             sub_wg_id: Int, half_tile: Bool
         ] = FragmentToSMemWriter[
             tile_n_size=TMA_BN,
-            num_m_mmas = Self.num_m_mmas,
-            num_consumer = Self.num_consumer,
+            num_m_mmas=Self.num_m_mmas,
+            num_consumer=Self.num_consumer,
             half_tile=half_tile,
-            WG_BM = Self.WG_BM,
-            WG_BN = Self.WG_BN,
+            WG_BM=Self.WG_BM,
+            WG_BN=Self.WG_BN,
             sub_wg_id=sub_wg_id,
-            swapAB = Self.swapAB,
+            swapAB=Self.swapAB,
         ]
 
         comptime num_column_tiles = ceildiv(Self.BN, Self.WG_BN)
@@ -405,8 +408,11 @@ struct MatmulTileWriter[
                         var smem_offset = self.smem_tile.ptr + (
                             Self.WG_BM * TMA_BN * Int(self.local_thread_idx)
                         )
+                        comptime tma_smem_layout = Layout.row_major(
+                            tma_tile_shape[0], tma_tile_shape[1]
+                        )
                         var tma_tile = SMemTile[
-                            Self.dtype, tma_layout, alignment=128
+                            Self.dtype, tma_smem_layout, alignment=128
                         ](smem_offset)
 
                         var tma_coords = (
@@ -428,9 +434,9 @@ struct MatmulTileWriter[
 
                     var threadwise_writer = TileWriterThreadwise[
                         thread_layout=thread_layout,
-                        simd_size = Self.simd_size,
+                        simd_size=Self.simd_size,
                         half_tile=is_partial_tile,
-                        swapAB = Self.swapAB,
+                        swapAB=Self.swapAB,
                     ](workgroup_tile, self.local_thread_idx)
 
                     threadwise_writer.write_tile(
@@ -441,14 +447,17 @@ struct MatmulTileWriter[
 
     @always_inline
     fn write_tile[
-        tma_layout: Layout,
-        desc_layout: Layout,
+        tma_rank: Int,
+        tma_tile_shape: IndexList[tma_rank],
+        tma_desc_shape: IndexList[tma_rank],
         accum_type: DType,
         reg_tile_layout: Layout,
         //,
     ](
         self,
-        tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
+        tma_op: TMATensorTile[
+            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
+        ],
         reg_tile: RegTile[accum_type, reg_tile_layout],
     ):
         """Write output from registers to global memory.
@@ -470,9 +479,9 @@ struct MatmulTileWriter[
 
         comptime output_tile_shape = String(output_tile.layout.shape)
 
-        comptime TMA_BN = tma_layout.shape[
+        comptime TMA_BN = tma_tile_shape[
             1
-        ].value() if Self.use_tma_store else Self.WG_BN
+        ] if Self.use_tma_store else Self.WG_BN
         comptime row_size_aligned = Self.N * size_of[Self.dtype]() % 16 == 0
 
         # Check if st.matrix optimization can be used

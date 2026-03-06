@@ -56,7 +56,7 @@ struct Grouped1D1DSmem[
         Self.sfa_dtype,
         Self.sfb_dtype,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== Storage Fields ==========

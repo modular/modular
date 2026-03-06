@@ -28,12 +28,10 @@ from std.utils import IndexList
 fn tile[
     dtype: DType, type_repeats: DType
 ](
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    repeats: TileTensor[
-        type_repeats, address_space = AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    repeats: TileTensor[type_repeats, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) raises:
     """

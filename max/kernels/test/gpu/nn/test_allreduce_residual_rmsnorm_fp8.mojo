@@ -26,8 +26,14 @@ from nn.allreduce_residual_rmsnorm_fp8 import (
 )
 from comm.sync import enable_p2p
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Coord, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._utils import ManagedLayoutTensor
 from nn.normalization import rms_norm_fused_fp8
 from std.runtime.asyncrt import DeviceContextPtr

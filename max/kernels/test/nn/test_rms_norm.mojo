@@ -15,8 +15,13 @@ from std.math import sqrt
 from std.sys.info import CompilationTarget
 
 from std.itertools import product
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from nn.normalization import *
 from std.testing import assert_almost_equal
 

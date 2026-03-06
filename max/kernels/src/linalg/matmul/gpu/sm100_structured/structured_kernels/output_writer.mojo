@@ -35,10 +35,11 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
@@ -73,8 +74,9 @@ struct TileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,
     c_type: DType,
-    c_layout: Layout,
-    c_desc_layout: Layout,
+    c_rank: Int,
+    c_tile_shape: IndexList[c_rank],
+    c_desc_shape: IndexList[c_rank],
     //,
     # Explicit config parameters (works with any config type)
     a_type: DType,
@@ -120,7 +122,7 @@ struct TileWriter[
 
     # Type aliases
     comptime TmaOp = TMATensorTile[
-        Self.c_type, Self.c_layout, Self.c_desc_layout
+        Self.c_type, Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
     # C tile array (output and source tiles)
@@ -177,7 +179,7 @@ struct TileWriter[
         Self.accum_type,
         Self.accum_tile_layout,
         Self.num_stages,
-        cta_group = Self.cta_group,
+        cta_group=Self.cta_group,
     ]
 
     var c_tma_op: Self.TmaOpPtr
@@ -471,7 +473,7 @@ struct TileWriter[
             Self.epc,
             Self.stage_contiguous_size,
             Self.c_swizzle,
-            batched = Self.batched,
+            batched=Self.batched,
         ]
 
         comptime EpilogueApplierType = EpilogueApplier[
@@ -592,14 +594,16 @@ struct TileWriter[
                 Self.epc,
                 Self.c_smem_dim0,
                 stage,
-                batched = Self.batched,
+                batched=Self.batched,
             ]
 
             comptime if Self.batched:
                 var store_coords = StoreCoords(
                     (c_coord[0], c_coord[1], batch_idx), UInt32(warp_id)
                 )
-                StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
+                StoreExecutor.execute[
+                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+                ](
                     c_smem_tile,
                     store_coords,
                     self.c_tma_op[],
@@ -608,7 +612,9 @@ struct TileWriter[
                 )
             else:
                 var store_coords = StoreCoords(c_coord, UInt32(warp_id))
-                StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
+                StoreExecutor.execute[
+                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+                ](
                     c_smem_tile,
                     store_coords,
                     self.c_tma_op[],
@@ -618,8 +624,9 @@ struct TileWriter[
 
             tma_wait_pipelined[
                 Self.c_type,
-                Self.c_layout,
-                Self.c_desc_layout,
+                Self.c_rank,
+                Self.c_tile_shape,
+                Self.c_desc_shape,
                 stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 
@@ -820,7 +827,9 @@ struct TileWriter[
                         loop_stage * Self.stageN
                     )
 
-                StoreExecutorLocal.execute[Self.c_layout, Self.c_desc_layout](
+                StoreExecutorLocal.execute[
+                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+                ](
                     c_smem_tile,
                     store_coords,
                     self.c_tma_op[],
@@ -833,8 +842,9 @@ struct TileWriter[
             # TMA, preventing SMEM races with double-buffered tiles.
             tma_wait_pipelined[
                 Self.c_type,
-                Self.c_layout,
-                Self.c_desc_layout,
+                Self.c_rank,
+                Self.c_tile_shape,
+                Self.c_desc_shape,
                 loop_stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 
@@ -901,7 +911,7 @@ struct TileWriter[
             comptime for j in range(zipped.shape[1][0].value()):
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
-                    element_type = DType.uint32,
+                    element_type=DType.uint32,
                 ](Int(thread_idx.x), j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
@@ -915,9 +925,9 @@ struct TileWriter[
                 ) * UInt32(
                     simd_size
                 )
-                var cmem_crd = split_layout_new.idx2crd[
-                    out_dtype = DType.uint32
-                ](Int(linear_idx))
+                var cmem_crd = split_layout_new.idx2crd[out_dtype=DType.uint32](
+                    Int(linear_idx)
+                )
                 var local_i = cmem_crd[0].value()
                 var local_j = cmem_crd[1].value()
                 var coord_m = m_abs + UInt32(i * TMA_BM)
@@ -957,7 +967,7 @@ struct TileWriter[
         c_tensor_layout: Layout,
     ](
         c_smem_ptr: UnsafePointer[
-            Scalar[Self.c_type], _, address_space = AddressSpace.SHARED
+            Scalar[Self.c_type], _, address_space=AddressSpace.SHARED
         ],
         c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
         m_abs: UInt32,
@@ -1112,7 +1122,7 @@ struct TileWriter[
             Self.epc,
             Self.stage_contiguous_size,
             Self.c_swizzle,
-            batched = Self.batched,
+            batched=Self.batched,
         ]
 
         comptime EpilogueApplierType = EpilogueApplier[
@@ -1235,10 +1245,12 @@ struct TileWriter[
                 Self.epc,
                 Self.c_smem_dim0,
                 stage,
-                batched = Self.batched,
+                batched=Self.batched,
             ]
             var store_coords = StoreCoords(c_coord, UInt32(warp_id))
-            StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
+            StoreExecutor.execute[
+                Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+            ](
                 c_smem_tile,
                 store_coords,
                 self.c_tma_op[],
@@ -1247,8 +1259,9 @@ struct TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                Self.c_layout,
-                Self.c_desc_layout,
+                Self.c_rank,
+                Self.c_tile_shape,
+                Self.c_desc_shape,
                 stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 

@@ -93,7 +93,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 comptime for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_val = c_local[row, col]
-                    c_val = fma[dtype = c_local.dtype, width=simd_size](
+                    c_val = fma[dtype=c_local.dtype, width=simd_size](
                         a_val[lane], b_val, c_val
                     )
                     c_local[row, col] = c_val

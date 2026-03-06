@@ -16,8 +16,8 @@ from std.math import iota
 from std.random import rand, seed
 
 from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
-from layout._layout import Layout, row_major
-from layout import TileTensor
+from layout.tile_layout import Layout
+from layout import TileTensor, row_major
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 
@@ -39,8 +39,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
     ) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types = DynamicCoord[DType.int64, Self.rank].element_types,
-            stride_types = DynamicCoord[DType.int64, Self.rank].element_types,
+            shape_types=DynamicCoord[DType.int64, Self.rank].element_types,
+            stride_types=DynamicCoord[DType.int64, Self.rank].element_types,
         ],
         origin_of(self.storage),
     ]:
@@ -48,10 +48,10 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
             TileTensor[
                 Self.dtype,
                 Layout[
-                    shape_types = DynamicCoord[
+                    shape_types=DynamicCoord[
                         DType.int64, Self.rank
                     ].element_types,
-                    stride_types = DynamicCoord[
+                    stride_types=DynamicCoord[
                         DType.int64, Self.rank
                     ].element_types,
                 ],

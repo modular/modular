@@ -30,10 +30,10 @@ fn free(ptr: UnsafePointer[mut=True, NoneType, ...]):
     # manually construct the call to free and attach the
     # correct attributes
     __mlir_op.`pop.external_call`[
-        func = __mlir_attr[`"free" : !kgen.string`],
+        func=__mlir_attr[`"free" : !kgen.string`],
         _type=None,
-        argAttrs = __mlir_attr.`[{llvm.allocptr}]`,
-        funcAttrs = __mlir_attr.`[["allockind", "4"], ["alloc-family", "malloc"]]`,
+        argAttrs=__mlir_attr.`[{llvm.allocptr}]`,
+        funcAttrs=__mlir_attr.`[["allockind", "4"], ["alloc-family", "malloc"]]`,
     ](ptr)
 
 

@@ -245,7 +245,7 @@ Execution happens automatically when an operation requires concrete values:
   position.
 - **Converting to other formats**: Passing a MAX `Tensor` to `np.from_dlpack(x)`
   requires a real memory buffer for `x`, which forces execution.
-- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an [`nn.Module`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.Module) executes the
+- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an [`nn.Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module) executes the
   graph to produce the output.
 
 This all happens automatically and transparently behind the scenes. MAX detects

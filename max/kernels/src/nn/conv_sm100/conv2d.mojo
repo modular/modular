@@ -229,7 +229,7 @@ fn conv2d_fprop[
         filter_type,
         out_type,
         config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -243,9 +243,9 @@ fn conv2d_fprop[
     act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
-        __tile_layout = KernelType.ActTmaOp.layout,
-        __desc_layout = KernelType.ActTmaOp.desc_layout,
+        swizzle_mode=config.a_swizzle,
+        __tile_shape=KernelType.ActTmaOp.tile_shape,
+        __desc_shape=KernelType.ActTmaOp.desc_shape,
     ](
         ctx,
         act_tensor,
@@ -273,7 +273,7 @@ fn conv2d_fprop[
         KernelType.FilterTmaTile.tile_layout,
         KernelType.FilterTmaTile.desc_layout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, filter_tensor)
 
     # Create output 2D view: [M, N] row-major
@@ -295,7 +295,7 @@ fn conv2d_fprop[
         KernelType.OutTmaTile.tile_layout,
         KernelType.OutTmaTile.desc_layout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, out_tensor)
 
     comptime kernel = conv_kernel.run
@@ -480,7 +480,7 @@ fn conv2d_fprop_with_residual[
         filter_type,
         out_type,
         config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -494,9 +494,9 @@ fn conv2d_fprop_with_residual[
     act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
-        __tile_layout = KernelType.ActTmaOp.layout,
-        __desc_layout = KernelType.ActTmaOp.desc_layout,
+        swizzle_mode=config.a_swizzle,
+        __tile_shape=KernelType.ActTmaOp.tile_shape,
+        __desc_shape=KernelType.ActTmaOp.desc_shape,
     ](
         ctx,
         act_tensor,
@@ -523,7 +523,7 @@ fn conv2d_fprop_with_residual[
         KernelType.FilterTmaTile.tile_layout,
         KernelType.FilterTmaTile.desc_layout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, filter_tensor)
 
     # Output TMA (D) - 2D row-major
@@ -544,7 +544,7 @@ fn conv2d_fprop_with_residual[
         KernelType.OutTmaTile.tile_layout,
         KernelType.OutTmaTile.desc_layout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, out_tensor)
 
     # Source TMA (C) - same shape and layout as output
@@ -559,7 +559,7 @@ fn conv2d_fprop_with_residual[
         KernelType.SrcTmaTile.tile_layout,
         KernelType.SrcTmaTile.desc_layout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, src_tensor)
 
     comptime kernel = conv_kernel.run_with_residual

@@ -73,8 +73,8 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
-from layout import Coord, Idx, TileTensor
-from layout._layout import TensorLayout, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
@@ -606,14 +606,14 @@ fn _allreduce_rmsnorm_fp8_launch[
     var scale_buffer_tensor = TileTensor(scale_output)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
-        mut = gamma.mut,
-        origin = gamma.origin,
-        LayoutType = gamma.LayoutType,
+        mut=gamma.mut,
+        origin=gamma.origin,
+        LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
-        scale_origin = scale_buffer_tensor.origin,
-        ScaleLayoutType = scale_buffer_tensor.LayoutType,
+        scale_origin=scale_buffer_tensor.origin,
+        ScaleLayoutType=scale_buffer_tensor.LayoutType,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -743,14 +743,14 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
     var scale_buffer_tensor = TileTensor(scale_output)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
-        mut = gamma.mut,
-        origin = gamma.origin,
-        LayoutType = gamma.LayoutType,
+        mut=gamma.mut,
+        origin=gamma.origin,
+        LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
-        scale_origin = scale_buffer_tensor.origin,
-        ScaleLayoutType = scale_buffer_tensor.LayoutType,
+        scale_origin=scale_buffer_tensor.origin,
+        ScaleLayoutType=scale_buffer_tensor.LayoutType,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -877,7 +877,7 @@ fn _launch_split_allreduce_rmsnorm_fp8[
 
     allreduce[
         ngpus=ngpus,
-        output_lambda = Optional[elementwise_epilogue_type](add_epilogue),
+        output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
     ](input_buffers, residual_output, rank_sigs, ctx)
 
     # Step 2: Fused RMSNorm + FP8 on residual_output (kernel already compiled).
@@ -932,7 +932,7 @@ fn _dispatch_fused_kernel[
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
     comptime base_simd_width = simd_width_of[
-        in_dtype, target = get_gpu_target()
+        in_dtype, target=get_gpu_target()
     ]()
     comptime sw1 = base_simd_width
     comptime sw2 = base_simd_width * 2

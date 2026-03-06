@@ -36,28 +36,28 @@ fn _verify_sleep_intrinsics_amd(asm: StringSlice) raises -> None:
 
 def test_sleep_intrinsics_sm80() raises:
     var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["sm_80"]()
+        sleep_intrinsics, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_sleep_intrinsics_nvidia(asm)
 
 
 def test_sleep_intrinsics_sm90() raises:
     var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["sm_90"]()
+        sleep_intrinsics, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_sleep_intrinsics_nvidia(asm)
 
 
 def test_sleep_intrinsics_gfx942() raises:
     var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["gfx942"]()
+        sleep_intrinsics, target=get_gpu_target["gfx942"]()
     ]().asm
     _verify_sleep_intrinsics_amd(asm)
 
 
 def test_sleep_intrinsics_gfx950() raises:
     var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["gfx950"]()
+        sleep_intrinsics, target=get_gpu_target["gfx950"]()
     ]().asm
     _verify_sleep_intrinsics_amd(asm)
 

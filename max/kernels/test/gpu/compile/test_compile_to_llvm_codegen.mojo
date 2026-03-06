@@ -26,7 +26,7 @@ fn test_array_offset():
 
     fn kernel(
         output: UnsafePointer[Float32],
-        p: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
+        p: UnsafePointer[Float32, address_space=AddressSpace.SHARED],
         idx: Int,
     ):
         output[] = p[idx]
@@ -45,7 +45,7 @@ fn test_case_thread_id_nvidia():
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
     print(
         _compile_code[
-            kernel, emission_kind="llvm", target = get_gpu_target["sm_80"]()
+            kernel, emission_kind="llvm", target=get_gpu_target["sm_80"]()
         ]()
     )
 
@@ -60,7 +60,7 @@ fn test_case_thread_id_mi300x():
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(
         _compile_code[
-            kernel, emission_kind="llvm", target = get_gpu_target["mi300x"]()
+            kernel, emission_kind="llvm", target=get_gpu_target["mi300x"]()
         ]()
     )
 
@@ -76,10 +76,10 @@ fn test_dynamic_shared_mem():
         # CHECK: %3 = load float, ptr addrspace(3) getelementptr inbounds nuw (i8, ptr addrspace(3) @extern_ptr_syml_0, i{{[0-9]+}}  4), align 4
         # CHECK: fadd contract float %2, %3
         var dynamic_sram_ptr_1 = external_memory[
-            Float32, address_space = AddressSpace.SHARED, alignment=4
+            Float32, address_space=AddressSpace.SHARED, alignment=4
         ]()
         var dynamic_sram_ptr_2 = external_memory[
-            Float32, address_space = AddressSpace.SHARED, alignment=4
+            Float32, address_space=AddressSpace.SHARED, alignment=4
         ]()
         output[] = dynamic_sram_ptr_1[0] + dynamic_sram_ptr_2[1]
 
