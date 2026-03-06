@@ -353,6 +353,10 @@ what we publish.
   segments, producing considerably smaller static data and faster runtime than
   the previous struct-based precompiled entries.
 
+- `Dict` now has an `unsafe_pop(key)` method that returns `Optional[V]` instead
+  of raising when the key is not found. This provides a non-raising, no-default
+  alternative to `pop(key)` and `pop(key, default)`.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
