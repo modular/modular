@@ -873,6 +873,16 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
+  // TODO: should we make param match-ability an MLIR interface?
+  // Check struct values fieldwise.
+  if (auto actualStruct = dyn_cast<VariadicSplatAttr>(actualAttr)) {
+    if (auto expectedStruct = dyn_cast<VariadicSplatAttr>(expectedAttr)) {
+      PROP(matchParams(actualStruct.getElement(), expectedStruct.getElement()));
+      PROP(matchParams(actualStruct.getCount(), expectedStruct.getCount()));
+      return success();
+    }
+  }
+
   // We look through non-builtin-apply sugar always.  For builtin apply's, we
   // want to do inference on the sugar itself, because we want to treat x+y
   // as unequal to y+x unless canonically equal.
