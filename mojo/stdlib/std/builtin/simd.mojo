@@ -54,7 +54,7 @@ from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
     is_big_endian,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -2609,7 +2609,7 @@ struct SIMD[dtype: DType, size: Int](
         elif offset % simd_width_of[Self.dtype]():
             return slice_body()
 
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             return slice_body()
 
         comptime if is_apple_gpu():

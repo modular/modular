@@ -33,7 +33,7 @@ conflicts can degrade performance.  Applying swizzle layouts
 optimizes memory access patterns for higher throughput.
 """
 
-from std.sys import is_compile_time, simd_width_of, size_of
+from std.sys import is_run_in_comptime_interpreter, simd_width_of, size_of
 
 from std.bit import log2_floor
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -362,10 +362,11 @@ struct Swizzle(
             base: Least significant bits to keep constant.
             shift: Distance to shift the mask.
         """
-        if not is_compile_time():
+        if not is_run_in_comptime_interpreter():
             assert (
                 bits >= 0 and base >= 0
             ), "Require non-negative mask bits and base"
+
             assert abs(shift) >= bits, "shift should be less than bits"
 
         self.bits = bits

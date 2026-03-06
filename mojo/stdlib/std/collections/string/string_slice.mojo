@@ -35,7 +35,7 @@ from std.hashlib.hasher import Hasher
 from std.format._utils import _TotalWritableBytes, _WriteBufferStack
 from std.math import align_down
 from std.os import PathLike, abort
-from std.sys import is_compile_time, simd_width_of
+from std.sys import is_run_in_comptime_interpreter, simd_width_of
 from std.ffi import c_char
 from std.sys.intrinsics import likely, unlikely
 
@@ -2674,7 +2674,10 @@ fn _memchr[
 ](
     source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
 ) -> source.UnsafePointerType:
-    if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
+    if (
+        is_run_in_comptime_interpreter()
+        or len(source) < simd_width_of[Scalar[dtype]]()
+    ):
         var ptr = source.unsafe_ptr()
 
         for i in range(len(source)):
@@ -2727,7 +2730,10 @@ fn _memmem[
         ...,
     ],
 ) -> haystack_span.UnsafePointerType:
-    if is_compile_time() or len(haystack_span) < simd_width_of[Scalar[dtype]]():
+    if (
+        is_run_in_comptime_interpreter()
+        or len(haystack_span) < simd_width_of[Scalar[dtype]]()
+    ):
         var haystack = haystack_span.unsafe_ptr()
         var haystack_len = len(haystack_span)
         var needle = needle_span.unsafe_ptr()

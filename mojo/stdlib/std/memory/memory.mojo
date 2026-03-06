@@ -28,7 +28,7 @@ from std.sys import (
     align_of,
     codegen_unreachable,
     get_defined_string,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     llvm_intrinsic,
     simd_bit_width,
@@ -113,7 +113,7 @@ fn _memcmp_impl[
     s2: UnsafePointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int where dtype.is_integral():
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _memcmp_impl_unconstrained(s1, s2, count)
     else:
         return _memcmp_opt_impl_unconstrained(s1, s2, count)
@@ -257,7 +257,7 @@ fn memcpy[
     """
     var n = count * size_of[dest.type]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
@@ -294,7 +294,7 @@ fn memmove[
         count: The number of elements to copy.
     """
     var n = count * size_of[T]()
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         for i in range(n):
             (dest.bitcast[Byte]() + i).store((src.bitcast[Byte]() + i).load())
     else:

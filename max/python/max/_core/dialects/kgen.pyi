@@ -3079,10 +3079,10 @@ class GeneratorOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
 
-class IsCompileTimeOp(max._core.Operation):
+class IsRunInComptimeInterpreterOp(max._core.Operation):
     """
-    The `kgen.is_compile_time` represents a boolean value which is `true`
-    during compile time and `false` otherwise.
+    The `kgen.is_run_in_comptime_interpreter` represents a boolean value which
+    is `true` when running in the comptime interpreter and `false` otherwise.
     When used as condition for control flow, for example,
     only the `true` branch will be evaluated during compile
     time, while the other branch will be compiled to generated code.
@@ -3092,7 +3092,7 @@ class IsCompileTimeOp(max._core.Operation):
     Example:
 
     ```mlir
-      kgen.is_compile_time : i1
+      kgen.is_run_in_comptime_interpreter : i1
     ```
     """
 

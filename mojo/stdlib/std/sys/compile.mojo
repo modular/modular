@@ -16,19 +16,19 @@ from .defines import get_defined_int, get_defined_string, is_defined
 from std.collections.string.string_slice import _get_kgen_string
 
 # ===----------------------------------------------------------------------=== #
-# is_compile_time
+# is_run_in_comptime_interpreter
 # ===----------------------------------------------------------------------=== #
 
 
 @always_inline("nodebug")
-fn is_compile_time() -> Bool:
+fn is_run_in_comptime_interpreter() -> Bool:
     """Returns true if the current code is executed at compile time, false
     otherwise.
 
     Returns:
         A boolean value indicating whether the code is being compiled.
     """
-    return __mlir_op.`kgen.is_compile_time`()
+    return __mlir_op.`kgen.is_run_in_comptime_interpreter`()
 
 
 # ===----------------------------------------------------------------------=== #

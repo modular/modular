@@ -41,7 +41,7 @@ from std.builtin.constrained import _constrained_conforms_to
 from std.compile import get_type_name
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
-from std.sys.intrinsics import is_compile_time, likely
+from std.sys.intrinsics import is_run_in_comptime_interpreter, likely
 
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.memory import alloc, bitcast, memcpy, memset, pack_bits
@@ -105,7 +105,7 @@ struct _Group(Copyable, Movable):
         """
         self.ctrl = ptr.load[width=_GROUP_WIDTH]()
 
-    # TODO: Remove `is_compile_time()` branches once `pack_bits` is supported
+    # TODO: Remove `is_run_in_comptime_interpreter()` branches once `pack_bits` is supported
     # by the compile-time interpreter. Currently `pack_bits` uses `pop.bitcast`
     # which the interpreter can't handle, so we fall back to scalar loops for
     # comptime contexts (e.g., Dict used in `comptime` expressions).
@@ -120,7 +120,7 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] == h2.
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             return Self._scalar_match(self.ctrl, h2)
         return pack_bits(self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](h2)))
 
@@ -131,7 +131,7 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] == EMPTY (0xFF).
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             return Self._scalar_match(self.ctrl, _CTRL_EMPTY)
         return pack_bits(
             self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_EMPTY))
@@ -147,7 +147,7 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] is EMPTY or DELETED.
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             var result = UInt16(0)
 
             comptime for i in range(_GROUP_WIDTH):
@@ -171,7 +171,7 @@ struct _Group(Copyable, Movable):
         Returns:
             Transformed control byte vector.
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             var result = SIMD[DType.uint8, _GROUP_WIDTH](0)
 
             comptime for i in range(_GROUP_WIDTH):
