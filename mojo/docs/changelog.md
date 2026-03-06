@@ -610,6 +610,12 @@ what we publish.
   storing a separate tag, so that `size_of[Optional[T]]() == size_of[T]()`.
   `UnsafeSingleNicheable` is a simplified subtrait for the common case where a
   type has exactly one niche value.
+  - `Variant` and `Optional` now automatically take advantage of this: when the
+    variant types qualify, the discriminant tag is elided entirely, reducing the
+    size of the variant. For example, `size_of[Optional[T]]() == size_of[T]()`
+    for any `T` that implements `UnsafeNicheable`.
+  - `Variant` also only works with `Movable` types in the interim instead of
+    `AnyType` due to some compiler limitations.
 
 - `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
   There are a few restrictions including iteration requiring `T: Copyable`.

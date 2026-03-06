@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import OptionalReg
+from std.sys import size_of
 
 from std.testing import *
 from std.testing import TestSuite
@@ -249,6 +250,13 @@ def test_optional_of_move_only_type() raises:
     # Test move-only default value
     val = opt2^.or_else(MoveOnly(10))
     assert_equal(val.data, 10)
+
+
+def test_nicheable_size() raises:
+    comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]
+
+    assert_equal(size_of[Optional[PointerType]](), size_of[PointerType]())
+    assert_true(size_of[Optional[Int]]() > size_of[Int]())
 
 
 def main() raises:
