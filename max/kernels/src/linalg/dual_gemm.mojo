@@ -35,7 +35,6 @@ from std.gpu.memory import (
     external_memory,
 )
 from layout import Layout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
@@ -47,6 +46,7 @@ from layout.layout_tensor import (
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.tile_tensor import TileTensor
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from std.memory import memset_zero, stack_allocation
 from register import register_internal
@@ -869,10 +869,10 @@ fn multistage_dual_gemm[
     b1: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,
 ) raises:
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b0 = from_ndbuffer_row_major(b0)
-    var tensor_b1 = from_ndbuffer_row_major(b1)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b0 = TileTensor(b0).to_layout_tensor()
+    var tensor_b1 = TileTensor(b1).to_layout_tensor()
     multistage_dual_gemm[
         transpose_b=transpose_b,
         config=config,
