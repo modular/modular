@@ -14,7 +14,13 @@
 from std.time import sleep, time_function
 
 from std.benchmark import Report, clobber_memory, keep, run
-from std.benchmark.bencher import BenchConfig, BenchMetric, Format, Mode, ThroughputMeasure
+from std.benchmark.bencher import (
+    BenchConfig,
+    BenchMetric,
+    Format,
+    Mode,
+    ThroughputMeasure,
+)
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
@@ -183,7 +189,9 @@ def test_throughput_measure_write_repr_to() raises:
 
 
 def test_bench_config_write_to() raises:
-    var cfg = BenchConfig(min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000)
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
     var s = String()
     cfg.write_to(s)
     assert_true("min_runtime_secs=0.5" in s)
@@ -192,7 +200,9 @@ def test_bench_config_write_to() raises:
 
 
 def test_bench_config_write_repr_to() raises:
-    var cfg = BenchConfig(min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000)
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
     var s = String()
     cfg.write_repr_to(s)
     assert_true(s.startswith("BenchConfig("))
