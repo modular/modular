@@ -397,6 +397,55 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         offset = self._physical_index(self._head + normalized_idx)
         return (self._data + offset)[]
 
+    def __getitem__(self, slice: ContiguousSlice) -> Self:
+        """Gets a new deque with elements at the specified contiguous slice.
+
+        Args:
+            slice: A slice specifying start and stop (stride is always 1).
+
+        Returns:
+            A new `Deque` containing the elements at the specified positions.
+
+        Example:
+
+        ```mojo
+        var d = Deque[Int](1, 2, 3, 4, 5)
+        var s = d[1:4]
+        print(s)  # Deque(2, 3, 4)
+        ```
+        """
+        var start, end = slice.indices(len(self))
+        var result = Self(capacity=end - start)
+        for i in range(start, end):
+            result.append(self[i].copy())
+        return result^
+
+    def __getitem__(self, slice: StridedSlice) -> Self:
+        """Gets a new deque with elements at the specified strided slice positions.
+
+        Args:
+            slice: A slice specifying start, stop, and step.
+
+        Returns:
+            A new `Deque` containing the elements at the specified positions.
+
+        Example:
+
+        ```mojo
+        var d = Deque[Int](1, 2, 3, 4, 5)
+        var s = d[::2]
+        print(s)  # Deque(1, 3, 5)
+        var s2 = d[::-1]
+        print(s2)  # Deque(5, 4, 3, 2, 1)
+        ```
+        """
+        var start, end, step = slice.indices(len(self))
+        var r = range(start, end, step)
+        var result = Self(capacity=len(r))
+        for i in r:
+            result.append(self[i].copy())
+        return result^
+
     def _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
     ](self, mut writer: Some[Writer]) where conforms_to(

@@ -58,6 +58,17 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- `Deque` now supports slice subscripting via `__getitem__`. Both contiguous
+  slices (`d[1:4]`) and strided slices (`d[::2]`, `d[::-1]`) return a new
+  `Deque` with the selected elements:
+
+  ```mojo
+  var d: Deque[Int] = [1, 2, 3, 4, 5]
+  print(d[1:4])   # Deque(2, 3, 4)
+  print(d[::2])   # Deque(1, 3, 5)
+  print(d[::-1])  # Deque(5, 4, 3, 2, 1)
+  ```
+
 ## Tooling changes
 
 ## ❌ Removed
