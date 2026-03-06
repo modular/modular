@@ -265,6 +265,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
 
         return Self(mlir_value=array)
 
+    @always_inline
     fn __eq__[
         _E: Equatable & TrivialRegisterPassable, //
     ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
@@ -285,6 +286,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
                 return False
         return True
 
+    @always_inline
     fn __ne__[
         _E: Equatable & TrivialRegisterPassable, //
     ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
@@ -302,6 +304,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         return not (self == other)
 
+    @always_inline
     fn __lt__[
         _E: Comparable & TrivialRegisterPassable, //
     ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
@@ -324,6 +327,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
                 return False
         return False
 
+    @always_inline
     fn __le__[
         _E: Comparable & TrivialRegisterPassable, //
     ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
@@ -342,6 +346,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         return not (other < self)
 
+    @always_inline
     fn __gt__[
         _E: Comparable & TrivialRegisterPassable, //
     ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
@@ -359,6 +364,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         return other < self
 
+    @always_inline
     fn __ge__[
         _E: Comparable & TrivialRegisterPassable, //
     ](self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]) -> Bool:
