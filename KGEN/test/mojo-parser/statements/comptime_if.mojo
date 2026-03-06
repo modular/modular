@@ -99,24 +99,24 @@ fn param_if_and[a: Bool, b: Bool]():
     # CHECK:   kgen.param.yield
     # CHECK: }
 
-# Minimal local stand-in for std.sys.is_compile_time, matching its definition.
+# Minimal local stand-in for std.sys.is_run_in_comptime_interpreter, matching its definition.
 @always_inline("nodebug")
-fn is_compile_time() -> Bool:
-    return __mlir_op.`kgen.is_compile_time`()
+fn is_run_in_comptime_interpreter() -> Bool:
+    return __mlir_op.`kgen.is_run_in_comptime_interpreter`()
 
 
 # Warnings appear on stderr before IR output, so all CHECK/CHECK-NOT lines
 # for warnings must be ordered before any CHECK-LABEL that matches IR.
 
 fn test_direct_call():
-    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
-    comptime if is_compile_time():
+    #expected-warning @+1 {{'is_run_in_comptime_interpreter()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_run_in_comptime_interpreter():
         var x: Int
 
 
 fn test_negated_call():
-    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
-    comptime if not is_compile_time():
+    #expected-warning @+1 {{'is_run_in_comptime_interpreter()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if not is_run_in_comptime_interpreter():
         var x: Int
 
 
@@ -127,24 +127,24 @@ fn test_no_warning_for_regular_param[cond: __mlir_type.i1]():
 
 
 fn test_elif_also_warns[cond: __mlir_type.i1]():
-    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
-    comptime if is_compile_time():
+    #expected-warning @+1 {{'is_run_in_comptime_interpreter()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_run_in_comptime_interpreter():
         var x: Int
-    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
-    elif is_compile_time():
+    #expected-warning @+1 {{'is_run_in_comptime_interpreter()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    elif is_run_in_comptime_interpreter():
         var y: Int
 
 fn test_and_call():
-    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
-    comptime if is_compile_time() and True:
+    #expected-warning @+1 {{'is_run_in_comptime_interpreter()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_run_in_comptime_interpreter() and True:
         var x: Int
 
 fn test_or_call():
-    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
-    comptime if is_compile_time() or False:
+    #expected-warning @+1 {{'is_run_in_comptime_interpreter()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if is_run_in_comptime_interpreter() or False:
         var x: Int
 
 fn test_nested_call():
-    #expected-warning @+1 {{'is_compile_time()' is always true as a 'comptime if' condition; use runtime 'if'}}
-    comptime if ((not (is_compile_time() and True)) or (not is_compile_time())):
+    #expected-warning @+1 {{'is_run_in_comptime_interpreter()' is always true as a 'comptime if' condition; use runtime 'if'}}
+    comptime if ((not (is_run_in_comptime_interpreter() and True)) or (not is_run_in_comptime_interpreter())):
         var x: Int

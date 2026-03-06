@@ -10,7 +10,7 @@
 fn diverge_comptime(i: Int) -> Int:
     var t = 0
     # Intentionally have then and else branches mismatch logic for testing.
-    if __mlir_op.`kgen.is_compile_time`():
+    if __mlir_op.`kgen.is_run_in_comptime_interpreter`():
         t = i + 40
     else:
         t = i + 1
@@ -18,9 +18,9 @@ fn diverge_comptime(i: Int) -> Int:
     return t + 1
 
 
-fn test_is_compile_time():
-    # CHECK-LABEL: testing test_is_compile_time
-    print("testing test_is_compile_time")
+fn test_is_run_in_comptime_interpreter():
+    # CHECK-LABEL: testing test_is_run_in_comptime_interpreter
+    print("testing test_is_run_in_comptime_interpreter")
 
     # CHECK: interpret value: 42
     comptime a = diverge_comptime(1)
@@ -70,5 +70,5 @@ fn test_exception_handling():
 
 
 fn main():
-    test_is_compile_time()
+    test_is_run_in_comptime_interpreter()
     test_exception_handling()

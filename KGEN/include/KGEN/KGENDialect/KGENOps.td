@@ -2147,15 +2147,15 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
 }
 
 //===----------------------------------------------------------------------===//
-// IsCompileTimeOp
+// IsRunInComptimeInterpreterOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
+def KGEN_IsRunInComptimeInterpreterOp: KGENOp<"is_run_in_comptime_interpreter",
     [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "Evaluated as true for compile time and false otherwise.";
+  let summary = "Evaluated as true when running in the comptime interpreter and false otherwise.";
   let description = [{
-    The `kgen.is_compile_time` represents a boolean value which is `true`
-    during compile time and `false` otherwise.
+    The `kgen.is_run_in_comptime_interpreter` represents a boolean value which
+    is `true` when running in the comptime interpreter and `false` otherwise.
     When used as condition for control flow, for example,
     only the `true` branch will be evaluated during compile
     time, while the other branch will be compiled to generated code.
@@ -2165,7 +2165,7 @@ def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
     Example:
 
     ```mlir
-      kgen.is_compile_time : i1
+      kgen.is_run_in_comptime_interpreter : i1
     ```
   }];
 
