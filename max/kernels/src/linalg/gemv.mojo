@@ -60,9 +60,8 @@ from layout import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import LegacyUnsafePointer, stack_allocation
+from memory import UnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from utils import IndexList
 from utils.index import Index

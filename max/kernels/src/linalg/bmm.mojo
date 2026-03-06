@@ -45,9 +45,8 @@ from layout._coord import (
     coord_to_index_list,
 )
 from logger import Logger
-from memory import LegacyUnsafePointer, memset_zero
+from memory import UnsafePointer, memset_zero
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from gpu.host.info import B200, H100

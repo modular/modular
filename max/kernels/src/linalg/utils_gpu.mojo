@@ -13,12 +13,7 @@
 
 from hashlib.hasher import Hasher
 from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
+from memory import UnsafePointer
 
 from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
 from ffi import external_call

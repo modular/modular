@@ -21,10 +21,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from memory import UnsafePointer
 
 
 # ===-----------------------------------------------------------------------===#

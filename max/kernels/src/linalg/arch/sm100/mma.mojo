@@ -31,9 +31,8 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
-from memory import LegacyUnsafePointer
+from memory import UnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from utils.index import Index, IndexList, product
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 

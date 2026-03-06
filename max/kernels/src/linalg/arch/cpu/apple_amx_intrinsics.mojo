@@ -22,13 +22,11 @@ from sys._assembly import inlined_assembly
 from buffer import DimList
 from layout import Layout, LayoutTensor
 from memory import (
-    LegacyUnsafePointer,
+    UnsafePointer,
     memcpy,
     memset_zero,
     stack_allocation,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # All AMX instructions are of the form

@@ -34,9 +34,8 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._coord import coord_to_index_list
 from layout._tile_tensor import TileTensor
 from logger import Logger
-from memory import LegacyUnsafePointer, bitcast
+from memory import UnsafePointer, bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from algorithm import elementwise

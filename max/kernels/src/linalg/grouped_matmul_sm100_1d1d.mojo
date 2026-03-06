@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
+from memory import UnsafePointer
 from sys import align_of, simd_width_of, size_of
 
 from gpu import WARP_SIZE
