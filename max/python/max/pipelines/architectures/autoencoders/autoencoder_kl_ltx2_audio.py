@@ -197,7 +197,7 @@ class LTX2AudioAttnBlock(nn.Module[[Tensor], Tensor]):
         return x + self.proj_out(h)
 
 
-class LTX2AudioResnetBlock(nn.Module[[Tensor, Tensor | None], Tensor]):
+class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
     def __init__(
         self,
         in_channels: int,
@@ -431,7 +431,7 @@ class LTX2AudioAudioPatchifier(nn.Module[[Tensor], Tensor]):
         return self._patch_size
 
 
-class LTX2AudioDecoderMid(nn.Module):
+class LTX2AudioDecoderMid(nn.Module[..., Any]):
     """Container for the middle block of the LTX2 Audio Decoder."""
 
     block_1: LTX2AudioResnetBlock
@@ -439,7 +439,7 @@ class LTX2AudioDecoderMid(nn.Module):
     block_2: LTX2AudioResnetBlock
 
 
-class LTX2AudioDecoderStage(nn.Module):
+class LTX2AudioDecoderStage(nn.Module[..., Any]):
     """Container for a single stage (level) of the LTX2 Audio Decoder."""
 
     block: nn.ModuleList[LTX2AudioResnetBlock]
