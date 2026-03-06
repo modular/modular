@@ -11,24 +11,18 @@ comptime string = __mlir_type.`!kgen.string`
 comptime float = __mlir_type.`!pop.scalar<f64>`
 
 comptime __TypeOfAllTypes = __mlir_type.`!kgen.type`
-comptime ImmutOrigin = Origin[mut=False]
-comptime MutOrigin = Origin[mut=True]
-comptime AnyOrigin[*, mut: Bool] = Origin[
+comptime AnyOrigin[*, mut: Bool = False] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
     ]
 ]()
-comptime ImmutAnyOrigin = AnyOrigin[mut=False]
-comptime MutAnyOrigin = AnyOrigin[mut=True]
-comptime ExternalOrigin[*, mut: Bool] = Origin[
+comptime ExternalOrigin[*, mut: Bool = False] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         mut._mlir_value,
         `>`,
     ],
 ]()
-comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
-comptime MutExternalOrigin = ExternalOrigin[mut=True]
 comptime StaticConstantOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
@@ -46,16 +40,16 @@ comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
 ]
 
 
-struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
-    TrivialRegisterPassable
-):
+struct Origin[
+    mut: Bool = False, _mlir_origin: _lit_origin_type_of_mut[mut], //
+](TrivialRegisterPassable):
     @always_inline("builtin")
     fn __init__(out self):
         pass
 
     @always_inline("builtin")
     @implicit
-    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
+    fn __init__(v: Origin) -> Origin[mut=False, _mlir_origin=v._mlir_origin]:
         return {}
 
     @always_inline("builtin")
@@ -69,7 +63,7 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
             `> : !lit.origin<`,
             dest_mut._mlir_value,
             `>`,
-        ]
+        ],
     ]:
         return {}
 
@@ -605,7 +599,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @implicit
     fn __init__[
-        _origin: ImmutOrigin, //
+        _origin: Origin[], //
     ](out self: StringSlice[_origin], ref[_origin] value: String):
         self._slice = Span[Byte, _origin]()
 
@@ -912,7 +906,7 @@ struct _VariadicListIter[
     //,
     elt_type: AnyType,
     elt_origin: Origin[mut=elt_is_mutable],
-    list_origin: ImmutOrigin,
+    list_origin: Origin[],
     is_owned: Bool,
 ]:
     """Iterator for VariadicList.
@@ -1215,7 +1209,7 @@ struct UnsafePointer[
     # unique reference from this pointer.  The returned reference is always
     # mutable.
     fn get_unique_item_ref[
-        self_origin: ImmutOrigin
+        self_origin: Origin[]
     ](ref[self_origin] self, offset: Int = 0) -> ref[
         _lit_indirect_origin[self_origin].unsafe_mut_cast[True](),
         Self.address_space,
@@ -1231,7 +1225,7 @@ struct UnsafePointer[
 
 
 comptime MutOpaquePointer[
-    origin: MutOrigin,
+    origin: Origin[mut=True],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ] = UnsafePointer[NoneType, origin, address_space=address_space]

@@ -1113,9 +1113,9 @@ fn test_ref_field(var mem: MemPair):
   _ = r == r
   # CHECK-NEXT: lit.call {{.*}}MemPair::@"__del__
 
-fn get_inner_ptr(s: String) -> UnsafePointer[UInt8, MutAnyOrigin]:
+fn get_inner_ptr(s: String) -> UnsafePointer[UInt8, AnyOrigin[mut=True]]:
   return {}
-fn use_inner_pointer[origin: MutOrigin](ptr: UnsafePointer[UInt8, origin]): pass
+fn use_inner_pointer[origin: Origin[mut=True]](ptr: UnsafePointer[UInt8, origin]): pass
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime1
 fn handleAnyLifetime1():
@@ -1144,7 +1144,7 @@ fn handleAnyLifetime3():
     # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
     # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
-    var a_packed_ptr = UnsafePointer[Int, MutAnyOrigin]()
+    var a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]]()
 
     # CHECK-NEXT: lit.call {{.*}}__init__
     # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
@@ -1153,7 +1153,7 @@ fn handleAnyLifetime3():
 
     # This shouldn't be treated as a use of `a_packed_ptr`
     # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
-    a_packed_ptr = UnsafePointer[Int, MutAnyOrigin]()
+    a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]]()
 
 
 fn take_pack[*Ts: AnyType](*values: *Ts): pass
@@ -1174,9 +1174,9 @@ fn handleAnyLifetime4():
 
 
 struct A:
-    var data: UnsafePointer[Int, MutAnyOrigin]
+    var data: UnsafePointer[Int, AnyOrigin[mut=True]]
     fn __init__(out self):
-        self.data = UnsafePointer[Int, MutAnyOrigin]()
+        self.data = UnsafePointer[Int, AnyOrigin[mut=True]]()
     fn __del__(deinit self): pass
 
 fn use_int(a: Int): pass
