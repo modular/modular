@@ -141,6 +141,10 @@ private:
                                             ASTType expectedType,
                                             size_t paramIdx);
 
+  bool isExplicitlyUnbound(size_t paramIdx) const {
+    return explicitlyUnboundParams[paramIdx];
+  }
+
   /// This is the evaluator instance parameter inference uses to progressively
   /// refine dependent types as we infer parameters.
   ParameterEvaluator evaluator;
@@ -175,6 +179,11 @@ private:
 
   /// This describes the nature of the parameter list we're inferring for.
   PogListAttr declaredParamPogs;
+
+  /// This describes the parameters that are explicitly unbound (only applicable
+  /// for struct binding. For call binding, every parameter might have a
+  /// concrete real value).
+  llvm::BitVector explicitlyUnboundParams;
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;

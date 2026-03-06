@@ -42,6 +42,12 @@ struct MatchFailure {
     TypedAttr v1, v2;
   };
 
+  /// This failure happens when a parameter is explicitly unbound by the user,
+  /// but then inferable from another parameter.
+  struct UnboundButInferrable {
+    size_t unboundParamIdx;
+  };
+
   /// This failure happens when merge* is called, but the expected type/value
   /// still has an unresolved dependent type which can't be inferred.
   struct DependsOnUnresolved {
@@ -73,9 +79,13 @@ struct MatchFailure {
     return std::nullopt;
   }
 
+  bool isUnboundButInferrable() const {
+    return isa<UnboundButInferrable>(info);
+  }
+
 private:
   SmartVariant<TypeConflict, ValueConflict, DependsOnUnresolved, Unclassified,
-               UnprovableConstraints>
+               UnprovableConstraints, UnboundButInferrable>
       info;
 };
 

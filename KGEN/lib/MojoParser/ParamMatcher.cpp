@@ -54,6 +54,13 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
     return;
   }
 
+  if (isa<UnboundButInferrable>(info)) {
+    auto details = cast<UnboundButInferrable>(info);
+    diag << ", it overwrites an explicitly unbound parameter '_' at #"
+         << details.unboundParamIdx;
+    return;
+  }
+
   if (isa<ValueConflict>(info)) {
     auto failure = cast<ValueConflict>(info);
     diag << ", it inferred to two different values: " << failure.v1 << " and "
@@ -780,6 +787,9 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           state.evaluator.getIndexBindings()[parameterIndex];
       // If this is a new parameter we've inferred, huzzah, remember it.
       if (!inferredValue) {
+        if (state.isExplicitlyUnbound(parameterIndex))
+          return error(MatchFailure::UnboundButInferrable{parameterIndex});
+
         if (failed(state.setInferredValue(parameterIndex, actualAttr)))
           return error(MatchFailure::UnprovableConstraints{parameterIndex});
         return success();

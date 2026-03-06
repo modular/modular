@@ -95,6 +95,7 @@ ParamInf::ParamInf(
       evaluator(paramBinding.shared.getParameterEvaluator()),
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
+      explicitlyUnboundParams(declaredParamTypes.size(), false),
       allowImplicitConversions(allowImplicitConversions) {
 
   // Fills in with nullptr.
@@ -721,6 +722,15 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // Restore the information from the original failure so we have a simple
   // diagnostic.
   ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
+
+  if (matcher.failureReason->isUnboundButInferrable()) {
+    // Be more specific about this case.
+    auto &diag = getDiag(operand.expr->getLoc());
+    diag << "failed to infer from type " << argType;
+    matcher.failureReason->addExplanation(diag);
+    return failure();
+  }
+
   auto &diag = emitWrongTypeDiag(expectedType);
   matcher.failureReason->addExplanation(diag);
   return failure();
@@ -753,8 +763,11 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     // `_` means different things when used in struct binding or call bindings,
     // for struct binding, it is a concrete unknown value; for call binding, it
     // means something to be inferred.
+    // We can not simply return and bind a `_` value here either, because it
+    // could be dependent by other parameters/default values, which need to be
+    // handled properly.
     if (isInferForStruct)
-      return TypedAttr(UnboundAttr::get(expectedType));
+      explicitlyUnboundParams.set(paramIdx);
 
     return TypedAttr(); // Deferred
   }
@@ -1452,10 +1465,17 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
 LogicalResult ParamInf::inferFromDefaults() {
 
   auto setDefault = [&](TypedAttr value, size_t idx) -> LogicalResult {
+    // The default value is explicitly unbound.
+    if (explicitlyUnboundParams[idx])
+      return success();
+
     value = evaluator.getReboundAttribute(value);
 
     // Don't try to infer from default values that have unresolved references
     // to other parameters.
+    //
+    // TODO: If the references points to a `_` parameter, we might still want to
+    // install it without erasing the index reference.
     if (paramFinder.hasReferences(value))
       return success();
 
@@ -1638,8 +1658,10 @@ LogicalResult ParamInf::finalizeWithUnbound() {
   // to unboundAttr.
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     TypedAttr inferred = evaluator.getIndexBindings()[idx];
-    if (inferred && !sugarIsa<UnboundAttr>(inferred))
+    if (inferred) {
+      assert(!sugarIsa<UnboundAttr>(inferred));
       continue;
+    }
 
     bool installUnbound = [&]() -> bool {
       // Call must produce a concrete type
@@ -1647,7 +1669,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
         return false;
 
       // There is a explicit unbound value provided and unbound is allowed.
-      if (inferred)
+      if (isExplicitlyUnbound(idx))
         return true;
 
       // `...` provides a default `_` value for any missing parameter. Besides,
