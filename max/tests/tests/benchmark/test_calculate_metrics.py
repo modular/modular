@@ -22,7 +22,10 @@ from max.benchmark.benchmark_serving import (
     calculate_metrics,
     calculate_pixel_generation_metrics,
 )
-from max.benchmark.benchmark_shared.request import RequestFuncOutput
+from max.benchmark.benchmark_shared.request import (
+    PixelGenerationRequestFuncOutput,
+    RequestFuncOutput,
+)
 
 
 def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
@@ -398,17 +401,17 @@ def test_skip_all_requests_warns() -> None:
 
 def test_calculate_pixel_generation_metrics() -> None:
     outputs = [
-        RequestFuncOutput(
+        PixelGenerationRequestFuncOutput(
             success=True,
             latency=1.0,
             num_generated_outputs=1,
         ),
-        RequestFuncOutput(
+        PixelGenerationRequestFuncOutput(
             success=True,
             latency=2.0,
             num_generated_outputs=2,
         ),
-        RequestFuncOutput(success=False, error="bad request"),
+        PixelGenerationRequestFuncOutput(success=False, error="bad request"),
     ]
 
     metrics = calculate_pixel_generation_metrics(
