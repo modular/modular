@@ -611,13 +611,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
     fn _keep_positive(mut self):
         """Remove zero and negative counts from the `Counter`."""
-        for key in self.keys():
-            if self.get(key, 0) <= 0:
-                try:
-                    var key_copy = key.copy()  # Copy due to incorrect origins.
-                    _ = self.pop(key_copy)
-                except:
-                    pass  # this should not happen
+        var keys_to_remove = List[Self.V]()
+        for item in self.items():
+            if item.value <= 0:
+                keys_to_remove.append(item.key.copy())
+        for key in keys_to_remove:
+            _ = self._data.unsafe_pop(key)
 
     # ===------------------------------------------------------------------=== #
     # Unary operators
