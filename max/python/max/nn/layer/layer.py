@@ -204,28 +204,57 @@ class Module(Layer, ABC):
         input_types: Sequence[Type[Any] | list[Type[Any]]],
         weight_prefix: str = "",
     ) -> Graph:
-        """Builds a subgraph for this module.
+        """Builds a subgraph encapsulating this layer's computation.
 
-        This method creates a subgraph that encapsulates the module's logic,
-        handling input types, weights, and creating a graph with the module's
-        computation.
+        Call this method once on a representative layer, then call the returned
+        subgraph once per layer using :func:`~max.graph.ops.call` with a unique
+        ``prefix``. This pattern lets the compiler process the layer definition
+        once rather than once per repetition, which significantly reduces compile
+        time for models with many identical layers.
 
-        Once the subgraph is built, it can be called using the :obj:`ops.call`
-        op.
+        Examples:
+
+            Build a subgraph from layer 0 and call it once per layer with
+            layer-specific weights:
+
+            .. code-block:: python
+
+                input_types = [hidden.type for hidden in h]
+
+                # Build the subgraph once.
+                subgraph = self.layers[0].build_subgraph(
+                    "transformer_block",
+                    input_types=input_types,
+                    weight_prefix="layers.0.",
+                )
+
+                # Call it once per layer with the correct weight prefix.
+                for idx in range(len(self.layers)):
+                    outputs = ops.call(
+                        subgraph, *h, prefix=f"layers.{idx}."
+                    )
+                    h = [x.tensor for x in outputs]
 
         Args:
-            name: The name of the subgraph to create.
-            input_types: A list of input types for the subgraph. Each element can be
-                either a single :obj:`Type` or a list of :obj:`Type` objects.
-            weight_prefix: Optional prefix for weight names in the subgraph. If provided,
-                weights with names starting with this prefix will have their names
-                modified by removing the prefix and will be marked as placeholders.
+            name: The name of the subgraph. Must be unique within the containing
+                graph.
+            input_types: The input types for the subgraph. Pass a flat
+                :class:`~max.graph.type.Type` for a single tensor, or a list of
+                :class:`~max.graph.type.Type` objects for a group of tensors that
+                should be passed together (for example, KV-cache blocks).
+            weight_prefix: A prefix string to strip from weight names before
+                registering them as placeholder weights. At call time, the caller
+                supplies the same prefix via the ``prefix`` argument of
+                :func:`~max.graph.ops.call` to re-resolve each weight to the
+                correct entry in the weights registry.
 
         Returns:
-            :obj:`Graph`: The created subgraph containing the module's computation.
+            A :class:`~max.graph.Graph` instance representing the subgraph.
 
-        Note:
-            - Placeholder weights will require the :obj:`prefix` attribute of :obj:`ops.call` to be set.
+        Notes:
+            Weights with names that start with ``weight_prefix`` are marked as
+            placeholders. Any :func:`~max.graph.ops.call` invocation for this
+            subgraph must supply a matching ``prefix``.
         """
         layer_weights = list(self.raw_state_dict().values())
         subgraph_input_types: list[Type[Any]] = []
