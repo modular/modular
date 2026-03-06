@@ -1523,7 +1523,7 @@ fn matmul_dispatch_sm100_bf16[
     comptime static_NK = Index(static_N, static_K)
 
     comptime if static_NK in DeepSeek_NK:
-        return heuristic_and_outliers_dispatch[
+        return sm100_heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
@@ -1798,3 +1798,105 @@ fn batched_matmul_dispatch_sm100_bf16[
         transpose_b=transpose_b,
         config=config,
     ](c, a, b, ctx)
+
+
+fn sm100_heuristic_and_outliers_dispatch[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[b_type, 2, _, _],
+    ctx: DeviceContext,
+) raises -> Int:
+    var m = c.dim[0]()
+    comptime static_N = c.shape.get[1]()
+    comptime static_K = a.shape.get[1]()
+
+    comptime assert a_type == b_type and a_type in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    ), "Only support bfloat16 and float8_e4m3fn input types"
+
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+
+    comptime outliers = Table(
+        _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
+    ) if a_type == DType.bfloat16 else Table(
+        _get_tuning_list_sm100_fp8[MMA_K, BK](), "fp8_heuristic_outliers"
+    )
+
+    @parameter
+    @always_inline
+    fn rule(x: TuningConfigSM100) -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    var c_tensor = TileTensor(c)
+    var a_tensor = TileTensor(a)
+    var b_tensor = TileTensor(b)
+
+    comptime outlier_configs = outliers.find[rule]()
+
+    comptime for tuning_config in outlier_configs:
+        if m >= tuning_config.M and m < tuning_config.M_end:
+            comptime matmul_config = MatmulConfig[
+                a_type, b_type, c_type, transpose_b
+            ](
+                mma_shape=tuning_config.mma_shape,
+                cta_group=tuning_config.cta_group,
+                cluster_shape=tuning_config.cluster_shape,
+                block_swizzle_size=Int(tuning_config.block_swizzle_size),
+                raster_order=tuning_config.rasterize_order,
+                AB_swapped=tuning_config.swapAB,
+                num_accum_pipeline_stages=Int(
+                    tuning_config.num_accum_pipeline_stages
+                ),
+                num_clc_pipeline_stages=Int(
+                    tuning_config.num_clc_pipeline_stages
+                ),
+                k_group_size=Int(tuning_config.k_group_size),
+                num_split_k=tuning_config.num_split_k,
+            )
+
+            logger.info("dispatching to outlier config: ", matmul_config)
+
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=matmul_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c_tensor, a_tensor, b_tensor, ctx)
+
+            return DISPATCH_HIT
+
+    comptime configs = build_configs[
+        a_type, b_type, c_type, static_N, static_K, transpose_b
+    ]()
+    var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
+        m, static_N, static_K
+    )
+
+    comptime for config in configs:
+        if config_runtime == config:
+            logger.info("dispatching to config: ", config)
+
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](c_tensor, a_tensor, b_tensor, ctx)
+            return DISPATCH_HIT
+
+    return DISPATCH_MISS
