@@ -18,7 +18,7 @@ import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
 from std.gpu.host.info import is_gpu
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from layout import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 from std.runtime.asyncrt import DeviceContextPtr
@@ -197,14 +197,12 @@ fn update_frequency_data[
     target: StaticString,
 ](
     compressed_frequency_data: TileTensor[
-        mut=True, DType.int32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    new_tokens: TileTensor[
-        token_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -224,12 +222,12 @@ fn update_frequency_data[
 
         dev_ctx = ctx.get_device_context()
         comptime kernel = update_frequency_data_kernel[
-            freq_data_origin = compressed_frequency_data.origin,
-            FreqDataLayoutType = compressed_frequency_data.LayoutType,
-            freq_offsets_origin = ImmutOrigin(frequency_offsets.origin),
-            FreqOffsetsLayoutType = frequency_offsets.LayoutType,
-            new_tokens_origin = ImmutOrigin(new_tokens.origin),
-            NewTokensLayoutType = new_tokens.LayoutType,
+            freq_data_origin=compressed_frequency_data.origin,
+            FreqDataLayoutType=compressed_frequency_data.LayoutType,
+            freq_offsets_origin=ImmutOrigin(frequency_offsets.origin),
+            FreqOffsetsLayoutType=frequency_offsets.LayoutType,
+            new_tokens_origin=ImmutOrigin(new_tokens.origin),
+            NewTokensLayoutType=new_tokens.LayoutType,
             token_type=token_type,
             block_size=block_size,
         ]

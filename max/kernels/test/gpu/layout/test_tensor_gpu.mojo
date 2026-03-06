@@ -46,7 +46,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
             DType.float32,
             Layout.row_major(4, 4),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
         sram_tensor.copy_from_async(dram_tile)
 

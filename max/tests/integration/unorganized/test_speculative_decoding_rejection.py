@@ -258,6 +258,7 @@ def test_speculative_decoding_partial_rejection(
 
     # Permute to [batch, num_steps, vocab] and set large logit values for half the tokens in the first batch.
     # Then permute back to the expected shape
+    assert all_draft_logits is not None
     all_draft_logits_host = np.permute_dims(
         np.copy(all_draft_logits.to_numpy()), [1, 0, 2]
     )

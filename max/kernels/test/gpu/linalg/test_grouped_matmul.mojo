@@ -534,14 +534,14 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(256, 256),
+            expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(16, 256),
+            expert_shape=Index(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
@@ -549,14 +549,14 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(1024, 256),
+            expert_shape=Index(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
@@ -564,7 +564,7 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(256, 64),
+            expert_shape=Index(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
@@ -572,7 +572,7 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(256, 64),
+            expert_shape=Index(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
@@ -580,21 +580,21 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(256, 64),
+            expert_shape=Index(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(2880, 512),
+            expert_shape=Index(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(5760, 512),
+            expert_shape=Index(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -602,7 +602,7 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
+            expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -611,7 +611,7 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
+            expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -621,7 +621,7 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(192, 1024),
+            expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         comptime if ctx.default_device_info == B200:
@@ -629,14 +629,14 @@ def main() raises:
                 DType.bfloat16,
                 DType.bfloat16,
                 num_experts=6,
-                expert_shape = Index(1280, 16),
+                expert_shape=Index(1280, 16),
             ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(16, 1024),
+            expert_shape=Index(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
@@ -644,7 +644,7 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
+            expert_shape=Index(768, 1024),
             has_epilogue=True,
         ](2, [128, 256], [0, 2], ctx)
 
@@ -664,7 +664,7 @@ def main() raises:
                     DType.bfloat16,
                     DType.bfloat16,
                     num_experts=2,
-                    expert_shape = Index(n, m),
+                    expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
                 # Test negative lora_id behavior with naive matmul
@@ -672,7 +672,7 @@ def main() raises:
                     DType.bfloat16,
                     DType.bfloat16,
                     num_experts=2,
-                    expert_shape = Index(n, m),
+                    expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
         # QKV perm dim test
@@ -680,6 +680,6 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(192, 1024),
+            expert_shape=Index(192, 1024),
             qkv_perm_dim=True,
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)

@@ -22,13 +22,12 @@ import numpy.typing
 import torch
 from scipy.spatial import distance
 from scipy.special import rel_entr, softmax
+from test_common.custom_args import CommaSeparatedList
+from test_common.table import CONSOLE, PrettyTable
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from torchmetrics.image.lpip import (
     LearnedPerceptualImagePatchSimilarity,
 )
-
-from test_common.custom_args import CommaSeparatedList
-from test_common.table import CONSOLE, PrettyTable
 
 # --- Shared image metric computation (single source of truth for report + validators) ---
 

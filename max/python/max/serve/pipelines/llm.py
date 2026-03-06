@@ -62,7 +62,6 @@ class TokenGeneratorOutput:
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
     stop_sequence: str | None = None
-    is_done: bool = False
 
 
 class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):

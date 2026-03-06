@@ -106,14 +106,14 @@ struct MLA_SM100_Decode_KV_BF16[
         4 // size_of[Self.output_type]()
     )
     comptime UMMAQKTSS = DecodeSM100QKTSS[
-        operand_type = Self.q_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.q_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
     comptime UMMAPVSS = DecodeSM100PVSS[
-        operand_type = Self.q_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.q_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
 
     comptime Common_MLA_Op = MLA_SM100_Decode_Common[
@@ -183,29 +183,29 @@ struct MLA_SM100_Decode_KV_BF16[
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn kernel(
         q_tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.q_type,
+            BM=Self.config.BM,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
         ],
         o_tma: QOTMATile[
-            dtype = Self.output_type,
-            BM = Self.config.out_rows,
-            BK = Self.config.BN,
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.output_type,
+            BM=Self.config.out_rows,
+            BK=Self.config.BN,
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         mla_decode_pack: MLA_Decode_Pack[
-            ValidLengthType = Self.ValidLengthType,
-            MaskType = Self.MaskType,
-            SplitAccumType = Self.SplitAccumType,
+            ValidLengthType=Self.ValidLengthType,
+            MaskType=Self.MaskType,
+            SplitAccumType=Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: LayoutTensor[
@@ -279,7 +279,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 return  # This query position doesn't exist for this batch
         q_smem = external_memory[
             Scalar[Self.q_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -322,7 +322,7 @@ struct MLA_SM100_Decode_KV_BF16[
         var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
 
         var kv_pipeline = KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -373,7 +373,7 @@ struct MLA_SM100_Decode_KV_BF16[
         # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
-            num_out_stages = OutPipeType.num_out_stages,
+            num_out_stages=OutPipeType.num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ](
@@ -490,23 +490,23 @@ struct MLA_SM100_Decode_KV_BF16[
     @always_inline
     fn load(
         q_tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.q_type,
+            BM=Self.config.BM,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
         kv_smem: SharedMemPointer[Scalar[Self.kv_type]],
         mbar_q: MBarType,
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -658,7 +658,7 @@ struct MLA_SM100_Decode_KV_BF16[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -731,7 +731,7 @@ struct MLA_SM100_Decode_KV_BF16[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages=Self.config.num_kv_stages,  # 2
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,

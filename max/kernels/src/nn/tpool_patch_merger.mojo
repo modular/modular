@@ -17,7 +17,8 @@ from std.sys.info import simd_width_of
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout.coord import Coord, Idx, coord
-from layout._layout import TensorLayout, row_major
+from layout import row_major
+from layout.tile_layout import TensorLayout
 from layout.tile_tensor import TileTensor
 from std.memory import UnsafePointer
 from std.runtime.asyncrt import DeviceContextPtr
@@ -169,7 +170,7 @@ fn tpool_patch_merger[
     var max_pat = max_h // kH * max_w // kW * kH * kW
 
     comptime simd_width = simd_width_of[
-        dtype, target = ctx.default_device_info.target()
+        dtype, target=ctx.default_device_info.target()
     ]()
     comptime num_threads = 256
 

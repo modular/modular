@@ -1051,10 +1051,10 @@ fn _external_call_const[
     var loaded_pack = args.get_loaded_kgen_pack()
 
     return __mlir_op.`pop.external_call`[
-        func = _get_kgen_string[callee](),
-        resAttrs = __mlir_attr.`[{llvm.noundef}]`,
-        funcAttrs = __mlir_attr.`["willreturn"]`,
-        memory = __mlir_attr[
+        func=_get_kgen_string[callee](),
+        resAttrs=__mlir_attr.`[{llvm.noundef}]`,
+        funcAttrs=__mlir_attr.`["willreturn"]`,
+        memory=__mlir_attr[
             `#llvm.memory_effects<other = none, `,
             `argMem = none, `,
             `inaccessibleMem = none, `,

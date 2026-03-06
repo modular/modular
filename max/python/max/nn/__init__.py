@@ -16,11 +16,10 @@ Graph-based API:
     >>> from max.nn import Linear, AttentionWithRope
     >>> from max.nn.kv_cache import KVCacheParams
 
-Eager tensor API (module_v3):
-    >>> from max.nn.module_v3 import Module, Linear, Embedding
+Eager tensor API:
+    >>> from max.experimental.nn import Module, Linear, Embedding
 """
 
-from . import module_v3
 from .attention import (
     AttentionWithRope,
     DistributedAttentionImpl,
@@ -73,6 +72,7 @@ from .sampling import (
     MinPSampler,
     RejectionSampler,
     RejectionSamplerWithResiduals,
+    TypicalAcceptanceSampler,
 )
 from .sequential import Sequential
 from .transformer import (
@@ -146,13 +146,13 @@ __all__ = [
     "TensorParallelLatentAttentionWithRope",
     "Transformer",
     "TransformerBlock",
+    "TypicalAcceptanceSampler",
     "VocabParallelEmbedding",
     "WeightNormConvTranspose1d",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
     "build_max_lengths_tensor",
     "clamp",
-    "module_v3",
     "split_batch",
     "split_batch_replicated",
 ]

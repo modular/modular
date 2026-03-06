@@ -30,8 +30,8 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
-from layout._layout import row_major
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer
@@ -213,7 +213,7 @@ fn bench_rms_norm_fused_fp8[
 
             quantize_dynamic_scaled_fp8[
                 input_fn=fp8_input_fn,
-                group_size_or_per_token= -1,  # Per-token quantization
+                group_size_or_per_token=-1,  # Per-token quantization
                 num_cols=cols,
             ](fp8_output_ndbuf, scales_ndbuf, Float32(448.0), ctx, rows)
 
@@ -379,7 +379,7 @@ fn bench_rms_norm_fused_fp8[
 
     quantize_dynamic_scaled_fp8[
         input_fn=fp8_input_fn_verify,
-        group_size_or_per_token= -1,
+        group_size_or_per_token=-1,
         num_cols=cols,
     ](fp8_output_ndbuf_verify, scales_ndbuf_verify, Float32(448.0), ctx, rows)
 

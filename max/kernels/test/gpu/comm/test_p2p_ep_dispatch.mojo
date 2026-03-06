@@ -143,7 +143,7 @@ struct BF16DispatchTest[
         Self.n_tokens_per_rank * Self.n_experts, Self.hidden_size
     )
     comptime TokenFormatType = BF16TokenFormat[
-        output_layout = Self.output_layout, Self.hidden_size, Self.top_k
+        output_layout=Self.output_layout, Self.hidden_size, Self.top_k
     ]
 
     var device_output_bufs_list: List[DeviceBuffer[DType.bfloat16]]
@@ -254,10 +254,10 @@ struct BlockwiseFP8DispatchTest[
         Self.n_tokens_per_rank * Self.n_experts,
     )
     comptime TokenFormatType = BlockwiseFP8TokenFormat[
-        fp8_dtype = Self.fp8_dtype,
-        scales_dtype = Self.scales_dtype,
-        output_layout = Self.output_layout,
-        scales_layout = Self.output_scales_layout,
+        fp8_dtype=Self.fp8_dtype,
+        scales_dtype=Self.scales_dtype,
+        output_layout=Self.output_layout,
+        scales_layout=Self.output_scales_layout,
         Self.hidden_size,
         Self.top_k,
     ]
@@ -438,11 +438,11 @@ struct NVFP4DispatchTest[
     )
 
     comptime TokenFormatType = NVFP4TokenFormat[
-        fp4_dtype = Self.fp4_dtype,
-        scales_dtype = Self.scales_dtype,
-        output_layout = Self.output_layout,
-        scales_layout = Self.output_scales_layout,
-        scales_offset_layout = Self.output_scales_offset_layout,
+        fp4_dtype=Self.fp4_dtype,
+        scales_dtype=Self.scales_dtype,
+        output_layout=Self.output_layout,
+        scales_layout=Self.output_scales_layout,
+        scales_offset_layout=Self.output_scales_offset_layout,
         Self.hidden_size,
         Self.top_k,
     ]
@@ -1255,8 +1255,8 @@ def test_dispatch_blockwise_fp8[
     bench_e2e: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = BlockwiseFP8DispatchTest[
-        fp8_dtype = DType.float8_e4m3fn,
-        scales_dtype = DType.float32,
+        fp8_dtype=DType.float8_e4m3fn,
+        scales_dtype=DType.float32,
         _hidden_size=hidden_size,
         _top_k=top_k,
         _n_experts=n_experts,
@@ -1279,8 +1279,8 @@ def test_dispatch_nvfp4[
     bench_e2e: Bool = False,
 ](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
-        fp4_dtype = DType.uint8,
-        scales_dtype = DType.float8_e4m3fn,
+        fp4_dtype=DType.uint8,
+        scales_dtype=DType.float8_e4m3fn,
         _hidden_size=hidden_size,
         _top_k=top_k,
         _n_experts=n_experts,
@@ -1322,7 +1322,7 @@ def main() raises:
             test_dispatch_bf16[
                 hidden_size=3584,  # equivalent to send 7168 FP8s.
                 top_k=8,
-                n_experts = num_gpus * n_local_experts,
+                n_experts=num_gpus * n_local_experts,
                 n_ranks=num_gpus,
                 n_slots=1,
                 n_tokens_per_rank=64,
@@ -1332,7 +1332,7 @@ def main() raises:
             test_dispatch_blockwise_fp8[
                 hidden_size=7168,
                 top_k=8,
-                n_experts = num_gpus * n_local_experts,
+                n_experts=num_gpus * n_local_experts,
                 n_ranks=num_gpus,
                 n_slots=1,
                 n_tokens_per_rank=64,
@@ -1345,7 +1345,7 @@ def main() raises:
                 test_dispatch_nvfp4[
                     hidden_size=7168,
                     top_k=8,
-                    n_experts = num_gpus * n_local_experts,
+                    n_experts=num_gpus * n_local_experts,
                     n_ranks=num_gpus,
                     n_slots=1,
                     n_tokens_per_rank=64,

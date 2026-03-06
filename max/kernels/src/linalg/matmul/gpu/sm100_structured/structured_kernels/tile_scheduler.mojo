@@ -103,7 +103,7 @@ struct AdvanceAfterWorkContext[
     work_origin: MutOrigin,
     state_origin: MutOrigin,
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](TrivialRegisterPassable):
@@ -198,7 +198,7 @@ struct WaitAndAdvanceContext[
 
 struct WorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](TrivialRegisterPassable):
@@ -312,7 +312,7 @@ struct WorkIterator[
 
 struct SchedulerWorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](TrivialRegisterPassable):
@@ -415,8 +415,8 @@ struct SchedulerWorkIterator[
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
-        dtype = DType.uint32
+    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+        dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,

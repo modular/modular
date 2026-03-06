@@ -256,7 +256,7 @@ fn _dtype_to_rocshmem_type[
         return get_static_string[prefix, "longlong", suffix]()
     else:
         return CompilationTarget.unsupported_target_error[
-            StaticString, operation = __get_current_function_name()
+            StaticString, operation=__get_current_function_name()
         ]()
 
 

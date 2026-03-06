@@ -41,6 +41,24 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_overlap_scatter_future_token_processor_gpu",
+    srcs = ["test_overlap_scatter_future_token_processor_gpu.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_dp_padding",
     srcs = ["test_dp_padding.py"],
     deps = [
@@ -77,7 +95,6 @@ modular_py_test(
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],

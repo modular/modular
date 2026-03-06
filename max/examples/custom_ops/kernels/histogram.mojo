@@ -60,7 +60,7 @@ fn _histogram_gpu(
 
         # Allocate shared memory for the histogram
         var shared_mem = stack_allocation[
-            bin_width, Int64, address_space = AddressSpace.SHARED
+            bin_width, Int64, address_space=AddressSpace.SHARED
         ]()
 
         # Initialize the shared memory to 0
@@ -109,8 +109,8 @@ struct Histogram:
     fn execute[
         target: StaticString
     ](
-        output: OutputTensor[dtype = DType.int64, rank=1],
-        input: InputTensor[dtype = DType.uint8, rank=1],
+        output: OutputTensor[dtype=DType.int64, rank=1, ...],
+        input: InputTensor[dtype=DType.uint8, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime if is_cpu[target]():

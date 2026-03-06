@@ -63,6 +63,7 @@ from .primitives import (
     lane_id,
     sm_id,
     thread_idx,
+    thread_idx_int,
     warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE

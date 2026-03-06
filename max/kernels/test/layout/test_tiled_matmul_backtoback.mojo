@@ -132,7 +132,7 @@ fn matmul_ukern[
 
                 comptime for m in range(mr):
                     var Abroadcast: SIMD[elt, width] = SIMD[elt, width](
-                        Atmp.load[width=1, alignment = size_of[elt]()](
+                        Atmp.load[width=1, alignment=size_of[elt]()](
                             m * Astride
                         )
                     )
@@ -390,7 +390,7 @@ fn vectorize_flat[
         vectorize[
             vf,
             simd_width,
-            unroll_factor = min(size // simd_width, unroll_factor),
+            unroll_factor=min(size // simd_width, unroll_factor),
         ](size)
     else:
         # we find the maximum min stride, subset, and loop over it.

@@ -2786,6 +2786,35 @@ class DebugTensorPrintOp(max._core.Operation):
     @label.setter
     def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
 
+class DistributedBroadcastOp(max._core.Operation):
+    """
+    Broadcast takes a single input tensor from the root device and replicates
+    it to all participating devices. The root device is identified by the
+    `root` attribute (0-indexed position in the signal buffer list).
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Type],
+        out_chain: ChainType,
+        input: max._core.Value[TensorType],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+        root: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def root(self) -> int: ...
+    @root.setter
+    def root(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+
 class DistributedScatterOp(max._core.Operation):
     """
     Scatter takes in ngpus input tensors (one per GPU, padded from dp_size

@@ -391,7 +391,7 @@ struct TiledMatmul[
         3,
         b_packed_ptr.origin,
         Self.config.packed_shape,
-        address_space = b_packed_ptr.address_space,
+        address_space=b_packed_ptr.address_space,
     ]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
@@ -408,7 +408,7 @@ struct TiledMatmul[
             3,
             b_packed_ptr.origin,
             Self.config.packed_shape,
-            address_space = b_packed_ptr.address_space,
+            address_space=b_packed_ptr.address_space,
         ](
             b_packed_ptr,
             IndexList[3](tile_n // n_inner_size, tile_k, n_inner_size),

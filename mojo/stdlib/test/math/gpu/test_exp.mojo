@@ -27,7 +27,7 @@ def run_elementwise[
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
     comptime length = 256
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)

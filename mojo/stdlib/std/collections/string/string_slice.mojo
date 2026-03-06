@@ -617,10 +617,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -664,10 +664,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             c_char,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -690,10 +690,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
         length: Int,
@@ -1256,7 +1256,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     ](
         self,
         out result: StringSlice[
-            mut = Self.mut & other_type.origin.mut,
+            mut=Self.mut & other_type.origin.mut,
             origin_of(Self.origin, other_type.origin),
         ],
     ):

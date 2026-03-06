@@ -71,6 +71,8 @@ class Qwen3TextEncoderModel(ComponentModel):
             adapted_key = key
             for before, after in QWEN_SAFETENSOR_MAP.items():
                 adapted_key = adapted_key.replace(before, after)
+            # The text-encoder module uses local names without language_model prefix.
+            adapted_key = adapted_key.removeprefix("language_model.")
 
             state_dict[adapted_key] = value.data()
 

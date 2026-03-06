@@ -85,15 +85,15 @@ def test_causal_mask_asm() raises:
     fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
         var mask = CausalMask()
         var vec = mask.mask(
-            IndexList[4, element_type = DType.uint32](
+            IndexList[4, element_type=DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
             ),
             SIMD[DType.float32, 4](0),
         )
         if (
             mask.status(
-                Index[dtype = DType.uint32](q_idx, k_idx),
-                Index[dtype = DType.uint32](4, 5),
+                Index[dtype=DType.uint32](q_idx, k_idx),
+                Index[dtype=DType.uint32](4, 5),
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
@@ -101,7 +101,7 @@ def test_causal_mask_asm() raises:
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target = get_gpu_target()]().asm
+    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
     print(asm)
 
     comptime if has_nvidia_gpu_accelerator():
@@ -112,7 +112,7 @@ def test_causal_mask_asm() raises:
         assert_true("v_cndmask_b32_e64" in asm)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -201,15 +201,15 @@ def test_sliding_window_causal_mask_asm() raises:
     fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
         var mask = SlidingWindowCausalMask[8]()
         var vec = mask.mask(
-            IndexList[4, element_type = DType.uint32](
+            IndexList[4, element_type=DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
             ),
             SIMD[DType.float32, 4](0),
         )
         if (
             mask.status(
-                Index[dtype = DType.uint32](q_idx, k_idx),
-                Index[dtype = DType.uint32](64, 32),
+                Index[dtype=DType.uint32](q_idx, k_idx),
+                Index[dtype=DType.uint32](64, 32),
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
@@ -217,7 +217,7 @@ def test_sliding_window_causal_mask_asm() raises:
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target = get_gpu_target()]().asm
+    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
     print(asm)
 
     comptime if has_nvidia_gpu_accelerator():
@@ -229,7 +229,7 @@ def test_sliding_window_causal_mask_asm() raises:
         assert_true("v_cndmask_b32_e64" in asm)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 

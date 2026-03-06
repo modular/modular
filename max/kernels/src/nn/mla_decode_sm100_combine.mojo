@@ -407,14 +407,12 @@ fn launch_mla_combine_kernel[
     warps_per_head: Int = 2,
 ](
     out_accum_split: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
+        output_type, address_space=AddressSpace.GENERIC, ...
     ],
     lse_accum_split: LayoutTensor[
-        accum_type, address_space = AddressSpace.GENERIC, ...
+        accum_type, address_space=AddressSpace.GENERIC, ...
     ],
-    output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],
@@ -492,14 +490,12 @@ fn mla_decode_combine_partial_outputs[
     warps_per_head: Int = 2,
 ](
     out_accum_split: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
+        output_type, address_space=AddressSpace.GENERIC, ...
     ],
     lse_accum_split: LayoutTensor[
-        accum_type, address_space = AddressSpace.GENERIC, ...
+        accum_type, address_space=AddressSpace.GENERIC, ...
     ],
-    output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],

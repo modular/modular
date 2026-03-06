@@ -21,15 +21,15 @@ import pytest
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor, TensorType
-from max.graph import DeviceRef, Dim, DimLike
-from max.nn.module_v3 import (
+from max.experimental.nn import (
     Embedding,
     Linear,
     Module,
     Sequential,
     module_dataclass,
 )
+from max.experimental.tensor import Tensor, TensorType
+from max.graph import DeviceRef, Dim, DimLike
 
 
 # Tricky: because this function adds two dimensions, it needs

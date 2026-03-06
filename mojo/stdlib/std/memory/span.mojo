@@ -218,7 +218,7 @@ struct Span[
     @always_inline
     @implicit
     fn __init__[
-        list_origin: Origin[mut = Self.mut],
+        list_origin: Origin[mut=Self.mut],
         U: Copyable,
     ](out self: Span[U, list_origin], ref[list_origin] list: List[U]):
         """Construct a `Span` from a `List`.
@@ -236,7 +236,7 @@ struct Span[
     @always_inline
     @implicit
     fn __init__[
-        array_origin: Origin[mut = Self.mut],
+        array_origin: Origin[mut=Self.mut],
         U: Copyable,
         size: Int,
         //,
@@ -432,7 +432,7 @@ struct Span[
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.T]](writer)
+        self._write_self_to[f=fmt.write_to[Self.T]](writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -447,7 +447,7 @@ struct Span[
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.T]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "Span").params(
             fmt.Named("mut", Self.mut),
@@ -714,7 +714,7 @@ struct Span[
     ](
         self,
         out result: Span[
-            mut = Self.mut & other_type.origin.mut,
+            mut=Self.mut & other_type.origin.mut,
             Self.T,
             origin_of(Self.origin, other_type.origin),
         ],

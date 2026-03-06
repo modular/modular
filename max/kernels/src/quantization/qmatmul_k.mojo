@@ -106,7 +106,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
                 comptime for i in range(2):
                     var bytes = (src_ptr + i * Self._packed_stride).load[
-                        width = Self._simd_width
+                        width=Self._simd_width
                     ]()
                     packed_bits |= bytes << UInt8(i * 4)
 
@@ -126,7 +126,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
         for _ in range(0, Self.block_m, 2 * Self._tuple_width):
             comptime for col in range(Self._tile_n):
-                var packed_bits = bits_ptr.load[width = Self._simd_width]()
+                var packed_bits = bits_ptr.load[width=Self._simd_width]()
                 bits_ptr += Self._simd_width
 
                 comptime for i in range(2):
@@ -155,12 +155,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
             comptime for col in range(Self._tile_n):
                 var hi_bytes = (src_col_ptr + 3 * Self._packed_stride).load[
-                    width = Self._simd_width
+                    width=Self._simd_width
                 ]()
 
                 comptime for i in range(3):
                     var bytes = (src_col_ptr + i * Self._packed_stride).load[
-                        width = Self._simd_width
+                        width=Self._simd_width
                     ]()
                     var packed_bits = bytes | (
                         ((hi_bytes >> UInt8(i * 2)) & 3) << 6
@@ -186,10 +186,10 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             var dst_col_ptr = dst_ptr
 
             comptime for col in range(Self._tile_n):
-                var hi_bytes = SIMD[DType.uint8, size = Self._simd_width](0)
+                var hi_bytes = SIMD[DType.uint8, size=Self._simd_width](0)
 
                 comptime for i in range(3):
-                    var packed_bits = bits_ptr.load[width = Self._simd_width]()
+                    var packed_bits = bits_ptr.load[width=Self._simd_width]()
                     bits_ptr += Self._simd_width
 
                     (dst_col_ptr + i * Self._packed_stride).store(
@@ -550,10 +550,10 @@ fn _pack_block_Q6_K[
 
 fn matmul_Q4_K_pack_b(
     b: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     b_packed: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     comptime assert b.rank == 2
@@ -582,10 +582,10 @@ fn matmul_Q4_K_pack_b(
 
 fn matmul_Q6_K_pack_b(
     b: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     b_packed: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     comptime assert b.rank == 2
@@ -750,7 +750,7 @@ fn _matmul_group_unpacked[
         mut b_vals: InlineArray[SIMD[DType.uint8, simd_width * 4], tile_n * 1]
     ):
         comptime for col in range(tile_n):
-            b_vals[col] = b_q_bits_ptr.load[width = simd_width * 4]()
+            b_vals[col] = b_q_bits_ptr.load[width=simd_width * 4]()
             b_q_bits_ptr += simd_width * 4
 
     _matmul_group_stream[
@@ -809,7 +809,7 @@ fn _apply_zero_point_correction[
                 # The minimum values vector is encoded as pairs of int16 values
                 # from group_0 and group_1:
                 #       [n0_g0 n0_g1 : n1_g0 n1_g1 : n2_g0 n2_g1 : n3_g0 n3_g1]
-                var q_mins = b_q_mins_ptr.load[width = simd_width * 2](
+                var q_mins = b_q_mins_ptr.load[width=simd_width * 2](
                     g * block_n + col * simd_width * 2
                 ).cast[DType.int16]()
 
@@ -831,14 +831,14 @@ fn _apply_zero_point_correction[
             # Use `smull(2)` and `smlal(2)` instructions to do an `int16*int16`
             # widening multiply/add to an int32 accumulator.
             var group_sums = (a_group_sums_ptr + g * tile_m).load[
-                width = tile_m * 2
+                width=tile_m * 2
             ]()
 
             comptime for col in range(tile_n):
                 # The minimum values vector is encoded as pairs of int16 values
                 # from group_0 and group_1:
                 #       [n0_g0 n1_g0 n2_g0 n3_g0 : n0_g1 n1_g1 n2_g1 n3_g1]
-                var q_mins = b_q_mins_ptr.load[width = simd_width * 2](
+                var q_mins = b_q_mins_ptr.load[width=simd_width * 2](
                     g * block_n + col * simd_width * 2
                 ).cast[DType.int16]()
 
@@ -975,7 +975,7 @@ fn _matmul_group_packed_Q4_K[
         ]
     ):
         comptime for col in range(tile_n):
-            var packed_bits = b_q_bits_ptr.load[width = simd_width * 4]()
+            var packed_bits = b_q_bits_ptr.load[width=simd_width * 4]()
             b_q_bits_ptr += simd_width * 4
 
             comptime for i in range(2):
@@ -1201,10 +1201,10 @@ fn _matmul_group_packed_Q6_K[
         ]
     ):
         comptime for col in range(tile_n):
-            var hi_bytes = SIMD[DType.uint8, size = simd_width * 4](0)
+            var hi_bytes = SIMD[DType.uint8, size=simd_width * 4](0)
 
             comptime for i in range(3):
-                var packed_bits = b_q_bits_ptr.load[width = simd_width * 4]()
+                var packed_bits = b_q_bits_ptr.load[width=simd_width * 4]()
                 b_q_bits_ptr += simd_width * 4
 
                 var bytes = packed_bits & 63
@@ -1242,11 +1242,9 @@ fn _matmul_Q6_K_tile[
         _block_Q8_K_packed[_block_Q6_K.group_size], ImmutAnyOrigin
     ],
     b_ptr: UnsafePointer[
-        _block_Q6_K_packed[], origin=_, address_space = AddressSpace.GENERIC
+        _block_Q6_K_packed[], origin=_, address_space=AddressSpace.GENERIC
     ],
-    c_ptr: UnsafePointer[
-        Float32, origin=_, address_space = AddressSpace.GENERIC
-    ],
+    c_ptr: UnsafePointer[Float32, origin=_, address_space=AddressSpace.GENERIC],
     N: Int,
     accumulate: Bool,
     m: Int,
@@ -1359,7 +1357,7 @@ fn _matmul_Q6_K_columns[
             a_q_bits_ptr: UnsafePointer[Int8, _],
             mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
         ):
-            _matmul_group_packed_Q6_K[zero_point = UInt8(b_zero_point)](
+            _matmul_group_packed_Q6_K[zero_point=UInt8(b_zero_point)](
                 a_q_bits_ptr, b_q_bits_ptr, c_int32_group
             )
 
@@ -1375,7 +1373,7 @@ fn _matmul_Q6_K_columns[
     var b_q_bits = stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
     ]()
-    b_tile_ptr[].q_bits.unpack[zero_point = UInt8(b_zero_point)](b_q_bits)
+    b_tile_ptr[].q_bits.unpack[zero_point=UInt8(b_zero_point)](b_q_bits)
 
     @parameter
     @__copy_capture(b_tile_ptr, b_q_bits)
@@ -1429,9 +1427,9 @@ fn _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1512,17 +1510,17 @@ fn _matmul_Qb_K[
 fn matmul_Q4_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
     comptime assert c.rank == 2
 
     _matmul_Qb_K[
-        group_size = _block_Q4_K.group_size,
-        b_type = _block_Q4_K_packed[],
+        group_size=_block_Q4_K.group_size,
+        b_type=_block_Q4_K_packed[],
         columns_fn=_matmul_Q4_K_columns,
         interleave_group_sums=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1532,17 +1530,17 @@ fn matmul_Q4_K[
 fn matmul_Q6_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
     comptime assert c.rank == 2
 
     _matmul_Qb_K[
-        group_size = _block_Q6_K.group_size,
-        b_type = _block_Q6_K_packed[],
+        group_size=_block_Q6_K.group_size,
+        b_type=_block_Q6_K_packed[],
         columns_fn=_matmul_Q6_K_columns,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](a, b, c)
