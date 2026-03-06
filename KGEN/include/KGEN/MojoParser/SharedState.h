@@ -544,10 +544,17 @@ public:
   void setDefaultCaptureForScope(ASTDecl &scope,
                                  CaptureConvention defaultConvention);
 
-  ClosureParamCaptures *
-  getClosureParamCapturesForFunction(ASTDecl &functionDecl);
+  /// Return the captured parameters map for all closures defined in the
+  /// function represented by \p op. Returns nullptr if no captures have been
+  /// registered for this op.
+  ClosureParamCaptures *getClosureParamCapturesForOp(Operation *op);
+  /// Set the captured parameters map for a given function.
   void setClosureParamCaptures(ASTDecl &functionDecl,
                                ClosureParamCaptures closureParamCaptures);
+
+  /// Add an entry to the captured closures map of the given function.
+  void addClosureParamCaptures(ASTDecl &functionDecl, StringAttr closureName,
+                               SmallVector<ClosureParamCapture> captures);
 
   /// These two methods are used to memoize whether a type is implicitly
   /// convertible to another type, which includes overload resolution etc.

@@ -88,6 +88,28 @@ fn testCapturedParamFromFn[T: Coord, R: Coord](t: T, r: R):
 
 
 # ===----------------------------------------------------------------------=== #
+# Captured Param From Nested Closure Call
+# ===----------------------------------------------------------------------=== #
+
+
+fn funcWithNestedCall[
+    T: Coord, R: Coord, C: fn(arg: T) unified -> R
+](impl: C, state: T) -> R:
+    fn kernel() unified {read} -> R:
+        return impl(state)
+
+    return kernel()
+
+
+fn testCapturedParamFromNestedCall[T: Coord, R: Coord](t: T, r: R):
+    fn closureImpl(arg: T) unified {var} -> R:
+        t.prettyPrint()
+        return r
+
+    _ = funcWithNestedCall[T, R](closureImpl, t)
+
+
+# ===----------------------------------------------------------------------=== #
 # Captured Param With Existing Params
 # ===----------------------------------------------------------------------=== #
 
@@ -204,6 +226,8 @@ def main() raises:
     testCapturedParamFromStruct(x, y)
     # CHECK: Cart: 1 , 2
     testCapturedParamFromFn(x, y)
+    # CHECK: Cart: 1 , 2
+    testCapturedParamFromNestedCall(x, y)
     # CHECK: sphere: 4 , 4
     testCapturedParamWithOtherParamsFromFn(four, y)
     # CHECK: sphere: 3 , 3

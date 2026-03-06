@@ -73,6 +73,9 @@ public:
   void processClosureTraits(TraitType traitType,
                             std::function<void(TraitDeclOp)> const &callback);
 
+  /// Return true if \p type is a compiler-synthesized closure type.
+  static bool isClosureType(SharedState &shared, Type type);
+
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
   StructDeclOp
