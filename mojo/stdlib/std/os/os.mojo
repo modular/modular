@@ -52,7 +52,17 @@ comptime SEEK_END: UInt8 = 2
 # ===----------------------------------------------------------------------=== #
 
 
-struct _dirent_linux(Copyable):
+trait _DirentLike(Copyable, ImplicitlyDestructible):
+    """Internal trait for platform-specific directory entry types."""
+
+    fn get_name_ptr(
+        ref self,
+    ) -> UnsafePointer[mut=False, Byte, AnyOrigin[mut=False]]:
+        """Returns a pointer to the null-terminated name bytes."""
+        ...
+
+
+struct _dirent_linux(_DirentLike):
     comptime MAX_NAME_SIZE = 256
     var d_ino: Int64
     """File serial number."""
@@ -65,8 +75,13 @@ struct _dirent_linux(Copyable):
     var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
 
+    fn get_name_ptr(
+        ref self,
+    ) -> UnsafePointer[mut=False, Byte, AnyOrigin[mut=False]]:
+        return self.name.unsafe_ptr().bitcast[Byte]().as_any_origin()
 
-struct _dirent_macos(Copyable):
+
+struct _dirent_macos(_DirentLike):
     comptime MAX_NAME_SIZE = 1024
     var d_ino: Int64
     """File serial number."""
@@ -80,6 +95,11 @@ struct _dirent_macos(Copyable):
     """Type of file."""
     var name: InlineArray[c_char, Self.MAX_NAME_SIZE]
     """Name of entry."""
+
+    fn get_name_ptr(
+        ref self,
+    ) -> UnsafePointer[mut=False, Byte, AnyOrigin[mut=False]]:
+        return self.name.unsafe_ptr().bitcast[Byte]().as_any_origin()
 
 
 struct _DirHandle:
@@ -122,59 +142,26 @@ struct _DirHandle:
         """
 
         comptime if CompilationTarget.is_linux():
-            return self._list_linux()
+            return self._list[_dirent_linux, _dirent_linux.MAX_NAME_SIZE]()
         else:
-            return self._list_macos()
+            return self._list[_dirent_macos, _dirent_macos.MAX_NAME_SIZE]()
 
-    fn _list_linux(self) -> List[String]:
-        """Reads all the data from the handle.
-
-        Returns:
-            A string containing the output of running the command.
-        """
+    fn _list[D: _DirentLike, max_name_size: Int](self) -> List[String]:
         var res = List[String]()
 
         while True:
             var ep = external_call[
-                "readdir", UnsafePointer[_dirent_linux, MutExternalOrigin]
+                "readdir", UnsafePointer[D, MutExternalOrigin]
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
-            var name_str = StringSlice[origin_of(name)](
-                ptr=name_ptr,
-                length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
-                ),
-            )
-            if name_str == "." or name_str == "..":
-                continue
-            res.append(String(name_str))
-
-        return res^
-
-    fn _list_macos(self) -> List[String]:
-        """Reads all the data from the handle.
-
-        Returns:
-            A string containing the output of running the command.
-        """
-        var res = List[String]()
-
-        while True:
-            var ep = external_call[
-                "readdir", UnsafePointer[_dirent_macos, MutExternalOrigin]
-            ](self._handle)
-            if not ep:
-                break
-            ref name = ep.take_pointee().name
-            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
-            var name_str = StringSlice[origin_of(name)](
-                ptr=name_ptr,
-                length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
-                ),
+            var entry = ep.take_pointee()
+            var name_ptr = entry.get_name_ptr()
+            var name_str = StringSlice(
+                unsafe_from_utf8=Span(
+                    ptr=name_ptr,
+                    length=Int(_unsafe_strlen(name_ptr, UInt(max_name_size))),
+                )
             )
             if name_str == "." or name_str == "..":
                 continue
