@@ -15,15 +15,10 @@
 """FLUX.2 performance comparison: diffusers (PyTorch) vs MAX.
 
 Runs FLUX.2 image generation with both backends, performs warmup runs,
-benchmarks with microbench, and prints a side-by-side timing summary.
-
-Usage (from a venv with diffusers, torch, microbench, kernels, and max installed):
-
-    python3 max/examples/diffusion/flux2_comparison.py \
-        --prompt "dog dancing near the sun" \
-        --num-inference-steps 50 \
-        --num-warmups 2 \
-        --num-iterations 3
+benchmarks with split preprocessing/execution timings, and prints a
+side-by-side summary. When --vary-inputs is set, each iteration uses a
+different (height, width, num_inference_steps) tuple to stress test
+eager-mode recompilation.
 """
 
 from __future__ import annotations
@@ -32,9 +27,33 @@ import argparse
 import asyncio
 import statistics
 import sys
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
-from microbench import MicroBench
+# Varying-input configurations for recompilation stress testing.
+# Each tuple is (height, width, num_inference_steps).
+VARIED_CONFIGS: list[tuple[int, int, int]] = [
+    (1024, 1024, 50),
+    (768, 1360, 40),
+    (1360, 768, 30),
+    (512, 512, 50),
+    (1024, 768, 28),
+    (768, 768, 50),
+    (1360, 1024, 40),
+    (512, 1024, 30),
+    (1024, 512, 28),
+    (768, 1024, 50),
+]
+
+
+@dataclass
+class TimingResult:
+    """Collected timings for a single backend."""
+
+    preprocess_durations: list[float] = field(default_factory=list)
+    execute_durations: list[float] = field(default_factory=list)
+    total_durations: list[float] = field(default_factory=list)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -50,7 +69,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--num-inference-steps",
         type=int,
         default=50,
-        help="Number of denoising steps.",
+        help="Number of denoising steps (used when --vary-inputs is off).",
     )
     parser.add_argument(
         "--guidance-scale",
@@ -62,13 +81,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--height",
         type=int,
         default=1024,
-        help="Output image height in pixels.",
+        help="Output image height (used when --vary-inputs is off).",
     )
     parser.add_argument(
         "--width",
         type=int,
         default=1024,
-        help="Output image width in pixels.",
+        help="Output image width (used when --vary-inputs is off).",
     )
     parser.add_argument(
         "--num-warmups",
@@ -98,7 +117,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip the MAX run.",
     )
+    parser.add_argument(
+        "--vary-inputs",
+        action="store_true",
+        help=(
+            "Vary (height, width, num_inference_steps) across iterations to "
+            "stress test eager-mode recompilation."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _iter_configs(
+    args: argparse.Namespace, count: int
+) -> list[tuple[int, int, int]]:
+    """Return (height, width, steps) tuples for *count* iterations."""
+    if args.vary_inputs:
+        return [VARIED_CONFIGS[i % len(VARIED_CONFIGS)] for i in range(count)]
+    return [(args.height, args.width, args.num_inference_steps)] * count
 
 
 def _load_diffusers_pipeline() -> Any:
@@ -127,52 +163,81 @@ def _load_diffusers_pipeline() -> Any:
     return pipe
 
 
-def _run_diffusers_once(pipe: Any, args: argparse.Namespace) -> Any:
-    """Run a single diffusers inference pass and return the image."""
+def run_diffusers(args: argparse.Namespace) -> TimingResult:
+    """Benchmark FLUX.2 through diffusers. Returns split timings.
+
+    Preprocessing is measured as text encoding (encode_prompt). Execution
+    is the remainder: latent prep, denoising loop, and VAE decode.
+    """
     import torch
 
-    generator = torch.Generator(device="cpu").manual_seed(args.seed)
-    result = pipe(
-        prompt=args.prompt,
-        num_inference_steps=args.num_inference_steps,
-        guidance_scale=args.guidance_scale,
-        height=args.height,
-        width=args.width,
-        generator=generator,
-    )
-    return result.images[0]
-
-
-def run_diffusers(args: argparse.Namespace) -> list[float]:
-    """Benchmark FLUX.2 through diffusers. Returns list of durations (s)."""
     print("\n=== Diffusers (PyTorch) backend ===")
     print("Loading pipeline...")
     pipe = _load_diffusers_pipeline()
 
-    for i in range(args.num_warmups):
-        print(f"  warmup {i + 1}/{args.num_warmups}")
-        _run_diffusers_once(pipe, args)
+    # Warm up using the same split path (encode_prompt + `pipe(prompt_embeds=)`)
+    # that we use for timed iterations. If we warmed up with `pipe(prompt=...)`
+    # instead, then `torch.compile` would recompile when it first sees the
+    # `prompt_embeds` call signature during timed runs, adding ~50s of overhead.
+    warmup_configs = _iter_configs(args, args.num_warmups)
+    for i, (h, w, steps) in enumerate(warmup_configs):
+        print(f"  warmup {i + 1}/{args.num_warmups} ({w}x{h}, {steps} steps)")
+        generator = torch.Generator(device="cpu").manual_seed(args.seed)
+        prompt_embeds, _text_ids = pipe.encode_prompt(
+            prompt=args.prompt, device=pipe._execution_device
+        )
+        pipe(
+            prompt_embeds=prompt_embeds,
+            num_inference_steps=steps,
+            guidance_scale=args.guidance_scale,
+            height=h,
+            width=w,
+            generator=generator,
+        )
+        torch.cuda.synchronize()
 
-    bench = MicroBench(iterations=args.num_iterations)
+    result = TimingResult()
+    timed_configs = _iter_configs(args, args.num_iterations)
+    for i, (h, w, steps) in enumerate(timed_configs):
+        print(f"  iter {i + 1}/{args.num_iterations} ({w}x{h}, {steps} steps)")
+        generator = torch.Generator(device="cpu").manual_seed(args.seed)
 
-    @bench
-    def diffusers_generate() -> None:
-        _run_diffusers_once(pipe, args)
+        # Preprocessing: text encoding
+        torch.cuda.synchronize()
+        t0 = time.perf_counter()
+        prompt_embeds, _text_ids = pipe.encode_prompt(
+            prompt=args.prompt,
+            device=pipe._execution_device,
+        )
+        torch.cuda.synchronize()
+        t_preprocess = time.perf_counter() - t0
 
-    diffusers_generate()
-    results = bench.get_results()
-    durations = _extract_durations(results)
+        # Execution: latent prep + denoising loop + VAE decode
+        torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        pipe(
+            prompt_embeds=prompt_embeds,
+            num_inference_steps=steps,
+            guidance_scale=args.guidance_scale,
+            height=h,
+            width=w,
+            generator=generator,
+        )
+        torch.cuda.synchronize()
+        t_execute = time.perf_counter() - t1
 
-    # Free GPU memory before MAX runs
+        result.preprocess_durations.append(t_preprocess)
+        result.execute_durations.append(t_execute)
+        result.total_durations.append(t_preprocess + t_execute)
+
+    # Free GPU memory before MAX runs.
     import gc
-
-    import torch
 
     del pipe
     gc.collect()
     torch.cuda.empty_cache()
 
-    return durations
+    return result
 
 
 def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
@@ -197,9 +262,6 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
             model_path=model_id,
             device_specs=[DeviceSpec.accelerator()],
         ),
-        # FLUX.2 is only available as a V3 module currently, even though it
-        # doesn't follow the typical V3 naming conventions, so this flag is
-        # currently a no-op. I expect it to be used in the future.
         runtime=PipelineRuntimeConfig(prefer_module_v3=True),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -234,7 +296,11 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
 
 
 async def _build_max_inputs(
-    args: argparse.Namespace, tokenizer: Any, config: Any
+    args: argparse.Namespace,
+    tokenizer: Any,
+    height: int,
+    width: int,
+    steps: int,
 ) -> tuple[Any, Any]:
     """Build MAX pipeline inputs for a single generation."""
     from max.interfaces import PixelGenerationInputs, RequestID
@@ -252,9 +318,9 @@ async def _build_max_inputs(
         seed=args.seed,
         provider_options=ProviderOptions(
             image=ImageProviderOptions(
-                height=args.height,
-                width=args.width,
-                steps=args.num_inference_steps,
+                height=height,
+                width=width,
+                steps=steps,
                 guidance_scale=args.guidance_scale,
             )
         ),
@@ -267,88 +333,96 @@ async def _build_max_inputs(
     return inputs, context
 
 
-def run_max(args: argparse.Namespace) -> list[float]:
-    """Benchmark FLUX.2 through MAX. Returns list of durations (s)."""
+def run_max(args: argparse.Namespace) -> TimingResult:
+    """Benchmark FLUX.2 through MAX with split preprocess/execute timings."""
     print("\n=== MAX backend ===")
     print("Loading pipeline...")
-    pipeline, tokenizer, config = _load_max_pipeline(args)
+    pipeline, tokenizer, _config = _load_max_pipeline(args)
 
-    for i in range(args.num_warmups):
-        print(f"  warmup {i + 1}/{args.num_warmups}")
-        inputs, _ = asyncio.run(_build_max_inputs(args, tokenizer, config))
+    warmup_configs = _iter_configs(args, args.num_warmups)
+    for i, (h, w, steps) in enumerate(warmup_configs):
+        print(f"  warmup {i + 1}/{args.num_warmups} ({w}x{h}, {steps} steps)")
+        inputs, _ = asyncio.run(_build_max_inputs(args, tokenizer, h, w, steps))
         pipeline.execute(inputs)
 
-    # Build inputs once outside the timed loop
-    # TODO: Figure out if we want to build inside or outside the loop. The
-    # difference was neglibable between runs in my testing (29.40s vs 29.46s).
-    inputs, _ = asyncio.run(_build_max_inputs(args, tokenizer, config))
+    result = TimingResult()
+    timed_configs = _iter_configs(args, args.num_iterations)
+    for i, (h, w, steps) in enumerate(timed_configs):
+        print(f"  iter {i + 1}/{args.num_iterations} ({w}x{h}, {steps} steps)")
 
-    bench = MicroBench(iterations=args.num_iterations)
+        # Preprocessing: tokenization + context + input building
+        t0 = time.perf_counter()
+        inputs, _ = asyncio.run(_build_max_inputs(args, tokenizer, h, w, steps))
+        t_preprocess = time.perf_counter() - t0
 
-    @bench
-    def max_generate() -> None:
+        # Model execution
+        t1 = time.perf_counter()
         pipeline.execute(inputs)
+        t_execute = time.perf_counter() - t1
 
-    max_generate()
-    results = bench.get_results()
-    durations = _extract_durations(results)
-    return durations
+        result.preprocess_durations.append(t_preprocess)
+        result.execute_durations.append(t_execute)
+        result.total_durations.append(t_preprocess + t_execute)
 
-
-def _extract_durations(results: Any) -> list[float]:
-    """Extract run_durations from microbench results (DataFrame or StringIO)."""
-    import pandas as pd
-
-    if isinstance(results, pd.DataFrame):
-        durations: list[float] = []
-        for cell in results["run_durations"]:
-            if isinstance(cell, list):
-                durations.extend(cell)
-            else:
-                durations.append(float(cell))
-        return durations
-
-    # Fallback for StringIO
-    import json
-
-    results.seek(0)
-    durations = []
-    for line in results:
-        line = line.strip()
-        if not line:
-            continue
-        data = json.loads(line)
-        durations.extend(data.get("run_durations", []))
-    return durations
+    return result
 
 
-def _print_summary(
-    label: str,
-    durations: list[float],
-) -> None:
+def _print_summary(label: str, result: TimingResult) -> None:
     """Print timing summary for one backend."""
-    n = len(durations)
-    mean = statistics.mean(durations)
-    std = statistics.stdev(durations) if n > 1 else 0.0
-    mn = min(durations)
-    mx = max(durations)
+    n = len(result.total_durations)
     print(f"  {label}:")
     print(f"    iterations : {n}")
-    print(f"    mean       : {mean:8.2f} s")
-    print(f"    std        : {std:8.2f} s")
+
+    if result.preprocess_durations:
+        mean_pp = statistics.mean(result.preprocess_durations)
+        std_pp = statistics.stdev(result.preprocess_durations) if n > 1 else 0.0
+        print(f"    preprocess : {mean_pp:8.2f} s  (std {std_pp:.2f} s)")
+
+    mean_ex = statistics.mean(result.execute_durations)
+    std_ex = statistics.stdev(result.execute_durations) if n > 1 else 0.0
+    print(f"    execute    : {mean_ex:8.2f} s  (std {std_ex:.2f} s)")
+
+    mean_tot = statistics.mean(result.total_durations)
+    std_tot = statistics.stdev(result.total_durations) if n > 1 else 0.0
+    mn = min(result.total_durations)
+    mx = max(result.total_durations)
+    print(f"    total      : {mean_tot:8.2f} s  (std {std_tot:.2f} s)")
     print(f"    min        : {mn:8.2f} s")
     print(f"    max        : {mx:8.2f} s")
+
+
+def _print_per_iteration(
+    label: str, result: TimingResult, configs: list[tuple[int, int, int]]
+) -> None:
+    """Print per-iteration breakdown when --vary-inputs is used."""
+    print(f"\n  {label} per-iteration breakdown:")
+    print(
+        f"    {'Config':>15s}  {'Preprocess':>10s}"
+        f"  {'Execute':>10s}  {'Total':>10s}"
+    )
+    for i, (h, w, steps) in enumerate(configs):
+        pp = (
+            result.preprocess_durations[i]
+            if result.preprocess_durations
+            else 0.0
+        )
+        ex = result.execute_durations[i]
+        tot = result.total_durations[i]
+        print(
+            f"    {w:4d}x{h:<4d} {steps:2d}s"
+            f"  {pp:10.2f}  {ex:10.2f}  {tot:10.2f}"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    diffusers_durations: list[float] = []
-    max_durations: list[float] = []
+    diffusers_result: TimingResult | None = None
+    max_result: TimingResult | None = None
 
     if not args.skip_diffusers:
         try:
-            diffusers_durations = run_diffusers(args)
+            diffusers_result = run_diffusers(args)
         except Exception as e:
             print(f"ERROR running diffusers: {e}", file=sys.stderr)
             import traceback
@@ -357,31 +431,45 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.skip_max:
         try:
-            max_durations = run_max(args)
+            max_result = run_max(args)
         except Exception as e:
             print(f"ERROR running MAX: {e}", file=sys.stderr)
             import traceback
 
             traceback.print_exc()
 
-    print("\n" + "=" * 50)
+    # Summary header
+    print("\n" + "=" * 60)
     print("FLUX.2 Performance Comparison")
-    print("=" * 50)
+    print("=" * 60)
     print(f"  prompt           : {args.prompt!r}")
-    print(f"  resolution       : {args.width}x{args.height}")
-    print(f"  inference steps  : {args.num_inference_steps}")
+    if args.vary_inputs:
+        print("  inputs           : varied (recompilation stress test)")
+    else:
+        print(f"  resolution       : {args.width}x{args.height}")
+        print(f"  inference steps  : {args.num_inference_steps}")
     print(f"  guidance scale   : {args.guidance_scale}")
     print(f"  warmup runs      : {args.num_warmups}")
     print()
 
-    if diffusers_durations:
-        _print_summary("Diffusers (PyTorch)", diffusers_durations)
-    if max_durations:
-        _print_summary("MAX", max_durations)
+    timed_configs = _iter_configs(args, args.num_iterations)
 
-    if diffusers_durations and max_durations:
-        d_mean = statistics.mean(diffusers_durations)
-        m_mean = statistics.mean(max_durations)
+    if diffusers_result:
+        _print_summary("Diffusers (PyTorch)", diffusers_result)
+    if max_result:
+        _print_summary("MAX", max_result)
+
+    if args.vary_inputs:
+        if diffusers_result:
+            _print_per_iteration(
+                "Diffusers (PyTorch)", diffusers_result, timed_configs
+            )
+        if max_result:
+            _print_per_iteration("MAX", max_result, timed_configs)
+
+    if diffusers_result and max_result:
+        d_mean = statistics.mean(diffusers_result.total_durations)
+        m_mean = statistics.mean(max_result.total_durations)
         speedup = d_mean / m_mean if m_mean > 0 else float("inf")
         print()
         print(f"  Speedup (MAX vs Diffusers): {speedup:.2f}x")
