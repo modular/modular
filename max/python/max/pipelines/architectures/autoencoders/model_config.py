@@ -130,7 +130,7 @@ class AutoencoderKLLTX2VideoConfig(AutoencoderKLConfigBase):
         init_dict = {
             key: value
             for key, value in config_dict.items()
-            if key in AutoencoderKLLTX2VideoConfig.__annotations__
+            if key in AutoencoderKLConfigBase.__annotations__
         }
         # Add LTX-2-specific parameters if present
         ltx2_params = [
