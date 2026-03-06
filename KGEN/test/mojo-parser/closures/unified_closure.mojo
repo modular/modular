@@ -273,6 +273,8 @@ fn nested[
 # CHECK: kgen.struct.generator @"bindIt({{.*}})::myclosure"
 # CHECK-SAME: <CAPTURES: !kgen.param_closure<@{{.*}}::bindIt(::Int,::Int)" "myclosure">>:
 # CHECK-SAME: [[TRAIT]] = !kgen.closure<@{{.*}}::bindIt({{.*}})", "myclosure" nonescaping>{
+# CHECK: kgen.conformance @"{{.*}}::AnyType" {
+# CHECK-NEXT: }
 # CHECK: kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
 # CHECK-NEXT: kgen.witness "__del__{{.*}}"
 # CHECK: kgen.conformance @"{{.*}}::Movable" {
@@ -324,6 +326,9 @@ fn bindIt() -> Int:
 # CHECK: kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
 # CHECK-NEXT:  kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none
 # CHECK-SAME: > = @{{.*}}::@"fn[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__del__{{.*}}"<{{.*}}>
+
+# CHECK: kgen.conformance @"{{.*}}::AnyType" {
+# CHECK-NEXT: }
 
 
 fn make_closure(x: Int) -> Int:

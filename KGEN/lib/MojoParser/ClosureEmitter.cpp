@@ -95,6 +95,42 @@ static FnOp getInit(StructDeclOp structDeclOp) {
   return init;
 }
 
+static void addConformanceTable(
+    ASTDecl &structDecl, ClosureEmitter::ClosureParent closureParent,
+    ArrayRef<std::pair<StringRef, TypedAttr>> witnesses, ASTDecl &fileModule) {
+  // Insert the new witness into the conformance table.
+  MLIRContext *ctx = structDecl.getContext();
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp.getContext());
+  b.setInsertionPointToEnd(&structDeclOp.getBodyRegion().front());
+  TraitDeclOp traitDeclOp = closureParent.getTrait(fileModule);
+  SymbolRefArrayAttr immediateParents = traitDeclOp.getImmediateParentsAttr();
+  SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
+  StringAttr parentName = b.getStringAttr(getFlattenedSymbolName(parentSymbol));
+  ConformanceOp witnessTable =
+      ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
+  Block &block = witnessTable.getBody().emplaceBlock();
+  b.setInsertionPointToStart(&block);
+  for (auto [name, newWitness] : witnesses)
+    WitnessOp::create(b, StringAttr::get(ctx, name), newWitness);
+
+  // Register the conformance with the ASTDecl so lookupInCurrentScope can find
+  // it during constraint checking.
+  ASTDecl &conformDecl = structDecl.getShared().getDeclResolver().addDecl(
+      witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
+  conformDecl.resolvedness = DeclResolvedness::signature;
+
+  // Update the types of the struct wrapper.
+  SymbolRefAttr symbol = closureParent.getSymbolRef(fileModule);
+  TraitType oldTraitType = structDeclOp.getCanonicalTrait();
+  SmallVector<SymbolRefAttr> symbols;
+  llvm::append_range(symbols, oldTraitType.getSymbols());
+  symbols.push_back(symbol);
+  TraitType traitType = TraitType::get(ctx, symbols);
+  structDeclOp.setCanonicalTrait(traitType);
+}
+
 ClosureEmitter::ClosureEmitter(SharedState &shared)
     : FunctionEmitter(shared), ctx(shared.getContext()),
       selfName(StringAttr::get(ctx, "self")),
@@ -965,6 +1001,10 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     }
   }
 
+  // AnyType has no methods, but TypeConformsToTraitAttr::simplify() needs a
+  // ConformanceOp to verify conformance on concrete closure types.
+  addConformanceTable(structDecl, anyParent, {}, moduleDecl);
+
   assert(moveParentStrAttr && "closures are expected to conform to Movable");
   auto initName = StringAttr::get(ctx, "__init__");
   SmallVector<Type> initArgumentTypes;
@@ -1168,6 +1208,10 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
       callParent.getDefiningOp(moduleDecl), structDecl,
       /*synthetic=*/false);
   addWitnessEntry(callParent, callMethod);
+
+  // AnyType has no methods, but TypeConformsToTraitAttr::simplify() needs a
+  // ConformanceOp to verify conformance on concrete closure types.
+  addConformanceTable(structDecl, anyParent, {}, moduleDecl);
 
   // Populate the body of ClosureWrapper::__call__.
   {
@@ -2267,7 +2311,6 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   // Emit the conformance ops into the struct gen body by finding the closure
   // method and FnOp associated with the parent trait.
   auto addWitnessTable = [&](ClosureParent &closureParent) {
-    ClosureMethod method = closureParent.getClosureMethod();
     TraitDeclOp traitParent = closureParent.getTrait(moduleDecl);
     builder.setInsertionPointToStart(structGenBody);
     SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
@@ -2276,8 +2319,14 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     ConformanceOp witnessTable = ConformanceOp::create(
         builder, parentName, parentSymbol, immediateParents);
     Block &block = witnessTable.getBody().emplaceBlock();
-    builder.setInsertionPointToStart(&block);
 
+    // Marker traits like AnyType have no methods -- empty ConformanceOp is
+    // sufficient for TypeConformsToTraitAttr::simplify().
+    if (closureParent.isEmpty())
+      return;
+
+    builder.setInsertionPointToStart(&block);
+    ClosureMethod method = closureParent.getClosureMethod();
     FnOp fnOp = closureParent.getDefiningOp(moduleDecl);
     FnTypeGeneratorType sig =
         specializeSignature(fnOp, closureType, *shared.declResolver);
@@ -2307,10 +2356,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     }
   };
 
-  for (ClosureParent &closureParent : closureParents) {
-    if (!closureParent.isEmpty())
-      addWitnessTable(closureParent);
-  }
+  for (ClosureParent &closureParent : closureParents)
+    addWitnessTable(closureParent);
 
   // create a SymbolRefAttr from the StructGeneratorOp
   SymbolRefAttr structGenSymbolRef = getFullyResolvedSymbolRef(
@@ -2784,42 +2831,6 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   shared.addCaptureToScope(closure, result,
                            Capture(captureValue, convention, name));
   return &captureValueDecl;
-}
-
-static void addConformanceTable(
-    ASTDecl &structDecl, ClosureEmitter::ClosureParent closureParent,
-    ArrayRef<std::pair<StringRef, TypedAttr>> witnesses, ASTDecl &fileModule) {
-  // Insert the new witness into the conformance table.
-  MLIRContext *ctx = structDecl.getContext();
-  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
-  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp.getContext());
-  b.setInsertionPointToEnd(&structDeclOp.getBodyRegion().front());
-  TraitDeclOp traitDeclOp = closureParent.getTrait(fileModule);
-  SymbolRefArrayAttr immediateParents = traitDeclOp.getImmediateParentsAttr();
-  SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
-  StringAttr parentName = b.getStringAttr(getFlattenedSymbolName(parentSymbol));
-  ConformanceOp witnessTable =
-      ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
-  Block &block = witnessTable.getBody().emplaceBlock();
-  b.setInsertionPointToStart(&block);
-  for (auto [name, newWitness] : witnesses)
-    WitnessOp::create(b, StringAttr::get(ctx, name), newWitness);
-
-  // Register the conformance with the ASTDecl so lookupInCurrentScope can find
-  // it during constraint checking.
-  ASTDecl &conformDecl = structDecl.getShared().getDeclResolver().addDecl(
-      witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
-  conformDecl.resolvedness = DeclResolvedness::signature;
-
-  // Update the types of the struct wrapper.
-  SymbolRefAttr symbol = closureParent.getSymbolRef(fileModule);
-  TraitType oldTraitType = structDeclOp.getCanonicalTrait();
-  SmallVector<SymbolRefAttr> symbols;
-  llvm::append_range(symbols, oldTraitType.getSymbols());
-  symbols.push_back(symbol);
-  TraitType traitType = TraitType::get(ctx, symbols);
-  structDeclOp.setCanonicalTrait(traitType);
 }
 
 /// If an alias is already bound, verify the new

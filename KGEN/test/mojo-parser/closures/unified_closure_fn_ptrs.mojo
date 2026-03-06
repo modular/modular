@@ -18,6 +18,9 @@
 # CHECK: kgen.conformance @"fn(x: Int) -> Int"
 # CHECK: kgen.witness "__call__($0,::Int)"
 
+# CHECK: kgen.conformance @"{{.*}}::AnyType" {
+# CHECK-NEXT: }
+
 # CHECK: lit.fn @"wrap_fn()"
 # CHECK: %wrappedFnPtr = lit.var.decl "wrappedFnPtr" var
 # CHECK: %0 = lit.call {{.*}}:@"fn(x: Int) -> Int_PtrWrapper"::@"__init__()"
