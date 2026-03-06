@@ -17,7 +17,9 @@ from std.testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
+    assert_in,
     assert_not_equal,
+    assert_not_in,
     assert_raises,
     assert_true,
     TestSuite,
@@ -289,6 +291,54 @@ def test_assert_equal_with_unicode() raises:
     # Mixed ASCII and Unicode
     with assert_raises():
         assert_equal("abc中文def", "abc英文def")
+
+
+def test_assert_in_passes() raises:
+    """assert_in succeeds when the value is in the container."""
+    assert_in(2, [1, 2, 3])
+    assert_in("b", ["a", "b", "c"])
+
+
+def test_assert_in_fails() raises:
+    """assert_in raises AssertionError when the value is not in the container."""
+    with assert_raises(contains="AssertionError"):
+        assert_in(99, [1, 2, 3])
+
+
+def test_assert_in_error_message() raises:
+    """assert_in error message contains value and container."""
+    with assert_raises(contains="value in container"):
+        assert_in(99, [1, 2, 3])
+
+
+def test_assert_in_custom_msg() raises:
+    """assert_in includes the custom message on failure."""
+    with assert_raises(contains="not there"):
+        assert_in(99, [1, 2, 3], msg="not there")
+
+
+def test_assert_not_in_passes() raises:
+    """assert_not_in succeeds when the value is not in the container."""
+    assert_not_in(99, [1, 2, 3])
+    assert_not_in("z", ["a", "b", "c"])
+
+
+def test_assert_not_in_fails() raises:
+    """Raises AssertionError when the value is in the container."""
+    with assert_raises(contains="AssertionError"):
+        assert_not_in(2, [1, 2, 3])
+
+
+def test_assert_not_in_error_message() raises:
+    """Error message contains value and container on failure."""
+    with assert_raises(contains="value not in container"):
+        assert_not_in(2, [1, 2, 3])
+
+
+def test_assert_not_in_custom_msg() raises:
+    """Custom message is included in the error on failure."""
+    with assert_raises(contains="unexpected"):
+        assert_not_in(2, [1, 2, 3], msg="unexpected")
 
 
 def main() raises:
