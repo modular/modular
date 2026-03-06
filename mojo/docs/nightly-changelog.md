@@ -58,6 +58,9 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- Added `Dict.unsafe_pop()` which returns `Optional[V]` instead of raising,
+  enabling non-raising key removal patterns.
+
 ## Tooling changes
 
 ## ❌ Removed
