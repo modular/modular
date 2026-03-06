@@ -431,7 +431,7 @@ class LTX2AudioAudioPatchifier(nn.Module[[Tensor], Tensor]):
         return self._patch_size
 
 
-class LTX2AudioDecoderMid(nn.Module[Any, Any]):
+class LTX2AudioDecoderMid(nn.Module):
     """Container for the middle block of the LTX2 Audio Decoder."""
 
     block_1: LTX2AudioResnetBlock
@@ -439,7 +439,7 @@ class LTX2AudioDecoderMid(nn.Module[Any, Any]):
     block_2: LTX2AudioResnetBlock
 
 
-class LTX2AudioDecoderStage(nn.Module[Any, Any]):
+class LTX2AudioDecoderStage(nn.Module):
     """Container for a single stage (level) of the LTX2 Audio Decoder."""
 
     block: nn.ModuleList[LTX2AudioResnetBlock]
