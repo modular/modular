@@ -29,10 +29,11 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from std.memory import LegacyUnsafePointer, memcpy
+from layout._tile_tensor import TileTensor
+from memory import UnsafePointer, memcpy
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from std.runtime.asyncrt import parallelism_level
+comptime UnsafePointer = UnsafePointer[mut=True, ...]
+from runtime.asyncrt import parallelism_level
 
 from std.utils.index import IndexList, StaticTuple
 

@@ -39,11 +39,12 @@ from layout import (
 from layout.tile_layout import RowMajorLayout, row_major as tt_row_major
 from layout.coord import RuntimeInt
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from std.logger import Logger
-from std.memory import LegacyUnsafePointer, bitcast
+from layout._coord import coord_to_index_list
+from layout._tile_tensor import TileTensor
+from logger import Logger
+from memory import UnsafePointer, bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from std.algorithm import elementwise
 from std.utils.index import Index, IndexList, StaticTuple

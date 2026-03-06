@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
-from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer, bitcast
+from collections import Optional
+from math import align_up, ceildiv
+from memory import UnsafePointer, bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from std.sys import align_of, simd_width_of, size_of
+from sys import align_of, simd_width_of, size_of
 
 from std.bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer

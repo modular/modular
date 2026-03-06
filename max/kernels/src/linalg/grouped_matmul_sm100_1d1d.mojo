@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer as UnsafePointer
-from std.sys import align_of, simd_width_of, size_of
+from math import align_up, ceildiv
+from memory import UnsafePointer
+from sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE
 from std.gpu.primitives.cluster import (

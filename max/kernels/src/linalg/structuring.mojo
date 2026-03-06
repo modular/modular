@@ -32,9 +32,8 @@ from layout.int_tuple import (
 )
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
-from std.memory import LegacyUnsafePointer, stack_allocation
+from memory import UnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 struct ScatterGatherAmd[

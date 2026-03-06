@@ -51,16 +51,15 @@ from layout.coord import (
     Idx,
     coord_to_index_list,
 )
-from std.logger import Logger
-from std.memory import LegacyUnsafePointer, memset_zero
+from logger import Logger
+from memory import UnsafePointer, memset_zero
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from std.gpu.host.info import B200, H100
-from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
-from std.utils.static_tuple import StaticTuple
+from runtime.asyncrt import DeviceContextPtr, parallelism_level
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from gpu.host.info import B200, H100
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,

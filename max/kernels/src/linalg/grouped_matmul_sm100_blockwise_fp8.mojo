@@ -60,12 +60,11 @@ from layout.tma_async import (
 )
 from std.logger import Logger
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
-from std.memory import LegacyUnsafePointer
+from memory import UnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from std.utils.index import Index, IndexList
-from std.utils.numerics import get_accum_type
-from std.utils.static_tuple import StaticTuple
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm100.config import MatmulConfig

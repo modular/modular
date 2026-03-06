@@ -18,13 +18,12 @@ from std.sys.intrinsics import PrefetchOptions
 from std.algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
-from std.memory import (
-    LegacyUnsafePointer,
+from memory import (
+    UnsafePointer,
     memcpy,
     stack_allocation,
 )
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from register import register_internal
 
 from std.utils.index import Index, IndexList

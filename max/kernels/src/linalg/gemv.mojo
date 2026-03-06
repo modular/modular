@@ -52,10 +52,9 @@ from layout import (
     RuntimeTuple,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from std.logger import Logger
-from std.memory import LegacyUnsafePointer, stack_allocation
+from logger import Logger
+from memory import UnsafePointer, stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from std.utils import IndexList
 from std.utils.index import Index

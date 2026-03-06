@@ -13,12 +13,7 @@
 
 from std.hashlib.hasher import Hasher
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
+from std.memory import UnsafePointer
 
 from std.sys import (
     get_defined_int,
