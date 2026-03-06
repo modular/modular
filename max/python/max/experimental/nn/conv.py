@@ -222,7 +222,7 @@ class Conv3d(Module[[Tensor], Tensor]):
     Example:
         .. code-block:: python
 
-            from max.nn.module_v3 import Conv3d
+            from max.experimental.nn import Conv3d
             from max.experimental.tensor import Tensor
 
             conv = Conv3d(

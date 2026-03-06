@@ -845,7 +845,7 @@ class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
 
         self.patch_size = patch_size
         self.patch_size_t = patch_size_t
-        self.out_channels = out_channels * patch_size**2
+        self.out_channels = out_channels * patch_size_t * patch_size**2
         self.is_causal = is_causal
         self.device = device
         self.dtype = dtype
@@ -930,7 +930,8 @@ class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
         temb: Tensor | None = None,
         causal: bool | None = None,
     ) -> Tensor:
-        causal = causal or self.is_causal
+        if causal is None:
+            causal = self.is_causal
 
         hidden_states = self.conv_in(hidden_states, causal=causal)
 
@@ -1049,7 +1050,7 @@ class AutoencoderKLLTX2Video(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
 
 
 class PostprocessAndDecode(nn.Module[..., Tensor]):
-    """Fused BN-denorm + unpatchify + VAE decode in a single compiled graph.
+    """Fused latents denorm + VAE decode in a single compiled graph.
 
     Eliminates the inter-graph boundary and intermediate tensor materialization
     that previously existed between _postprocess_latents and vae.decode().
@@ -1058,12 +1059,16 @@ class PostprocessAndDecode(nn.Module[..., Tensor]):
     def __init__(
         self,
         decoder: LTX2VideoDecoder3d,
+        latents_mean: Tensor,
+        latents_std: Tensor,
         num_channels: int,
         device: DeviceRef,
         dtype: DType,
     ) -> None:
         super().__init__()
         self.decoder = decoder
+        self.latents_mean = latents_mean
+        self.latents_std = latents_std
         self._num_channels = num_channels
         self._device = device
         self._dtype = dtype
@@ -1071,16 +1076,14 @@ class PostprocessAndDecode(nn.Module[..., Tensor]):
     def forward(
         self,
         latents: Tensor,
-        latents_mean: Tensor,
-        latents_std: Tensor,
     ) -> Tensor:
         # Denormalization
         C = latents.shape[1]
         latents_mean = F.reshape(
-            latents_mean.cast(latents.dtype), (1, C, 1, 1, 1)
+            self.latents_mean.cast(latents.dtype), (1, C, 1, 1, 1)
         )
         latents_std = F.reshape(
-            latents_std.cast(latents.dtype), (1, C, 1, 1, 1)
+            self.latents_std.cast(latents.dtype), (1, C, 1, 1, 1)
         )
         latents = latents * latents_std + latents_mean
 
@@ -1135,13 +1138,13 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
     def load_model(self) -> Any:
         """Load and compile the decoder and encoder models with BatchNorm statistics.
 
-        Extracts BatchNorm statistics (bn.*) which are specific to Flux2, then
-        delegates to base class for weight loading and model compilation.
+        Extracts BatchNorm statistics (latents_mean, latents_std) which are specific
+        to LTX-2, then delegates to base class for weight loading and model compilation.
 
         Returns:
             Compiled decoder model callable.
         """
-        bn_stats = {}
+        latents_stats = {}
 
         for key, value in self.weights.items():
             if key in ("latents_mean", "latents_std"):
@@ -1150,21 +1153,21 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
                 if weight_data.dtype != target_dtype:
                     if weight_data.dtype.is_float() and target_dtype.is_float():
                         weight_data = weight_data.astype(target_dtype)
-                    # Non-float left as-is; running_mean/var are typically float.
-                bn_stats[key] = weight_data.data
+                    # Non-float left as-is; latents_mean/latents_std are typically float.
+                latents_stats[key] = weight_data.data
 
-        bn_mean_data = bn_stats.get("latents_mean")
-        bn_var_data = bn_stats.get("latents_std")
+        latents_mean_data = latents_stats.get("latents_mean")
+        latents_std_data = latents_stats.get("latents_std")
 
         super().load_model()
 
-        if bn_mean_data is not None or bn_var_data is not None:
-            if bn_mean_data is not None:
-                self.latents_mean = Tensor.from_dlpack(bn_mean_data).to(
+        if latents_mean_data is not None or latents_std_data is not None:
+            if latents_mean_data is not None:
+                self.latents_mean = Tensor.from_dlpack(latents_mean_data).to(
                     self.devices[0]
                 )
-            if bn_var_data is not None:
-                self.latents_std = Tensor.from_dlpack(bn_var_data).to(
+            if latents_std_data is not None:
+                self.latents_std = Tensor.from_dlpack(latents_std_data).to(
                     self.devices[0]
                 )
 
@@ -1175,16 +1178,19 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
     ) -> Callable[..., Any]:
         """Build a fused postprocess + VAE decode compiled graph.
 
-        Combines BN denormalization, unpatchify, and VAE decoding into a single
+        Combines latents denormalization and VAE decoding into a single
         compiled graph, eliminating the intermediate tensor and device sync
-        between the two previously separate compiled graphs.
+        between the two previously separate compiled graphs.  The reshape from
+        packed (B, S, C) to spatial (B, H, W, C) is the first op inside the
+        graph; spatial dims are conveyed via shape-carrier tensors so the same
+        compiled graph handles any image size without recompilation.
 
         Args:
             device: Target device for the compiled graph.
-            num_channels: Number of latent channels (bn.running_mean shape[0]).
+            num_channels: Number of latent channels (self.latents_mean.shape[0]).
 
         Returns:
-            Compiled callable taking (latents_bhwc, bn_mean, bn_var) and
+            Compiled callable taking (latents_bhwc) and
             returning the decoded image tensor.
         """
         dtype = self.config.dtype
@@ -1199,11 +1205,20 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
             if key.startswith("decoder."):
                 # decoder.X -> decoder.X (PostprocessAndDecode.decoder.X)
                 fused_weights[key] = weight_data
+            elif key.startswith("post_quant_conv."):
+                # post_quant_conv.X -> decoder.post_quant_conv.X
+                fused_weights[f"decoder.{key}"] = weight_data
+            elif key == "latents_mean":
+                fused_weights["latents_mean"] = weight_data
+            elif key == "latents_std":
+                fused_weights["latents_std"] = weight_data
 
         with F.lazy():
             autoencoder = AutoencoderKLLTX2Video(self.config)
             fused = PostprocessAndDecode(
                 decoder=autoencoder.decoder,
+                latents_mean=self.latents_mean,
+                latents_std=self.latents_std,
                 num_channels=num_channels,
                 device=device_ref,
                 dtype=dtype,
@@ -1217,23 +1232,25 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
 
     @property
     def bn(self) -> SimpleNamespace:
-        """Property to access BatchNorm statistics, compatible with diffusers API.
+        """Property to access BatchNorm-like statistics, compatible with diffusers API.
 
-        Returns a SimpleNamespace with running_mean and running_var attributes
-        for compatibility with pipeline code that accesses self.vae.bn.running_mean.
+        Returns a SimpleNamespace with latents_mean and latents_std attributes.
+        Note that ``latents_std`` is a standard deviation tensor corresponding to
+        the ``latents_std`` weights used in the denormalization formula
+        ``latents * latents_std + latents_mean``.
 
         Returns:
-            SimpleNamespace: Object containing running_mean and running_var attributes.
+            SimpleNamespace: Object containing latents_mean and latents_std attributes.
 
         Raises:
             ValueError: If BatchNorm statistics are not loaded.
         """
         if self.latents_mean is None or self.latents_std is None:
             raise ValueError(
-                "BatchNorm statistics (running_mean, running_var) not loaded. "
+                "Latents statistics (latents_mean, latents_std) not loaded. "
                 "Make sure the model weights contain 'latents_mean' and 'latents_std'."
             )
 
         return SimpleNamespace(
-            running_mean=self.latents_mean, running_var=self.latents_std
+            latents_mean=self.latents_mean, latents_std=self.latents_std
         )
