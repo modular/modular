@@ -16,13 +16,12 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DLPackArray, load_devices
-from max.engine import InferenceSession
+from max.driver import Buffer, Device, load_devices
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
@@ -176,7 +175,23 @@ def get_vocab_size(huggingface_config: AutoConfig) -> int:
         )
 
 
-class _TypicalAcceptanceRunner:
+class RejectionRunner(Protocol):
+    """Interface for rejection sampling runners."""
+
+    def run(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer | None,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer | None,
+        context_batch: list[TextContext],
+    ) -> tuple[Buffer, Buffer, Buffer | None]:
+        """Run the rejection sampler."""
+        ...
+
+
+class _TypicalAcceptanceRunner(RejectionRunner):
     """Routes per-batch: temp=0 uses greedy (argmax), temp>0 uses stochastic."""
 
     def __init__(
@@ -189,16 +204,15 @@ class _TypicalAcceptanceRunner:
         self._stochastic = stochastic_model
         self._device = target_device
 
-    def __call__(
+    def run(
         self,
         draft_tokens: Buffer,
         draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
         all_draft_logits: Buffer | None,
-        context_batch: list[TextContext] | None,
+        context_batch: list[TextContext],
     ) -> tuple[Buffer, Buffer, Buffer]:
-        assert context_batch is not None
         temps = [ctx.sampling_params.temperature for ctx in context_batch]
         all_greedy = all(t == 0 for t in temps)
         if all_greedy:
@@ -234,20 +248,20 @@ class _TypicalAcceptanceRunner:
         return a, b, c
 
 
-class _GreedyRunner:
+class _GreedyRunner(RejectionRunner):
     """Always argmax acceptance. No draft logits needed."""
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Model) -> None:
         self._model = model
 
-    def __call__(
+    def run(
         self,
         draft_tokens: Buffer,
         draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
         all_draft_logits: Buffer | None,
-        context_batch: list[TextContext] | None,
+        context_batch: list[TextContext],
     ) -> tuple[Buffer, Buffer, Buffer]:
         a, b, c = self._model(
             draft_tokens,
@@ -260,21 +274,23 @@ class _GreedyRunner:
         return a, b, c
 
 
-class _LogitComparisonRunner:
+class _LogitComparisonRunner(RejectionRunner):
     """draft_logit <= target_logit + eps. No bonus token (returns None)."""
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Model) -> None:
         self._model = model
 
-    def __call__(
+    def run(
         self,
         draft_tokens: Buffer,
         draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
         all_draft_logits: Buffer | None,
-        context_batch: list[TextContext] | None,
+        context_batch: list[TextContext],
     ) -> tuple[Buffer, Buffer, None]:
+        assert all_draft_logits is not None
+        assert draft_logits is not None
         a, b = self._model(
             draft_tokens,
             draft_logits,
@@ -286,21 +302,23 @@ class _LogitComparisonRunner:
         return a, b, None
 
 
-class _ResidualRunner:
+class _ResidualRunner(RejectionRunner):
     """p_target/p_draft ratio acceptance. Needs all_draft_logits."""
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Model) -> None:
         self._model = model
 
-    def __call__(
+    def run(
         self,
         draft_tokens: Buffer,
-        draft_logits: Buffer,
+        draft_logits: Buffer | None,
         target_logits: Buffer,
         target_logit_offsets: Buffer,
-        all_draft_logits: Buffer,
-        context_batch: list[TextContext] | None,
+        all_draft_logits: Buffer | None,
+        context_batch: list[TextContext],
     ) -> tuple[Buffer, Buffer, Buffer]:
+        assert draft_logits is not None
+        assert all_draft_logits is not None
         a, b, c = self._model(
             draft_tokens,
             draft_logits,
@@ -312,6 +330,36 @@ class _ResidualRunner:
         assert isinstance(b, Buffer)
         assert isinstance(c, Buffer)
         return a, b, c
+
+
+def _build_rejection_runner(
+    strategy: str,
+    session: InferenceSession,
+    device_ref: DeviceRef,
+) -> RejectionRunner:
+    """Loads the compiled rejection sampler graph and returns a runner."""
+    if strategy == "typical-acceptance":
+        return _TypicalAcceptanceRunner(
+            greedy_model=session.load(
+                greedy_acceptance_sampler(device=device_ref)
+            ),
+            stochastic_model=session.load(
+                typical_acceptance_sampler(device=device_ref)
+            ),
+            target_device=device_ref.to_device(),
+        )
+    if strategy == "greedy":
+        return _GreedyRunner(
+            session.load(greedy_acceptance_sampler(device=device_ref))
+        )
+    if strategy == "logit-comparison":
+        return _LogitComparisonRunner(
+            session.load(rejection_sampler(device=device_ref))
+        )
+    else:
+        return _ResidualRunner(
+            session.load(rejection_sampler_with_residuals(device=device_ref))
+        )
 
 
 class SpeculativeDecodingPipelineBase(
@@ -408,12 +456,6 @@ class SpeculativeDecodingPipelineBase(
                 "Please ensure the target model is a standard Transformers model with a valid config.json."
             )
 
-        # Calculate Max Length
-        self._max_length = self._target_model.calculate_max_seq_len(
-            self.pipeline_config,
-            huggingface_config=target_hf_config,
-        )
-
         # Load draft model
         assert self.pipeline_config.draft_model is not None
         self.draft_devices = load_devices(
@@ -448,33 +490,14 @@ class SpeculativeDecodingPipelineBase(
         assert self.pipeline_config.speculative is not None
         self._speculative_config = self.pipeline_config.speculative
 
-        shared_weights: dict[str, DLPackArray] | None = None
-        shared_ep_comm_initializer = None
-        if self.pipeline_config.speculative is not None and (
-            self.pipeline_config.speculative.is_eagle()
-            or self.pipeline_config.speculative.is_mtp()
-        ):
-            shared_weights, shared_ep_comm_initializer = (
-                self._maybe_build_deepseekv3_nextn_shared_resources(
-                    actual_draft_pipeline_model
-                )
-            )
+        from max.pipelines.architectures.deepseekV3_nextn.model import (  # type: ignore[import-not-found]
+            maybe_build_deepseekv3_nextn_kwargs,
+        )
 
-        draft_model_kwargs: dict[str, Any] = {}
-        if shared_weights and getattr(
-            actual_draft_pipeline_model, "supports_shared_weights", False
-        ):
-            draft_model_kwargs["shared_weights"] = shared_weights
-        elif shared_weights:
-            logger.debug(
-                "Draft model %s does not support shared weights; skipping",
-                actual_draft_pipeline_model.__name__,
-            )
-
-        if shared_ep_comm_initializer is not None:
-            draft_model_kwargs["shared_ep_comm_initializer"] = (
-                shared_ep_comm_initializer
-            )
+        draft_kwargs = maybe_build_deepseekv3_nextn_kwargs(
+            self._target_model,
+            actual_draft_pipeline_model,
+        )
 
         self._draft_model = actual_draft_pipeline_model(
             pipeline_config=self.pipeline_config,
@@ -487,7 +510,7 @@ class SpeculativeDecodingPipelineBase(
             return_hidden_states=hidden_states_return_config(
                 self.pipeline_config, is_draft=True
             ),
-            **draft_model_kwargs,
+            **draft_kwargs,
         )
 
         # Load draft sampler
@@ -519,7 +542,7 @@ class SpeculativeDecodingPipelineBase(
             )
         logger.info(f"Using '{strategy}' rejection sampling strategy")
         target_device_ref = DeviceRef.from_device(self.target_devices[0])
-        self._run_rejection_sampler = self._build_rejection_runner(
+        self._rejection_runner: RejectionRunner = _build_rejection_runner(
             strategy, target_session, target_device_ref
         )
         self._needs_all_draft_logits = strategy == "residual"
@@ -541,6 +564,7 @@ class SpeculativeDecodingPipelineBase(
             raise ValueError(
                 f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
             )
+        self._max_seq_len = target_seq_len
 
         self._ragged_token_merger = target_session.load(
             ragged_token_merger(
@@ -561,7 +585,7 @@ class SpeculativeDecodingPipelineBase(
             params=target_kv_params,
             max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._target_model.max_seq_len,
-            session=self._target_session,
+            session=target_session,
             available_cache_memory=self._target_model.kv_cache_config._available_cache_memory,
         )
         draft_kv_params = self._draft_model.kv_params
@@ -570,77 +594,9 @@ class SpeculativeDecodingPipelineBase(
             params=draft_kv_params,
             max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._draft_model.max_seq_len,
-            session=self._draft_session,
+            session=draft_session,
             available_cache_memory=self._draft_model.kv_cache_config._available_cache_memory,
         )
-
-    def _maybe_build_deepseekv3_nextn_shared_resources(
-        self,
-        draft_model_cls: type[PipelineModel[TextContext]],
-    ) -> tuple[dict[str, DLPackArray] | None, Any]:
-        # Imported here to avoid circular imports
-        from max.pipelines.architectures.deepseekV3.model import (  # type: ignore[import-not-found]
-            DeepseekV3Model,
-        )
-        from max.pipelines.architectures.deepseekV3_nextn.model import (  # type: ignore[import-not-found]
-            DeepseekV3NextNModel,
-        )
-
-        if not isinstance(self._target_model, DeepseekV3Model):
-            return None, None
-        if not issubclass(draft_model_cls, DeepseekV3NextNModel):
-            return None, None
-
-        # Share EP buffers between target and draft to avoid duplicating
-        shared_ep_comm_initializer = self._target_model.ep_comm_initializer
-        target_state_dict = getattr(self._target_model, "state_dict", None)
-        if not isinstance(target_state_dict, dict):
-            raise ValueError(
-                "Target DeepseekV3 model has no state_dict; "
-                "cannot share weights with NextN draft model."
-            )
-
-        required_prefixes = ("embed_tokens.", "lm_head.")
-        shared_weights: dict[str, DLPackArray] = {}
-        for name, value in target_state_dict.items():
-            for prefix in required_prefixes:
-                if name.startswith(prefix):
-                    shared_weights[name] = value
-
-        if len(shared_weights) != len(required_prefixes):
-            raise ValueError(
-                f"Missing weight prefixes {required_prefixes} in target DeepseekV3 "
-                f"state_dict. Cannot share weights with NextN draft model."
-            )
-
-        logger.info(
-            "Sharing DeepseekV3 embedding and head weights with NextN draft model."
-        )
-        return shared_weights, shared_ep_comm_initializer
-
-    @traced
-    def calculate_num_steps(
-        self,
-        model: PipelineModel[TextContext],
-        huggingface_config: AutoConfig,
-        num_steps: int,
-        context: TextContext,
-        is_draft: bool = False,
-    ) -> int:
-        """Computes the number of steps to run for the given context."""
-        max_seq_len = model.calculate_max_seq_len(
-            self.pipeline_config, huggingface_config=huggingface_config
-        )
-        if is_draft:
-            max_seq_len -= 1
-        num_available_steps = context.compute_num_available_steps(max_seq_len)
-
-        if num_available_steps <= 0:
-            raise ValueError(
-                f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
-            )
-
-        return min(num_available_steps, num_steps)
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -698,72 +654,6 @@ class SpeculativeDecodingPipelineBase(
             and self._metrics.draft_tokens_generated > 0
         ):
             logger.info(f"Speculative decoding metrics: {self._metrics}")
-
-    def _build_rejection_runner(
-        self,
-        strategy: str,
-        target_session: InferenceSession,
-        device_ref: DeviceRef,
-    ) -> Callable[..., Any]:
-        """Loads the compiled rejection sampler graph and returns a runner."""
-        if strategy == "typical-acceptance":
-            return _TypicalAcceptanceRunner(
-                greedy_model=target_session.load(
-                    greedy_acceptance_sampler(device=device_ref)
-                ),
-                stochastic_model=target_session.load(
-                    typical_acceptance_sampler(device=device_ref)
-                ),
-                target_device=self.target_devices[0],
-            )
-        if strategy == "greedy":
-            return _GreedyRunner(
-                target_session.load(
-                    greedy_acceptance_sampler(device=device_ref)
-                )
-            )
-        if strategy == "logit-comparison":
-            return _LogitComparisonRunner(
-                target_session.load(rejection_sampler(device=device_ref))
-            )
-        return _ResidualRunner(
-            target_session.load(
-                rejection_sampler_with_residuals(device=device_ref)
-            )
-        )
-
-    def _call_rejection_sampler(
-        self,
-        draft_tokens: Buffer,
-        draft_logits: Buffer | None,
-        target_logits: Buffer,
-        target_logit_offsets: Buffer,
-        all_draft_logits: Buffer | None,
-        context_batch: list[TextContext] | None = None,
-    ) -> tuple[Buffer, Buffer, Buffer | None]:
-        """Calls the rejection sampler with the appropriate arguments.
-
-        Args:
-            draft_tokens: Draft token ids.
-            draft_logits: Logits for sampled draft tokens. None when draft
-                logits are unavailable.
-            target_logits: Target model logits.
-            target_logit_offsets: Offsets into target_logits per batch element.
-            all_draft_logits: Full draft logits (used by residual sampler).
-            context_batch: Batch contexts for per-request sampling params.
-
-        Returns:
-            A tuple of (first_rejected_tokens, recovered_tokens, bonus_tokens).
-            bonus_tokens is None when using logit-comparison strategy.
-        """
-        return self._run_rejection_sampler(
-            draft_tokens,
-            draft_logits,
-            target_logits,
-            target_logit_offsets,
-            all_draft_logits,
-            context_batch,
-        )
 
     def update_contexts(
         self,
@@ -847,7 +737,7 @@ class SpeculativeDecodingPipelineBase(
         for context in context_batch:
             # Identify the Max Length
             context_max_length = upper_bounded_default(
-                upper_bound=self._max_length, default=context.max_length
+                upper_bound=self._max_seq_len, default=context.max_length
             )
 
             # Break early if beyond max length

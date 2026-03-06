@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
+from max.pipelines.lib.pipeline_variants.utils import calculate_num_steps
 from max.profiler import traced
 
 from ..sampling import SamplerInputs, apply_logits_processors
@@ -64,11 +65,12 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             for ctx in replica_batch:
                 request_to_replica[ctx.request_id] = r_idx
 
-        for i, context in enumerate(batch):  # noqa: B007
+        for context in batch:
             # Calculate num_steps.
-            num_steps = self.calculate_num_steps(
-                model, model.huggingface_config, num_steps, context, is_draft
+            max_seq_len = (
+                self._max_seq_len - 1 if is_draft else self._max_seq_len
             )
+            num_steps = calculate_num_steps(context, num_steps, max_seq_len)
             replica_idx = request_to_replica.get(context.request_id, 0)
             if not kv_manager.contains(
                 context.request_id, replica_idx=replica_idx
@@ -228,12 +230,12 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self._call_rejection_sampler(
-                draft_tokens,
-                draft_logits,
-                target_outputs.logits,
-                target_outputs.logit_offsets,
-                all_draft_logits,
+            self._rejection_runner.run(
+                draft_tokens=draft_tokens,
+                draft_logits=draft_logits,
+                target_logits=target_outputs.logits,
+                target_logit_offsets=target_outputs.logit_offsets,
+                all_draft_logits=all_draft_logits,
                 context_batch=context_batch,
             )
         )
