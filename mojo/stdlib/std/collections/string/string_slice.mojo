@@ -617,10 +617,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -664,10 +664,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             c_char,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -690,10 +690,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
         length: Int,
@@ -1256,7 +1256,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     ](
         self,
         out result: StringSlice[
-            mut = Self.mut & other_type.origin.mut,
+            mut=Self.mut & other_type.origin.mut,
             origin_of(Self.origin, other_type.origin),
         ],
     ):
@@ -2651,7 +2651,7 @@ fn _to_string_list[
 
 @always_inline
 fn _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte], max: UInt = UInt.MAX
+    ptr: UnsafePointer[mut=False, Byte, _], max: UInt = UInt.MAX
 ) -> UInt:
     """Get the length of a null-terminated string from a pointer.
 
@@ -2812,7 +2812,7 @@ fn _memmem_impl[
 fn _memrchr[
     dtype: DType
 ](
-    source: UnsafePointer[mut=False, Scalar[dtype]],
+    source: UnsafePointer[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
     len: Int,
 ) -> type_of(source):
@@ -2828,9 +2828,9 @@ fn _memrchr[
 fn _memrmem[
     dtype: DType
 ](
-    haystack: UnsafePointer[mut=False, Scalar[dtype]],
+    haystack: UnsafePointer[mut=False, Scalar[dtype], _],
     haystack_len: Int,
-    needle: UnsafePointer[mut=False, Scalar[dtype]],
+    needle: UnsafePointer[mut=False, Scalar[dtype], _],
     needle_len: Int,
 ) -> type_of(haystack):
     if not needle_len:

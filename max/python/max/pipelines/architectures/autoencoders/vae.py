@@ -18,9 +18,9 @@ import numpy as np
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
+from max.experimental.nn import Conv2d, GroupNorm, Module, ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn.module_v3 import Conv2d, GroupNorm, Module, ModuleList
 
 from .layers import Downsample2D, ResnetBlock2D, Upsample2D, VAEAttention
 
@@ -884,7 +884,7 @@ class DiagonalGaussianDistribution:
             Tensor containing KL divergence values.
         """
         if self.deterministic:
-            return Tensor.constant([0.0], dtype=DType.float32)
+            return Tensor([0.0], dtype=DType.float32)
 
         if other is None:
             kl_term = F.pow(self.mean, 2) + self.var - 1.0 - self.logvar
@@ -919,7 +919,7 @@ class DiagonalGaussianDistribution:
             Tensor containing negative log-likelihood values.
         """
         if self.deterministic:
-            return Tensor.constant([0.0], dtype=DType.float32)
+            return Tensor([0.0], dtype=DType.float32)
 
         logtwopi = np.log(2.0 * np.pi)
         nll_term = (

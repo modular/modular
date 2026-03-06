@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import row_major
-from layout import TileTensor
+from layout import TileTensor, row_major
 from std.memory import UnsafePointer
 from nn.argmaxmin import argmax, argmin
 

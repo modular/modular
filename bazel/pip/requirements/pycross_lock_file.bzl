@@ -146,6 +146,7 @@ PINS = {
     "sentencepiece": "sentencepiece@0.2.1",
     "setuptools": "setuptools@80.9.0",
     "simpy": "simpy@4.1.1",
+    "slack-sdk": "slack-sdk@3.40.1",
     "soundfile": "soundfile@0.12.1",
     "sphinx": "sphinx@7.4.7",
     "sqlalchemy": "sqlalchemy@2.0.44",
@@ -156,6 +157,7 @@ PINS = {
     "taskgroup": "taskgroup@0.2.2",
     "termcolor": "termcolor@2.5.0",
     "threadpoolctl": "threadpoolctl@3.5.0",
+    "tiktoken": "tiktoken@0.12.0",
     "timm": "timm@1.0.15",
     "tokenicer": "tokenicer@0.0.4",
     "tomli": "tomli@2.0.1",
@@ -8933,6 +8935,17 @@ def targets():
         name = "six@1.16.0",
         wheel = ":_wheel_six@1.16.0",
         testonly = "six" in _TESTONLY_DEPS,
+    )
+
+    native.alias(
+        name = "_wheel_slack-sdk@3.40.1",
+        actual = "@pycross_lock_file_wheel_slack_sdk_3.40.1_py2.py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "slack-sdk@3.40.1",
+        wheel = ":_wheel_slack-sdk@3.40.1",
+        testonly = "slack-sdk" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -26280,6 +26293,16 @@ def repositories():
         ],
         sha256 = "8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254",
         downloaded_file_path = "six-1.16.0-py2.py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_slack_sdk_3.40.1_py2.py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/6e/e1/bb81f93c9f403e3b573c429dd4838ec9b44e4ef35f3b0759eb49557ab6e3/slack_sdk-3.40.1-py2.py3-none-any.whl",
+        ],
+        sha256 = "cd8902252979aa248092b0d77f3a9ea3cc605bc5d53663ad728e892e26e14a65",
+        downloaded_file_path = "slack_sdk-3.40.1-py2.py3-none-any.whl",
     )
 
     maybe(

@@ -77,7 +77,7 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
         var `6bit` = shuffled & _repeat_until[width](mask)
         return _rshift_bits_in_u16[shift](`6bit`)
 
-    var shuffled = input.shuffle[mask = indices()]()
+    var shuffled = input.shuffle[mask=indices()]()
     var a = combine[
         Bytes[4](0b0000_0000, 0b1111_1100, 0b0000_0000, 0b0000_0000), 10
     ](shuffled)
@@ -194,7 +194,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 fn load_incomplete_simd[
     width: Int
 ](
-    pointer: UnsafePointer[mut=False, UInt8], nb_of_elements_to_load: Int
+    pointer: UnsafePointer[mut=False, UInt8, _], nb_of_elements_to_load: Int
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
@@ -203,7 +203,7 @@ fn load_incomplete_simd[
 
 
 @no_inline
-fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
+fn _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     comptime simd_width = sys.simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))

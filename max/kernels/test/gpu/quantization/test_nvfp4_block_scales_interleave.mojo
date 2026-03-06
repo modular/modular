@@ -136,20 +136,20 @@ fn test_block_scales_interleave_fp4[
 def main() raises:
     with DeviceContext() as ctx:
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(4)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
         ](ctx, 128, 4)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(4)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
         ](ctx, 129, 4)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(5)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(5)
         ](ctx, 129, 5)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(1024)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
         ](ctx, 1024, 1024)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(3328)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(3328)
         ](ctx, 16384, 3328)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(1024)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
         ](ctx, 53248, 1024)

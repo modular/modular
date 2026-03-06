@@ -20,6 +20,7 @@ import msgspec
 from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from .distribution import BaseDistribution
 from .huggingface import HuggingFaceBenchmarkDataset
 from .types import (
     ChatSamples,
@@ -69,6 +70,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
     def gen_twoturn_longcontext_requests(
         self,
         num_chat_sessions: int,
+        delay_between_chat_turns: BaseDistribution | None,
         tokenizer: PreTrainedTokenizerBase,
     ) -> ChatSamples:
         # Expand code_debug dataset to 2-turn chats with a pre-defined followup question
@@ -88,11 +90,30 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 ),
                 # TODO, put correct answers for verification
                 # NOTE: Specific single letter answer (2-token)
-                build_chat_message("assistant", DUMMY_OUTPUT, tokenizer, 2),
+                build_chat_message(
+                    "assistant",
+                    DUMMY_OUTPUT,
+                    tokenizer,
+                    2,
+                    delay_until_next_message=max(
+                        delay_between_chat_turns.sample_value(), 0
+                    )
+                    if delay_between_chat_turns
+                    else None,
+                ),
                 build_chat_message(
                     "user", CODE_DEBUG_FOLLOWUP_QUESTION, tokenizer
                 ),
-                build_chat_message("assistant", DUMMY_OUTPUT, tokenizer),
+                build_chat_message(
+                    "assistant",
+                    DUMMY_OUTPUT,
+                    tokenizer,
+                    delay_until_next_message=max(
+                        delay_between_chat_turns.sample_value(), 0
+                    )
+                    if delay_between_chat_turns
+                    else None,
+                ),
             ]
             sessions.append(ChatSession(session_id, messages))
 

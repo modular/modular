@@ -29,13 +29,16 @@ from nn.sm100_attention_utils import (
     SharedMemLT,
     TMemTile,
     STMatrixLayout,
+    STMatrixOffsets,
     TMADestination,
     MBarType,
     apply_mask,
     sub_ftz,
     elect,
     elect_mma_arrive,
+    break_into_powers_of_two,
 )
+from nn.mha_sm100.softmax_warp import fa4_scale_write_output
 from nn.mha_fa3_utils import (
     OptionalPointer,
     MHAPosition,
@@ -49,7 +52,7 @@ from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tma_async import RaggedTMA3DTile, PipelineState
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
-from layout._layout import row_major
+from layout import row_major
 from layout.swizzle import make_swizzle, Swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
@@ -78,6 +81,7 @@ from std.utils.index import Index
 
 
 struct MLAConfig(TrivialRegisterPassable):
+    var fa4_config: FA4Config
     var MMA_M: Int
     var BM: Int
     var BN: Int
@@ -148,6 +152,7 @@ struct MLAConfig(TrivialRegisterPassable):
             page_size=page_size,
             is_mla=True,
         )
+        self.fa4_config = fa4_config
 
         self.MMA_M = fa4_config.MMA_M
         self.BM = fa4_config.BM
@@ -503,10 +508,10 @@ fn cvt_block_fp8_to_bf16_with_scale[
     swizzle_bf16: Swizzle,
 ](
     input: LayoutTensor[
-        input_type, _, MutAnyOrigin, address_space = AddressSpace.SHARED, ...
+        input_type, _, MutAnyOrigin, address_space=AddressSpace.SHARED, ...
     ],
     mut output: LayoutTensor[
-        output_type, _, MutAnyOrigin, address_space = AddressSpace.SHARED, ...
+        output_type, _, MutAnyOrigin, address_space=AddressSpace.SHARED, ...
     ],
     k_rope_lut: KRopeType,
     seq_info: SeqInfo,
@@ -531,7 +536,7 @@ fn cvt_block_fp8_to_bf16_with_scale[
         var col = t_col * 4
         var elem_offset = row * UInt32(row_stride) + col
         var fp8x4 = (input.ptr + Int(swizzle_fp8(elem_offset))).load[width=4]()
-        fp8_regs = fp8_regs.insert[offset = i * 4](fp8x4)
+        fp8_regs = fp8_regs.insert[offset=i * 4](fp8x4)
 
     # make sure all the fp8_regs are loaded
     named_barrier[64](6)
@@ -553,7 +558,7 @@ fn cvt_block_fp8_to_bf16_with_scale[
             else:
                 scale = SIMD[KRopeType.scale_dtype, 1](1)
 
-            var fp32x4 = fp8_regs.slice[4, offset = i * 4]().cast[
+            var fp32x4 = fp8_regs.slice[4, offset=i * 4]().cast[
                 KRopeType.scale_dtype
             ]()
             fp32x4 = fp32x4 * scale
@@ -561,7 +566,7 @@ fn cvt_block_fp8_to_bf16_with_scale[
                 fp32x4.cast[output_type]()
             )
         else:
-            var fp16x4 = fp8_regs.slice[4, offset = i * 4]().cast[output_type]()
+            var fp16x4 = fp8_regs.slice[4, offset=i * 4]().cast[output_type]()
             (output.ptr + Int(swizzle_bf16(elem_offset))).store[width=4](fp16x4)
 
     fence_async_view_proxy()
@@ -613,27 +618,27 @@ struct SM100MLA[
     comptime UMMA0Type = SM100TensorAccumulatorSS[
         Self.qkv_type,
         Self.accum_type,
-        MMA_M = Self.MMA_M,  # generally 128
-        MMA_N = Self.BN,
-        BK = Self.depth,  # BK in memory depth
-        mma_kind = Self.mma_kind,
-        swizzle_a = Self.config.qkv_swizzle_mode,
-        swizzle_b = Self.config.qkv_swizzle_mode,
+        MMA_M=Self.MMA_M,  # generally 128
+        MMA_N=Self.BN,
+        BK=Self.depth,  # BK in memory depth
+        mma_kind=Self.mma_kind,
+        swizzle_a=Self.config.qkv_swizzle_mode,
+        swizzle_b=Self.config.qkv_swizzle_mode,
         transpose_b=True,
-        num_stages = Self.num_qk_stages,
+        num_stages=Self.num_qk_stages,
     ]
     # Second MMA is P@V
     # (BM x BN) @ (BN x depth) -> (BM x depth)
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         Self.qkv_type,
         Self.accum_type,
-        MMA_M = Self.MMA_M,
-        MMA_N = Self.kv_depth,  # 128
-        BK = Self.BN,
-        mma_kind = Self.mma_kind,
-        swizzle_b = Self.config.qkv_swizzle_mode,
+        MMA_M=Self.MMA_M,
+        MMA_N=Self.kv_depth,  # 128
+        BK=Self.BN,
+        mma_kind=Self.mma_kind,
+        swizzle_b=Self.config.qkv_swizzle_mode,
         transpose_b=False,
-        num_stages = Self.num_qk_stages,
+        num_stages=Self.num_qk_stages,
     ]
 
     comptime KVPipelineType = KVPipeline[
@@ -650,9 +655,9 @@ struct SM100MLA[
     ]
     # Unified misc barriers type managing all barriers including KV/O pipelines
     comptime MiscMBarsType = FA4MiscMBars[
-        num_qk_stages = Self.config.num_qk_stages,
-        num_pv_stages = Self.config.num_pv_stages,
-        num_kv_stages = Self.config.num_kv_stages,
+        num_qk_stages=Self.config.num_qk_stages,
+        num_pv_stages=Self.config.num_pv_stages,
+        num_kv_stages=Self.config.num_kv_stages,
         separate_kv=False,  # MLA uses unified KV pipeline
     ]
 
@@ -671,8 +676,8 @@ struct SM100MLA[
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.output_swizzle_mode,
-            BM = Self.config.BM // 2,
-            BN = Self.kv_depth,
+            BM=Self.config.BM // 2,
+            BN=Self.kv_depth,
         ],
         o_smem: SharedMemPointer[Scalar[Self.output_type]],
         correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
@@ -743,7 +748,7 @@ struct SM100MLA[
         pipeline_s.wait()
         tcgen05_fence_after()
         s = tt_stack_allocation[
-            dtype = Self.accum_type, address_space = AddressSpace.LOCAL
+            dtype=Self.accum_type, address_space=AddressSpace.LOCAL
         ](row_major[Self.config.BN]())
 
         @parameter
@@ -768,7 +773,7 @@ struct SM100MLA[
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
             s0v = s0.ptr.load[width=first_cols]()
-            vrow_max = s0v.reduce_max[size_out = Self.simd_size]()
+            vrow_max = s0v.reduce_max[size_out=Self.simd_size]()
 
             s.ptr.store(s0v)
             comptime cols = Self.config.BN - first_cols + batch_size
@@ -786,7 +791,7 @@ struct SM100MLA[
                     )
                     s1v = s1.ptr.load[width=batch_size]()
                     vrow_max = max(
-                        s1v.reduce_max[size_out = Self.simd_size](), vrow_max
+                        s1v.reduce_max[size_out=Self.simd_size](), vrow_max
                     )
                     s.ptr.store(offset0, s1v)
                 else:
@@ -798,7 +803,7 @@ struct SM100MLA[
                     )
                     s1v = s1.ptr.load[width=batch_size]()
                     vrow_max = max(
-                        s1v.reduce_max[size_out = Self.simd_size](), vrow_max
+                        s1v.reduce_max[size_out=Self.simd_size](), vrow_max
                     )
                     s.ptr.store(offset0, s1v)
                     tcgen05_load_wait()
@@ -812,7 +817,7 @@ struct SM100MLA[
                     )
                     s2v = s2.ptr.load[width=batch_size]()
                     vrow_max = max(
-                        s2v.reduce_max[size_out = Self.simd_size](), vrow_max
+                        s2v.reduce_max[size_out=Self.simd_size](), vrow_max
                     )
                     s.ptr.store(offset1, s2v)
 
@@ -830,7 +835,7 @@ struct SM100MLA[
 
         comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
             mask_ends = mask.masked_set_ends[
-                BM = Self.BM, BN = Self.BN, page_size = Self.page_size
+                BM=Self.BM, BN=Self.BN, page_size=Self.page_size
             ](score_row, num_keys)
             mask_iters[0] = mask_ends[0]
 
@@ -843,30 +848,30 @@ struct SM100MLA[
         )
 
         comptime if num_sets == 1:
-            row_max = load_mask_max[mask_strategy = mask_strategies[0]](kv_row)
+            row_max = load_mask_max[mask_strategy=mask_strategies[0]](kv_row)
             mask_iters[0] -= 1
         else:
             # find out which strategy to apply
             if mask_iters[0] > 0:
-                row_max = load_mask_max[mask_strategy = mask_strategies[0]](
+                row_max = load_mask_max[mask_strategy=mask_strategies[0]](
                     kv_row
                 )
                 mask_iters[0] -= 1
             else:
                 comptime if num_sets == 2:
-                    row_max = load_mask_max[mask_strategy = mask_strategies[1]](
+                    row_max = load_mask_max[mask_strategy=mask_strategies[1]](
                         kv_row
                     )
                     mask_iters[1] -= 1
                 else:
                     if mask_iters[1] > 1:
                         row_max = load_mask_max[
-                            mask_strategy = mask_strategies[1]
+                            mask_strategy=mask_strategies[1]
                         ](kv_row)
                         mask_iters[1] -= 1
                     else:
                         row_max = load_mask_max[
-                            mask_strategy = mask_strategies[2]
+                            mask_strategy=mask_strategies[2]
                         ](kv_row)
                         mask_iters[2] -= 1
 
@@ -1039,12 +1044,12 @@ struct SM100MLA[
                 var new_row_max: Scalar[Self.accum_type]
                 if mask_status == TileMaskStatus.PARTIAL_MASK:
                     new_row_max = load_mask_max[
-                        mask_strategy = MaskStrategy.COMPUTED
+                        mask_strategy=MaskStrategy.COMPUTED
                         | MaskStrategy.OUT_OF_BOUNDS
                     ](kv_row)
                 else:
                     new_row_max = load_mask_max[
-                        mask_strategy = MaskStrategy.OUT_OF_BOUNDS
+                        mask_strategy=MaskStrategy.OUT_OF_BOUNDS
                     ](kv_row)
                 new_row_max = max(old_max, new_row_max)
                 diff = sub_ftz(old_max, new_row_max)
@@ -1095,7 +1100,6 @@ struct SM100MLA[
                 o_smem + warp_group_idx * UInt32(HalfBM * Self.kv_depth),
                 o_tile,
                 ragged_tma_store,
-                mbars.combined_p_o_consumer(warp_group_idx),  # consumer arrive
                 num_output_rows,
                 q_head_idx,
                 gmem_row + warp_group_idx * UInt32(HalfBM),
@@ -1181,7 +1185,7 @@ struct SM100MLA[
                         datapaths=32,
                         bits=32,
                         repeat=batch_size,
-                        dtype = Self.accum_type,
+                        dtype=Self.accum_type,
                         pack=False,
                         width=batch_size,
                     ](o_tmem)
@@ -1204,7 +1208,7 @@ struct SM100MLA[
                             datapaths=32,
                             bits=32,
                             repeat=batch_size,
-                            dtype = Self.accum_type,
+                            dtype=Self.accum_type,
                             pack=False,
                             width=batch_size,
                         ](o_tmem + UInt32(b1_offset))
@@ -1221,7 +1225,7 @@ struct SM100MLA[
                                 datapaths=32,
                                 bits=32,
                                 repeat=batch_size,
-                                dtype = Self.accum_type,
+                                dtype=Self.accum_type,
                                 pack=False,
                                 width=batch_size,
                             ](o_tmem + UInt32(b0_offset1))
@@ -1251,11 +1255,11 @@ struct SM100MLA[
         mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
     ) -> TileMaskStatus:
         return mask.status(
-            Index[dtype = DType.int32](
+            Index[dtype=DType.int32](
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype = DType.int32](Self.BM, Self.BN),
+            Index[dtype=DType.int32](Self.BM, Self.BN),
         )
 
     @always_inline
@@ -1266,124 +1270,203 @@ struct SM100MLA[
         warp_group_idx: UInt32,
         inv_row_sum: Scalar[Self.accum_type],
         o_smem_arg: SharedMemPointer[Scalar[Self.output_type]],
-        o_tmem: TMemTile[Self.accum_type, Self.BM // 2, Self.kv_depth],
+        o_tmem_arg: TMemTile[Self.accum_type, Self.BM // 2, Self.kv_depth],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.output_swizzle_mode,
-            BM = Self.config.BM // 2,
-            BN = Self.kv_depth,
+            BM=Self.config.BM // 2,
+            BN=Self.kv_depth,
         ],
-        consumer_mbar: MBarType,
         num_output_rows: Int32,
         out_head_idx: UInt32,
         out_row_idx: UInt32,
     ):
-        e = elect()
-        if e != 0:
-            ragged_tma_store.prefetch_descriptor()
+        comptime BM = Self.config.BM
+        comptime padded_depth = Self.config.kv_depth
 
-        o = o_tmem.load_async_with_st_matrix_layout[
-            num_threads=WARPGROUP_SIZE
+        comptime swizzle_granularity = Self.config.output_swizzle_mode.bytes() // size_of[
+            Self.output_type
         ]()
+        comptime iters = padded_depth // swizzle_granularity
 
-        comptime num_rows = o.layout[0].size()
-        inv_row_sums = tt_stack_allocation[
-            dtype = Self.accum_type, address_space = AddressSpace.LOCAL
-        ](row_major[num_rows]())
-        lane = local_row % 32
-        lane_row = lane // 4
-
-        #  0  1  2  3
-        #  4  5  6  7
-        #  8  9 10 11
-        # 12 13 14 15
-        # 16 17 18 19
-        # 20 21 22 23
-        # 24 25 26 27
-        # 28 29 30 31
-        # lane 0 needs to get
-        comptime for i in range(num_rows):
-            # lane // 4, lane // 4 + 8, lane // 4 + 16, lane // 4 + 24
-            inv_row_sums[i] = warp.shuffle_idx(
-                inv_row_sum, lane_row + UInt32(8 * i)
-            )
-
-        tcgen05_load_wait()
-        tcgen05_fence_before()
-        _ = consumer_mbar[].arrive()
-
-        comptime for i in range(num_rows):
-            irs = o.element_type(
-                rebind[Scalar[Self.accum_type]](inv_row_sums[i])
-            )
-
-            comptime for j in range(o.layout[1].size()):
-                o[i, j] *= irs
+        comptime ST = STMatrixLayout[
+            BM // 2,
+            swizzle_granularity,
+            num_threads=WARPGROUP_SIZE,
+            accum_type_size=4,
+        ]
+        comptime num_rows = ST.vec_local_layout[0].size()
 
         comptime swizzle = make_swizzle[
             Self.output_type, Self.config.output_swizzle_mode
         ]()
 
-        comptime ST = STMatrixLayout[
-            Self.BM // 2, Self.kv_depth, num_threads=WARPGROUP_SIZE
-        ]
-
-        comptime swizzle_granularity = Self.config.output_swizzle_mode.bytes() // size_of[
-            Self.output_type
-        ]()
-        comptime iters = Self.kv_depth // swizzle_granularity
-
         comptime swizzle_block_size: UInt32 = UInt32(
             WARP_SIZE * swizzle_granularity
         )
-        o_smem = o_smem_arg + local_warp_idx * swizzle_block_size
 
-        comptime for i in range(2):
-            comptime datapath_offset: UInt32 = UInt32(
-                16 * i * swizzle_granularity
-            )
-
-            comptime for j in range(iters):
-                comptime ofs = i * ST.frag_size + j * (ST.frag_size // iters)
-                comptime reg_layout = row_major[1, ST.frag_size // iters]()
-                var rows_of_o_frags = _LocalTT[Self.accum_type, reg_layout](
-                    o.ptr + ofs, reg_layout
-                )  # all the repeats across n and m
-
-                comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
-                    j * (Self.BM // 2) * swizzle_granularity
-                )
-                comptime smem_layout = row_major[16, swizzle_granularity]()
-                var accum_smem_warp_tile = _SharedMemTT[
-                    Self.output_type, smem_layout
-                ](o_smem + warp_smem_offset, smem_layout)
-
-                output_reg_to_smem_st_matrix[
-                    BM=16,
-                    swizzle=swizzle,
-                    num_consumer=1,
-                ](
-                    lane,
-                    local_warp_group_idx=0,
-                    output_reg_tile=rows_of_o_frags,
-                    accum_smem_tile=accum_smem_warp_tile,
-                )
-        named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
-
-        # # first thread of each warp_group
+        e = elect()
         if local_warp_idx == 0:
             if e != 0:
-                fence_async_view_proxy()
+                ragged_tma_store.prefetch_descriptor()
 
-            if e != 0:
-                ragged_tma_store.async_copy_from(
-                    o_smem,
-                    ragged_idx=out_row_idx,
-                    dynamic_dim=UInt32(num_output_rows),
-                    middle_idx=out_head_idx,
+        # Allocate register tiles for double-buffered pipeline.
+        comptime ChunkTMemType = TMemTile[
+            Self.accum_type, BM // 2, swizzle_granularity
+        ]
+        var o_cur = ChunkTMemType.allocate_register_tile[
+            num_threads=WARPGROUP_SIZE
+        ]()
+
+        # --- Composable pipeline primitives, parameterized by m_half ---
+
+        @always_inline
+        @parameter
+        fn load_chunk[col: Int, m_half: Int](dst: type_of(o_cur)):
+            """Async tmem load for one M-half of column `col`."""
+            comptime load_dtype = DType.uint32
+            var ptr = rebind[
+                UnsafePointer[
+                    Scalar[load_dtype],
+                    MutAnyOrigin,
+                    address_space=AddressSpace.LOCAL,
+                ]
+            ](dst.ptr)
+            chunk_tmem_addr = o_tmem_arg.tmem_addr + UInt32(
+                col * swizzle_granularity
+            )
+
+            @parameter
+            @always_inline
+            fn load_fn[pow_two: Int, local_offset: Int]():
+                comptime assert pow_two + local_offset <= ST.repeat
+                comptime if pow_two > 0:
+                    comptime offsets = STMatrixOffsets[
+                        BM // 2,
+                        swizzle_granularity,
+                        num_threads=WARPGROUP_SIZE,
+                        accum_type_size=4,
+                        curr_repeat=pow_two,
+                        cumulative_repeat=local_offset,
+                        m_mma=m_half,
+                    ]()
+                    tmem = chunk_tmem_addr + UInt32(offsets.tmem_offset)
+                    frag = tcgen05_ld[
+                        datapaths=16,
+                        bits=ST.bits,
+                        repeat=pow_two,
+                        dtype=load_dtype,
+                        pack=False,
+                        width=offsets.local_frag_size_b32,
+                    ](tmem)
+                    ptr.store(offsets.ptr_offset, frag)
+
+            comptime max_value = 64 if ST.bits == 128 else 32
+            break_into_powers_of_two[
+                func=load_fn, N=ST.repeat, max_value=max_value
+            ]()
+
+        load_chunk[0, 0](o_cur)
+        inv_row_sums = tt_stack_allocation[
+            dtype=Self.accum_type, address_space=AddressSpace.LOCAL
+        ](row_major[num_rows]())
+        lane = local_row % 32
+        lane_row = lane // 4
+
+        comptime for i in range(num_rows):
+            inv_row_sums[i] = warp.shuffle_idx(
+                inv_row_sum, lane_row + UInt32(8 * i)
+            )
+        o_smem = o_smem_arg + local_warp_idx * swizzle_block_size
+
+        @always_inline
+        @parameter
+        fn scale_half[m_half: Int](o: type_of(o_cur)):
+            """Scale one M-half's registers by `inv_row_sum`."""
+            comptime rows_per_half = ST.num_row_blocks_per_mma
+            comptime start = m_half * rows_per_half
+            comptime for i in range(start, start + rows_per_half):
+                irs = o.element_type(
+                    rebind[Scalar[Self.accum_type]](inv_row_sums[i])
                 )
-            if e != 0:
-                cp_async_bulk_commit_group()
+                comptime for k in range(o.layout[1].size()):
+                    o[i, k] *= irs
+
+        @always_inline
+        @parameter
+        fn write_to_smem[j: Int, m_half: Int](o: type_of(o_cur)):
+            """Write one M-half of column `j` to smem."""
+            comptime datapath_offset: UInt32 = UInt32(
+                16 * m_half * swizzle_granularity
+            )
+            comptime ofs = m_half * ST.frag_size
+            comptime reg_layout = row_major[1, ST.frag_size]()
+            var rows_of_o_frags = _LocalTT[Self.accum_type, reg_layout](
+                o.ptr + ofs, reg_layout
+            )
+
+            comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
+                j * (BM // 2) * swizzle_granularity
+            )
+            comptime smem_layout = row_major[16, swizzle_granularity]()
+            var accum_smem_warp_tile = _SharedMemTT[
+                Self.output_type, smem_layout
+            ](o_smem + warp_smem_offset, smem_layout)
+
+            output_reg_to_smem_st_matrix[
+                BM=16,
+                swizzle=swizzle,
+                num_consumer=1,
+            ](
+                lane,
+                local_warp_group_idx=0,
+                output_reg_tile=rows_of_o_frags,
+                accum_smem_tile=accum_smem_warp_tile,
+            )
+
+        @always_inline
+        @parameter
+        fn sync_and_tma_store[j: Int]():
+            """Barrier sync + TMA store for column `j`."""
+            named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
+
+            if local_warp_idx == 0:
+                if e != 0:
+                    fence_async_view_proxy()
+                if e != 0:
+                    ragged_tma_store.async_copy_from_col[j](
+                        o_smem_arg,
+                        ragged_idx=out_row_idx,
+                        dynamic_dim=UInt32(num_output_rows),
+                        middle_idx=out_head_idx,
+                    )
+                if e != 0:
+                    cp_async_bulk_commit_group()
+
+        # --- Pipeline loop ---
+
+        # Prologue: load column 0, m_half=1 into o_cur (m_half=0 was already
+        # loaded above).
+        load_chunk[0, 1](o_cur)
+
+        comptime for iter in range(iters):
+            # Each 'iter' processes one column (column 'iter') in two M-halves.
+            comptime next_iter = iter + 1
+            scale_half[0](o_cur)
+            write_to_smem[iter, 0](o_cur)
+
+            comptime if next_iter < iters:
+                load_chunk[next_iter, 0](o_cur)
+
+            scale_half[1](o_cur)
+            write_to_smem[iter, 1](o_cur)
+
+            comptime if next_iter < iters:
+                load_chunk[next_iter, 1](o_cur)
+
+            sync_and_tma_store[iter]()
+
+        # Wait for all TMA stores to complete
         cp_async_bulk_wait_group[0]()
 
     @staticmethod
@@ -1392,8 +1475,8 @@ struct SM100MLA[
         q_smem: SharedMemPointer[Scalar[Self.qkv_type]],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
-            BMN = Self.config.BM // 2,
-            BK = Self.config.BK0,
-            swizzle_mode = Self.config.qkv_swizzle_mode,
+            BMN=Self.config.BM // 2,
+            BK=Self.config.BK0,
+            swizzle_mode=Self.config.qkv_swizzle_mode,
             is_k_major=True,
         ](q_smem)

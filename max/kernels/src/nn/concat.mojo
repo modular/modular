@@ -26,8 +26,14 @@ from std.algorithm.functional import (
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.info import is_cpu, is_valid_target
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import TensorLayout, row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -52,9 +58,9 @@ fn memcpy_or_fuse[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    dest_data: UnsafePointer[mut=True, Int8],
+    dest_data: UnsafePointer[mut=True, Int8, _],
     out_byte_offset: Int,
-    src_data: UnsafePointer[Int8],
+    src_data: UnsafePointer[Int8, _],
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
@@ -87,7 +93,7 @@ fn memcpy_or_fuse[
         ](index: IndexList[_rank]):
             var coord = Coord(index)
             comptime assert coord.flat_rank == input.flat_rank
-            var load = input.load[width=simd_width](coord)
+            var load = input.load[width=simd_width, alignment=1](coord)
 
             # Convert the linearized address back to the n-D indices.
             comptime assert _rank == 1
@@ -135,7 +141,7 @@ struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
 fn _canonical_reshape[
     dtype: DType
 ](
-    buf: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    buf: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     axis: Int,
 ) -> _CanonicallyReshapedBuffer[buf.origin]:
     var shape = coord_to_index_list(buf.layout.shape_coord())
@@ -152,7 +158,7 @@ fn _canonical_reshape_output[
     dtype: DType,
 ](
     out_buf: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -177,7 +183,7 @@ fn _concat_parallel[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -324,7 +330,7 @@ fn _concat[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -386,7 +392,7 @@ fn _concat_inner[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
@@ -435,7 +441,7 @@ fn _concat_serial[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -466,7 +472,7 @@ fn _concat_small[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -498,7 +504,7 @@ fn _concat_small[
                 in_index[axis] = target_dim
                 var coord = Coord(in_index)
                 comptime assert coord.flat_rank == input.flat_rank
-                var load = input.load[width=simd_width](coord)
+                var load = input.load[width=simd_width, alignment=1](coord)
 
                 comptime if epilogue_fn:
                     comptime func = epilogue_fn.value()
@@ -506,7 +512,7 @@ fn _concat_small[
                 else:
                     var coord = Coord(out_index)
                     comptime assert coord.flat_rank == output.flat_rank
-                    output.store[width=simd_width](coord, load)
+                    output.store[width=simd_width, alignment=1](coord, load)
                 return
             else:
                 # Keep looking...
@@ -548,7 +554,7 @@ fn _concat_cpu[
     single_thread_blocking_override: Bool,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
@@ -655,7 +661,7 @@ fn concat[
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: StaticTuple[
@@ -747,7 +753,7 @@ fn _concat_gpu_elementwise[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: StaticTuple[
@@ -775,7 +781,7 @@ fn _concat_gpu_elementwise[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin],
@@ -808,7 +814,8 @@ fn _concat_gpu_elementwise[
                     )
                 else:
                     output.store[width=simd_width](
-                        out_coord, input.load[width=simd_width](in_coord)
+                        out_coord,
+                        input.load[width=simd_width](in_coord),
                     )
                 return
 
@@ -836,7 +843,7 @@ fn _concat_gpu[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     axis: Int,
     inputs: StaticTuple[
@@ -896,8 +903,8 @@ fn _concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _concat_inner_most_single_dim[
-                OutputLayoutType = output.LayoutType,
-                output_origin = output.origin,
+                OutputLayoutType=output.LayoutType,
+                output_origin=output.origin,
                 InputLayoutType=InputLayoutType,
                 input_origin=input_origin,
                 dtype,
@@ -930,7 +937,7 @@ fn _fused_concat_cpu[
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr,
 ) raises:
@@ -1011,7 +1018,7 @@ fn _fused_concat_gpu_elementwise[
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1028,7 +1035,7 @@ fn _fused_concat_gpu_elementwise[
             var input_shape = input_shapes[i]
 
             if in_index[axis] < input_shape[axis]:
-                output_0_fn[dtype, _rank, width=simd_width, alignment=1](
+                output_0_fn[dtype, _rank, width=simd_width](
                     out_index,
                     input_fn[i, simd_width, _rank](in_index),
                 )
@@ -1060,7 +1067,7 @@ fn _fused_concat_gpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype],
+    output: TileTensor[mut=True, dtype, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1078,8 +1085,8 @@ fn _fused_concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _fused_concat_inner_most_single_dim[
-                OutputLayoutType = output.LayoutType,
-                output_origin = output.origin,
+                OutputLayoutType=output.LayoutType,
+                output_origin=output.origin,
                 rank,
                 dtype,
                 block_size,
@@ -1126,7 +1133,7 @@ fn fused_concat[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: TileTensor[mut=True, dtype],
+    output: TileTensor[mut=True, dtype, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"

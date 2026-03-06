@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.sys import env_get_bool, env_get_int, size_of
+from std.sys import get_defined_bool, get_defined_int, size_of
 
 from buffer.buffer import NDBuffer
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -514,19 +514,19 @@ fn matmul_dispatch_sm90_fp8[
 
     var m = c.dim[0]()
 
-    comptime if env_get_bool["AUTOTUNING_MODE", False]():
-        comptime NUM_PIPELINE_STAGES = env_get_int[
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+        comptime NUM_PIPELINE_STAGES = get_defined_int[
             "TUNE_NUM_PIPELINE_STAGES", 4
         ]()
-        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+        comptime NUM_CONSUMER = get_defined_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = get_defined_int["TUNE_WGMMA_N", 128]()
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime GRID_DIM_X = get_defined_int["TUNE_GRID_DIM_X", 1]()
         comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
         comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
 
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            env_get_int["TUNE_SCHEDULE_TYPE", 1]()
+            get_defined_int["TUNE_SCHEDULE_TYPE", 1]()
         )
 
         comptime H100_FP8_TUNING_CONFIG = MatmulConfig[
@@ -548,8 +548,8 @@ fn matmul_dispatch_sm90_fp8[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=H100_FP8_TUNING_CONFIG,
-            grid_shape = Index(128, 1),
-            schedule = MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
         ](
             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
             rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -575,8 +575,8 @@ fn matmul_dispatch_sm90_fp8[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=config,
-            schedule = entry.schedule,
-            grid_shape = entry.grid_shape,
+            schedule=entry.schedule,
+            grid_shape=entry.grid_shape,
         ](
             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
             rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -694,8 +694,8 @@ fn matmul_dispatch_sm90_fp8[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.DS_SCHEDULER,
-                    grid_shape = Index(H100.sm_count, 1),
+                    schedule=MatmulSchedule.DS_SCHEDULER,
+                    grid_shape=Index(H100.sm_count, 1),
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -723,8 +723,8 @@ fn matmul_dispatch_sm90_fp8[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.DS_SCHEDULER,
-                    grid_shape = Index(H100.sm_count, 1),
+                    schedule=MatmulSchedule.DS_SCHEDULER,
+                    grid_shape=Index(H100.sm_count, 1),
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2160,31 +2160,31 @@ fn matmul_dispatch_sm90_bf16_fp32[
     comptime mma_k = 16 // size_factor
     comptime BK = 64 // size_factor
 
-    comptime if env_get_bool["AUTOTUNING_MODE", False]():
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         comptime static_N = c.shape.get[1]()
         comptime static_K = a.shape.get[1]()
 
-        comptime IS_LARGE_GEMM_SHAPE = env_get_bool[
+        comptime IS_LARGE_GEMM_SHAPE = get_defined_bool[
             "TUNE_LARGE_GEMM_SHAPE", True
         ]()
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime NUM_PIPELINE_STAGES = env_get_int[
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime NUM_PIPELINE_STAGES = get_defined_int[
             "TUNE_NUM_PIPELINE_STAGES", 4
         ]()
-        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
+        comptime NUM_CONSUMER = get_defined_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = get_defined_int["TUNE_WGMMA_N", 128]()
         comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
-        comptime PARTITIONED_MULTICAST = env_get_bool[
+        comptime PARTITIONED_MULTICAST = get_defined_bool[
             "TUNE_PARTITIONED_MULTICAST", False
         ]()
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            Int32(env_get_int["TUNE_SCHEDULE_TYPE", 0]())
+            Int32(get_defined_int["TUNE_SCHEDULE_TYPE", 0]())
         )
 
         comptime if IS_LARGE_GEMM_SHAPE:
             # GRID_DIM_X = 2^n for n in range[0-7]
-            comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+            comptime GRID_DIM_X = get_defined_int["TUNE_GRID_DIM_X", 1]()
             comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
 
             comptime H100_TUNING_CONFIG = MatmulConfig[
@@ -2208,7 +2208,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=H100_TUNING_CONFIG,
-                grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                 schedule=SCHEDULE_TYPE,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2219,10 +2219,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
         else:
-            comptime IS_SPLITK = env_get_bool["TUNE_IS_SPLITK", False]()
+            comptime IS_SPLITK = get_defined_bool["TUNE_IS_SPLITK", False]()
 
             comptime if not IS_SPLITK:
-                comptime NUM_PIPELINE_STAGES = env_get_int[
+                comptime NUM_PIPELINE_STAGES = get_defined_int[
                     "TUNE_NUM_PIPELINE_STAGES", 4
                 ]()
                 comptime GRID_DIM_X = H100.sm_count
@@ -2256,7 +2256,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK,
-                    grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                    grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                     schedule=SCHEDULE_TYPE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2267,7 +2267,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
             else:
-                comptime SPLITS = env_get_int["TUNE_SPLITS", 2]()
+                comptime SPLITS = get_defined_int["TUNE_SPLITS", 2]()
 
                 comptime SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK = MatmulConfig[
                     a_type,
@@ -2289,7 +2289,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK,
                     splits=SPLITS,
-                    raster_order = RasterOrder.AlongM,
+                    raster_order=RasterOrder.AlongM,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2354,8 +2354,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = entry.schedule,
-                grid_shape = entry.grid_shape,
+                schedule=entry.schedule,
+                grid_shape=entry.grid_shape,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2368,10 +2368,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = entry.schedule,
-                grid_shape = entry.grid_shape,
-                splits = entry.splits.value(),
-                raster_order = entry.raster_order.value(),
+                schedule=entry.schedule,
+                grid_shape=entry.grid_shape,
+                splits=entry.splits.value(),
+                raster_order=entry.raster_order.value(),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2508,7 +2508,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2537,7 +2537,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2567,7 +2567,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2600,7 +2600,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2630,7 +2630,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2660,7 +2660,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     # swapAB = True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2690,7 +2690,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2720,7 +2720,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2749,7 +2749,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2777,7 +2777,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2805,7 +2805,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2831,7 +2831,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2913,8 +2913,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2937,8 +2937,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2963,8 +2963,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M8192_N8192_K2048_config,
-                grid_shape = Index(4, H100.sm_count // 4),
-                schedule = MatmulSchedule.TILE2D,
+                grid_shape=Index(4, H100.sm_count // 4),
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2990,7 +2990,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N8192_K2048_config,
-                schedule = MatmulSchedule.TILE2D,
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3015,8 +3015,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3041,8 +3041,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M8192_N14336_K8192_config,
-                grid_shape = Index(8, H100.sm_count // 8),
-                schedule = MatmulSchedule.TILE2D,
+                grid_shape=Index(8, H100.sm_count // 8),
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3068,7 +3068,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N14336_K8192_config,
-                schedule = MatmulSchedule.TILE2D,
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3093,8 +3093,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3117,8 +3117,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3143,8 +3143,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M8192_N8192_K7168_config,
-                grid_shape = Index(8, H100.sm_count // 8),
-                schedule = MatmulSchedule.TILE2D,
+                grid_shape=Index(8, H100.sm_count // 8),
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3173,7 +3173,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N8192_K7168_config,
-                schedule = MatmulSchedule.TILE2D,
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3204,7 +3204,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M512_N3840_K15360_config,
-                schedule = MatmulSchedule.NONE,
+                schedule=MatmulSchedule.NONE,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3243,7 +3243,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=default_bf16_config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3279,7 +3279,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -3318,7 +3318,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -3354,7 +3354,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -3420,7 +3420,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=base_config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3446,7 +3446,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=default_bf16_config,
-            schedule = MatmulSchedule.NONE,
+            schedule=MatmulSchedule.NONE,
         ](
             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
             rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),

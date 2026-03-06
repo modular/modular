@@ -24,8 +24,6 @@ Key features:
 from std.collections import OptionalReg
 
 from std.gpu import barrier, block_idx, lane_id
-from layout import LayoutTensor
-from layout.swizzle import Swizzle
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
 from std.utils import IndexList
@@ -169,14 +167,14 @@ __extension AttentionRDNA:
             var num_b_rows = Int(kv_tile_num_rows)
 
             var k_buffer = KBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](
                 k_tile,
                 num_b_rows,
@@ -184,13 +182,13 @@ __extension AttentionRDNA:
             )
 
             var v_buffer = VBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Int(Self.BN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                num_warps_n = Int(Self.num_warps_n),
+                tensor_core_mma=Self.get_tensor_core_mma_pv(),
+                BN=Int(Self.BN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
+                num_warps_n=Int(Self.num_warps_n),
             ](
                 v_tile,
                 self.smem_manager.get_v_ptr[v_tile.dtype](),
@@ -282,14 +280,14 @@ __extension AttentionRDNA:
             ) if not not_last_iter else None
 
             var k_buffer = KBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](
                 k_tile,
                 num_b_rows,
@@ -298,13 +296,13 @@ __extension AttentionRDNA:
 
             var v_tile_slice = v_tile.slice[:, : Int(Self.output_depth)]()
             var v_buffer = VBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Int(Self.BN),
-                BK = Int(Self.BK),
-                depth = Self.output_depth,
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                num_warps_n = Int(Self.num_warps_n),
+                tensor_core_mma=Self.get_tensor_core_mma_pv(),
+                BN=Int(Self.BN),
+                BK=Int(Self.BK),
+                depth=Self.output_depth,
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
+                num_warps_n=Int(Self.num_warps_n),
             ](
                 v_tile_slice,
                 self.smem_manager.get_v_ptr[v_tile.dtype](),

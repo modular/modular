@@ -467,7 +467,7 @@ struct Path(
         with open(self, "w") as f:
             f.write(value)
 
-    fn write_bytes(self, bytes: Span[Byte]) raises:
+    fn write_bytes(self, bytes: Span[Byte, _]) raises:
         """Writes bytes to the file.
 
         Args:

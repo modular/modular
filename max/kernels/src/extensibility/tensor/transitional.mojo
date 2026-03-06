@@ -24,15 +24,15 @@ fn managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec,
     //,
 ](
-    tensor: ManagedTensorSlice[static_spec=spec],
+    tensor: ManagedTensorSlice[static_spec=spec, ...],
     out result: NDBuffer[
         spec.dtype,
         spec.rank,
-        AnyOrigin[mut = not tensor.io_spec.input.value == IO.Input.value],
+        AnyOrigin[mut=not tensor.io_spec.input.value == IO.Input.value],
         spec.shape,
         spec.strides,
         # alignment2 = spec.alignment,
-        address_space = spec.address_space,
+        address_space=spec.address_space,
         # exclusive = spec.exclusive,
     ],
 ):

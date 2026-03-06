@@ -12,11 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import random_float64
-from std.sys import env_get_bool, env_get_dtype
+from std.sys import get_defined_bool, get_defined_dtype
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
-from internal_utils import env_get_shape, int_list_to_tuple, CacheBustingBuffer
+from internal_utils import (
+    get_defined_shape,
+    int_list_to_tuple,
+    CacheBustingBuffer,
+)
 from std.runtime.asyncrt import DeviceContextPtr
 from layout import (
     Coord,
@@ -26,8 +30,8 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
-from layout._layout import row_major
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer
@@ -164,7 +168,7 @@ fn bench_rms_norm_fused_fp8[
     b.bench_function[bench_rms_norm](
         BenchId(
             "rms_norm_only",
-            input_id=t"{fn_name}/{in_dtype}/{out_dtype}/{shape}",
+            input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
         ),
     )
 
@@ -209,7 +213,7 @@ fn bench_rms_norm_fused_fp8[
 
             quantize_dynamic_scaled_fp8[
                 input_fn=fp8_input_fn,
-                group_size_or_per_token= -1,  # Per-token quantization
+                group_size_or_per_token=-1,  # Per-token quantization
                 num_cols=cols,
             ](fp8_output_ndbuf, scales_ndbuf, Float32(448.0), ctx, rows)
 
@@ -218,7 +222,7 @@ fn bench_rms_norm_fused_fp8[
     b.bench_function[bench_fp8_quant](
         BenchId(
             "fp8_quant_only",
-            input_id=t"{fn_name}/{in_dtype}/{out_dtype}/{shape}",
+            input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
         ),
     )
 
@@ -298,7 +302,7 @@ fn bench_rms_norm_fused_fp8[
     b.bench_function[bench_fused](
         BenchId(
             "rms_norm_fused_fp8",
-            input_id=t"{fn_name}/{in_dtype}/{out_dtype}/{shape}",
+            input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
         ),
     )
 
@@ -375,7 +379,7 @@ fn bench_rms_norm_fused_fp8[
 
     quantize_dynamic_scaled_fp8[
         input_fn=fp8_input_fn_verify,
-        group_size_or_per_token= -1,
+        group_size_or_per_token=-1,
         num_cols=cols,
     ](fp8_output_ndbuf_verify, scales_ndbuf_verify, Float32(448.0), ctx, rows)
 
@@ -542,12 +546,12 @@ fn bench_rms_norm_fused_fp8[
 
 
 def main() raises:
-    comptime in_dtype = env_get_dtype["in_dtype", DType.bfloat16]()
-    comptime out_dtype = env_get_dtype["out_dtype", DType.float8_e4m3fn]()
+    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime out_dtype = get_defined_dtype["out_dtype", DType.float8_e4m3fn]()
     comptime shape = int_list_to_tuple[
-        env_get_shape["shape", "1x4096x16384"]()
+        get_defined_shape["shape", "1x4096x16384"]()
     ]()
-    comptime cache_busting = env_get_bool["cache_busting", True]()
+    comptime cache_busting = get_defined_bool["cache_busting", True]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:

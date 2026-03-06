@@ -27,7 +27,7 @@ from std.gpu.host.nvidia.tma import TMADescriptor
 
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from ..structured_kernels.pipeline_storage import SmemPipelineBundle
+from structured_kernels.pipeline_storage import SmemPipelineBundle
 
 
 # Number of tensormap descriptors for grouped GEMM
@@ -65,7 +65,7 @@ struct GroupedBlockScaledSmem[
         Self.sfa_dtype,
         Self.sfb_dtype,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== Storage Fields ==========

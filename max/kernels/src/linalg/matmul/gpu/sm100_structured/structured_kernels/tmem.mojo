@@ -34,6 +34,8 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from layout.tma_async import SharedMemBarrier
 from linalg.structuring import SMemArray
 from .config import OutputPipelineConfig
 
@@ -391,9 +393,9 @@ struct TmemTensor[
     comptime Fragments = TmemFragments[
         Self.dtype,
         Self.frag_size,
-        is_lower_required = Self.is_lower_required,
-        data_paths = Self.data_paths,
-        bits = Self.bits,
+        is_lower_required=Self.is_lower_required,
+        data_paths=Self.data_paths,
+        bits=Self.bits,
     ]
 
     @always_inline
@@ -402,7 +404,7 @@ struct TmemTensor[
     ](self) -> TmemFragments[
         Self.dtype,
         Self.frag_size * repeat,
-        is_lower_required = Self.is_lower_required,
+        is_lower_required=Self.is_lower_required,
     ]:
         """Load both upper and lower fragments in one call.
 
@@ -417,7 +419,7 @@ struct TmemTensor[
         return TmemFragments[
             Self.dtype,
             Self.frag_size,
-            is_lower_required = Self.is_lower_required,
+            is_lower_required=Self.is_lower_required,
         ].load[repeat](self.address())
 
     @always_inline
@@ -428,7 +430,7 @@ struct TmemTensor[
         frags: TmemFragments[
             Self.dtype,
             Self.frag_size * repeat,
-            is_lower_required = Self.is_lower_required,
+            is_lower_required=Self.is_lower_required,
         ],
     ):
         """Store both upper and lower fragments in one call.
@@ -525,7 +527,7 @@ struct TmemFragments[
     ](tmem: TmemAddress) -> TmemFragments[
         Self.dtype,
         Self.frag_size * repeat,
-        is_lower_required = Self.is_lower_required,
+        is_lower_required=Self.is_lower_required,
     ]:
         """Load fragments from TMEM address.
 
@@ -542,7 +544,7 @@ struct TmemFragments[
         """
         comptime width = Self.frag_size * repeat
         var result = TmemFragments[
-            Self.dtype, width, is_lower_required = Self.is_lower_required
+            Self.dtype, width, is_lower_required=Self.is_lower_required
         ]()
         result.upper = tmem.load_upper[
             Self.dtype, width, Self.data_paths, Self.bits, repeat
@@ -580,13 +582,13 @@ struct TmemFragments[
     fn cast[
         target_dtype: DType
     ](self) -> TmemFragments[
-        target_dtype, Self.frag_size, is_lower_required = Self.is_lower_required
+        target_dtype, Self.frag_size, is_lower_required=Self.is_lower_required
     ]:
         """Cast fragments to a different dtype."""
         var result = TmemFragments[
             target_dtype,
             Self.frag_size,
-            is_lower_required = Self.is_lower_required,
+            is_lower_required=Self.is_lower_required,
         ]()
         result.upper = self.upper.cast[target_dtype]()
 
@@ -638,7 +640,7 @@ struct TmemArrayType[
     """
 
     comptime Tile = TmemTensor[
-        Self.dtype, Self.layout, cta_group = Self.cta_group
+        Self.dtype, Self.layout, cta_group=Self.cta_group
     ]
     # TMEM addresses are in column units, so stride is N dimension (shape[1])
     comptime tile_stride = Self.layout.shape[1].value()
@@ -721,20 +723,20 @@ struct BlockScaledTmem[
     comptime AccumArray = TmemArrayType[
         Self.accum_dtype,
         Self.accum_layout,
-        num_tiles = Self.num_accum_stages,
-        cta_group = Self.cta_group,
+        num_tiles=Self.num_accum_stages,
+        cta_group=Self.cta_group,
     ]
     comptime SFAArray = TmemArrayType[
         Self.sf_dtype,
         Self.sfa_layout,
-        num_tiles = Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
+        num_tiles=Self.num_pipeline_stages,
+        cta_group=Self.cta_group,
     ]
     comptime SFBArray = TmemArrayType[
         Self.sf_dtype,
         Self.sfb_layout,
-        num_tiles = Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
+        num_tiles=Self.num_pipeline_stages,
+        cta_group=Self.cta_group,
     ]
 
     # Tile types (for convenience)
@@ -893,9 +895,7 @@ struct TmemStage[
     fn tensor[
         accum_dtype: DType,
         accum_layout: Layout,
-    ](self) -> TmemTensor[
-        accum_dtype, accum_layout, cta_group = Self.cta_group
-    ]:
+    ](self) -> TmemTensor[accum_dtype, accum_layout, cta_group=Self.cta_group]:
         """Get typed TmemTensor view of this stage's accumulator.
 
         Parameters:
@@ -905,9 +905,9 @@ struct TmemStage[
         Returns:
             TmemTensor providing typed access to the accumulator.
         """
-        return TmemTensor[
-            accum_dtype, accum_layout, cta_group = Self.cta_group
-        ](self.base_addr + self.index * Self.stage_stride)
+        return TmemTensor[accum_dtype, accum_layout, cta_group=Self.cta_group](
+            self.base_addr + self.index * Self.stage_stride
+        )
 
     @always_inline
     fn load_upper[
@@ -940,3 +940,63 @@ struct TmemStage[
     fn wait_load():
         """Wait for TMEM load operations to complete."""
         TmemAddress.wait_load()
+
+
+# =============================================================================
+# TmemDeallocBarrier - TMEM deallocation synchronization
+# =============================================================================
+
+
+struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
+    """TMEM deallocation synchronization barrier.
+
+    Handles cluster-aware synchronization patterns for TMEM deallocation,
+    supporting both single-CTA and multi-CTA (cta_group=2) configurations.
+    """
+
+    comptime BarrierStorage = SMemArray[SharedMemBarrier, 1]
+
+    var barrier: Self.BarrierStorage
+
+    fn __init__(out self, barrier: Self.BarrierStorage):
+        """Initialize with shared memory barrier array."""
+        self.barrier = barrier
+
+    @always_inline
+    fn signal_peer(self):
+        """Signal peer CTA in cluster (cta_group=2 only)."""
+
+        comptime if Self.cta_group == 2:
+            _ = self.barrier.ptr[].arrive_cluster(block_rank_in_cluster() ^ 1)
+
+    @always_inline
+    fn signal_self(self):
+        """Signal own arrival at barrier."""
+        _ = self.barrier.ptr[].arrive()
+
+    @always_inline
+    fn wait(self):
+        """Wait for barrier completion."""
+        self.barrier.ptr[].wait()
+
+    @always_inline
+    fn complete_dealloc[
+        max_cols: Int = 512
+    ](self, tmem: TmemAllocation[Self.cta_group, max_cols]):
+        """Complete TMEM deallocation sequence (MMA warp side).
+
+        Releases the allocation lock, waits for epilogue completion,
+        then deallocates the TMEM.
+        """
+        tmem.release_lock()
+        self.wait()
+        tmem.deallocate()
+
+    @always_inline
+    fn signal_complete(self):
+        """Signal TMEM consumption complete (Epilogue warp side).
+
+        For cta_group=2, signals peer CTA first, then signals self.
+        """
+        self.signal_peer()
+        self.signal_self()

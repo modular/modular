@@ -19,21 +19,21 @@ import functools
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Module
+from max.experimental.nn.common_layers.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
+from max.experimental.nn.embedding import Embedding
+from max.experimental.nn.linear import Linear
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
-from max.nn.module_v3 import Module
-from max.nn.module_v3.common_layers.rotary_embedding import (
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
-from max.nn.module_v3.embedding import Embedding
-from max.nn.module_v3.linear import Linear
-from max.nn.module_v3.sequential import ModuleList
 
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE
@@ -185,9 +185,8 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
-        kv_values = [arg._graph_value for arg in variadic_args]
-        kv_collections = unflatten_ragged_mha_decode_inputs(
-            kv_values, n_devices=self.kv_params.n_devices
+        kv_collections = unflatten_ragged_attention_inputs(
+            variadic_args, n_devices=self.kv_params.n_devices
         )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets

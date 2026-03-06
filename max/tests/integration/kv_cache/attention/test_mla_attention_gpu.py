@@ -146,7 +146,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     input_row_offsets[batch_size] = running_sum
     input_row_offsets = input_row_offsets.to(cuda)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
     model = session.load(g)
 
     input_tensor = Buffer.zeros(
@@ -164,7 +164,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets.to(cuda),
         k_buffer_tensor.to(cuda),
         v_buffer_tensor.to(cuda),
-        *kv_runtime_inputs[:4],
+        *(kv_runtime_inputs.inputs[0].as_list()[:4]),
     )[0]
     assert isinstance(result, Buffer)
 

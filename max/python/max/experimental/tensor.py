@@ -75,7 +75,7 @@ with randomly initialized weights before loading weights
 
 .. code-block:: python
 
-    from max.nn.module_v3 import Linear
+    from max.experimental.nn import Linear
 
     with F.lazy():
         model = Linear(2, 3)
@@ -99,6 +99,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import warnings
 from collections.abc import Generator
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -415,8 +416,8 @@ class Tensor(DLPackArray, HasTensorValue):
 
     **Creating Tensors:**
 
-    Create tensors using factory methods like :meth:`ones`, :meth:`zeros`,
-    :meth:`constant`, :meth:`arange`, or from other array libraries via
+    Create tensors using the constructor, factory methods like :meth:`ones`,
+    :meth:`zeros`, :meth:`arange`, or from other array libraries via
     :meth:`from_dlpack`.
 
     .. code-block:: python
@@ -424,8 +425,8 @@ class Tensor(DLPackArray, HasTensorValue):
         from max.experimental import tensor
         from max.dtype import DType
 
-        # Create tensors with factory methods
-        x = tensor.Tensor.ones((2, 3), dtype=DType.float32)
+        # Create tensors from data (like torch.tensor())
+        x = tensor.Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32)
         y = tensor.Tensor.zeros((2, 3), dtype=DType.float32)
 
         # Perform operations
@@ -470,14 +471,106 @@ class Tensor(DLPackArray, HasTensorValue):
     #: State for realizing an unrealized tensor.
     state: RealizationState | None
 
+    def __new__(
+        cls,
+        data: DLPackArray | NestedArray | Number | None = None,
+        *,
+        dtype: DType | None = None,
+        device: Device | None = None,
+        storage: driver.Buffer | None = None,
+        state: RealizationState | None = None,
+    ) -> Tensor:
+        """Allocates the tensor, delegating to ``F.constant`` when data is given.
+
+        When ``data`` is provided, returns the tensor produced by
+        ``F.constant`` directly so that lazy/eager realization contexts track
+        the correct object.  For internal construction (``storage`` or
+        ``state``), falls through to the normal allocation path.
+        """
+        if data is not None:
+            if storage is not None or state is not None:
+                raise TypeError(
+                    "Cannot supply both 'data' and internal 'storage'/'state'."
+                )
+            if isinstance(data, DLPackArray):
+                # Preserve the array's own dtype/device by default so that
+                # round-tripping (e.g. torch bfloat16 → Tensor) never silently
+                # casts.  The user can still supply explicit dtype/device to
+                # override.  ops.constant will raise a clear error if the
+                # explicit dtype conflicts with the array's dtype.
+                resolved_device = device or _default_device()
+                return F.constant(data, dtype, resolved_device)
+            else:
+                # Python scalars and nested lists carry no dtype information,
+                # so we always resolve from defaults.
+                resolved_dtype, resolved_device = defaults(dtype, device)
+                return F.constant(data, resolved_dtype, resolved_device)
+        return super().__new__(cls)
+
     def __init__(
         self,
+        data: DLPackArray | NestedArray | Number | None = None,
         *,
+        dtype: DType | None = None,
+        device: Device | None = None,
         storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ):
+        """Creates a tensor from data or from internal storage.
+
+        When called with ``data``, constructs a tensor from a scalar, nested
+        list, or DLPack-compatible array (matching PyTorch's ``torch.tensor()``
+        semantics). When called without ``data``, requires exactly one of
+        ``storage`` or ``state`` for internal construction.
+
+        For DLPack-compatible arrays (NumPy, PyTorch, etc.) the array's own
+        ``dtype`` is preserved by default — no silent precision conversion
+        happens.  For Python scalars and nested lists, ``dtype`` defaults to
+        :obj:`DType.float32` on CPU and :obj:`DType.bfloat16` on accelerators.
+
+        .. code-block:: python
+
+            from max.experimental.tensor import Tensor
+            from max.dtype import DType
+
+            # Create from scalar — dtype defaults to float32 on CPU
+            x = Tensor(42, dtype=DType.int32)
+
+            # Create from nested list
+            y = Tensor([[1.0, 2.0], [3.0, 4.0]])
+
+            # Create from NumPy array — dtype is inherited from the array
+            import numpy as np
+            z = Tensor(np.array([1, 2, 3], dtype=np.int16))  # stays int16
+
+        Args:
+            data: The value for the tensor. Can be a scalar number, a nested
+                Python list, or any DLPack-compatible array (NumPy, PyTorch,
+                etc.). If not provided, exactly one of ``storage`` or ``state``
+                must be supplied.
+            dtype: The data type for the tensor elements.  For DLPack arrays
+                this defaults to the array's own dtype; passing a conflicting
+                value raises :obj:`ValueError`.  For Python scalars/lists this
+                defaults to :obj:`DType.float32` on CPU and
+                :obj:`DType.bfloat16` on accelerators.
+            device: The device where the tensor will be allocated. If not
+                specified, defaults to an accelerator if available, otherwise
+                CPU. Only valid when ``data`` is provided.
+            storage: Internal backing buffer for a realized tensor. Mutually
+                exclusive with ``data``.
+            state: Internal realization state for an unrealized tensor. Mutually
+                exclusive with ``data``.
+        """
+        if data is not None:
+            # __new__ already returned the tensor produced by F.constant;
+            # __init__ is invoked on that object but nothing remains to do.
+            return
+        if dtype is not None or device is not None:
+            raise TypeError(
+                "'dtype' and 'device' are only valid when 'data' is provided."
+            )
         if (storage is None) == (state is None):
-            raise TypeError("Must supply exactly one of storage and state.")
+            raise TypeError("Must supply exactly one of 'storage' and 'state'.")
         self.storage = storage
         self.state = state
 
@@ -540,27 +633,11 @@ class Tensor(DLPackArray, HasTensorValue):
         dtype: DType | None = None,
         device: Device | None = None,
     ) -> Tensor:
-        """Creates a constant tensor from a scalar, array, or nested list.
+        """Creates a tensor from a scalar, array, or nested list.
 
-        Constructs a tensor with constant values that can be a scalar, a nested
-        Python list, or a DLPack-compatible array. The shape is automatically
-        inferred from the input data structure.
-
-        .. code-block:: python
-
-            from max.experimental import tensor
-            from max.dtype import DType
-
-            # Create from scalar
-            x = tensor.Tensor.constant(42, dtype=DType.int32)
-
-            # Create from nested list
-            y = tensor.Tensor.constant([[1.0, 2.0], [3.0, 4.0]])
-
-            # Create from NumPy array
-            import numpy as np
-
-            z = tensor.Tensor.constant(np.array([1, 2, 3]))
+        .. deprecated::
+            Use ``Tensor(value, dtype=dtype, device=device)`` instead.
+            ``Tensor.constant`` will be removed in a future release.
 
         Args:
             value: The constant value for the tensor. Can be a scalar number,
@@ -574,8 +651,13 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A new tensor containing the constant value(s).
         """
-        dtype, device = defaults(dtype, device)
-        return F.constant(value, dtype, device)
+        warnings.warn(
+            "Tensor.constant() is deprecated. Use Tensor(value, dtype=dtype,"
+            " device=device) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(value, dtype=dtype, device=device)
 
     @classmethod
     def full(
@@ -616,9 +698,7 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A new tensor with the specified shape filled with the given value.
         """
-        return F.broadcast_to(
-            cls.constant(value, dtype=dtype, device=device), shape
-        )
+        return F.broadcast_to(cls(value, dtype=dtype, device=device), shape)
 
     @classmethod
     def full_like(cls, input: Tensor | TensorType, value: Number) -> Tensor:
@@ -1221,7 +1301,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x4 tensor
-            x = tensor.Tensor.constant(
+            x = tensor.Tensor(
                 [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
             )
 
@@ -1255,7 +1335,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x4 tensor
-            x = tensor.Tensor.constant(
+            x = tensor.Tensor(
                 [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
             )
 
@@ -1293,7 +1373,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x4 tensor
-            x = tensor.Tensor.constant(
+            x = tensor.Tensor(
                 [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]], dtype=DType.float32
             )
 
@@ -1331,7 +1411,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x4 tensor
-            x = tensor.Tensor.constant(
+            x = tensor.Tensor(
                 [[2.0, 4.0, 6.0, 8.0], [1.0, 3.0, 5.0, 7.0]], dtype=DType.float32
             )
 
@@ -1369,7 +1449,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x3 tensor
-            x = tensor.Tensor.constant(
+            x = tensor.Tensor(
                 [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=DType.float32
             )
 
@@ -1420,7 +1500,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.experimental import tensor
 
             # Create a 2x4 tensor
-            x = tensor.Tensor.constant(
+            x = tensor.Tensor(
                 [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]]
             )
 
@@ -1493,7 +1573,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 1D tensor
-            x = tensor.Tensor.constant([1.0, 2.0, 3.0], dtype=DType.float32)
+            x = tensor.Tensor([1.0, 2.0, 3.0], dtype=DType.float32)
             print(x.shape)  # (3,)
 
             # Add dimension at the end
@@ -1566,7 +1646,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x3 tensor
-            x = tensor.Tensor.constant([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
+            x = tensor.Tensor([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
             print(x.shape)  # (2, 3)
 
             # Flatten to 1D
@@ -1633,7 +1713,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a float32 tensor
-            x = tensor.Tensor.constant([1.7, 2.3, 3.9], dtype=DType.float32)
+            x = tensor.Tensor([1.7, 2.3, 3.9], dtype=DType.float32)
             print(x.dtype)  # DType.float32
 
             # Cast to int32 (truncates decimal values)
@@ -1664,9 +1744,9 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 3D tensor (batch_size=2, channels=3, length=4)
-            x = Tensor.constant([[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
-                                 [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]]],
-                                dtype=DType.int32)
+            x = Tensor([[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
+                        [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]]],
+                       dtype=DType.int32)
             print(f"Original shape: {x.shape}")
             # Output: Original shape: [Dim(2), Dim(3), Dim(4)]
 
@@ -1696,7 +1776,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x3 matrix
-            x = Tensor.constant([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
+            x = Tensor([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
             print(f"Original shape: {x.shape}")
             # Output: Original shape: [Dim(2), Dim(3)]
             print(x)
@@ -1730,7 +1810,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
 
             # Create a 2x3 matrix
-            x = Tensor.constant([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
+            x = Tensor([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
             print(f"Original shape: {x.shape}")
             # Output: Original shape: [Dim(2), Dim(3)]
 

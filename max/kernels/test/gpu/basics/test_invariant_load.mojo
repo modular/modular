@@ -26,7 +26,7 @@ fn ldg_kernel(i8: UnsafePointer[Int8]):
 
 
 fn layout_kernel(
-    a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1)],
+    a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1), _],
     mut b: type_of(a[0]),
 ):
     b = a[0]
@@ -36,7 +36,7 @@ def test_ldg_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         ldg_kernel,
         emission_kind=emission_kind,
-        target = get_gpu_target["sm_90a"](),
+        target=get_gpu_target["sm_90a"](),
     ]().asm
 
 
@@ -51,7 +51,7 @@ def test_layout_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         layout_kernel,
         emission_kind=emission_kind,
-        target = get_gpu_target["sm_90a"](),
+        target=get_gpu_target["sm_90a"](),
     ]().asm
 
 

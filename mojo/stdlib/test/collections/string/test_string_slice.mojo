@@ -73,10 +73,10 @@ fn test_string_slice_layout() raises:
 
 
 def test_constructors() raises:
-    def some_func_immut(b: StringSlice[mut=False]) raises:
+    def some_func_immut(b: StringSlice[mut=False, ...]) raises:
         assert_false(b.mut)
 
-    def some_func_mut(b: StringSlice[mut=True]) raises:
+    def some_func_mut(b: StringSlice[mut=True, ...]) raises:
         assert_true(b.mut)
 
     var a = "123"
@@ -277,7 +277,7 @@ fn test_string_substring() raises:
     var sub3 = str_slice[0:1]
     assert_equal(len(sub3), 1)
     assert_equal(sub3[byte=0], "H")
-    assert_equal(sub3[byte= -1], "H")
+    assert_equal(sub3[byte=-1], "H")
 
     # ----------------------------------
     # Test empty subslicing
@@ -1055,7 +1055,7 @@ def test_string_slice_from_pointer() raises:
     assert_equal("B", d[byte=1])
     assert_equal("C", d[byte=2])
     assert_equal("D", d[byte=3])
-    assert_equal("D", d[byte= -1])
+    assert_equal("D", d[byte=-1])
 
 
 def test_replace() raises:

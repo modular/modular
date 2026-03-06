@@ -504,14 +504,14 @@ struct DType(
     fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
         return DType(
             mlir_value=__mlir_op.`pop.dtype.from_ui8`(
-                __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
+                __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.ui8](ui8)
             )
         )
 
     @doc_private
     @always_inline("builtin")
     fn _as_ui8(self) -> UInt8._mlir_type:
-        return __mlir_op.`pop.cast_from_builtin`[_type = UInt8._mlir_type](
+        return __mlir_op.`pop.cast_from_builtin`[_type=UInt8._mlir_type](
             __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)
         )
 
@@ -525,7 +525,7 @@ struct DType(
     fn _match(self, mask: UInt8._mlir_type) -> Bool:
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred ne>`
+                pred=__mlir_attr.`#pop<cmp_pred ne>`
             ](
                 __mlir_op.`pop.simd.and`(self._as_ui8(), mask),
                 __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
@@ -544,7 +544,7 @@ struct DType(
         """
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred eq>`
+                pred=__mlir_attr.`#pop<cmp_pred eq>`
             ](self._as_ui8(), rhs._as_ui8())
         )
 
@@ -560,7 +560,7 @@ struct DType(
         """
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred ne>`
+                pred=__mlir_attr.`#pop<cmp_pred ne>`
             ](self._as_ui8(), rhs._as_ui8())
         )
 

@@ -15,8 +15,8 @@ from std.collections.string import StaticString
 from std.math import erf, exp, rsqrt, log, sin, sqrt, tanh
 from std.sys import (
     align_of,
-    env_get_int,
-    env_get_string,
+    get_defined_int,
+    get_defined_string,
     simd_width_of,
     size_of,
 )
@@ -132,10 +132,10 @@ fn run_elementwise[
     comptime pack_size = 32 // size_of[
         dtype
     ]() if ctx.default_device_info == B200 else simd_width_of[
-        dtype, target = get_gpu_target()
+        dtype, target=get_gpu_target()
     ]()
     comptime align = align_of[
-        SIMD[dtype, pack_size], target = get_gpu_target()
+        SIMD[dtype, pack_size], target=get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 
@@ -247,15 +247,15 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
 def main() raises:
     var op = arg_parse("op", "sqrt")
     comptime dtype = DType._from_str(
-        env_get_string["dtype", "DType.bfloat16"]()
+        get_defined_string["dtype", "DType.bfloat16"]()
     )
-    comptime rank = env_get_int["rank", 3]()
-    comptime dims_str = env_get_string["dims", "1x1024x3072"]()
+    comptime rank = get_defined_int["rank", 3]()
+    comptime dims_str = get_defined_string["dims", "1x1024x3072"]()
     comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
-    comptime aligned_memory_config = env_get_int[
+    comptime aligned_memory_config = get_defined_int[
         "aligned_memory_config", 0
     ]()  # bool
-    comptime emulate_graph_compiler = env_get_int[
+    comptime emulate_graph_compiler = get_defined_int[
         "emulate_graph_compiler", 0
     ]()  # bool
 
@@ -271,16 +271,16 @@ def main() raises:
             run_elementwise[
                 dtype,
                 simd_sqrt,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](m, "sqrt", dims, name=dims_str, ctx=ctx)
 
         elif op == "rsqrt":
             run_elementwise[
                 dtype,
                 rsqrt,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](
                 m,
                 "rsqrt",
@@ -293,48 +293,48 @@ def main() raises:
             run_elementwise[
                 dtype,
                 log,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](m, "log", dims, name=dims_str, ctx=ctx)
 
         elif op == "sin":
             run_elementwise[
                 dtype,
                 sin,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](m, "sin", dims, name=dims_str, ctx=ctx)
 
         elif op == "tanh":
             run_elementwise[
                 dtype,
                 tanh,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](m, "tanh", dims, name=dims_str, ctx=ctx)
 
         elif op == "exp":
             run_elementwise[
                 dtype,
                 exp,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](m, "exp", dims, name=dims_str, ctx=ctx)
 
         elif op == "erf":
             run_elementwise[
                 dtype,
                 erf,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](m, "erf", dims, name=dims_str, ctx=ctx)
 
         elif op == "add_const":
             run_elementwise[
                 dtype,
                 add_const_fn,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](
                 m,
                 "add_const",
@@ -347,7 +347,7 @@ def main() raises:
             run_elementwise[
                 dtype,
                 copy_fn,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
+                use_aligned_memory=aligned_memory_config != 0,
+                emulate_graph_compiler=emulate_graph_compiler != 0,
             ](m, "copy", dims, name=dims_str, ctx=ctx)
     m.dump_report()

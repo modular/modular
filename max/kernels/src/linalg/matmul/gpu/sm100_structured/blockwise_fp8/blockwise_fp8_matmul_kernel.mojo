@@ -50,7 +50,7 @@ from std.gpu.sync import (
     syncwarp,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from layout import TileTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -63,10 +63,10 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
-from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
-from ..structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
     compute_tma_tile_dims,
@@ -82,7 +82,7 @@ from ..structured_kernels.tile_pipeline import (
     InputProducerStage,
     InputConsumerStage,
 )
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     TMATile,
     static_row_major,
 )
@@ -91,8 +91,11 @@ from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
 from ..structured_kernels.tile_loader import TileLoader, ScalesLoader
-from ..structured_kernels.tmem import TmemAllocation, TmemTensor
-from ..structured_kernels.barriers import TmemDeallocBarrier
+from ..structured_kernels.tmem import (
+    TmemAllocation,
+    TmemTensor,
+    TmemDeallocBarrier,
+)
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
@@ -216,13 +219,13 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Shared Memory Layout Types ==========
 
     comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
+        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
     ]()
 
     comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]()
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
@@ -308,7 +311,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.c_type,
         Self.a_scales_type,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -319,12 +322,12 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.b_type,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Kernel Context Type ==========
@@ -340,14 +343,14 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
-        num_stages = Self.num_clc_pipeline_stages,
-        cluster_shape = Index[dtype = DType.uint32](
+        num_stages=Self.num_clc_pipeline_stages,
+        cluster_shape=Index[dtype=DType.uint32](
             Self.config.cluster_shape[0],
             Self.config.cluster_shape[1],
             Self.config.cluster_shape[2],
         ),
-        block_swizzle_size = Self.config.block_swizzle_size,
-        rasterize_order = Self.config.raster_order,
+        block_swizzle_size=Self.config.block_swizzle_size,
+        rasterize_order=Self.config.raster_order,
     ]
 
     # ========== Tile Pipeline Type ==========
@@ -388,7 +391,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # Layout-parameterized TMEM tensor for typed accumulator access
     comptime tmem_accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.tmem_accum_layout, cta_group = Self.cta_group
+        Self.accum_type, Self.tmem_accum_layout, cta_group=Self.cta_group
     ]
 
     # ========== Output Pipeline Type ==========
@@ -426,10 +429,10 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]()
 
     comptime accum_dims = get_accumulator_dims[
-        c_smem_dim1 = Self.OutputN,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
+        c_smem_dim1=Self.OutputN,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        cta_group=Self.cta_group,
     ]()
 
     comptime Accumulator = BlockwiseFP8Accumulator[
@@ -450,13 +453,13 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.accum_type,
         Self.accum_dims[0],
         Self.accum_dims[1],
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        is_lower_frag_required = Self.is_lower_required,
-        cta_group = Self.cta_group,
-        num_output_stages = Self.num_output_stages,
-        num_output_warps = Self.num_output_warps,
-        c_swizzle = Self.config.c_swizzle,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        is_lower_frag_required=Self.is_lower_required,
+        cta_group=Self.cta_group,
+        num_output_stages=Self.num_output_stages,
+        num_output_warps=Self.num_output_warps,
+        c_swizzle=Self.config.c_swizzle,
     ]
 
     # ========== Load Input Tiles ==========
@@ -475,20 +478,20 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             Self.a_type,
             Self.ATileLayout,
             Self.ADescLayout,
-            cta_group = Self.cta_group,
+            cta_group=Self.cta_group,
         ],
         b_loader: TileLoader[
             b_tma_origin,
             Self.b_type,
             Self.BTileLayout,
             Self.BDescLayout,
-            cta_group = Self.cta_group,
+            cta_group=Self.cta_group,
         ],
         a_scales_loader: ScalesLoader[
             a_scales_tma_origin,
             Self.a_scales_type,
             Self.AScalesLayout,
-            cta_group = Self.cta_group,
+            cta_group=Self.cta_group,
         ],
         tiles: InputProducerStage[
             tiles_origin,
@@ -665,8 +668,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                         Self.CLUSTER_M,
                         Self.CLUSTER_N,
                         Self.cta_group,
-                        CLUSTER_SIZE = Self.CLUSTER_SIZE,
-                        epilogue_threads = Self.EPILOGUE_THREADS,
+                        CLUSTER_SIZE=Self.CLUSTER_SIZE,
+                        epilogue_threads=Self.EPILOGUE_THREADS,
                     ]()
                 ),
                 accum_barriers.ptr,
@@ -718,7 +721,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -777,20 +780,20 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 Self.a_type,
                 Self.ATileLayout,
                 Self.ADescLayout,
-                cta_group = Self.cta_group,
+                cta_group=Self.cta_group,
             ](Pointer(to=a_tma_op), ctx.a_multicast_mask)
             var b_loader = TileLoader[
                 _,
                 Self.b_type,
                 Self.BTileLayout,
                 Self.BDescLayout,
-                cta_group = Self.cta_group,
+                cta_group=Self.cta_group,
             ](Pointer(to=b_tma_op), ctx.b_multicast_mask)
             var a_scales_loader = ScalesLoader[
                 _,
                 Self.a_scales_type,
                 Self.AScalesLayout,
-                cta_group = Self.cta_group,
+                cta_group=Self.cta_group,
             ](Pointer(to=a_scales_tma_op))
 
             var producer = input_pipeline.producer()

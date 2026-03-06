@@ -31,7 +31,7 @@ def test_convert_asm() raises:
         in _compile_code[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = get_gpu_target["sm_80"](),
+            target=get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -40,7 +40,7 @@ def test_convert_asm() raises:
         in _compile_code[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = get_gpu_target["mi300x"](),
+            target=get_gpu_target["mi300x"](),
         ]()
     )
 
@@ -49,7 +49,7 @@ def test_convert_asm() raises:
         in _compile_code[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = get_gpu_target["sm_80"](),
+            target=get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -58,7 +58,7 @@ def test_convert_asm() raises:
         in _compile_code[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = get_gpu_target["mi300x"](),
+            target=get_gpu_target["mi300x"](),
         ]()
     )
 

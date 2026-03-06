@@ -92,10 +92,10 @@ struct Struct_ep_init:
         //,
         target: StaticString,
     ](
-        dev_ptrs: OutputTensor[dtype = DType.uint64, rank=2],
-        my_rank_tensor: OutputTensor[dtype = DType.int32, rank=1],
-        atomic_counters_0: MutableInputTensor[dtype = DType.int32],
-        atomic_counters_1: MutableInputTensor[dtype = DType.int32],
+        dev_ptrs: OutputTensor[dtype=DType.uint64, rank=2, ...],
+        my_rank_tensor: OutputTensor[dtype=DType.int32, rank=1, ...],
+        atomic_counters_0: MutableInputTensor[dtype=DType.int32, ...],
+        atomic_counters_1: MutableInputTensor[dtype=DType.int32, ...],
         context: DeviceContextPtr,
     ) raises:
         """This kernel initializes the vendor library for Expert Parallelism
@@ -143,8 +143,8 @@ struct Struct_ep_init:
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
-                output_layout = Layout(),
-                scales_layout = Layout(),
+                output_layout=Layout(),
+                scales_layout=Layout(),
                 hidden_size,
                 top_k,
                 gpu_alignment,
@@ -155,9 +155,9 @@ struct Struct_ep_init:
             comptime token_fmt_type = NVFP4TokenFormat[
                 fp4_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
-                output_layout = Layout(),
-                scales_layout = Layout(),
-                scales_offset_layout = Layout(),
+                output_layout=Layout(),
+                scales_layout=Layout(),
+                scales_offset_layout=Layout(),
                 hidden_size,
                 top_k,
                 gpu_alignment,
@@ -166,7 +166,7 @@ struct Struct_ep_init:
 
         elif dispatch_fmt_str == "BF16":
             comptime token_fmt_type = BF16TokenFormat[
-                output_layout = Layout(), hidden_size, top_k, gpu_alignment
+                output_layout=Layout(), hidden_size, top_k, gpu_alignment
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
 
@@ -316,12 +316,12 @@ struct Struct_ep_dispatch_async:
         //,
         target: StaticString,
     ](
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=input_dtype, rank=2],
-        topk_ids: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism async dispatch kernel. Tokens are
@@ -331,9 +331,9 @@ struct Struct_ep_dispatch_async:
         comptime if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
-                scales_dtype = DType.float32,
-                output_layout = Layout(),
-                scales_layout = Layout(),
+                scales_dtype=DType.float32,
+                output_layout=Layout(),
+                scales_layout=Layout(),
                 hidden_size,
                 top_k,
             ]
@@ -356,7 +356,7 @@ struct Struct_ep_dispatch_async:
 
         elif dispatch_fmt_str == "BF16":
             comptime token_fmt_type = BF16TokenFormat[
-                output_layout = Layout(), hidden_size, top_k
+                output_layout=Layout(), hidden_size, top_k
             ]
 
             ep_dispatch_async_kernel_api[
@@ -397,13 +397,13 @@ struct Struct_ep_dispatch_async_nvfp4:
         //,
         target: StaticString,
     ](
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=input_dtype, rank=2],
-        topk_ids: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        input_scales: InputTensor[dtype = DType.float32, rank=1],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism async dispatch kernel. Tokens are
@@ -420,10 +420,10 @@ struct Struct_ep_dispatch_async_nvfp4:
 
         comptime token_fmt_type = NVFP4TokenFormat[
             fp4_dtype=dispatch_dtype,
-            scales_dtype = DType.float8_e4m3fn,
-            output_layout = Layout(),
-            scales_layout = Layout(),
-            scales_offset_layout = Layout(),
+            scales_dtype=DType.float8_e4m3fn,
+            output_layout=Layout(),
+            scales_layout=Layout(),
+            scales_offset_layout=Layout(),
             hidden_size,
             top_k,
         ]
@@ -465,13 +465,13 @@ struct Struct_ep_dispatch_wait:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype = DType.bfloat16, rank=2],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        output_tokens: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
@@ -521,14 +521,14 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype = DType.bfloat16, rank=2],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        input_tokens: InputTensor[dtype = DType.bfloat16, rank=2],
+        output_tokens: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input_tokens: InputTensor[dtype=DType.bfloat16, rank=2, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
@@ -592,14 +592,14 @@ struct Struct_ep_dispatch_wait_fp8:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
-        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
@@ -653,15 +653,15 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
-        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        input_tokens: InputTensor[dtype = DType.bfloat16, rank=2],
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input_tokens: InputTensor[dtype=DType.bfloat16, rank=2, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
@@ -727,15 +727,15 @@ struct Struct_ep_dispatch_wait_nvfp4:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
-        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        scales_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
@@ -792,16 +792,16 @@ struct Struct_ep_dispatch:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=dispatch_dtype, rank=2],
-        topk_ids: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=dispatch_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the fused Expert Parallelism dispatch kernel."""
@@ -854,17 +854,17 @@ struct Struct_ep_dispatch_fp8:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
-        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=input_dtype, rank=2],
-        topk_ids: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the fused Expert Parallelism FP8 dispatch kernel. Tokens are
@@ -918,19 +918,19 @@ struct Struct_ep_dispatch_nvfp4:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
-        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5],
-        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        scales_offsets: OutputTensor[dtype = DType.uint32, rank=1],
-        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        src_info: OutputTensor[dtype = DType.int32, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=input_dtype, rank=2],
-        topk_ids: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        input_scales: InputTensor[dtype = DType.float32, rank=1],
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the fused Expert Parallelism NVFP4 dispatch kernel. Tokens
@@ -995,12 +995,12 @@ struct Struct_ep_combine_async:
         //,
         target: StaticString,
     ](
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=combine_dtype, rank=2],
-        src_info: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
+        src_info: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism combine kernel."""
@@ -1040,13 +1040,13 @@ struct Struct_ep_combine_async_fused_shared_expert:
         //,
         target: StaticString,
     ](
-        output_tokens: OutputTensor[dtype=combine_dtype, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=combine_dtype, rank=2],
-        src_info: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        output_tokens: OutputTensor[dtype=combine_dtype, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
+        src_info: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism combine kernel. This kernel will
@@ -1104,11 +1104,11 @@ struct Struct_ep_combine_wait:
         lambdas_have_fusion: Bool,
         target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2],
+        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism combine completion kernel."""
@@ -1145,7 +1145,7 @@ struct Struct_ep_combine_wait:
             n_nodes,
             target,
             router_weights_wrapper=router_weights_fn,
-            epilogue_fn = Optional[elementwise_epilogue_type](
+            epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
             ) if lambdas_have_fusion else None,
         ](
@@ -1176,14 +1176,14 @@ struct Struct_ep_combine:
         //,
         target: StaticString,
     ](
-        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2],
-        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
-        input_tokens: InputTensor[dtype=combine_dtype, rank=2],
-        src_info: InputTensor[dtype = DType.int32, rank=2],
-        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
-        router_weights: InputTensor[dtype=router_weights_dtype, rank=2],
+        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
+        src_info: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the fused Expert Parallelism combine kernel."""
@@ -1220,7 +1220,7 @@ struct Struct_ep_combine:
             n_nodes,
             target,
             router_weights_wrapper=router_weights_fn,
-            epilogue_fn = Optional[elementwise_epilogue_type](
+            epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
             ) if lambdas_have_fusion else None,
             fused_shared_expert=fused_shared_expert,
@@ -1251,9 +1251,9 @@ struct Struct_ep_fused_silu:
         //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_dtype, rank=2],
-        input: InputTensor[dtype=input_dtype, rank=2],
-        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        output: OutputTensor[dtype=output_dtype, rank=2, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel.
@@ -1322,10 +1322,10 @@ struct Struct_ep_fused_silu_fp8:
         input_dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=fp8_dtype, rank=2],
-        scales: OutputTensor[dtype=scales_dtype, rank=2],
-        input: InputTensor[dtype=input_dtype, rank=2],
-        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        output: OutputTensor[dtype=fp8_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel with FP8
@@ -1404,12 +1404,12 @@ struct Struct_ep_fused_silu_nvfp4:
         input_dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=fp4_dtype, rank=2],
-        scales: OutputTensor[dtype=scales_dtype, rank=5],
-        input: InputTensor[dtype=input_dtype, rank=2],
-        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        scales_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        input_scales: InputTensor[dtype = DType.float32, rank=1],
+        output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_dtype, rank=5, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
         context: DeviceContextPtr,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel with NVFP4

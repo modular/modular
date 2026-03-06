@@ -43,7 +43,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu import _matmul_gpu
 from std.math import ceildiv
 from std.memory import LegacyUnsafePointer
-from std.sys import env_get_int, size_of
+from std.sys import get_defined_int, size_of
 
 from std.utils import IndexList
 
@@ -146,7 +146,7 @@ fn run_pdl_race_test[
         _matmul_gpu[
             use_tensor_core=True,
             transpose_b=True,
-            pdl_level = PDLLevel.OVERLAP_AT_END,
+            pdl_level=PDLLevel.OVERLAP_AT_END,
         ](c_buf, a_buf, b_buf, ctx)
         #
         # Launch consumer kernel - waits for matmul via PDL
@@ -238,11 +238,11 @@ fn run_pdl_race_test[
 def main() raises:
     with DeviceContext() as ctx:
         # Use env vars for configurability
-        # var M = env_get_int["M", 8]()
-        comptime M = env_get_int["M", 32]()
-        comptime N = env_get_int["N", 1536]()
-        comptime K = env_get_int["K", 4096]()
-        var iters = env_get_int["ITERS", 100]()
+        # var M = get_defined_int["M", 8]()
+        comptime M = get_defined_int["M", 32]()
+        comptime N = get_defined_int["N", 1536]()
+        comptime K = get_defined_int["K", 4096]()
+        var iters = get_defined_int["ITERS", 100]()
 
         # Test with bfloat16 (common for SM90 matmul)
         run_pdl_race_test[DType.bfloat16, M, N, K](ctx, iters)

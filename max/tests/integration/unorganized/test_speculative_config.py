@@ -41,3 +41,36 @@ def test_num_speculative_tokens() -> None:
     assert (
         SpeculativeConfig(num_speculative_tokens=1).num_speculative_tokens == 1
     )
+
+
+def test_rejection_sampling_strategy_default() -> None:
+    """Verify rejection_sampling_strategy defaults to None (resolved later based on method)."""
+    config = SpeculativeConfig()
+    assert config.rejection_sampling_strategy is None
+
+
+def test_rejection_sampling_strategy_values() -> None:
+    """Verify rejection_sampling_strategy accepts valid values."""
+    assert (
+        SpeculativeConfig(
+            rejection_sampling_strategy="greedy"
+        ).rejection_sampling_strategy
+        == "greedy"
+    )
+    assert (
+        SpeculativeConfig(
+            rejection_sampling_strategy="residual"
+        ).rejection_sampling_strategy
+        == "residual"
+    )
+
+
+def test_uses_greedy_rejection() -> None:
+    """Verify uses_greedy_rejection() returns correct boolean."""
+    assert SpeculativeConfig(
+        rejection_sampling_strategy="greedy"
+    ).uses_greedy_rejection()
+    assert not SpeculativeConfig(
+        rejection_sampling_strategy="residual"
+    ).uses_greedy_rejection()
+    assert not SpeculativeConfig().uses_greedy_rejection()

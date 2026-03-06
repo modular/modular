@@ -316,7 +316,7 @@ struct UnsafePointer[
         mut=with_mut,
         Self.type,
         with_origin,
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]
 
     # ===-------------------------------------------------------------------===#
@@ -387,7 +387,7 @@ struct UnsafePointer[
         out self: UnsafePointer[
             other.type,
             ImmutOrigin(other.origin),
-            address_space = other.address_space,
+            address_space=other.address_space,
         ],
     ):
         """Implicitly casts a mutable pointer to immutable.
@@ -399,7 +399,7 @@ struct UnsafePointer[
             disambig2: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type = type_of(self)._mlir_type
+            _type=type_of(self)._mlir_type
         ](other.address)
 
     @always_inline("builtin")
@@ -411,7 +411,7 @@ struct UnsafePointer[
         out self: UnsafePointer[
             other.type,
             MutAnyOrigin,
-            address_space = other.address_space,
+            address_space=other.address_space,
         ],
     ):
         """Implicitly casts a mutable pointer to `MutAnyOrigin`.
@@ -423,7 +423,7 @@ struct UnsafePointer[
             disambig: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type = type_of(self)._mlir_type
+            _type=type_of(self)._mlir_type
         ](other.address)
 
     @always_inline("builtin")
@@ -433,7 +433,7 @@ struct UnsafePointer[
         out self: UnsafePointer[
             other.type,
             ImmutAnyOrigin,
-            address_space = other.address_space,
+            address_space=other.address_space,
         ],
     ):
         """Implicitly casts a pointer to `ImmutAnyOrigin`.
@@ -442,7 +442,7 @@ struct UnsafePointer[
             other: The pointer to cast from.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type = type_of(self)._mlir_type
+            _type=type_of(self)._mlir_type
         ](other.address)
 
     fn __init__[
@@ -476,8 +476,8 @@ struct UnsafePointer[
         out self,
         other: LegacyUnsafePointer[
             Self.type,
-            origin = Self.origin,
-            address_space = Self.address_space,
+            origin=Self.origin,
+            address_space=Self.address_space,
         ],
     ):
         """Cast a `LegacyUnsafePointer` to an `UnsafePointer`.
@@ -493,7 +493,7 @@ struct UnsafePointer[
             This constructor will be removed in a future version of Mojo when
             `LegacyUnsafePointer` is removed.
         """
-        self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
+        self.address = __mlir_op.`pop.pointer.bitcast`[_type=Self._mlir_type](
             other.address
         )
 
@@ -504,7 +504,7 @@ struct UnsafePointer[
         out self: UnsafePointer[
             other.type,
             ImmutOrigin(other.origin),
-            address_space = other.address_space,
+            address_space=other.address_space,
         ],
     ):
         """Cast a `LegacyUnsafePointer` to an immutable `UnsafePointer`.
@@ -521,7 +521,7 @@ struct UnsafePointer[
             `LegacyUnsafePointer` is removed.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type = type_of(self)._mlir_type
+            _type=type_of(self)._mlir_type
         ](other.address)
 
     @doc_private
@@ -530,8 +530,8 @@ struct UnsafePointer[
         self,
         out result: LegacyUnsafePointer[
             Self.type,
-            origin = Self.origin,
-            address_space = Self.address_space,
+            origin=Self.origin,
+            address_space=Self.address_space,
         ],
     ):
         result = type_of(result)(self.address)
@@ -541,8 +541,8 @@ struct UnsafePointer[
         self,
         out result: LegacyUnsafePointer[
             Self.type,
-            origin = Self.origin,
-            address_space = Self.address_space,
+            origin=Self.origin,
+            address_space=Self.address_space,
         ],
     ):
         """Explicitly cast this pointer to a `LegacyUnsafePointer`.
@@ -664,7 +664,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __eq__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
+        rhs: UnsafePointer[Self.type, address_space=Self.address_space, ...],
     ) -> Bool:
         """Returns True if the two pointers are equal.
 
@@ -693,7 +693,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __ne__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
+        rhs: UnsafePointer[Self.type, address_space=Self.address_space, ...],
     ) -> Bool:
         """Returns True if the two pointers are not equal.
 
@@ -722,7 +722,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __lt__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
+        rhs: UnsafePointer[Self.type, address_space=Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a lower address than rhs.
 
@@ -751,7 +751,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __le__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
+        rhs: UnsafePointer[Self.type, address_space=Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a lower than or equal
            address than rhs.
@@ -782,7 +782,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __gt__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
+        rhs: UnsafePointer[Self.type, address_space=Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a higher address than rhs.
 
@@ -813,7 +813,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __ge__(
         self,
-        rhs: UnsafePointer[Self.type, address_space = Self.address_space, ...],
+        rhs: UnsafePointer[Self.type, address_space=Self.address_space, ...],
     ) -> Bool:
         """Returns True if this pointer represents a higher than or equal
            address than rhs.
@@ -848,13 +848,13 @@ struct UnsafePointer[
             UnsafePointer[
                 Self.type,
                 origin=_,
-                address_space = Self.address_space,
+                address_space=Self.address_space,
             ]
         ),
     ](self) -> UnsafePointer[
-        type = Self.type,
-        origin = origin_of(Self.origin, other_type.origin),
-        address_space = Self.address_space,
+        type=Self.type,
+        origin=origin_of(Self.origin, other_type.origin),
+        address_space=Self.address_space,
     ]:
         """Returns a pointer merged with the specified `other_type`.
 
@@ -872,14 +872,14 @@ struct UnsafePointer[
         other_type: type_of(
             LegacyUnsafePointer[
                 Self.type,
-                origin=_,
-                address_space = Self.address_space,
+                address_space=Self.address_space,
+                ...,
             ]
         ),
     ](self) -> LegacyUnsafePointer[
-        type = Self.type,
-        origin = origin_of(Self.origin, other_type.origin),
-        address_space = Self.address_space,
+        type=Self.type,
+        origin=origin_of(Self.origin, other_type.origin),
+        address_space=Self.address_space,
     ]:
         return self.address  # allow kgen.pointer to convert.
 
@@ -947,8 +947,8 @@ struct UnsafePointer[
 
     comptime _LegacyPointerType = LegacyUnsafePointer[
         Self.type,
-        origin = Self.origin,
-        address_space = Self.address_space,
+        origin=Self.origin,
+        address_space=Self.address_space,
     ]
 
     @staticmethod
@@ -987,8 +987,8 @@ struct UnsafePointer[
     fn swap_pointees[
         U: Movable, //
     ](
-        self: UnsafePointer[U],
-        other: UnsafePointer[U],
+        self: UnsafePointer[U, _],
+        other: UnsafePointer[U, _],
     ) where (
         type_of(self).mut
     ) and (type_of(other).mut):
@@ -1417,7 +1417,8 @@ struct UnsafePointer[
     fn free(
         self: UnsafePointer[
             Self.type,
-            address_space = AddressSpace.GENERIC,
+            _,
+            address_space=AddressSpace.GENERIC,
         ]
     ) where type_of(self).mut:
         """Free the memory referenced by the pointer."""
@@ -1426,11 +1427,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn bitcast[
         T: AnyType
-    ](self) -> UnsafePointer[
-        T,
-        Self.origin,
-        address_space = Self.address_space,
-    ]:
+    ](self) -> UnsafePointer[T, Self.origin, address_space=Self.address_space,]:
         """Bitcasts an UnsafePointer to a different type.
 
         Parameters:
@@ -1447,7 +1444,7 @@ struct UnsafePointer[
     ] = UnsafePointer[
         Self.type,
         target_origin,
-        address_space = Self.address_space,
+        address_space=Self.address_space,
     ]
 
     @always_inline("nodebug")
@@ -1498,7 +1495,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn unsafe_origin_cast[
-        target_origin: Origin[mut = Self.mut]
+        target_origin: Origin[mut=Self.mut]
     ](self) -> Self._OriginCastType[target_origin]:
         """Changes the origin of a pointer.
 
@@ -1539,8 +1536,8 @@ struct UnsafePointer[
         self,
     ) -> UnsafePointer[
         Self.type,
-        AnyOrigin[mut = Self.mut],
-        address_space = Self.address_space,
+        AnyOrigin[mut=Self.mut],
+        address_space=Self.address_space,
     ]:
         """Casts the origin of a pointer to `AnyOrigin`.
 
@@ -1553,10 +1550,10 @@ struct UnsafePointer[
         destruction will not apply during the lifetime of the pointer.
         """
         return __mlir_op.`pop.pointer.bitcast`[
-            _type = UnsafePointer[
+            _type=UnsafePointer[
                 Self.type,
-                AnyOrigin[mut = Self.mut],
-                address_space = Self.address_space,
+                AnyOrigin[mut=Self.mut],
+                address_space=Self.address_space,
             ]._mlir_type,
         ](self.address)
 
@@ -1582,7 +1579,7 @@ struct UnsafePointer[
     @always_inline
     fn destroy_pointee[
         T: ImplicitlyDestructible, //
-    ](self: UnsafePointer[T]) where type_of(self).mut:
+    ](self: UnsafePointer[T, _]) where type_of(self).mut:
         """Destroy the pointed-to value.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1602,7 +1599,8 @@ struct UnsafePointer[
     fn destroy_pointee_with(
         self: UnsafePointer[
             Self.type,
-            address_space = AddressSpace.GENERIC,
+            _,
+            address_space=AddressSpace.GENERIC,
         ],
         destroy_func: fn(var Self.type),
     ) where type_of(self).mut:
@@ -1621,7 +1619,7 @@ struct UnsafePointer[
     fn take_pointee[
         T: Movable,
         //,
-    ](self: UnsafePointer[T]) -> T where type_of(self).mut:
+    ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
         """Move the value at the pointer out, leaving it uninitialized.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1644,7 +1642,7 @@ struct UnsafePointer[
     fn init_pointee_move[
         T: Movable,
         //,
-    ](self: UnsafePointer[T], var value: T) where type_of(self).mut:
+    ](self: UnsafePointer[T, _], var value: T) where type_of(self).mut:
         """Emplace a new value into the pointer location, moving from `value`.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -1667,7 +1665,7 @@ struct UnsafePointer[
     fn init_pointee_copy[
         T: Copyable,
         //,
-    ](self: UnsafePointer[T], value: T) where type_of(self).mut:
+    ](self: UnsafePointer[T, _], value: T) where type_of(self).mut:
         """Emplace a copy of `value` into the pointer location.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -1690,7 +1688,7 @@ struct UnsafePointer[
     fn init_pointee_move_from[
         T: Movable,
         //,
-    ](self: UnsafePointer[T], src: UnsafePointer[T]) where (
+    ](self: UnsafePointer[T, _], src: UnsafePointer[T, _]) where (
         type_of(self).mut
     ) and (type_of(src).mut):
         """Moves the value `src` points to into the memory location pointed to

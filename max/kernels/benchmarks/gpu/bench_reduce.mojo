@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import align_of, env_get_int, env_get_string, simd_width_of
+from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
 from std.sys.info import _TargetType
 
 from std.algorithm._gpu.reduction import reduce_launch
@@ -28,7 +28,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
-    env_get_shape,
+    get_defined_shape,
     int_list_to_tuple,
     update_bench_config_args,
 )
@@ -61,7 +61,7 @@ fn run_reduce[
     var out_shape = shape
     out_shape[axis] = 1
     comptime init: Scalar[dtype] = Scalar[dtype](0.0)
-    comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
+    comptime align = align_of_simd[dtype, simd_target=get_gpu_target()]()
 
     var in_size = shape.flattened_length()
     var out_size = in_size // shape[axis]
@@ -183,11 +183,13 @@ fn reduce_add[
 
 
 def main() raises:
-    comptime dtype = DType._from_str(env_get_string["dtype", "DType.float16"]())
+    comptime dtype = DType._from_str(
+        get_defined_string["dtype", "DType.float16"]()
+    )
 
-    comptime shape_in_list = env_get_shape["shape", "1x1x4096"]()
+    comptime shape_in_list = get_defined_shape["shape", "1x1x4096"]()
     comptime shape = int_list_to_tuple[shape_in_list]()
-    comptime axis = env_get_int["axis", 1]()
+    comptime axis = get_defined_int["axis", 1]()
     comptime cache_busting = True
 
     var m = Bench()

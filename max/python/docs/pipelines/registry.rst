@@ -1,9 +1,12 @@
+:description: Registry for model architectures and factory functions.
 :title: registry
 :type: module
 :lang: python
 :source: max/pipelines/lib/registry.py
 
 .. py:currentmodule:: max.pipelines.lib.registry
+
+Registry for model architectures and factory functions.
 
 .. automodule:: max.pipelines.lib.registry
    :members:

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import env_get_dtype, env_get_int, env_get_bool
+from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
 from std.benchmark import (
     Bench,
@@ -30,6 +30,7 @@ from std.memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
+from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from nn.mha_mask import CausalMask, MaterializedMask
 
 from std.utils.index import Index
@@ -91,6 +92,12 @@ fn bench_decode[
     cb_k.init_on_device(random_distribution, ctx)
     cb_mask.init_on_device(random_distribution, ctx)
 
+    var mla_args = MLADispatchScalarArgs[
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+    ](batch_size, num_keys, 1, ctx)
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     # Layout definitions.
     comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -104,7 +111,7 @@ fn bench_decode[
 
     @parameter
     @always_inline
-    @__copy_capture(cb_q, cb_k, cb_mask, cb_o)
+    @__copy_capture(cb_q, cb_k, cb_mask, cb_o, scalar_args_buf_lt)
     fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
@@ -148,7 +155,8 @@ fn bench_decode[
                     CausalMask(),
                     scale,
                     ctx,
-                    num_partitions,
+                    scalar_args_buf_lt,
+                    num_partitions=num_partitions,
                 )
             elif mask_rank == 3:
                 flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -158,7 +166,8 @@ fn bench_decode[
                     MaterializedMask(mask3d),
                     scale,
                     ctx,
-                    num_partitions,
+                    scalar_args_buf_lt,
+                    num_partitions=num_partitions,
                 )
             else:
                 flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -168,7 +177,8 @@ fn bench_decode[
                     MaterializedMask(mask4d),
                     scale,
                     ctx,
-                    num_partitions,
+                    scalar_args_buf_lt,
+                    num_partitions=num_partitions,
                 )
 
         b.iter_custom[_kernel_launch](ctx)
@@ -200,6 +210,7 @@ fn bench_decode[
     _ = cb_k
     _ = cb_mask
     _ = cb_o
+    _ = mla_args
 
 
 fn bench_prefill[
@@ -350,7 +361,7 @@ fn bench_prefill[
                 ),
             )
 
-            flare_mla_prefill[rank = q_device.rank](
+            flare_mla_prefill[rank=q_device.rank](
                 output_device,
                 q_device,
                 k_device,
@@ -437,22 +448,22 @@ struct MLA_cfg(ImplicitlyCopyable):
 
 
 def main() raises:
-    comptime mask_rank = env_get_int["mask_rank", 3]()
-    comptime qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
-    comptime output_type = env_get_dtype["output_type", DType.bfloat16]()
-    comptime mask_type = env_get_dtype["mask_type", DType.float32]()
-    comptime depth = env_get_int["depth", 576]()
-    comptime prefill_depth = env_get_int["prefill_depth", 192]()
-    comptime num_heads = env_get_int["num_heads", 128]()
-    comptime group = env_get_int["group", 128]()
-    comptime use_causal_mask = env_get_bool["use_causal_mask", True]()
-    comptime decoding_warp_split_k = env_get_bool[
+    comptime mask_rank = get_defined_int["mask_rank", 3]()
+    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
+    comptime output_type = get_defined_dtype["output_type", DType.bfloat16]()
+    comptime mask_type = get_defined_dtype["mask_type", DType.float32]()
+    comptime depth = get_defined_int["depth", 576]()
+    comptime prefill_depth = get_defined_int["prefill_depth", 192]()
+    comptime num_heads = get_defined_int["num_heads", 128]()
+    comptime group = get_defined_int["group", 128]()
+    comptime use_causal_mask = get_defined_bool["use_causal_mask", True]()
+    comptime decoding_warp_split_k = get_defined_bool[
         "decoding_warp_split_k", False
     ]()
-    comptime cache_busting = env_get_bool["cache_busting", True]()
-    comptime kv_depth = env_get_int["kv_depth", 128]()
-    comptime cache_depth = env_get_int["cache_depth", 576]()
-    comptime cache_num_heads = env_get_int["cache_num_heads", 1]()
+    comptime cache_busting = get_defined_bool["cache_busting", True]()
+    comptime kv_depth = get_defined_int["kv_depth", 128]()
+    comptime cache_depth = get_defined_int["cache_depth", 576]()
+    comptime cache_num_heads = get_defined_int["cache_num_heads", 1]()
 
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
@@ -510,7 +521,7 @@ def main() raises:
             cfg.cache_depth,
             cfg.cache_num_heads,
             use_causal_mask=True,
-            cache_busting = cfg.cache_busting,
+            cache_busting=cfg.cache_busting,
         ](m, seq_len, num_keys, batch_size, ctx)
 
     m.dump_report()

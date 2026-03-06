@@ -34,7 +34,7 @@ from ._cpython import (
 from .python_object import PythonObject
 
 comptime _PYTHON_GLOBAL = _Global[
-    StorageType=_PythonGlobal, name="Python", init_fn = _PythonGlobal.__init__
+    StorageType=_PythonGlobal, name="Python", init_fn=_PythonGlobal.__init__
 ]
 
 
@@ -402,7 +402,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     fn dict[
         K: ConvertibleToPython & Copyable = PythonObject,
         V: ConvertibleToPython & Copyable = PythonObject,
-    ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
+    ](tuples: Span[Tuple[K, V], _]) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
 
         Parameters:
@@ -437,7 +437,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @staticmethod
     fn list[
         T: ConvertibleToPython & Copyable
-    ](values: Span[T]) raises -> PythonObject:
+    ](values: Span[T, _]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
         Parameters:

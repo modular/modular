@@ -26,10 +26,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -163,9 +160,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
     ](
-        lt_to_tt(from_ndbuffer_row_major(c_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(a_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(b_device_nd)),
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
         ctx,
     )
 
@@ -242,7 +239,7 @@ def main() raises:
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=8,
@@ -260,7 +257,7 @@ def main() raises:
                             DType.bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
                             block_swizzle_size=4,
@@ -278,7 +275,7 @@ def main() raises:
                             DType.bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
                             block_swizzle_size=0,
@@ -297,7 +294,7 @@ def main() raises:
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                        cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=2,
@@ -314,7 +311,7 @@ def main() raises:
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
                         block_swizzle_size=1,

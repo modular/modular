@@ -34,8 +34,9 @@ fn _validate_shard_and_stack[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
 ) raises:
     """Validate inputs and outputs for shard_and_stack operation.
@@ -107,8 +108,9 @@ fn _shard_and_stack_multi_device[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
     dev_ctxs_input: DeviceContextPtrList,
 ) raises:
@@ -194,8 +196,9 @@ fn _shard_and_stack_single_device[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
 ) raises:
     """Single-device implementation using CPU memcpy.
@@ -263,8 +266,9 @@ fn shard_and_stack[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
+        ...,
     ],
     dev_ctxs_input: DeviceContextPtrList,
 ) raises:

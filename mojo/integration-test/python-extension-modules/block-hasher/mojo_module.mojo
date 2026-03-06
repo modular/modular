@@ -68,7 +68,7 @@ fn _mojo_block_hasher[
     dtype: DType,
     //,
 ](
-    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
+    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype], _],
     block_size: Int,
 ) -> PythonObject:
     # Compute number of hashes

@@ -29,27 +29,35 @@ from std.sys import align_of, simd_width_of
 from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from .barriers import WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
     Layout,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout.int_tuple import IntTuple
-from layout._layout import Layout as InternalLayout, TensorLayout, row_major
+from layout.tile_layout import (
+    Layout as InternalLayout,
+    TensorLayout,
+)
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArray, SMemTile
-from linalg.utils import elementwise_compute_lambda_type
+from std.utils.index import IndexList
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 from std.utils.fast_div import FastDiv
 from std.utils.static_tuple import StaticTuple
 
 # TileTensor-based types - use TileSMemTile to avoid name collision with old SMemTile
-from .tile_types import (
+from structured_kernels.tile_types import (
     SMemTile as TileSMemTile,
     SMemTileStride,
     SMemTileShape,
@@ -67,10 +75,11 @@ from .tile_types import (
 @always_inline
 fn tma_wait_pipelined[
     c_type: DType,
-    c_layout: Layout,
-    c_desc_layout: Layout,
+    tma_rank: Int,
+    tile_shape: IndexList[tma_rank],
+    desc_shape: IndexList[tma_rank],
     is_last_stage: Bool,
-](c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout]):
+](c_tma_op: TMATensorTile[c_type, tma_rank, tile_shape, desc_shape]):
     """Wait for TMA stores with pipelining.
 
     For SM100 output pipeline:
@@ -129,7 +138,7 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
 
 
 # Import for AccumBarrier
-from .pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================
@@ -168,7 +177,7 @@ fn store_fragment_to_smem[
 
     comptime if transpose_c:
         # Use new Layout directly instead of RuntimeLayout wrapper
-        from layout._layout import Layout as NewLayout
+        from layout.tile_layout import Layout as NewLayout
         from layout import Coord, Idx
 
         comptime trans_layout = NewLayout(
@@ -218,7 +227,7 @@ fn store_fragment_to_smem[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
     vec: SIMD,
-    dst: TileTensor[address_space = AddressSpace.SHARED, ...],
+    dst: TileTensor[address_space=AddressSpace.SHARED, ...],
     warp_offset: UInt32 = 0,
 ):
     """Store fragment to SMEM via st.matrix."""
@@ -497,8 +506,9 @@ struct TMAStoreExecutor[
     @staticmethod
     @always_inline
     fn execute[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
@@ -507,7 +517,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
         warp_id: UInt32,
         lane: UInt32,
     ):
@@ -516,7 +526,7 @@ struct TMAStoreExecutor[
             fence_async_view_proxy()
 
             comptime if Self.transpose_c:
-                Self._store_transpose_lt[c_layout, c_desc_layout](
+                Self._store_transpose_lt[tma_rank, tile_shape, desc_shape](
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
@@ -527,8 +537,9 @@ struct TMAStoreExecutor[
     @staticmethod
     @always_inline
     fn _store_transpose_lt[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
@@ -537,7 +548,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
         warp_id: UInt32,
     ):
         """Handle transpose_c TMA store paths."""
@@ -604,8 +615,9 @@ struct TMAStoreExecutor[
     @staticmethod
     @always_inline
     fn _store_non_transpose[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
         //,
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
@@ -615,7 +627,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
     ):
         """Handle non-transpose TMA store path."""
         # Path C: Simple tile selection by TMA_BM
@@ -642,17 +654,18 @@ struct TMAStoreExecutor[
     @staticmethod
     @always_inline
     fn execute[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
         warp_id: UInt32,
         lane: UInt32,
     ):
@@ -661,7 +674,7 @@ struct TMAStoreExecutor[
             fence_async_view_proxy()
 
             comptime if Self.transpose_c:
-                Self._store_transpose[c_layout, c_desc_layout](
+                Self._store_transpose[tma_rank, tile_shape, desc_shape](
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
@@ -670,7 +683,7 @@ struct TMAStoreExecutor[
 
                 comptime SMemPtrType = LegacyUnsafePointer[
                     Scalar[Self.c_type],
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     origin=MutAnyOrigin,
                 ]
                 var c_lt = SMemTile[
@@ -683,17 +696,18 @@ struct TMAStoreExecutor[
     @staticmethod
     @always_inline
     fn _store_transpose[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        tma_rank: Int,
+        tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
         warp_id: UInt32,
     ):
         """Transpose TMA store using reshape."""
@@ -718,7 +732,7 @@ struct TMAStoreExecutor[
             )
             comptime SMemPtrType = LegacyUnsafePointer[
                 Scalar[Self.c_type],
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
                 origin=MutAnyOrigin,
             ]
             var c_split_lt = SMemTile[Self.c_type, split_layout, alignment=128](
@@ -759,7 +773,7 @@ struct TMAStoreExecutor[
                 )
                 comptime SMemPtrType = LegacyUnsafePointer[
                     Scalar[Self.c_type],
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     origin=MutAnyOrigin,
                 ]
                 var c_warp_lt = SMemTile[
@@ -838,12 +852,21 @@ struct EpilogueApplier[
     var coords: Self.Coords
     var warp_id: UInt32
     var lane_id: UInt32
+    var M: UInt32
+    var N: UInt32
 
     @always_inline
-    fn __init__(out self, warp_id: UInt32, lane_id: UInt32):
+    fn __init__(
+        out self,
+        warp_id: UInt32,
+        lane_id: UInt32,
+        c_shape: Tuple[UInt32, UInt32],
+    ):
         self.coords = Self.Coords(lane_id)
         self.warp_id = warp_id
         self.lane_id = lane_id
+        self.M = c_shape[0]
+        self.N = c_shape[1]
 
     @always_inline
     fn compute_staged_coords(
@@ -964,6 +987,117 @@ struct EpilogueApplier[
 
         return (upper_frag, lower_frag)
 
+    @always_inline
+    fn apply_elementwise_epilogue_to_fragment[
+        epilogue_dtype: DType,
+        frag_size: Int,
+        elementwise_lambda_fn: elementwise_epilogue_type,
+    ](
+        self,
+        frag: SIMD[epilogue_dtype, frag_size],
+        staged_row: UInt32,
+        staged_col: UInt32,
+        is_upper: Bool,
+    ):
+        """Apply elementwise epilogue lambda to fragment elements with global coords.
+
+        Unlike apply_to_fragment which uses a compute lambda that returns modified
+        values, this calls an elementwise epilogue (returns None) that stores
+        directly to global memory.
+        """
+        var top = self.coords.top_upper if is_upper else self.coords.top_lower
+        var bot = (
+            self.coords.bottom_upper if is_upper else self.coords.bottom_lower
+        )
+
+        comptime for rep in range(Self.repeats):
+            comptime inc = rep * 8
+            comptime offset = rep * 4
+
+            var top_col = staged_col + top[1] + UInt32(inc)
+            var bot_col = staged_col + bot[1] + UInt32(inc)
+            var top_row = staged_row + top[0]
+            var bot_row = staged_row + bot[0]
+
+            var elems = frag.slice[4, offset=offset]()
+
+            comptime if Self.transpose_c:
+                # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
+                if top_row >= self.N or bot_row >= self.N:
+                    return
+
+                if top_col < self.M:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(top_col), Int(top_row)), elems[0]
+                    )
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(bot_col), Int(bot_row)), elems[2]
+                    )
+
+                if (top_col + 1) < self.M:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(top_col + 1), Int(top_row)), elems[1]
+                    )
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(bot_col + 1), Int(bot_row)), elems[3]
+                    )
+            else:
+                # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
+                if top_col >= self.N:
+                    return
+
+                var valid_top_row = top_row < self.M
+                var valid_bot_row = bot_row < self.M
+
+                if valid_top_row:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(top_row), Int(top_col)),
+                        SIMD[epilogue_dtype, 2](elems[0], elems[1]),
+                    )
+
+                if valid_bot_row:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(bot_row), Int(bot_col)),
+                        SIMD[epilogue_dtype, 2](elems[2], elems[3]),
+                    )
+
+    @always_inline
+    fn apply_elementwise_epilogue_to_both_fragments[
+        epilogue_dtype: DType,
+        frag_size: Int,
+        elementwise_lambda_fn: elementwise_epilogue_type,
+        is_lower_frag_required: Bool,
+    ](
+        self,
+        upper_frag: SIMD[epilogue_dtype, frag_size],
+        lower_frag: SIMD[epilogue_dtype, frag_size],
+        stage: UInt32,
+        c_row: UInt32,
+        c_col: UInt32,
+    ):
+        """Apply elementwise epilogue to both fragments.
+
+        Similar to apply_to_both_fragments but uses elementwise_epilogue_type
+        which writes directly to global memory and returns None.
+        """
+        var staged_row, staged_col = self.compute_staged_coords(
+            stage, c_row, c_col
+        )
+
+        self.apply_elementwise_epilogue_to_fragment[
+            epilogue_dtype, frag_size, elementwise_lambda_fn
+        ](upper_frag, staged_row, staged_col, is_upper=True)
+
+        comptime if is_lower_frag_required:
+            self.apply_elementwise_epilogue_to_fragment[
+                epilogue_dtype, frag_size, elementwise_lambda_fn
+            ](
+                lower_frag,
+                staged_row,
+                staged_col,
+                is_upper=False,
+            )
+
     # =========================================================================
     # Residual Add - Load C from SMEM and add beta*C to fragment registers
     # =========================================================================
@@ -982,7 +1116,7 @@ struct EpilogueApplier[
         local_col: UInt32,
         is_upper: Bool,
         src_ptr: UnsafePointer[
-            Scalar[c_type], address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space=AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ):
@@ -1051,7 +1185,7 @@ struct EpilogueApplier[
         mut lower_frag: SIMD[epilogue_dtype, frag_size],
         stage: UInt32,
         src_ptr: UnsafePointer[
-            Scalar[c_type], address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space=AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[
@@ -1193,7 +1327,7 @@ struct TMEMToSMemWriter[
                 var new_smem = SMemTile[
                     Self.c_type,
                     smem_logical_layout,
-                    alignment = c_smem_tile.alignment,
+                    alignment=c_smem_tile.alignment,
                 ](c_smem_tile.ptr)
 
                 warp_j, warp_i = divmod(Int(self.warp_id), 2)
@@ -1229,7 +1363,7 @@ struct TMEMToSMemWriter[
                 var new_smem = SMemTile[
                     Self.c_type,
                     smem_logical_layout,
-                    alignment = c_smem_tile.alignment,
+                    alignment=c_smem_tile.alignment,
                 ](c_smem_tile.ptr)
                 var _c_smem_warp_tile = new_smem.tile[
                     Self.stageN, 1, tile_width
@@ -1313,7 +1447,7 @@ struct TMEMToSMemWriter[
         self,
         upper_frag: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_frag: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
     ):
         """Write pre-loaded fragments to SMEM."""
         comptime is_lower_required = Self.Config.is_lower_frag_required
@@ -1334,7 +1468,7 @@ struct TMEMToSMemWriter[
         self,
         upper_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
     ):
         """Transposed output using reshape.
 
@@ -1458,7 +1592,7 @@ struct TMEMToSMemWriter[
         self,
         upper_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
     ):
         """Non-transposed output."""
         from layout import Coord, Idx
@@ -1833,7 +1967,7 @@ fn shared_memory_epilogue_transpose[
         )
         comptime thread_layout_new = row_major[1, 8, 1, 4]()
         var lane = lane_id()
-        var crd = thread_layout_new.idx2crd[out_dtype = DType.uint32](Int(lane))
+        var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](Int(lane))
         comptime thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
 
         comptime for iter_i in range(result.shape[1][3].value()):
@@ -1842,7 +1976,7 @@ fn shared_memory_epilogue_transpose[
                     UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
                 )
                 var coord = RuntimeTuple[
-                    [thread_shape, rest_shape], element_type = DType.uint32
+                    [thread_shape, rest_shape], element_type=DType.uint32
                 ](
                     Int(0),
                     crd[1].value(),
@@ -1863,7 +1997,7 @@ fn shared_memory_epilogue_transpose[
                     RuntimeTuple[result.shape](),
                     RuntimeTuple[result.stride](),
                 )
-                var logical_crd = layout_3d.idx2crd[out_dtype = DType.uint32](
+                var logical_crd = layout_3d.idx2crd[out_dtype=DType.uint32](
                     Int(offset)
                 )
                 var local_i: UInt32
@@ -1911,7 +2045,7 @@ fn shared_memory_epilogue_transpose[
             )
             # Use new Layout for idx2crd operations
             comptime thread_layout_new = row_major[min(16, Int(stageN)), 1, 2]()
-            var crd = thread_layout_new.idx2crd[out_dtype = DType.uint32](
+            var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](
                 Int(lane)
             )
             comptime thread_shape = IntTuple(UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
@@ -1925,7 +2059,7 @@ fn shared_memory_epilogue_transpose[
                         iter_i,
                     )
                     var coord = RuntimeTuple[
-                        [thread_shape, rest_shape], element_type = DType.uint32
+                        [thread_shape, rest_shape], element_type=DType.uint32
                     ](
                         crd[0].value(),
                         Int(0),
@@ -1945,7 +2079,7 @@ fn shared_memory_epilogue_transpose[
                         RuntimeTuple[result.stride](),
                     )
                     var logical_crd = layout_2d_new.idx2crd[
-                        out_dtype = DType.uint32
+                        out_dtype=DType.uint32
                     ](Int(offset))
 
                     var local_i = logical_crd[0].value()
@@ -2054,11 +2188,11 @@ fn shared_memory_epilogue[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
                 RuntimeTuple[
                     blocked_m_128_layout.shape,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
                 RuntimeTuple[
                     blocked_m_128_layout.stride,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
             )
 
@@ -2066,11 +2200,11 @@ fn shared_memory_epilogue[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
                 RuntimeTuple[
                     blocked_m_128_layout.shape,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
                 RuntimeTuple[
                     blocked_m_128_layout.stride,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
             )
 

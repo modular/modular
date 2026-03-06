@@ -221,12 +221,12 @@ fn _wmma_matmul_kernel[
     var a_shared = stack_allocation[
         BLOCK_M * BLOCK_K,
         a_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         BLOCK_N * BLOCK_K,
         b_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Initialize C accumulators to zero (4 tiles x 8 f32 elements each)

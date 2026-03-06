@@ -28,7 +28,7 @@ from std.gpu.memory import AddressSpace
 
 from ..blockwise_fp8.blockwise_fp8_smem import BlockwiseFP8TileCore
 from ..structured_kernels.config import MatmulConfig
-from ..structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
+from structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
 
 
 struct BlockwiseFP8_1D2DSmem[
@@ -53,7 +53,7 @@ struct BlockwiseFP8_1D2DSmem[
         Self.c_type,
         Self.a_scales_type,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== Storage Fields ==========

@@ -29,7 +29,7 @@ from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor, TileTensor
 from layout.coord import Coord, _DimsToCoordLike
-from layout._layout import Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout
 from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -82,7 +82,7 @@ fn simd_store_into_managed_tensor_slice[
     static_spec: StaticTensorSpec[dtype, rank],
     element_alignment: Int = 1,
 ](
-    tensor: ManagedTensorSlice[static_spec=static_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
     indices: IndexList[rank],
     value: SIMD[dtype, simd_width],
 ):
@@ -242,7 +242,7 @@ fn simd_load_from_managed_tensor_slice[
     static_spec: StaticTensorSpec[dtype, rank],
     element_alignment: Int = 1,
 ](
-    tensor: ManagedTensorSlice[static_spec=static_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
     indices: IndexList[rank],
 ) -> SIMD[dtype, simd_width]:
     var flat_index = tensor._compute_offset(indices)
@@ -306,16 +306,6 @@ fn simd_load_from_managed_tensor_slice[
 # ===----------------------------------------------------------------------=== #
 # Input / output fusion primitives
 # ===----------------------------------------------------------------------=== #
-
-
-@no_inline
-fn _extract_tensor_spec[
-    dtype: DType,
-    rank: Int,
-    //,
-    static_spec: StaticTensorSpec[dtype, rank],
-]() -> type_of(static_spec):
-    return static_spec
 
 
 @no_inline
@@ -386,259 +376,24 @@ fn rebuild_static_tensor_specs_with_compute_output_lambda[
     )
 
 
-# Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
-@__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
-@register_internal("mogg.dps_input_fusion_hook")
-@no_inline
-fn _input_fusion_hook_impl[
-    mut: Bool,
-    //,
-    dtype: DType,
-    rank: Int,
-    io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[dtype, rank],
-](
-    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> type_of(static_spec):
-    @always_inline
-    @parameter
-    fn _input_lambda[
-        _w: Int, _elem_align: Int = 1
-    ](i: IndexList[rank]) -> SIMD[dtype, _w]:
-        # We use these methods to help with fusion passes which manipulates
-        # calls. It is helpful to have a registered function.
-        return rebind[SIMD[dtype, _w]](
-            simd_load_from_managed_tensor_slice[
-                simd_width=_w, element_alignment=_elem_align
-            ](tensor, i)
-        )
-
-    return _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_input_lambda[dtype, rank](
-            static_spec,
-            _input_lambda,
-        )
-    ]()
-
-
-# Helper function used in SliceMOGGDPSFunc to generate the body of the output lambda
-@__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
-@register_internal("mogg.dps_output_fusion_hook")
-@no_inline
-fn _output_fusion_hook_impl[
-    mut: Bool,
-    //,
-    dtype: DType,
-    rank: Int,
-    io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[dtype, rank],
-](
-    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> type_of(static_spec):
-    @always_inline
-    @parameter
-    fn _output_lambda[
-        _w: Int, _elem_align: Int = 1
-    ](i: IndexList[rank], v: SIMD[dtype, _w]):
-        # We use these methods to help with fusion passes which manipulates
-        # calls. It is helpful to have a registered function.
-        simd_store_into_managed_tensor_slice[
-            simd_width=_w,
-            element_alignment=_elem_align,
-        ](tensor, i, rebind[SIMD[dtype, _w]](v))
-
-    return _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_output_lambda[dtype, rank](
-            static_spec,
-            _output_lambda,
-        )
-    ]()
-
-
-# ===----------------------------------------------------------------------=== #
-# Mixed precision output fusion hook used by experimental codegen path.
-# ===----------------------------------------------------------------------=== #
-
-
-@__mogg_intrinsic_attr("mogg.dps_mixed_precision_output_fusion_hook")
-@register_internal("mogg.dps_mixed_precision_output_fusion_hook")
-@no_inline
-fn _mixed_precision_output_fusion_hook_impl[
-    mut: Bool,
-    //,
-    # DType and rank after casting/view fusion.
-    rank: Int,
-    dst_dtype: DType,
-    # DType, shape and strides before casting/view fusion.
-    src_rank: Int,
-    src_shape: DimList,
-    src_strides: DimList,
-    src_dtype: DType,
-    io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[dst_dtype, rank],
-](
-    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> StaticTensorSpec[src_dtype, src_rank]:
-    @always_inline
-    @parameter
-    fn _output_lambda[
-        _w: Int, _elem_align: Int = 1
-    ](i: IndexList[src_rank], v: SIMD[src_dtype, _w]):
-        # .... compiler-generated-code insert here!
-        simd_store_into_managed_tensor_slice[
-            simd_width=_w,
-            element_alignment=_elem_align,
-        ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_dtype, _w]](v))
-
-    comptime mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
-        shape=src_shape,
-        strides=src_strides,
-        alignment=static_spec.alignment,
-        address_space=static_spec.address_space,
-        exclusive=static_spec.exclusive,
-        in_lambda=None,
-        out_lambda=None,
-        out_compute_lambda=None,
-    )
-
-    return _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_output_lambda[src_dtype, src_rank](
-            mixed_in_spec,
-            _output_lambda,
-        )
-    ]()
-
-
-@__mogg_intrinsic_attr("mogg.dps_mixed_precision_compute_output_fusion_hook")
-@register_internal("mogg.dps_mixed_precision_compute_output_fusion_hook")
-@no_inline
-fn _mixed_precision_compute_output_fusion_hook_impl[
-    mut: Bool,
-    //,
-    # DType and rank after casting/view fusion.
-    rank: Int,
-    dst_dtype: DType,
-    # DType and shape before casting/view fusion.
-    src_rank: Int,
-    src_shape: DimList,
-    src_dtype: DType,
-    io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[dst_dtype, rank],
-](
-    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> StaticTensorSpec[src_dtype, src_rank]:
-    @always_inline
-    @parameter
-    fn _compute_output_lambda[
-        _w: Int, _elem_align: Int = 1
-    ](i: IndexList[src_rank], v: SIMD[src_dtype, _w]) -> SIMD[src_dtype, _w]:
-        return v
-
-    comptime mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
-        shape=src_shape,
-        strides=static_spec.strides,
-        alignment=static_spec.alignment,
-        address_space=static_spec.address_space,
-        exclusive=static_spec.exclusive,
-        in_lambda=None,
-        out_lambda=None,
-        out_compute_lambda=None,
-    )
-
-    return _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_compute_output_lambda[
-            src_dtype, src_rank
-        ](
-            mixed_in_spec,
-            _compute_output_lambda,
-        )
-    ]()
-
-
-@register_internal(
-    "rebuild_mix_precision_static_tensor_specs_with_input_lambda"
-)
-@no_inline
-fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
-    func_type: __TypeOfAllTypes,
-    //,
-    src_dtype: DType,
-    dst_dtype: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[src_dtype, rank],
-    in_lambda: func_type,
-    out result: StaticTensorSpec[dst_dtype, rank],
-):
-    return StaticTensorSpec[dst_dtype, rank](
-        shape=spec.shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=rebind[result.in_lambda_t](in_lambda),
-        out_lambda=None,
-        out_compute_lambda=None,
-    )
-
-
-@__mogg_intrinsic_attr("mogg.dps_mixed_precision_input_fusion_hook")
-@register_internal("mogg.dps_mixed_precision_input_fusion_hook")
-@no_inline
-fn _mixed_precision_input_fusion_hook_impl[
-    mut: Bool,
-    //,
-    dst_dtype: DType,  # The DType after casting.
-    src_dtype: DType,  # The DType before casting.
-    rank: Int,
-    io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[src_dtype, rank],
-](
-    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> StaticTensorSpec[dst_dtype, rank]:
-    @always_inline
-    @parameter
-    fn _input_lambda[
-        _w: Int, _elem_align: Int = 1
-    ](i: IndexList[rank]) -> SIMD[dst_dtype, _w]:
-        # We use these methods to help with fusion passes which manipulates
-        # calls. It is helpful to have a registered function.
-        var v = rebind[SIMD[src_dtype, _w]](
-            simd_load_from_managed_tensor_slice[
-                simd_width=_w, element_alignment=_elem_align
-            ](tensor, i)
-        )
-        # .... compiler-generated-code here to bridge between src and dst_dtype
-        return rebind[SIMD[dst_dtype, _w]](v)
-
-    return _extract_tensor_spec[
-        rebuild_mix_precision_static_tensor_specs_with_input_lambda[
-            src_dtype, dst_dtype, rank
-        ](
-            static_spec,
-            _input_lambda,
-        )
-    ]()
-
-
 # ===----------------------------------------------------------------------=== #
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-comptime OutputTensor = ManagedTensorSlice[io_spec=Output]
-comptime InputTensor = ManagedTensorSlice[io_spec=Input]
+comptime OutputTensor = ManagedTensorSlice[io_spec=Output, ...]
+comptime InputTensor = ManagedTensorSlice[io_spec=Input, ...]
 
-comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
-comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
-comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
+comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput, ...]
+comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput, ...]
+comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput, ...]
 
 comptime _FusedComputeOutputTensor = ManagedTensorSlice[
-    io_spec=_FusedComputeOutput
+    io_spec=_FusedComputeOutput, ...
 ]
 
 comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
     io_spec=IOUnknown,
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]
 
 
@@ -1087,10 +842,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](
-        self: ManagedTensorSlice[
-            mut=True,
-            static_spec = Self.static_spec,
-        ],
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ):
@@ -1121,7 +873,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec],
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing:
@@ -1150,8 +902,8 @@ struct ManagedTensorSlice[
         element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[
-            io_spec = IOSpec[True, Self.input](),
-            static_spec = Self.static_spec,
+            io_spec=IOSpec[True, Self.input](),
+            static_spec=Self.static_spec,
         ],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
@@ -1169,7 +921,7 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec],
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing -> SIMD[Self.dtype, width]:
@@ -1197,8 +949,8 @@ struct ManagedTensorSlice[
         offset_ptr: Optional[UnsafePointer[Scalar[Self.dtype]]] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
-            io_spec = Self.io_spec,
-            static_spec = Self.static_spec.with_layout[new_rank](
+            io_spec=Self.io_spec,
+            static_spec=Self.static_spec.with_layout[new_rank](
                 new_static_shape, new_static_strides
             ),
         ],
@@ -1227,10 +979,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=FusedInput,
-            static_spec = rebuild_static_tensor_specs_with_input_lambda(
+            static_spec=rebuild_static_tensor_specs_with_input_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1249,10 +1001,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=FusedOutput,
-            static_spec = rebuild_static_tensor_specs_with_output_lambda(
+            static_spec=rebuild_static_tensor_specs_with_output_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1271,10 +1023,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=_FusedComputeOutput,
-            static_spec = rebuild_static_tensor_specs_with_compute_output_lambda(
+            static_spec=rebuild_static_tensor_specs_with_compute_output_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1293,10 +1045,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=_FusedComputeOutput,
-            static_spec = rebuild_static_tensor_specs_with_output_lambda(
+            static_spec=rebuild_static_tensor_specs_with_output_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1330,13 +1082,13 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: TileTensor[
-            dtype = Self.dtype,
+            dtype=Self.dtype,
             origin=MutExternalOrigin,
-            LayoutType = TileLayout[
-                shape_types = _DimsToCoordLike[
+            LayoutType=TileLayout[
+                shape_types=_DimsToCoordLike[
                     coord_dtype, Self.static_spec.shape
                 ],
-                stride_types = _DimsToCoordLike[
+                stride_types=_DimsToCoordLike[
                     coord_dtype, Self.static_spec.strides
                 ],
             ],
@@ -1364,7 +1116,7 @@ struct ManagedTensorSlice[
 
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            layout._layout.Layout(shape_tuple, stride_tuple),
+            layout.tile_layout.Layout(shape_tuple, stride_tuple),
         }
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -1453,12 +1205,14 @@ fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
 
-comptime InputVariadicTensors = VariadicTensors[io_spec=Input]
-comptime OutputVariadicTensors = VariadicTensors[io_spec=Output]
+comptime InputVariadicTensors = VariadicTensors[io_spec=Input, ...]
+comptime OutputVariadicTensors = VariadicTensors[io_spec=Output, ...]
 
-comptime _MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
-comptime _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
-comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
+comptime _MutableInputVariadicTensors = VariadicTensors[
+    io_spec=MutableInput, ...
+]
+comptime _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput, ...]
+comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput, ...]
 
 
 @fieldwise_init
@@ -1512,7 +1266,7 @@ struct VariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            io_spec = Self.io_spec, static_spec = Self.static_specs[index]
+            io_spec=Self.io_spec, static_spec=Self.static_specs[index]
         ],
     ):
         """Returns the tensor at the given position in the variadic argument
@@ -1548,7 +1302,7 @@ fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
         comptime if CompilationTarget[get_gpu_target()]._is_arch["sm_100a"]():
             return 32 // size_of[dtype]()
 
-        return simd_width_of[dtype, target = get_gpu_target()]()
+        return simd_width_of[dtype, target=get_gpu_target()]()
 
     return simd_width_of[dtype]()
 
@@ -1569,7 +1323,7 @@ fn foreach[
     _trace_name: StaticString = "mogg.for_each",
     use_blocking_impl: Bool = False,
 ](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
@@ -1626,7 +1380,7 @@ fn foreach[
     _trace_name: StaticString = "mogg.for_each",
     use_blocking_impl: Bool = False,
 ](
-    tensor: ManagedTensorSlice[dtype=dtype, rank=rank],
+    tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
@@ -1678,7 +1432,7 @@ fn foreach[
     _trace_name: StaticString = "mogg.for_each",
     use_blocking_impl: Bool = False,
 ](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
@@ -1730,8 +1484,8 @@ fn view_copy_impl[
     _trace_name: StaticString = "mogg.view_copy_impl",
     use_blocking_impl: Bool = False,
 ](
-    z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
-    x: ManagedTensorSlice[static_spec=spec],
+    z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    x: ManagedTensorSlice[static_spec=spec, ...],
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert _compatible_with[

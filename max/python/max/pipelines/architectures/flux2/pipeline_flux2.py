@@ -20,12 +20,12 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
+from max.graph import TensorType
+from max.graph.ops import rebind, shape_to_tensor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
-from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLFlux2Model
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
@@ -62,6 +62,14 @@ class Flux2ModelInputs:
 
     image_seq_len: int
     """Packed image sequence length ((latent_h // 2) * (latent_w // 2))."""
+
+    h_carrier: Tensor
+    """1-D shape-carrier of length latent_h // 2; encodes packed height as a
+    symbolic Dim for the decode graph.  Content is never read."""
+
+    w_carrier: Tensor
+    """1-D shape-carrier of length latent_w // 2; encodes packed width as a
+    symbolic Dim for the decode graph.  Content is never read."""
 
     height: int
     """Output image height in pixels."""
@@ -154,6 +162,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
+        self._cached_shape_carriers: dict[int, Tensor] = {}
 
     @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
@@ -201,6 +210,17 @@ class Flux2Pipeline(DiffusionPipeline):
             )
             self._cached_guidance[guidance_key] = guidance
 
+        # Retrieve cached shape carriers, if possible.
+        packed_h = latent_h // 2
+        packed_w = latent_w // 2
+        for n in (packed_h, packed_w):
+            if n not in self._cached_shape_carriers:
+                self._cached_shape_carriers[n] = Tensor.from_dlpack(
+                    np.empty(n, dtype=np.float32)
+                )
+        h_carrier = self._cached_shape_carriers[packed_h]
+        w_carrier = self._cached_shape_carriers[packed_w]
+
         return Flux2ModelInputs(
             tokens=Tensor(
                 storage=Buffer.from_dlpack(context.tokens.array).to(
@@ -218,6 +238,8 @@ class Flux2Pipeline(DiffusionPipeline):
             latent_h=latent_h,
             latent_w=latent_w,
             image_seq_len=image_seq_len,
+            h_carrier=h_carrier,
+            w_carrier=w_carrier,
             height=context.height,
             width=context.width,
             num_inference_steps=context.num_inference_steps,
@@ -230,7 +252,7 @@ class Flux2Pipeline(DiffusionPipeline):
         input_types = [
             TensorType(
                 DType.float32,
-                shape=["batch", "channels", "height", 2, "width", 2],
+                shape=["batch", "channels", "height", "width"],
                 device=device,
             ),
         ]
@@ -242,7 +264,7 @@ class Flux2Pipeline(DiffusionPipeline):
     def build_prepare_image_latents(self) -> None:
         dtype = self.vae.config.dtype
         device = self.vae.devices[0]
-        num_channels = self.vae.bn.running_mean.shape[0].dim
+        num_channels = int(self.vae.bn.running_mean.shape[0])
 
         c = num_channels // 4
         self.__dict__["_normalize_and_pack_image_latent"] = max_compile(
@@ -282,7 +304,6 @@ class Flux2Pipeline(DiffusionPipeline):
                 dtype, shape=["batch", "pred_seq", "channels"], device=device
             ),
             TensorType(DType.float32, shape=[1], device=device),
-            TensorType(DType.int64, shape=[], device=DeviceRef.CPU()),
         ]
         self.__dict__["scheduler_step"] = max_compile(
             self.scheduler_step,
@@ -310,23 +331,12 @@ class Flux2Pipeline(DiffusionPipeline):
         )
 
     def build_decode_latents(self) -> None:
-        dtype = self.vae.config.dtype
         device = self.transformer.devices[0]
-        num_channels = self.vae.bn.running_mean.shape[0].dim
-
-        input_types = [
-            TensorType(
-                dtype,
-                shape=["batch", "height", "width", num_channels],
-                device=device,
-            ),
-            TensorType(dtype, shape=[num_channels], device=device),
-            TensorType(dtype, shape=[num_channels], device=device),
-        ]
-
-        self.__dict__["_postprocess_latents"] = max_compile(
-            self._postprocess_latents,
-            input_types=input_types,
+        self._bn_mean: Tensor = self.vae.bn.running_mean
+        self._bn_var: Tensor = self.vae.bn.running_var
+        num_channels = int(self._bn_mean.shape[0])
+        self._postprocess_and_decode = self.vae.build_fused_decode(
+            device, num_channels
         )
 
     def concat_image_latents(
@@ -426,8 +436,8 @@ class Flux2Pipeline(DiffusionPipeline):
         generator: Any = None,
         sample_mode: str = "mode",
     ) -> tuple[Tensor, Tensor]:
-        bn_mean = self.vae.bn.running_mean
-        bn_var = self.vae.bn.running_var
+        bn_mean = self._bn_mean
+        bn_var = self._bn_var
 
         packed_latents = []
         latent_shapes = []
@@ -528,85 +538,22 @@ class Flux2Pipeline(DiffusionPipeline):
     def decode_latents(
         self,
         latents: Tensor,
-        latent_h: int,
-        latent_w: int,
+        h_carrier: Tensor,
+        w_carrier: Tensor,
     ) -> np.ndarray:
-        """Decode Flux2 packed latents into an image array.
+        """Decode Flux2 packed latents into a (B, H, W, C) float32 NumPy array.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
-            latent_h: Latent height after packing (latent_h // 2).
-            latent_w: Latent width after packing (latent_w // 2).
+            h_carrier: 1-D shape carrier of length packed_h (content unused).
+            w_carrier: 1-D shape carrier of length packed_w (content unused).
 
         Returns:
-            A float32 HWC NumPy array.
+            Float32 NumPy array of shape (B, H, W, C).
         """
-        # Unpack: (B, S, C) -> (B, H, W, C)
-        batch = int(latents.shape[0])
-        c = int(latents.shape[2])
-        latents_bhwc = F.reshape(latents, (batch, latent_h, latent_w, c))
+        decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
-        bn_mean = self.vae.bn.running_mean
-        bn_var = self.vae.bn.running_var
-        latents_decoded = self._postprocess_latents(
-            latents_bhwc, bn_mean, bn_var
-        )
-
-        # Decode with the VAE and normalize layout to HWC.
-        decoded = self.vae.decode(latents_decoded)
-        return self._image_to_flat_hwc(self._to_numpy(decoded))
-
-    def _postprocess_latents(
-        self,
-        latents_bhwc: Tensor,
-        bn_mean: Tensor,
-        bn_var: Tensor,
-    ) -> Tensor:
-        """Denormalize and unpatchify latents for VAE decoding.
-
-        Args:
-            latents_bhwc: Packed latents of shape (B, H, W, C).
-            bn_mean: BatchNorm running mean of shape (C,).
-            bn_var: BatchNorm running variance of shape (C,).
-
-        Returns:
-            Unpatchified latents of shape (B, C//4, H*2, W*2).
-        """
-        batch = latents_bhwc.shape[0]
-        h = latents_bhwc.shape[1]
-        w = latents_bhwc.shape[2]
-        c = latents_bhwc.shape[3]
-
-        # Permute: (B, H, W, C) -> (B, C, H, W)
-        latents = F.permute(latents_bhwc, (0, 3, 1, 2))
-
-        # BN denormalization
-        bn_mean_r = F.reshape(bn_mean, (1, c, 1, 1))
-        bn_var_r = F.reshape(bn_var, (1, c, 1, 1))
-        bn_std = F.sqrt(bn_var_r + self.vae.config.batch_norm_eps)
-        latents = latents * bn_std + bn_mean_r
-
-        # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)
-        latents = F.reshape(latents, (batch, c // 4, 2, 2, h, w))
-        latents = F.permute(latents, (0, 1, 4, 2, 5, 3))
-        latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
-
-        return latents
-
-    def _to_numpy(self, image: Tensor) -> np.ndarray:
-        """Convert a MAX Tensor to a CPU NumPy array (float32)."""
-        cpu_image: Tensor = image.cast(DType.float32).to(CPU())
-        return np.from_dlpack(cpu_image)
-
-    @staticmethod
-    def _image_to_flat_hwc(image: np.ndarray) -> np.ndarray:
-        """Convert a tensor-like NumPy image to a flat HWC float32 array."""
-        img = np.asarray(image)
-        while img.ndim > 3:
-            img = img.squeeze(0)
-        if img.ndim == 3 and img.shape[0] == 3:
-            img = np.transpose(img, (1, 2, 0))
-        return img.astype(np.float32, copy=False)
+        return decoded.driver_tensor.to_numpy()  # (B, H, W, C)
 
     @staticmethod
     def _prepare_text_ids(
@@ -641,11 +588,6 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @traced
     def preprocess_latents(self, latents: Tensor) -> Tensor:
-        batch = latents.shape[0]
-        c = latents.shape[1]
-        h = latents.shape[2]
-        w = latents.shape[3]
-        latents = F.reshape(latents, (batch, c, h // 2, 2, w // 2, 2))
         return self._patchify_and_pack(latents)
 
     def _patchify_and_pack(self, latents: Tensor) -> Tensor:
@@ -653,6 +595,10 @@ class Flux2Pipeline(DiffusionPipeline):
         latents = latents.cast(self.transformer.config.dtype)
         batch = latents.shape[0]
         c = latents.shape[1]
+        h = latents.shape[2]
+        w = latents.shape[3]
+        latents = F.rebind(latents, [batch, c, (h // 2) * 2, (w // 2) * 2])
+        latents = F.reshape(latents, (batch, c, h // 2, 2, w // 2, 2))
         h2 = latents.shape[2]
         w2 = latents.shape[4]
 
@@ -685,29 +631,26 @@ class Flux2Pipeline(DiffusionPipeline):
         latents: Tensor,
         noise_pred: Tensor,
         dt: Tensor,
-        num_noise_tokens: int,
     ) -> Tensor:
-        """Apply a single Euler update step in sigma space."""
-        latents_sliced = F.slice_tensor(
-            latents,
-            [
-                slice(None),
-                (slice(0, num_noise_tokens), "num_tokens"),
-                slice(None),
-            ],
-        )
+        """Apply a single Euler update step in sigma space.
+
+        Slices ``noise_pred`` to ``latents.shape[1]`` tokens before applying
+        the Euler update, which discards the image-latent predictions in the
+        img2img case where ``noise_pred`` covers a concatenated sequence.
+        """
+        num_tokens = shape_to_tensor([latents.shape[1]])
         noise_pred_sliced = F.slice_tensor(
             noise_pred,
             [
                 slice(None),
-                (slice(0, num_noise_tokens), "num_tokens"),
+                (slice(0, num_tokens), "num_tokens"),
                 slice(None),
             ],
         )
-        latents_dtype = latents_sliced.dtype
-        latents_sliced = latents_sliced.cast(DType.float32)
-        latents_sliced = latents_sliced + dt * noise_pred_sliced
-        return latents_sliced.cast(latents_dtype)
+        latents_dtype = latents.dtype
+        latents_f32 = latents.cast(DType.float32)
+        noise_pred_sliced = rebind(noise_pred_sliced, latents_f32.shape)
+        return (latents_f32 + dt * noise_pred_sliced).cast(latents_dtype)
 
     def prepare_scheduler(self, sigmas: Tensor) -> tuple[Tensor, Tensor]:
         """Precompute timesteps and dt values from sigmas in a single fused graph.
@@ -771,13 +714,9 @@ class Flux2Pipeline(DiffusionPipeline):
                 dts_seq = dts_seq.driver_tensor
 
         # 4) Denoising loop.
-        num_noise_tokens = model_inputs.image_seq_len
-
         is_img2img = image_latents is not None
         with Tracer("denoising_loop"):
-            for i in tqdm(
-                range(model_inputs.num_inference_steps), desc="Denoising"
-            ):
+            for i in range(model_inputs.num_inference_steps):
                 with Tracer(f"denoising_step_{i}"):
                     timestep = timesteps_seq[i : i + 1]
                     dt = dts_seq[i : i + 1]
@@ -808,22 +747,14 @@ class Flux2Pipeline(DiffusionPipeline):
                         )[0]
 
                     with Tracer("scheduler_step"):
-                        latents = self.scheduler_step(
-                            latents, noise_pred, dt, num_noise_tokens
-                        )
+                        latents = self.scheduler_step(latents, noise_pred, dt)
 
-        # 5) Decode final outputs per batch element.
-        image_list = []
+        # 5) Decode final outputs for all batch elements in a single pass.
         with Tracer("decode_outputs"):
-            for b in range(batch_size):
-                with Tracer("slice_batch"):
-                    latents_b = latents[b : b + 1]
-                image_list.append(
-                    self.decode_latents(
-                        latents_b,
-                        model_inputs.latent_h // 2,
-                        model_inputs.latent_w // 2,
-                    )
-                )
+            images = self.decode_latents(
+                latents,
+                model_inputs.h_carrier,
+                model_inputs.w_carrier,
+            )
 
-        return Flux2PipelineOutput(images=image_list)  # type: ignore[arg-type]
+        return Flux2PipelineOutput(images=images)

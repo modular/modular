@@ -26,10 +26,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -188,9 +185,9 @@ def test_matmul_sm100_epilogue[
         test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 
-    var c_dev = lt_to_tt(from_ndbuffer_row_major(c_device_nd))
-    var a_dev = lt_to_tt(from_ndbuffer_row_major(a_device_nd))
-    var b_dev = lt_to_tt(from_ndbuffer_row_major(b_device_nd))
+    var c_dev = TileTensor(c_device_nd)
+    var a_dev = TileTensor(a_device_nd)
+    var b_dev = TileTensor(b_device_nd)
 
     @parameter
     @always_inline
@@ -309,7 +306,7 @@ def main() raises:
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                         cta_group=2,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
@@ -329,7 +326,7 @@ def main() raises:
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                         cta_group=2,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
@@ -355,7 +352,7 @@ def main() raises:
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                         cta_group=1,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
@@ -375,7 +372,7 @@ def main() raises:
                         DType.bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
                         cta_group=1,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,

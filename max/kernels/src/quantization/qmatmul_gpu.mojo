@@ -104,7 +104,7 @@ fn multistage_mma_q[
     next_op_b_iter_alignment: Int = align_of[b_type](),
 ](
     c: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL
+        mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
     ],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
@@ -112,20 +112,20 @@ fn multistage_mma_q[
         mut=True,
         a_type,
         a_smem_layout,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         ...,
     ],
     mut b_smem_iter: LayoutTensorIter[
         mut=True,
         b_type,
         b_smem_layout,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         ...,
     ],
     scales_smem_iter_arg: LayoutTensorIter[
         scales_type,
         scales_smem_layout,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         ...,
     ],
     scales_iter_arg: LayoutTensorIter[scales_type, scales_layout, ...],
@@ -208,7 +208,7 @@ fn multistage_mma_q[
                     b_smem_tile.vectorize[1, simd_b_size](),
                     b_iter[]
                     .bitcast[
-                        b_type, target_address_space = AddressSpace.GENERIC
+                        b_type, target_address_space=AddressSpace.GENERIC
                     ]()
                     .vectorize[1, simd_b_size](),
                 )
@@ -230,7 +230,7 @@ fn multistage_mma_q[
                             scales_iter[]
                             .bitcast[
                                 scales_type,
-                                target_address_space = AddressSpace.GENERIC,
+                                target_address_space=AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, async_copy_scales_veclen]()
                             .distribute[async_copy_scales_layout](UInt(tid))
@@ -281,7 +281,7 @@ fn multistage_mma_q[
             a_type,
             a_reg_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .split[2]()
@@ -293,7 +293,7 @@ fn multistage_mma_q[
             a_type,
             b_reg_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
@@ -306,7 +306,7 @@ fn multistage_mma_q[
             scales_type,
             Layout.row_major(num_n_mmas, 1),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, 1]()
@@ -436,7 +436,7 @@ fn multistage_mma_q[
                             b_iter[]
                             .bitcast[
                                 b_type,
-                                target_address_space = AddressSpace.GENERIC,
+                                target_address_space=AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, simd_b_size](),
                         )
@@ -461,7 +461,7 @@ fn multistage_mma_q[
                                     scales_iter[]
                                     .bitcast[
                                         scales_type,
-                                        target_address_space = AddressSpace.GENERIC,
+                                        target_address_space=AddressSpace.GENERIC,
                                     ]()
                                     .vectorize[1, async_copy_scales_veclen]()
                                     .distribute[async_copy_scales_layout](
@@ -575,7 +575,7 @@ fn multistage_qgemm_kernel[
     comptime alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
@@ -583,7 +583,8 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
-        address_space = AddressSpace.SHARED,
+        _,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
         circular=True,
     ]
@@ -606,7 +607,8 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        address_space = AddressSpace.SHARED,
+        _,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var b_smem_iter = IteratorTypeB(
@@ -629,7 +631,8 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeScales = LayoutTensorIter[
         scales_type,
         scales_smem_layout,
-        address_space = AddressSpace.SHARED,
+        _,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var scales_smem_iter = IteratorTypeScales(
@@ -674,7 +677,7 @@ fn multistage_qgemm_kernel[
             accum_type,
             c_reg_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -760,7 +763,7 @@ fn multistage_qgemm_kernel[
             if UInt(m) < M and UInt(n) < UInt(N):
                 var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
-                    alignment = align_of[SIMD[c_type, src_simd_width_y]](),
+                    alignment=align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
 
                 comptime if dst_simd_width_x == 1:
@@ -779,7 +782,7 @@ fn multistage_qgemm_kernel[
 
     comptime if c_type.is_half_float() and is_nvidia_gpu():
         comptime swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+            num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
         var accum_smem_warp_tile = LayoutTensor[
@@ -787,11 +790,11 @@ fn multistage_qgemm_kernel[
             c_type,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * UInt(WM) * UInt(WN)))
 
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4),
+            thread_layout=Layout.row_major(8, 4),
             swizzle=swizzle,
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
@@ -851,7 +854,7 @@ fn multistage_qgemm_kernel[
                     )
         else:
             copy_sram_to_dram[
-                thread_layout = Layout.row_major(
+                thread_layout=Layout.row_major(
                     WARP_SIZE * simd_size // WN, WN // simd_size
                 ),
                 swizzle=swizzle,
@@ -870,13 +873,13 @@ fn multistage_qgemm_kernel[
                 c_type,
                 c_reg_tile.layout,
                 MutAnyOrigin,
-                address_space = AddressSpace.LOCAL,
+                address_space=AddressSpace.LOCAL,
             ].stack_allocation()
 
             comptime for i in range(c_reg_tile.shape[0]()):
                 comptime for j in range(c_reg_tile.shape[1]()):
                     c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
-            copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+            copy_local_to_dram[dst_thread_layout=Layout.row_major(4, 16)](
                 c_gmem_warp_tile.vectorize[4, 1](),
                 c_reg_tile_out.vectorize[1, 4](),
             )
@@ -886,12 +889,12 @@ fn multistage_qgemm_kernel[
             apply_epilogue()
         else:
             comptime if is_nvidia_gpu():
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+                copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
                     c_gmem_warp_tile.vectorize[1, 2](),
                     c_reg_tile.vectorize[1, 2]().transpose(),
                 )
             else:
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+                copy_local_to_dram[dst_thread_layout=Layout.row_major(4, 16)](
                     c_gmem_warp_tile.vectorize[4, 1](),
                     c_reg_tile.vectorize[1, 4](),
                 )
@@ -1039,13 +1042,13 @@ fn repack_Q4_0_for_sm8x[
     # We keep 128x2 Q4_0 GGUF blocks in smem
     var smem = external_memory[
         UInt8,
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[UInt8](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
         Layout.row_major(BN, 2 * group_bytes),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](smem.bitcast[UInt8]())
 
     var q_gmem_tile = q_weight.tile[BN, BK_groups * group_bytes](
@@ -1076,10 +1079,10 @@ fn repack_Q4_0_for_sm8x[
     # frag_1 stores frags of the second,
     for i in range(ceildiv(BK_groups, 2)):
         barrier()
-        copy_dram_to_sram[thread_layout = Layout.row_major(128, 1)](
+        copy_dram_to_sram[thread_layout=Layout.row_major(128, 1)](
             qb_smem.vectorize[1, 4](),
             q_gmem_iter[]
-            .bitcast[DType.uint8, target_address_space = AddressSpace.GENERIC]()
+            .bitcast[DType.uint8, target_address_space=AddressSpace.GENERIC]()
             .vectorize[1, 4](),
         )
         q_gmem_iter._incr()
@@ -1126,8 +1129,8 @@ fn repack_Q4_0_for_sm8x[
             )
             var rt_scales_thread_layout = RuntimeLayout[
                 scales_thread_layout,
-                element_type = q_warp_tile.layout_int_type,
-                linear_idx_type = q_warp_tile.linear_idx_type,
+                element_type=q_warp_tile.layout_int_type,
+                linear_idx_type=q_warp_tile.linear_idx_type,
             ]()
 
             # cast scales to bf16 before storing back
@@ -1242,18 +1245,18 @@ fn repack_GPTQ_for_sm8x[
     # We keep 128x2 GPTQ blocks in smem
     var smem = external_memory[
         UInt8,
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[UInt8](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[UInt8](),
     ]()
     var weights_smem = LayoutTensor[
         DType.uint8,
         Layout.row_major(BN, 2 * weights_bytes_per_group),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](smem.bitcast[UInt8]())
     var weights_smem_uint4 = LayoutTensor[
         DType.uint32,
         Layout.row_major(BN, 2 * group_size // pack_factor),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](smem.bitcast[UInt32]())
 
     var raw_weights_gmem_tile = raw_weights.tile[BN, uint_BK](
@@ -1294,7 +1297,7 @@ fn repack_GPTQ_for_sm8x[
             pass
         else:
             barrier()
-            copy_dram_to_sram[thread_layout = Layout.row_major(128, 1)](
+            copy_dram_to_sram[thread_layout=Layout.row_major(128, 1)](
                 weights_smem_uint4.vectorize[1, 1](),
                 raw_weights_gmem_iter[].vectorize[1, 1](),
             )
@@ -1379,8 +1382,8 @@ fn repack_GPTQ_for_sm8x[
             )
             var rt_scales_thread_layout = RuntimeLayout[
                 scales_thread_layout,
-                element_type = scales_warp_tile.layout_int_type,
-                linear_idx_type = scales_warp_tile.linear_idx_type,
+                element_type=scales_warp_tile.layout_int_type,
+                linear_idx_type=scales_warp_tile.linear_idx_type,
             ]()
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
@@ -1433,15 +1436,9 @@ fn multistage_gemm_q[
     config: MatmulConfig[a_type, b_type, c_type, True],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[
-        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    a: LayoutTensor[
-        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    b: LayoutTensor[
-        mut=False, b_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
+    b: LayoutTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
@@ -1545,14 +1542,10 @@ fn matmul_gpu_qint4[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[
-        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    a: LayoutTensor[
-        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
     b: LayoutTensor[
-        mut=False, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1576,14 +1569,10 @@ fn matmul_gpu_qint4_impl[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[
-        mut=True, c_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    a: LayoutTensor[
-        mut=False, a_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    c: LayoutTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
     b: LayoutTensor[
-        mut=False, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: Optional[DeviceContext],
 ) raises:
@@ -2078,10 +2067,10 @@ fn gpu_qint4_repack_Q4_0[
     target: StaticString,
 ](
     b: LayoutTensor[
-        mut=False, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     b_packed: LayoutTensor[
-        mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -2165,7 +2154,7 @@ fn gpu_qint4_repack_GPTQ[
             DType.bfloat16,
             group_size,
             True,
-            perm_layout = perm_idx.T.layout,
+            perm_layout=perm_idx.T.layout,
         ]
 
         cuda_ctx.enqueue_function[repack, repack](

@@ -16,8 +16,8 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Linear, Module
 
 
 class LlamaStackedMLP(Module[[Tensor], Tensor]):

@@ -18,8 +18,13 @@ from std.sys.info import _current_target
 from std.algorithm import elementwise, sync_parallelize
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from std.utils import IndexList
@@ -325,8 +330,8 @@ fn _index_tensor_impl[
         comptime assert data_coord.flat_rank == data.flat_rank
         var out_coord = Coord(output_idx)
         comptime assert out_coord.flat_rank == output.flat_rank
-        output.store[width=simd_width](
-            out_coord, data.load[width=simd_width](data_coord)
+        output.store[width=simd_width, alignment=1](
+            out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
     comptime compile_target = _current_target() if is_cpu[
@@ -533,7 +538,7 @@ fn advanced_indexing_getitem[
 
         var out_coord = Coord(output_index)
         comptime assert out_coord.flat_rank == out_tensor.flat_rank
-        out_tensor.store[width=width](
+        out_tensor.store[width=width, alignment=1](
             out_coord,
             input_tensor_fn[width=width](input_index),
         )
@@ -752,7 +757,7 @@ fn advanced_indexing_setitem_inplace[
 
         var input_tensor_coord = Coord(input_tensor_indices)
         comptime assert input_tensor_coord.flat_rank == input_tensor.flat_rank
-        input_tensor.store[width=width](
+        input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
             updates_tensor_fn[width=width](
                 rebind[IndexList[updates_rank]](iteration_indices)

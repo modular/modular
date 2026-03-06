@@ -35,9 +35,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
@@ -284,11 +282,11 @@ fn test_existing_kernel_single_group[
         transpose_b=transpose_b,
         config=config,
     ](
-        lt_to_tt(c_tensor),
-        lt_to_tt(a_tensor),
-        lt_to_tt(b_tensor),
-        lt_to_tt(a_scales_tensor),
-        lt_to_tt(b_scales_tensor),
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
+        TileTensor(a_scales_device_nd),
+        TileTensor(b_scales_device_nd),
         ctx,
     )
     ctx.synchronize()
@@ -1528,13 +1526,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Baseline test passed ---")
@@ -1545,13 +1543,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),  # Same as baseline
-        n = static[256](),  # Same as baseline
-        k = static[128](),
+        m=static[256](),  # Same as baseline
+        n=static[256](),  # Same as baseline
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Additional test cases ---")
@@ -1562,13 +1560,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[256](),
-        k = static[128](),
+        m=static[512](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 4: Larger N dimension (more N tiles)
@@ -1577,13 +1575,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[512](),
-        k = static[128](),
+        m=static[256](),
+        n=static[512](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 5: Larger K dimension (more K iterations)
@@ -1592,13 +1590,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 6: All dimensions larger
@@ -1607,13 +1605,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[256](),
+        m=static[512](),
+        n=static[512](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 7: Minimum tile size (single tile per dimension)
@@ -1622,13 +1620,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[128](),
-        n = static[128](),
-        k = static[128](),
+        m=static[128](),
+        n=static[128](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 8: Many K iterations
@@ -1637,13 +1635,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[512](),
+        m=static[256](),
+        n=static[256](),
+        k=static[512](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Multi-group test (same pointers) ---")
@@ -1655,14 +1653,14 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 10: Four groups with same size and same pointers
@@ -1671,14 +1669,14 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         num_groups=4,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Multi-group test (different pointers) ---")
@@ -1690,13 +1688,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # 2SM tests - using run_2sm() production kernel
@@ -1711,15 +1709,15 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=2,  # 2SM mode
-        mma_shape = Index(
+        mma_shape=Index(
             256, 128, 32
         ),  # mma[0]=256 for BM=128, mma[1]=128 for BN=128
-        cluster_shape = Index(2, 1, 1),  # 2 CTAs per cluster
+        cluster_shape=Index(2, 1, 1),  # 2 CTAs per cluster
     ](ctx)
 
     # Test 13: 2SM with multiple tiles (512x512)
@@ -1728,13 +1726,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[256](),
+        m=static[512](),
+        n=static[512](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 14: 2SM multi-group (same pointers)
@@ -1743,14 +1741,14 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 15: 2SM multi-group (different pointers)
@@ -1759,13 +1757,13 @@ def main() raises:
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     print("\n" + "=" * 60)

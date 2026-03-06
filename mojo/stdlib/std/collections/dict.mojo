@@ -97,7 +97,7 @@ struct _Group(Copyable, Movable):
     var ctrl: SIMD[DType.uint8, _GROUP_WIDTH]
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[UInt8]):
+    fn __init__(out self, ptr: UnsafePointer[UInt8, _]):
         """Load a group of control bytes from memory.
 
         Args:
@@ -540,7 +540,7 @@ struct DictEntry[
             key: The key of the entry.
             value: The value of the entry.
         """
-        self.hash = hash[HasherType = Self.H](key)
+        self.hash = hash[HasherType=Self.H](key)
         self.key = key^
         self.value = value^
 
@@ -993,7 +993,7 @@ struct Dict[
         Returns:
             True if the key exists in the dictionary, False otherwise.
         """
-        var found, _ = self._find_slot(hash[HasherType = Self.H](key), key)
+        var found, _ = self._find_slot(hash[HasherType=Self.H](key), key)
         return found
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -1122,8 +1122,8 @@ struct Dict[
             writer: The value to write to.
         """
         self._write_dict_body[
-            f_key = fmt.write_to[Self.K],
-            f_val = fmt.write_to[Self.V],
+            f_key=fmt.write_to[Self.K],
+            f_val=fmt.write_to[Self.V],
         ](writer)
 
     @no_inline
@@ -1137,8 +1137,8 @@ struct Dict[
         @parameter
         fn write_fields(mut w: Some[Writer]):
             self._write_dict_body[
-                f_key = fmt.write_repr_to[Self.K],
-                f_val = fmt.write_repr_to[Self.V],
+                f_key=fmt.write_repr_to[Self.K],
+                f_val=fmt.write_repr_to[Self.V],
             ](w)
 
         fmt.FormatStruct(writer, "Dict").params(
@@ -1199,7 +1199,7 @@ struct Dict[
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
-        var hash = hash[HasherType = Self.H](key)
+        var hash = hash[HasherType=Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
 
         if found:
@@ -1321,7 +1321,7 @@ struct Dict[
         print(missing_value.__str__())  # => 99
         ```
         """
-        var hash = hash[HasherType = Self.H](key)
+        var hash = hash[HasherType=Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
         if found:
             debug_assert(
@@ -1552,10 +1552,10 @@ struct Dict[
         ```
         """
         self._maybe_resize()
-        var h = hash[HasherType = Self.H](key)
+        var h = hash[HasherType=Self.H](key)
         var found, slot_idx = self._find_slot(h, key)
         if not found:
-            var entry = DictEntry[H = Self.H](key.copy(), default^)
+            var entry = DictEntry[H=Self.H](key.copy(), default^)
             self._set_ctrl(slot_idx, _h2(h))
             (self._slots + slot_idx).init_pointee_move(entry^)
             self._order.append(Int32(slot_idx))

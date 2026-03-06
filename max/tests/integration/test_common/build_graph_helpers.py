@@ -1,0 +1,121 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Shared helpers for build-graph GPU integration tests."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import torch
+from max.driver import DeviceSpec, load_devices, scan_available_devices
+from max.dtype import DType
+from max.engine import InferenceSession, Model
+from max.graph.weights import SafetensorWeights, WeightsAdapter
+from test_common.mocks import DummyPipelineConfig
+from transformers import PretrainedConfig
+from transformers.models.llama.configuration_llama import LlamaConfig
+from transformers.models.llama.modeling_llama import LlamaForCausalLM
+
+
+def make_small_llama_config(**overrides: Any) -> LlamaConfig:
+    """Return a small LlamaConfig suitable for graph-build tests."""
+    defaults: dict[str, Any] = dict(
+        hidden_size=64,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        num_hidden_layers=2,
+        intermediate_size=128,
+        vocab_size=256,
+        max_position_embeddings=2048,
+        rope_theta=500000.0,
+        rms_norm_eps=1e-5,
+    )
+    defaults.update(overrides)
+    return LlamaConfig(**defaults)
+
+
+def make_zero_weights(
+    hf_config: PretrainedConfig,
+    model_cls: type = LlamaForCausalLM,
+) -> SafetensorWeights:
+    """Generate zero-valued SafetensorWeights from a HF model class."""
+    hf_model = model_cls(hf_config)
+    weight_map = {
+        name: param.detach().zero_().to(torch.bfloat16)
+        for name, param in hf_model.named_parameters()
+    }
+    return SafetensorWeights(
+        [],
+        tensors=set(weight_map.keys()),
+        tensors_to_file_idx={},
+        _st_weight_map=weight_map,
+    )
+
+
+def make_pipeline_config_factory(
+    hf_config: PretrainedConfig,
+    repo_id: str,
+) -> Callable[..., DummyPipelineConfig]:
+    """Return a factory that creates a DummyPipelineConfig for the given config."""
+
+    def _make(
+        device_specs: list[DeviceSpec],
+        max_batch_size: int = 1,
+    ) -> DummyPipelineConfig:
+        pipeline_config = DummyPipelineConfig(
+            model_path=repo_id,
+            max_batch_size=max_batch_size,
+            max_length=hf_config.max_position_embeddings,
+            quantization_encoding="bfloat16",
+            device_specs=device_specs,
+        )
+        pipeline_config.model.kv_cache._available_cache_memory = 1024**4
+        pipeline_config.model.kv_cache._cache_dtype = DType.bfloat16
+        pipeline_config.model._huggingface_config = hf_config
+        pipeline_config.model.weight_path = [Path("fake.safetensors")]
+        return pipeline_config
+
+    return _make
+
+
+def assert_model_builds_graph(
+    model_cls: type,
+    make_pipeline_config: Callable[..., DummyPipelineConfig],
+    weights: SafetensorWeights,
+    adapter: WeightsAdapter | None = None,
+) -> None:
+    """Instantiate a pipeline model with a mocked session and assert the graph loads."""
+    device_specs = scan_available_devices()[:1]
+    pipeline_config = make_pipeline_config(device_specs)
+
+    mock_session = MagicMock(spec=InferenceSession)
+    mock_session.load.return_value = MagicMock(spec=Model, input_metadata=[])
+    devices = load_devices(device_specs)
+
+    with patch(
+        "max.experimental.realization_context._session",
+        return_value=mock_session,
+    ):
+        model_cls(
+            pipeline_config=pipeline_config,
+            session=mock_session,
+            devices=devices,
+            kv_cache_config=pipeline_config.model.kv_cache,
+            weights=weights,
+            adapter=adapter,
+        )
+
+    mock_session.load.assert_called()

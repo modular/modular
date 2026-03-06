@@ -26,7 +26,7 @@ Usage:
 
 from std.math import ceildiv
 from std.memory import LegacyUnsafePointer
-from std.sys import env_get_int, size_of
+from std.sys import get_defined_int, size_of
 from std.time import perf_counter_ns
 
 from std.benchmark import (
@@ -429,12 +429,12 @@ fn bench_grouped_block_scaled_gemm[
 
 def main() raises:
     # Compile-time parameters (from kbench YAML or defaults)
-    comptime N = env_get_int["N", 0]()
-    comptime K = env_get_int["K", 0]()
-    comptime num_groups = env_get_int["num_groups", 0]()
-    comptime cta_group = env_get_int["cta_group", 1]()
-    comptime k_group_size = env_get_int["k_group_size", 1]()
-    comptime block_swizzle_size = env_get_int["block_swizzle_size", 8]()
+    comptime N = get_defined_int["N", 0]()
+    comptime K = get_defined_int["K", 0]()
+    comptime num_groups = get_defined_int["num_groups", 0]()
+    comptime cta_group = get_defined_int["cta_group", 1]()
+    comptime k_group_size = get_defined_int["k_group_size", 1]()
+    comptime block_swizzle_size = get_defined_int["block_swizzle_size", 8]()
 
     # Runtime parameters (from kbench YAML $-prefixed or defaults)
     var M = Int(arg_parse("M", 0))
@@ -455,9 +455,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = dynamic(0),
-                n = static[N](),
-                k = static[K](),
+                m=dynamic(0),
+                n=static[N](),
+                k=static[K](),
                 num_groups=num_groups,
                 transpose_b=transpose_b,
                 cta_group=cta_group,
@@ -477,9 +477,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[128](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -492,9 +492,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[128](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -509,9 +509,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[4096](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -524,9 +524,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[4096](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -547,15 +547,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[128](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -564,15 +564,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[128](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -583,15 +583,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[4096](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -600,15 +600,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[4096](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 

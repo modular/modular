@@ -33,16 +33,17 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    Layout as LegacyLayout,
-    LayoutTensor,
     RuntimeInt,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import RowMajorLayout, TensorLayout, row_major
-from ..structured_kernels.tile_types import create_tma_tile
-from ..structured_kernels.kernel_common import _to_batched_3d
+from layout.tile_layout import (
+    RowMajorLayout,
+    TensorLayout,
+    row_major as tt_row_major,
+)
+from structured_kernels.tile_types import create_tma_tile
+from structured_kernels.kernel_common import _to_batched_3d
 
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
@@ -70,6 +71,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -109,6 +111,10 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     comptime assert (
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
+
+    comptime assert (
+        elementwise_compute_lambda_fn is None or elementwise_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if config.cta_group == 2:
         comptime assert (
@@ -162,11 +168,12 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
+        elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
         pdl_level=pdl_level,
@@ -181,7 +188,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         KernelType.ATmaTile.tile_layout,
         KernelType.ATmaTile.desc_layout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     # fmt: off
@@ -283,6 +290,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -313,6 +321,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 transpose_b,
                 config=new_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
@@ -321,6 +330,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 transpose_b,
                 config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
@@ -329,6 +339,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         blackwell_batched_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             register_based_epilogue=register_based_epilogue,
             pdl_level=pdl_level,
@@ -340,6 +351,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -364,6 +376,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
+    comptime assert (
+        elementwise_lambda_fn is None
+    ), "Split-K does not support elementwise epilogue function yet!"
     comptime assert config.cta_group in (
         1,
         2,
@@ -415,9 +430,6 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime max_profiled_tiles = 0 if max_profiled_tiles_per_SM is None else max_profiled_tiles_per_SM.value()
     comptime enable_profiling = max_profiled_tiles > 0
 
-    comptime reduction_layout = LegacyLayout.row_major(UNKNOWN_VALUE, BM, MMA_N)
-    from ..structured_kernels.tile_types import lt_to_tt
-
     # Instantiate kernel first -- TMA layouts are computed from config
     comptime matmul_kernel = BlackwellMatmulSM100Kernel[
         a_type,
@@ -425,7 +437,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         c_type,
         transpose_b,
         config=config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -442,7 +454,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         KernelType.ATmaTile_splitk.tile_layout,
         KernelType.ATmaTile_splitk.desc_layout,
         Index(BM // cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     b_tma_op = create_tma_tile[
@@ -453,7 +465,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         ) if transpose_b else Index(
             BK, BN // (cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_device)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
@@ -475,13 +487,13 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         c_tma_tile_shape if not config.AB_swapped else Index(
             c_tma_tile_shape[0], c_tma_tile_shape_1
         ),
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c_device)
 
     # Get the split-K kernel entry point.
     # Reduction TileTensor layout: shape = (UNKNOWN, BM, MMA_N),
     # strides = (BM*MMA_N, MMA_N, 1) -- all strides are static.
-    comptime ReductionTTLayout = type_of(lt_to_tt(reduction_tensor)).LayoutType
+    comptime ReductionTTLayout = type_of(reduction_tensor).LayoutType
     comptime kernel = matmul_kernel.run_splitk[ReductionTTLayout]
 
     var grid_dim = (
@@ -527,10 +539,14 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         num_output_tiles * BM * MMA_N
     )
 
-    var reduction_tensor = LayoutTensor[config.accum_type, reduction_layout](
+    var reduction_tensor = TileTensor(
         reduction_workspace,
-        RuntimeLayout[reduction_layout].row_major(
-            Index(num_output_tiles, BM, MMA_N)
+        tt_row_major(
+            (
+                RuntimeInt(Scalar[DType.int64](num_output_tiles)),
+                Idx[BM](),
+                Idx[MMA_N](),
+            )
         ),
     )
 
@@ -547,7 +563,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        lt_to_tt(reduction_tensor),
+        reduction_tensor,
         locks_buffer,
         cluster_dim,
         mnk,
@@ -582,6 +598,7 @@ fn blackwell_batched_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[_, _, _, transpose_b],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -606,6 +623,7 @@ fn blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=new_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,
@@ -620,6 +638,7 @@ fn blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,
@@ -636,6 +655,7 @@ fn blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=new_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,
@@ -645,6 +665,7 @@ fn blackwell_batched_matmul_tma_umma_warp_specialized[
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 register_based_epilogue=register_based_epilogue,
                 pdl_level=pdl_level,

@@ -26,8 +26,14 @@ from nn.allreduce_residual_rmsnorm_fp8 import (
 )
 from comm.sync import enable_p2p
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import Coord, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._utils import ManagedLayoutTensor
 from nn.normalization import rms_norm_fused_fp8
 from std.runtime.asyncrt import DeviceContextPtr
@@ -48,8 +54,8 @@ comptime out_fp8_dtype = DType.float8_e4m3fnuz if is_amd_gpu() else DType.float8
 fn _assert_fp8_close[
     out_dtype: DType,
 ](
-    ref_host: UnsafePointer[Scalar[out_dtype]],
-    fused_host: UnsafePointer[Scalar[out_dtype]],
+    ref_host: UnsafePointer[Scalar[out_dtype], _],
+    fused_host: UnsafePointer[Scalar[out_dtype], _],
     length: Int,
     *,
     max_error_rate: Float32 = 0.05,
@@ -99,8 +105,8 @@ fn _assert_fp8_close[
 
 
 fn _assert_scales_close(
-    ref_host: UnsafePointer[Scalar[DType.float32]],
-    fused_host: UnsafePointer[Scalar[DType.float32]],
+    ref_host: UnsafePointer[Scalar[DType.float32], _],
+    fused_host: UnsafePointer[Scalar[DType.float32], _],
     rows: Int,
     *,
     max_rel_diff: Float32 = 0.005,

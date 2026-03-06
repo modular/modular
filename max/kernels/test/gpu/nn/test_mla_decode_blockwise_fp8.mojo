@@ -52,6 +52,7 @@ from nn.mha import mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_operand import KVCacheMHAOperand
 from nn.mla import flare_mla_decoding
+from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from std.testing import assert_almost_equal, assert_true
 from std.gpu.host.info import B200
 from std.utils.index import Index, IndexList
@@ -384,7 +385,7 @@ fn run_test_blockwise_fp8[
         kv_type,
         kv_params,
         page_size,
-        scale_dtype_ = DType.float32,
+        scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
         LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
@@ -449,8 +450,16 @@ fn run_test_blockwise_fp8[
     )
 
     # -----------------------------------------------------------------------
-    # Step 7: Call the kernel
+    # Step 7: Pre-compute scalar args and call the kernel
     # -----------------------------------------------------------------------
+    var mla_args = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](
+        batch_size,
+        max_cache_len,
+        1,
+        ctx,
+    )
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     print("  Launching MLA decode kernel (blockwise FP8)...")
 
     flare_mla_decoding[rank=3, ragged=True](
@@ -461,11 +470,14 @@ fn run_test_blockwise_fp8[
         row_offsets_lt,
         scale,
         ctx,
-        q_max_seq_len,
+        scalar_args_buf_lt,
+        q_max_seq_len=q_max_seq_len,
     )
 
     ctx.synchronize()
     print("  Kernel completed successfully (no crash).")
+
+    _ = mla_args
 
     # -----------------------------------------------------------------------
     # Step 8: Numerical verification using mha_gpu_naive reference
@@ -858,7 +870,7 @@ fn run_bench_blockwise_fp8[
         kv_type,
         kv_params,
         page_size,
-        scale_dtype_ = DType.float32,
+        scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
     ](
         LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
@@ -921,10 +933,24 @@ fn run_bench_blockwise_fp8[
         RuntimeLayout[ro_layout].row_major(Index(batch_size + 1)),
     )
 
-    # Step 7: Benchmark - warmup + timed iterations
+    # Step 7: Pre-compute scalar args and benchmark
+    var mla_args = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](
+        batch_size,
+        max_cache_len,
+        1,
+        ctx,
+    )
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     @parameter
     @always_inline
-    @__copy_capture(out_lt, q_lt, kv_cache, row_offsets_lt)
+    @__copy_capture(
+        out_lt,
+        q_lt,
+        kv_cache,
+        row_offsets_lt,
+        scalar_args_buf_lt,
+    )
     fn kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[rank=3, ragged=True](
             out_lt,
@@ -934,7 +960,8 @@ fn run_bench_blockwise_fp8[
             row_offsets_lt,
             scale,
             ctx,
-            q_max_seq_len,
+            scalar_args_buf_lt,
+            q_max_seq_len=q_max_seq_len,
         )
 
     comptime nrun = 200
@@ -958,6 +985,7 @@ fn run_bench_blockwise_fp8[
     lookup_table_host.free()
     row_offsets_host.free()
 
+    _ = mla_args
     _ = blocks_device
     _ = scales_device
     _ = cache_lengths_device

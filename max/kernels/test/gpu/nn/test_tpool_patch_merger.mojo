@@ -23,7 +23,7 @@ from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
 from layout.coord import Coord, Idx
-from layout._layout import row_major
+from layout import row_major
 from layout.tile_tensor import TileTensor
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
@@ -35,9 +35,9 @@ from std.testing import assert_almost_equal
 fn cpu_reference_one_video[
     dtype: DType,
 ](
-    x: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
     in_offset: Int,
-    out_base: UnsafePointer[mut=True, Scalar[dtype]],
+    out_base: UnsafePointer[mut=True, Scalar[dtype], _],
     t: Int,
     h: Int,
     w: Int,

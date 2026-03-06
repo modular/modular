@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import replace
@@ -31,11 +32,11 @@ import numpy as np
 from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession, Model
 from max.nn.kv_cache import (
-    DecodeNumPartitionsResolver,
-    KVCacheInputsSequence,
+    AttentionDispatchMetadataScalars,
+    AttentionDispatchResolver,
+    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParams,
-    MHADecodeDispatchMetadataScalars,
-    RaggedKVCacheInputs,
 )
 
 from .interfaces import ModelInputs, ModelOutputs
@@ -49,43 +50,86 @@ WarmupModelInputs = Callable[[int], AbstractContextManager[ModelInputs]]
 
 _GRAPH_KEY_COMPONENT_MAX = 2**32 - 1
 
-# MHA decode kernel mode (num_partitions) changes at multiples of 256 (AMD)
-# or 512 (NVIDIA). Probing every 256 tokens catches all mode transitions on
-# both architectures.
-_PARTITION_PROBE_GRANULARITY = 256
+
+class AttentionMetadataProbeStrategy(ABC):
+    """Determines which num_partitions values to capture during warmup."""
+
+    @abstractmethod
+    def probe_lengths(self, max_cache_length: int) -> list[int]:
+        """Returns cache lengths to probe for distinct num_partitions."""
+        ...
+
+    def bucket_num_partitions(
+        self,
+        runtime_np: int,
+        captured_nps: Sequence[int],
+    ) -> int | None:
+        """Buckets runtime np to nearest captured np, or None on miss."""
+        return None
+
+
+class MHAProbeStrategy(AttentionMetadataProbeStrategy):
+    """MHA: probe at 256-token granularity, capture all distinct modes."""
+
+    granularity = 256
+
+    def probe_lengths(self, max_cache_length: int) -> list[int]:
+        """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
+        return (
+            [1]
+            + list(range(self.granularity, max_cache_length, self.granularity))
+            + [max_cache_length]
+        )
+
+
+class MLAProbeStrategy(AttentionMetadataProbeStrategy):
+    """MLA: probe at 256-token granularity, bucket up to nearest captured np."""
+
+    granularity = 256
+
+    def probe_lengths(self, max_cache_length: int) -> list[int]:
+        """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
+        return (
+            [1]
+            + list(range(self.granularity, max_cache_length, self.granularity))
+            + [max_cache_length]
+        )
+
+    def bucket_num_partitions(
+        self,
+        runtime_np: int,
+        captured_nps: Sequence[int],
+    ) -> int | None:
+        """Buckets to the smallest captured np >= runtime np."""
+        candidates = sorted(np for np in captured_nps if np >= runtime_np)
+        return candidates[0] if candidates else None
 
 
 def _ragged_kv_inputs_from_model_inputs(
     model_inputs: ModelInputs,
-) -> tuple[RaggedKVCacheInputs, ...]:
+) -> tuple[KVCacheInputsPerDevice, ...]:
     kv = model_inputs.kv_cache_inputs
     if kv is None:
         raise ValueError(
-            "Overlap graph capture requires RaggedKVCacheInputs, but "
+            "Overlap graph capture requires KVCacheInputs, but "
             "model_inputs.kv_cache_inputs is None."
         )
-    seq = kv.kv_cache_inputs if isinstance(kv, KVCacheInputsSequence) else [kv]
+    seq = kv.inputs
     if not seq:
         raise ValueError("Expected at least one KV cache input for replay.")
-    for item in seq:
-        if not isinstance(item, RaggedKVCacheInputs):
-            raise TypeError(
-                "Expected RaggedKVCacheInputs for overlap graph capture, got "
-                f"{type(item).__name__}."
-            )
-    return tuple(seq)  # type: ignore[arg-type]
+    return tuple(seq)
 
 
-def mha_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
+def attention_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
     """Builds a replay key from token count and decode kernel mode."""
     batch_token_count = int(model_inputs.buffers[0].shape[0])
     metadata = _ragged_kv_inputs_from_model_inputs(model_inputs)[
         0
-    ].mha_decode_dispatch_metadata
+    ].attention_dispatch_metadata
     if metadata is None:
         raise ValueError(
-            "Expected mha_decode_dispatch_metadata in "
-            "RaggedKVCacheInputs for overlap graph capture."
+            "Expected attention_dispatch_metadata in "
+            "KVCacheInputs for overlap graph capture."
         )
     num_partitions = int(metadata.to_numpy()[2])
     if num_partitions < 1:
@@ -98,31 +142,35 @@ def mha_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
 
 def _create_model_inputs_with_dispatch_metadata(
     model_inputs: ModelInputs,
-    source_ragged: Sequence[RaggedKVCacheInputs],
-    dispatch_metadata: MHADecodeDispatchMetadataScalars,
+    source_ragged: Sequence[KVCacheInputsPerDevice],
+    dispatch_metadata: AttentionDispatchMetadataScalars,
 ) -> ModelInputs:
     """Returns a copy of *model_inputs* with capture dispatch metadata."""
     max_cache_u32 = np.uint32(dispatch_metadata.max_cache_valid_length)
-    metadata_buf = dispatch_metadata.to_buffer()
-    capture_ragged: list[RaggedKVCacheInputs] = []
+    # MLA: the resolver produced the buffer on the primary GPU.
+    # Each TP shard needs metadata on its own device.
+    # MHA: a single CPU buffer is shared across all shards.
+    gpu_buf = dispatch_metadata.device_buffer
+    cpu_buf = None if gpu_buf is not None else dispatch_metadata.to_buffer()
+    capture_ragged: list[KVCacheInputsPerDevice] = []
     for kv in source_ragged:
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
+        if gpu_buf is not None:
+            # Place metadata on the same device as this shard's KV blocks.
+            metadata = gpu_buf.to(kv.blocks.device)
+        else:
+            assert cpu_buf is not None
+            metadata = cpu_buf
         capture_ragged.append(
             replace(
                 kv,
                 max_lengths=Buffer.from_numpy(ml),
-                mha_decode_dispatch_metadata=metadata_buf,
+                attention_dispatch_metadata=metadata,
             )
         )
     result = copy.copy(model_inputs)
-    kv_inputs = model_inputs.kv_cache_inputs
-    if isinstance(kv_inputs, KVCacheInputsSequence):
-        result.kv_cache_inputs = KVCacheInputsSequence(
-            kv_cache_inputs=capture_ragged
-        )
-    else:
-        result.kv_cache_inputs = capture_ragged[0]
+    result.kv_cache_inputs = KVCacheInputs(inputs=capture_ragged)
     return result
 
 
@@ -165,44 +213,45 @@ class ServeGraphCaptureRunner:
                 "max-cache length upper bound."
             )
         self._max_cache_length_upper_bound = max_cache_length_upper_bound
-        self._resolver = DecodeNumPartitionsResolver(session, kv_params)
+        self._resolver = AttentionDispatchResolver(
+            session=session,
+            device=kv_params.devices[0],
+            is_mla=kv_params.is_mla,
+            n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
+            q_max_seq_len=kv_params.q_max_seq_len,
+            num_q_heads=kv_params.num_q_heads,
+        )
         if max_batch_size < 1:
             raise ValueError(
                 "Device graph capture requires a positive decode capture "
                 "batch-size upper bound."
             )
         self._max_batch_size = max_batch_size
+        self._probe_strategy: AttentionMetadataProbeStrategy = (
+            MLAProbeStrategy() if kv_params.is_mla else MHAProbeStrategy()
+        )
+        self._is_data_parallel = kv_params.data_parallel_degree > 1
 
         self.graph_entries: dict[GraphKey, GraphEntry] = {}
 
     def dispatch_metadata(
         self, batch_size: int
-    ) -> list[MHADecodeDispatchMetadataScalars]:
-        """Returns capture metadata for distinct decode kernel modes."""
-        # Probe at _PARTITION_PROBE_GRANULARITY intervals to discover every
-        # distinct decode kernel mode (num_partitions). Collect the largest
-        # representative cache length for each mode (used as the capture upper
-        # bound).
-        ub = self._max_cache_length_upper_bound
-        probe_lengths = (
-            [1]
-            + list(
-                range(
-                    _PARTITION_PROBE_GRANULARITY,
-                    ub,
-                    _PARTITION_PROBE_GRANULARITY,
-                )
-            )
-            + [ub]
-        )
+    ) -> list[AttentionDispatchMetadataScalars]:
+        """Returns capture metadata selected by the probe strategy.
 
+        Probes at regular cache-length intervals to discover distinct
+        num_partitions modes, then delegates to the strategy to select
+        which modes to actually capture.
+        """
+        probe_lengths = self._probe_strategy.probe_lengths(
+            self._max_cache_length_upper_bound
+        )
         metadata_by_num_partitions = {
             (
                 metadata := self._resolver(batch_size, length)
             ).num_partitions: metadata
             for length in probe_lengths
         }
-
         return list(metadata_by_num_partitions.values())
 
     def warmup_pre_ready(self) -> None:
@@ -220,17 +269,12 @@ class ServeGraphCaptureRunner:
                 source_ragged = _ragged_kv_inputs_from_model_inputs(
                     model_inputs
                 )
-                # Build the full ModelInputs once per batch size, then derive
-                # per-mode variants by only patching KV dispatch metadata and
-                # max-cache lengths. This avoids re-running reserve/prepare for
-                # every decode kernel mode while still capturing each replay
-                # key.
                 for dispatch_metadata in self.dispatch_metadata(batch_size):
-                    replay_graph_key = (
+                    key = (
                         batch_token_count,
                         dispatch_metadata.num_partitions,
                     )
-                    assert replay_graph_key not in self.graph_entries, (
+                    assert key not in self.graph_entries, (
                         "unexpected duplicate key"
                     )
 
@@ -245,15 +289,11 @@ class ServeGraphCaptureRunner:
                     self._execute_model(capture_inputs)
 
                     input_buffers = capture_inputs.buffers
-                    packed_model_graph_key = _pack_model_graph_key(
-                        replay_graph_key
-                    )
-                    self.graph_entries[replay_graph_key] = (
+                    packed_key = _pack_model_graph_key(key)
+                    self.graph_entries[key] = (
                         input_buffers,
                         ModelOutputs(
-                            *self._model.capture(
-                                packed_model_graph_key, *input_buffers
-                            )
+                            *self._model.capture(packed_key, *input_buffers)
                         ),
                     )
                     for device in self._model.input_devices:
@@ -264,6 +304,88 @@ class ServeGraphCaptureRunner:
             "[1..%d] with num_steps=1.",
             self._max_batch_size,
         )
+
+    def _resolve_replay_key(self, model_inputs: ModelInputs) -> GraphKey:
+        """Resolves the replay graph key, handling DP sync.
+
+        1. If DP: syncs max_cache_valid_length to global max across replicas.
+        2. Reads the synced num_partitions (max across replicas for DP,
+           shard 0 otherwise).
+        3. If DP: broadcasts canonical metadata (with synced np) to all
+           shards.
+
+        For DP models, we synchronize dispatch metadata across DP replicas so
+        all devices agree on num_partitions. The captured CUDA graph bakes
+        uniform grid dimensions, so replicas with shorter caches get extra
+        CTAs that early-exit.
+
+        Returns the resolved ``GraphKey``.
+        """
+        ragged_inputs = _ragged_kv_inputs_from_model_inputs(model_inputs)
+        batch_token_count = int(model_inputs.buffers[0].shape[0])
+
+        def _np_val(kv: KVCacheInputsPerDevice) -> int:
+            meta = kv.attention_dispatch_metadata
+            return int(meta.to_numpy()[2]) if meta is not None else 0
+
+        if self._is_data_parallel and len(ragged_inputs) > 1:
+            synced_np = max(_np_val(kv) for kv in ragged_inputs)
+        else:
+            synced_np = _np_val(ragged_inputs[0])
+
+        if synced_np < 1:
+            raise ValueError(
+                "Expected positive decode kernel mode (num_partitions), got "
+                f"{synced_np}."
+            )
+
+        # Broadcast canonical metadata to all shards for DP.
+        if self._is_data_parallel and len(ragged_inputs) > 1:
+            primary_meta = ragged_inputs[0].attention_dispatch_metadata
+            if primary_meta is not None:
+                canonical = primary_meta.to_numpy().copy()
+                canonical[2] = synced_np
+                for kv in ragged_inputs:
+                    if kv.attention_dispatch_metadata is not None:
+                        kv.attention_dispatch_metadata.inplace_copy_from(
+                            Buffer.from_numpy(canonical).to(
+                                kv.attention_dispatch_metadata.device
+                            )
+                        )
+
+        replay_graph_key = (batch_token_count, synced_np)
+        if replay_graph_key not in self.graph_entries:
+            captured_nps = sorted(
+                {k[1] for k in self.graph_entries if k[0] == batch_token_count}
+            )
+            bucketed_np = self._probe_strategy.bucket_num_partitions(
+                synced_np, captured_nps
+            )
+            if bucketed_np is None:
+                raise RuntimeError(
+                    f"No captured device graph for {replay_graph_key}. "
+                    f"Available num_partitions for batch_token_count="
+                    f"{batch_token_count}: {captured_nps}. "
+                    f"Available batch_token_counts: "
+                    f"{sorted({k[0] for k in self.graph_entries})}."
+                )
+            replay_graph_key = (batch_token_count, bucketed_np)
+
+            # Patch num_partitions in each shard's dispatch metadata to match
+            # the captured value. This is presumably safe because num_partitions only
+            # controls the MLA decode kernel's CTA grid size.
+            bucketed_arr = np.int64(bucketed_np)
+            for kv in ragged_inputs:
+                if kv.attention_dispatch_metadata is not None:
+                    meta = kv.attention_dispatch_metadata.to_numpy().copy()
+                    meta[2] = bucketed_arr
+                    kv.attention_dispatch_metadata.inplace_copy_from(
+                        Buffer.from_numpy(meta).to(
+                            kv.attention_dispatch_metadata.device
+                        )
+                    )
+
+        return replay_graph_key
 
     def replay(
         self,
@@ -279,30 +401,14 @@ class ServeGraphCaptureRunner:
         ``debug_verify_model_inputs`` to verify eager traces against a
         different (but graph-key-equivalent) input shape.
         """
+        replay_graph_key = self._resolve_replay_key(model_inputs)
+        if debug_verify_model_inputs is not None:
+            self._resolve_replay_key(debug_verify_model_inputs)
+
         input_buffers = model_inputs.buffers
-        replay_graph_key = mha_graph_key_from_inputs(model_inputs)
+
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)
-        try:
-            captured_inputs, outputs = self.graph_entries[replay_graph_key]
-        except KeyError as exc:
-            batch_token_count, _ = replay_graph_key
-            available_decode_kernel_modes = sorted(
-                key[1]
-                for key in self.graph_entries
-                if key[0] == batch_token_count
-            )
-            available_batch_token_counts = sorted(
-                {key[0] for key in self.graph_entries}
-            )
-            raise RuntimeError(
-                "No captured device graph found for key: "
-                f"{replay_graph_key}. Available decode kernel modes "
-                "(num_partitions) for "
-                f"batch_token_count={batch_token_count}: "
-                f"{available_decode_kernel_modes}. Available "
-                "batch_token_counts: "
-                f"{available_batch_token_counts}."
-            ) from exc
+        captured_inputs, outputs = self.graph_entries[replay_graph_key]
 
         for src_value, dst_value in zip(
             input_buffers, captured_inputs, strict=True
@@ -311,7 +417,7 @@ class ServeGraphCaptureRunner:
 
         if debug_verify_replay:
             verify_inputs = debug_verify_model_inputs or model_inputs
-            verify_graph_key = mha_graph_key_from_inputs(verify_inputs)
+            verify_graph_key = attention_graph_key_from_inputs(verify_inputs)
             if verify_graph_key != replay_graph_key:
                 raise ValueError(
                     "debug_verify_model_inputs must map to the same graph key "

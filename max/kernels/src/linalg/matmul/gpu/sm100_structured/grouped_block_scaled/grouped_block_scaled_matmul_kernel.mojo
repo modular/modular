@@ -45,9 +45,9 @@ from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
 from layout import ComptimeInt, TileTensor
-from layout._layout import TensorLayout
-from layout._layout import RowMajorLayout, _IntToComptimeInt
-from ..structured_kernels.tile_types import (
+from layout.tile_layout import TensorLayout
+from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from structured_kernels.tile_types import (
     TMATile,
     tma_desc_layout_3d,
     tma_desc_layout_5d,
@@ -73,8 +73,8 @@ from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
 )
-from ..structured_kernels.tile_types import internal_k_major_128B
-from ..structured_kernels.kernel_common import (
+from structured_kernels.tile_types import internal_k_major_128B
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
     compute_tma_tile_dims,
@@ -90,8 +90,12 @@ from ..structured_kernels.tile_pipeline import (
     OutputTilePipeline,
     BlockScaledTilePayload,
 )
-from ..structured_kernels.tmem import BlockScaledTmem, TmemAllocation
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.tmem import (
+    BlockScaledTmem,
+    TmemAllocation,
+    TmemDeallocBarrier,
+)
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
@@ -153,38 +157,38 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     """
 
     var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
     @staticmethod
     @always_inline
     fn from_smem(
         ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
@@ -232,23 +236,31 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn init_ab_tensormaps[
         a_dtype: DType,
-        a_layout: Layout,
-        a_desc: Layout,
+        a_rank: Int,
+        a_tile_shape: IndexList[a_rank],
+        a_desc_shape: IndexList[a_rank],
         b_dtype: DType,
-        b_layout: Layout,
-        b_desc: Layout,
+        b_rank: Int,
+        b_tile_shape: IndexList[b_rank],
+        b_desc_shape: IndexList[b_rank],
         sfa_dtype: DType,
-        sfa_layout: Layout,
-        sfa_desc: Layout,
+        sfa_rank: Int,
+        sfa_tile_shape: IndexList[sfa_rank],
+        sfa_desc_shape: IndexList[sfa_rank],
         sfb_dtype: DType,
-        sfb_layout: Layout,
-        sfb_desc: Layout,
+        sfb_rank: Int,
+        sfb_tile_shape: IndexList[sfb_rank],
+        sfb_desc_shape: IndexList[sfb_rank],
     ](
         self,
-        template_a: TMATensorTile[a_dtype, a_layout, a_desc],
-        template_b: TMATensorTile[b_dtype, b_layout, b_desc],
-        template_sfa: TMATensorTile[sfa_dtype, sfa_layout, sfa_desc],
-        template_sfb: TMATensorTile[sfb_dtype, sfb_layout, sfb_desc],
+        template_a: TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
+        template_b: TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
+        template_sfa: TMATensorTile[
+            sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
+        ],
+        template_sfb: TMATensorTile[
+            sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape
+        ],
     ):
         """Initialize A/B/SFA/SFB tensormaps in SMEM from grid-constant templates.
 
@@ -264,9 +276,13 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn init_c_tensormap[
         c_dtype: DType,
-        c_layout: Layout,
-        c_desc: Layout,
-    ](self, template_c: TMATensorTile[c_dtype, c_layout, c_desc],):
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
+    ](
+        self,
+        template_c: TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
+    ):
         """Initialize C tensormap in SMEM from grid-constant template.
 
         Called by epilogue warp (lane 0). Copies template descriptor to SMEM.
@@ -277,17 +293,21 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn update_ab_for_group[
         a_dtype: DType,
-        a_layout: Layout,
-        a_desc: Layout,
+        a_rank: Int,
+        a_tile_shape: IndexList[a_rank],
+        a_desc_shape: IndexList[a_rank],
         b_dtype: DType,
-        b_layout: Layout,
-        b_desc: Layout,
+        b_rank: Int,
+        b_tile_shape: IndexList[b_rank],
+        b_desc_shape: IndexList[b_rank],
         sfa_dtype: DType,
-        sfa_layout: Layout,
-        sfa_desc: Layout,
+        sfa_rank: Int,
+        sfa_tile_shape: IndexList[sfa_rank],
+        sfa_desc_shape: IndexList[sfa_rank],
         sfb_dtype: DType,
-        sfb_layout: Layout,
-        sfb_desc: Layout,
+        sfb_rank: Int,
+        sfb_tile_shape: IndexList[sfb_rank],
+        sfb_desc_shape: IndexList[sfb_rank],
         max_groups: Int,
     ](
         self,
@@ -297,16 +317,20 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_sfa_ptrs: _GroupPtrTile[max_groups],
         group_sfb_ptrs: _GroupPtrTile[max_groups],
         tma_a: UnsafePointer[
-            TMATensorTile[a_dtype, a_layout, a_desc], MutAnyOrigin
+            TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
+            MutAnyOrigin,
         ],
         tma_b: UnsafePointer[
-            TMATensorTile[b_dtype, b_layout, b_desc], MutAnyOrigin
+            TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
+            MutAnyOrigin,
         ],
         tma_sfa: UnsafePointer[
-            TMATensorTile[sfa_dtype, sfa_layout, sfa_desc], MutAnyOrigin
+            TMATensorTile[sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape],
+            MutAnyOrigin,
         ],
         tma_sfb: UnsafePointer[
-            TMATensorTile[sfb_dtype, sfb_layout, sfb_desc], MutAnyOrigin
+            TMATensorTile[sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape],
+            MutAnyOrigin,
         ],
     ):
         """Update A/B/SFA/SFB tensormaps for the specified group.
@@ -364,15 +388,17 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn update_c_for_group[
         c_dtype: DType,
-        c_layout: Layout,
-        c_desc: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         max_groups: Int,
     ](
         self,
         group_idx: UInt32,
         group_c_ptrs: _GroupPtrTile[max_groups],
         tma_c: UnsafePointer[
-            TMATensorTile[c_dtype, c_layout, c_desc], MutAnyOrigin
+            TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
+            MutAnyOrigin,
         ],
     ):
         """Update C tensormap for the specified group.
@@ -648,10 +674,10 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Grouped Tile Scheduler Type ==========
 
     comptime SchedulerType = GroupedTileScheduler[
-        tile_m = Self.BM,
-        tile_n = Self.BN,
-        tile_k = Self.BK,
-        max_groups = Self.max_groups,
+        tile_m=Self.BM,
+        tile_n=Self.BN,
+        tile_k=Self.BK,
+        max_groups=Self.max_groups,
     ]
 
     # ========== TMA Descriptor Array Types ==========
@@ -660,32 +686,37 @@ struct GroupedBlockScaledMatmulKernel[
     comptime TMATensorTileArrayA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.a_type,
-        Self.ATmaOp.layout,
-        Self.ATmaOp.desc_layout,
+        Self.ATmaOp.rank,
+        Self.ATmaOp.tile_shape,
+        Self.ATmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.b_type,
-        Self.BTmaOp.layout,
-        Self.BTmaOp.desc_layout,
+        Self.BTmaOp.rank,
+        Self.BTmaOp.tile_shape,
+        Self.BTmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfa_dtype,
-        Self.SFATmaOp.layout,
-        Self.SFATmaOp.desc_layout,
+        Self.SFATmaOp.rank,
+        Self.SFATmaOp.tile_shape,
+        Self.SFATmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfb_dtype,
-        Self.SFBTmaOp.layout,
-        Self.SFBTmaOp.desc_layout,
+        Self.SFBTmaOp.rank,
+        Self.SFBTmaOp.tile_shape,
+        Self.SFBTmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayC = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.c_type,
-        Self.CTmaOp.layout,
-        Self.CTmaOp.desc_layout,
+        Self.CTmaOp.rank,
+        Self.CTmaOp.tile_shape,
+        Self.CTmaOp.desc_shape,
     ]
 
     # ========== Per-Group Pointer Layout ==========
@@ -697,13 +728,13 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Shared Memory Layout Types ==========
 
     comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
+        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
     ]()
 
     comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]()
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
@@ -734,7 +765,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfa_dtype,
         Self.sfb_dtype,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -748,12 +779,12 @@ struct GroupedBlockScaledMatmulKernel[
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Kernel Context Type ==========
@@ -806,8 +837,8 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfa_dtype,
         Self.BM,
         Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
-        num_sf_k_tiles = Self.config.num_sf_k_tiles,
+        cta_group=Self.cta_group,
+        num_sf_k_tiles=Self.config.num_sf_k_tiles,
     ]
 
     comptime OutputPipeline = OutputTilePipeline[Self.opc]
@@ -842,19 +873,19 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Tile Writer Type ==========
 
     comptime TileWriterType = TileWriter[
-        a_type = Self.a_type,
-        accum_type = Self.accum_type,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        opc = Self.opc,
-        c_swizzle = Self.config.c_swizzle,
-        transpose_c = Self.config.AB_swapped,
-        c_smem_dim0 = Self.SmemType.Core.OutputM,
-        c_smem_dim1 = Self.SmemType.Core.OutputN,
-        num_output_stages = Self.config.num_output_stages,
-        num_output_warps = Self.num_output_warps,
-        elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
-        register_based_epilogue = Self.register_based_epilogue,
+        a_type=Self.a_type,
+        accum_type=Self.accum_type,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        opc=Self.opc,
+        c_swizzle=Self.config.c_swizzle,
+        transpose_c=Self.config.AB_swapped,
+        c_smem_dim0=Self.SmemType.Core.OutputM,
+        c_smem_dim1=Self.SmemType.Core.OutputN,
+        num_output_stages=Self.config.num_output_stages,
+        num_output_warps=Self.num_output_warps,
+        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
+        register_based_epilogue=Self.register_based_epilogue,
         batched=True,
     ]
 
@@ -891,7 +922,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.CLUSTER_M,
         Self.CLUSTER_N,
         Self.cta_group,
-        AB_swapped = Self.config.AB_swapped,
+        AB_swapped=Self.config.AB_swapped,
     ]()
     comptime a_tile_dim0 = Self._tma_tile_dims[0]
     comptime b_tile_dim0 = Self._tma_tile_dims[1]
@@ -1013,11 +1044,13 @@ struct GroupedBlockScaledMatmulKernel[
     @always_inline
     fn _update_tensormap_address[
         dtype: DType,
-        cta_tile_layout: Layout,
-        desc_layout: Layout,
+        tma_rank: Int,
+        cta_tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
     ](
         tma_desc_ptr: UnsafePointer[
-            TMATensorTile[dtype, cta_tile_layout, desc_layout], MutAnyOrigin
+            TMATensorTile[dtype, tma_rank, cta_tile_shape, desc_shape],
+            MutAnyOrigin,
         ],
         new_addr: Int,
     ):
@@ -1203,7 +1236,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -1712,7 +1745,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

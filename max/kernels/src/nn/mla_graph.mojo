@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from std.collections import OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -28,8 +29,15 @@ from std.gpu import (
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, CoordLike, Idx, TileTensor, coord_to_index_list
-from layout._layout import TensorLayout, Layout as TileLayout, row_major
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout, Layout as TileLayout
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from std.utils.index import StaticTuple
@@ -51,6 +59,11 @@ from nn.normalization import _rms_norm_warp_tiling_subkernel
 
 
 # ===-----------------------------------------------------------------------===#
+# Maximum sequence length that routes through the decode branch instead of
+# prefill. This covers MTP verification where a small number of draft tokens
+# (> 1) should still use the decode kernel.
+comptime MLA_DECODE_MAX_SEQ_LEN = 4
+
 # Manually fused MLA RoPE and RMSNorm kernel
 # ===-----------------------------------------------------------------------===#
 
@@ -453,9 +466,7 @@ fn mla_fused_rope_rmsnorm[
 
     # Default block size used by the `elementwise` function on Blackwell.
     comptime block_size = 128
-    comptime kernel_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
+    comptime kernel_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime n_rope_elems = (num_q_heads + num_k_heads) * rope_dim
 
     # Make sure that we can use one block to process the rmsnorm.
@@ -572,9 +583,7 @@ fn mla_fused_rope_rmsnorm_quantization[
 
     # Default block size used by the `elementwise` function on Blackwell.
     comptime block_size = 128
-    comptime kernel_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
+    comptime kernel_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime n_rope_elems = (num_q_heads + num_k_heads) * rope_dim
 
     # Make sure that we can use one block to process the rmsnorm.
@@ -645,32 +654,32 @@ fn mla_prefill_branch_fp8[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
-    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
-    w_k: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     w_k_scale: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    w_uv: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     w_uv_scale: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -974,11 +983,11 @@ fn quantize_and_bmm_fp8_helper[
     k_scale_granularity: Int,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
-    a: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    b: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     b_scales: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1064,25 +1073,28 @@ fn mla_decode_branch_fp8[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
-    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    w_uk: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     w_uk_scale: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    w_uv: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     w_uv_scale: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1134,6 +1146,8 @@ fn mla_decode_branch_fp8[
             each head's original space. Shape: [num_heads, v_head_dim, kv_latent_dim].
         w_uv_scale: The scale for the w_uv weight matrix. Shape varies
             depending on the float8_config.
+        scalar_args_buf: Buffer containing scalar arguments for device graph
+            capture.
         ctx: Device context.
     """
 
@@ -1270,6 +1284,7 @@ fn mla_decode_branch_fp8[
         layer_idx,
         scale,
         raw_output.to_layout_tensor(),
+        scalar_args_buf.to_layout_tensor(),
         ctx,
     )
 
@@ -1316,37 +1331,40 @@ fn mla_prefill_decode_graph_fp8[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
-    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,
-    w_k: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     w_k_scale: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    w_uk: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     w_uk_scale: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    w_uv: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     w_uv_scale: TileTensor[
-        fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
+        fp8_scale_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -1365,7 +1383,8 @@ fn mla_prefill_decode_graph_fp8[
         collection_t.dtype == dtype
     ), "This KVCache DType is not supported."
 
-    if max_seq_len == 1:
+    # When running verification with MTP we want to use the decode branch.
+    if max_seq_len <= MLA_DECODE_MAX_SEQ_LEN:
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,
             n_scale_granularity=n_scale_granularity,
@@ -1386,6 +1405,7 @@ fn mla_prefill_decode_graph_fp8[
             w_uk_scale,
             w_uv,
             w_uv_scale,
+            scalar_args_buf,
             ctx,
         )
 
@@ -1429,28 +1449,28 @@ fn mla_prefill_branch_bf16[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, DType.bfloat16, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
-    kv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    kv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
-    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
-    w_k: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA prefill path.
@@ -1621,21 +1641,24 @@ fn mla_decode_branch_bf16[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, DType.bfloat16, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
-    kv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    kv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
-    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    w_uk: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA decode path.
@@ -1755,6 +1778,7 @@ fn mla_decode_branch_bf16[
         raw_output_buf,
         row_major((Idx(seq_len), Idx[num_heads](), Idx[kv_latent_dim]())),
     )
+
     generic_flare_mla_decode_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
@@ -1765,6 +1789,7 @@ fn mla_decode_branch_bf16[
         layer_idx,
         scale,
         raw_output.to_layout_tensor(),
+        scalar_args_buf.to_layout_tensor(),
         ctx,
     )
 
@@ -1806,30 +1831,33 @@ fn mla_prefill_decode_graph_bf16[
     target: StaticString = "cpu",
 ](
     output: TileTensor[
-        mut=True, DType.bfloat16, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
     ],
-    q: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
-    kv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    kv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
-    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,
-    w_k: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
-    w_uk: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
-    w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    w_k: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uk: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA prefill/decode graph.
@@ -1841,8 +1869,8 @@ fn mla_prefill_decode_graph_bf16[
     if seq_len == 0:
         return
 
-    # TODO(SERVOPT-967): generalize to number of draft tokens.
-    if max_seq_len == 1:
+    # When running verification with MTP we want to use the decode branch.
+    if max_seq_len <= MLA_DECODE_MAX_SEQ_LEN:
         mla_decode_branch_bf16[
             mask_str=mask_str,
             target=target,
@@ -1859,6 +1887,7 @@ fn mla_prefill_decode_graph_bf16[
             epsilon,
             w_uk,
             w_uv,
+            scalar_args_buf,
             ctx,
         )
     else:

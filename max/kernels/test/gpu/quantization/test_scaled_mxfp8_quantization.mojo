@@ -237,14 +237,14 @@ def main() raises:
             MXFP8_SF_DTYPE,
             MXFP8_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 1, 128)
         test_dynamic_mxfp8_quant[
             DType.bfloat16,
             MXFP8_SF_DTYPE,
             MXFP8_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 258, 128)
 
         comptime for N in range(576, 16384, 1024):

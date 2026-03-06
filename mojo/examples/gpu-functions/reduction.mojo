@@ -54,7 +54,7 @@ fn sum_kernel[
     sums = stack_allocation[
         Int(KERNEL_TPB),
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     global_tid = block_idx.x * block_dim.x + thread_idx.x
@@ -98,8 +98,8 @@ struct SumKernelBenchmarkParams:
 
     fn __init__(
         out self,
-        out_ptr: UnsafePointer[mut=True, Int32],
-        a_ptr: UnsafePointer[mut=True, Int32],
+        out_ptr: UnsafePointer[mut=True, Int32, _],
+        a_ptr: UnsafePointer[mut=True, Int32, _],
     ):
         self.out_ptr = out_ptr
         self.a_ptr = a_ptr

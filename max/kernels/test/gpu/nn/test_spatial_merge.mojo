@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Idx, TileTensor
-from layout._layout import row_major
+from layout import Idx, TileTensor, row_major
 from nn.spatial_merge import spatial_merge
 from std.testing import assert_equal
 

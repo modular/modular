@@ -115,7 +115,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
         _shmem_launch_tcp[func]()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 

@@ -14,8 +14,13 @@
 from std.random import random_ui64
 
 from std.gpu.host import DeviceContext, DeviceBuffer
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from nn.index_tensor import _index_tensor_impl
 from std.testing import assert_equal, assert_true
 
@@ -27,12 +32,10 @@ def execute_index_tensor_test[
     //,
     batch_dims: Int,
 ](
-    data_device: TileTensor[
-        data_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    indices_device: TileTensor[address_space = AddressSpace.GENERIC, ...],
+    data_device: TileTensor[data_type, address_space=AddressSpace.GENERIC, ...],
+    indices_device: TileTensor[address_space=AddressSpace.GENERIC, ...],
     expected_output_device: TileTensor[
-        data_type, address_space = AddressSpace.GENERIC, ...
+        data_type, address_space=AddressSpace.GENERIC, ...
     ],
     expected_output_device_buffer: DeviceBuffer[data_type],
     ctx: DeviceContext,

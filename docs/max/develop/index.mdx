@@ -30,7 +30,7 @@ from max.driver import CPU
 from max.experimental.tensor import Tensor
 
 # Create tensor from Python data
-x = Tensor.constant([1.0, -2.0, 3.0, -4.0, 5.0], device=CPU())
+x = Tensor([1.0, -2.0, 3.0, -4.0, 5.0], device=CPU())
 
 y = F.relu(x)
 
@@ -44,7 +44,7 @@ The expected output is:
 Tensor([1 0 3 0 5], dtype=DType.float32, device=Device(type=cpu,id=0))
 ```
 
-When you run this code, [`Tensor.constant()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.constant) creates a tensor and [`F.relu()`](/max/api/python/experimental/functional#max.experimental.functional.relu)
+When you run this code, [`Tensor(data)`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) creates a tensor and [`F.relu()`](/max/api/python/experimental/functional#max.experimental.functional.relu)
 performs the ReLU activation. The `print(y)` statement triggers execution. MAX compiles
 and runs the operations, then displays the result.
 
@@ -106,8 +106,8 @@ You can perform arithmetic operations using Python operators on tensors:
 ```python
 from max.experimental.tensor import Tensor
 
-a = Tensor.constant([1.0, 2.0, 3.0])
-b = Tensor.constant([4.0, 5.0, 6.0])
+a = Tensor([1.0, 2.0, 3.0])
+b = Tensor([4.0, 5.0, 6.0])
 
 c = a + b  # Addition
 d = a * b  # Element-wise multiplication
@@ -125,7 +125,7 @@ from max.driver import CPU
 from max.experimental.tensor import Tensor
 
 # Force CPU execution to avoid GPU compiler issues
-x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], device=CPU())
+x = Tensor([[1.0, 2.0], [3.0, 4.0]], device=CPU())
 
 y = F.sqrt(x)  # Element-wise square root
 z = F.softmax(x, axis=-1)  # Softmax along last axis
@@ -169,7 +169,7 @@ def debug_forward_pass(x: Tensor) -> Tensor:
     return h
 
 
-x = Tensor.constant([-1.0, 0.0, 1.0, 2.0], dtype=DType.float32, device=CPU())
+x = Tensor([-1.0, 0.0, 1.0, 2.0], dtype=DType.float32, device=CPU())
 result = debug_forward_pass(x)
 ```
 
@@ -197,7 +197,7 @@ from max.dtype import DType
 from max.experimental.tensor import Tensor
 
 # Create input data
-x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU())
+x = Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU())
 
 # Create random weights
 w = random.gaussian(
@@ -245,7 +245,7 @@ Execution happens automatically when an operation requires concrete values:
   position.
 - **Converting to other formats**: Passing a MAX `Tensor` to `np.from_dlpack(x)`
   requires a real memory buffer for `x`, which forces execution.
-- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an [`nn.Module`](/max/api/python/nn#max.nn.Module) executes the
+- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an [`nn.Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module) executes the
   graph to produce the output.
 
 This all happens automatically and transparently behind the scenes. MAX detects

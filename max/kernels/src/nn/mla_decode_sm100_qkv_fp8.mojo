@@ -61,11 +61,11 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout._layout import row_major
+from layout import row_major
 from layout.layout import Layout
-from layout.int_tuple import UNKNOWN_VALUE
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
+from layout.layout_tensor import LayoutTensor
 from nn.mha_fa3_utils import (
     OptionalPointer,
     KVTMATile,
@@ -146,15 +146,15 @@ struct MLA_SM100_Decode_QKV_FP8[
 
     # QK MMA: FP8 (KIND_F8F6F4) — both Q and K are FP8 in SMEM
     comptime UMMAQKTSS = DecodeSM100QKTSS_FP8[
-        operand_type = Self.fp8_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.fp8_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
     # PV MMA: FP8 (KIND_F8F6F4) — both P and V are FP8 in SMEM
     comptime UMMAPVSS = DecodeSM100PVSS_FP8[
-        operand_type = Self.fp8_type,
-        accum_type = Self.AccumType,
-        config = Self.config,
+        operand_type=Self.fp8_type,
+        accum_type=Self.AccumType,
+        config=Self.config,
     ]
 
     comptime Common_MLA_Op = MLA_SM100_Decode_Common[
@@ -203,35 +203,40 @@ struct MLA_SM100_Decode_QKV_FP8[
     fn kernel(
         # Q TMA is FP8 with SWIZZLE_64B (same as KV)
         q_tma: QOTMATile[
-            dtype = Self.kv_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+            dtype=Self.kv_type,
+            BM=Self.config.BM,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,  # tile_m =64
+            BK=Self.config.BK0,  # tile_n =576
         ],
         o_tma: QOTMATile[
-            dtype = Self.output_type,
-            BM = Self.config.out_rows,
-            BK = Self.config.BN,
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype=Self.output_type,
+            BM=Self.config.out_rows,
+            BK=Self.config.BN,
+            swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
-        batch_size: Int,
-        q_max_seq_len: Int,
-        num_partitions: Int,
         mla_decode_pack: MLA_Decode_Pack[
-            ValidLengthType = Self.ValidLengthType,
-            MaskType = Self.MaskType,
-            SplitAccumType = Self.SplitAccumType,
+            ValidLengthType=Self.ValidLengthType,
+            MaskType=Self.MaskType,
+            SplitAccumType=Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        scalar_args: LayoutTensor[
+            DType.int64, Layout.row_major(4), MutAnyOrigin
+        ],
     ):
+        # Extract scalar launch args from the stable device buffer.
+        var batch_size = Int(scalar_args.ptr[0])
+        var q_max_seq_len = Int(scalar_args.ptr[1])
+        var num_partitions = Int(scalar_args.ptr[2])
+
         # Register allocation: same as BF16 kernel (3 WGs)
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
@@ -288,7 +293,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         # Q FP8 region: 64 x 576 x 1 bytes = 36864 bytes
         q_smem = external_memory[
             Scalar[Self.fp8_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -327,7 +332,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         var mbar_kv_base: MBarType = mbar_base + 1
 
         var kv_pipeline = KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,
+            num_kv_stages=Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -336,14 +341,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         mbar_base = mbar_kv_base + kv_pipeline.num_mbars()
         # S pipeline: N-stage (matching KV stages)
         var s_bars = DecodeSM100MiscMBars[
-            num_stages = Self.num_stages,
+            num_stages=Self.num_stages,
             num_producer=1,
             num_consumer=WARPGROUP_SIZE,
         ](mbar_base)
         mbar_base = s_bars.end()
         # P pipeline: N-stage (matching KV stages)
         var p_bars = DecodeSM100MiscMBars[
-            num_stages = Self.num_stages,
+            num_stages=Self.num_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ](mbar_base)
@@ -366,7 +371,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         mbar_base = corr_done_bars.end()
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
-            num_out_stages = OutPipeType.num_out_stages,
+            num_out_stages=OutPipeType.num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ](mbar_base)
@@ -399,7 +404,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             warpgroup_reg_alloc[num_reg_softmax]()
             Self.Common_MLA_Op.Softmax[
                 native_fp8=True,
-                num_sp_stages = Self.num_stages,
+                num_sp_stages=Self.num_stages,
             ](
                 ptr_tmem_addr[0],
                 s_bars,
@@ -483,23 +488,23 @@ struct MLA_SM100_Decode_QKV_FP8[
     @always_inline
     fn load(
         q_tma: QOTMATile[
-            dtype = Self.kv_type,
-            BM = Self.config.BM,
-            BK = Self.config.BK0,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+            dtype=Self.kv_type,
+            BM=Self.config.BM,
+            BK=Self.config.BK0,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,
-            BK = Self.config.BK0,
+            dtype=Self.kv_type,
+            swizzle_mode=Self.config.kv_tma_swizzle_mode,
+            BN=Self.config.BK1,
+            BK=Self.config.BK0,
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         mbar_q: MBarType,
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,
+            num_kv_stages=Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -545,7 +550,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             # Q TMA: load FP8 Q directly into q_smem
             var q_block_smem = q_smem
             var q_smem_tensor = SharedMemTensor[
-                Self.kv_type, type_of(q_tma).layout
+                Self.kv_type,
+                Layout.row_major(type_of(q_tma).tile_shape),
             ](q_block_smem.bitcast[Scalar[Self.kv_type]]())
             q_tma.async_copy(q_smem_tensor, mbar_q[], (Int(UInt(0)), Int(row)))
 
@@ -607,12 +613,12 @@ struct MLA_SM100_Decode_QKV_FP8[
         kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         mbar_q: MBarType,
         s_bars: DecodeSM100MiscMBars[
-            num_stages = Self.num_stages,
+            num_stages=Self.num_stages,
             num_producer=1,
             num_consumer=WARPGROUP_SIZE,
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,
+            num_kv_stages=Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -684,7 +690,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         p_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         p_bars: DecodeSM100MiscMBars[
-            num_stages = Self.num_stages,
+            num_stages=Self.num_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
         ],
@@ -692,7 +698,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,
+            num_kv_stages=Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,

@@ -26,14 +26,24 @@ from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
 from std.testing import assert_almost_equal, assert_equal
 
 from std.utils import IndexList
-from std.sys import env_get_int, env_get_bool, env_get_dtype, env_get_string
+from std.sys import (
+    get_defined_int,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_string,
+)
 from std.sys.info import size_of
 
 
@@ -199,7 +209,7 @@ fn bench_topk_batched[
             topk_idxs_cpu_ptr, row_major((Idx(batch_size), Idx(K)))
         )
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_buffer,
             max_k,
             rank - 1,
@@ -370,7 +380,7 @@ fn bench_topk_multi_rank[
             topk_idxs_cpu_ptr, row_major(Coord(out_idxs_shape))
         )
 
-        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+        _top_k_cpu[dtype=dtype, out_idx_type=DType.int64, largest=largest](
             in_buffer,
             max_k,
             rank - 1,
@@ -581,12 +591,12 @@ fn main() raises:
     var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
     var fill_fn_name = arg_parse("fill_fn_name", "fill_random")
 
-    comptime dtype = env_get_dtype["dtype", DType.float32]()
-    comptime rank = env_get_int["rank", 2]()
-    comptime out_idx_type = env_get_dtype["out_idx_type", DType.int]()
-    comptime sampling = env_get_bool["sampling", False]()
-    comptime largest = env_get_bool["largest", True]()
-    comptime use_fi = env_get_bool["USE_FI_TOPK_KERNEL", False]()
+    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime rank = get_defined_int["rank", 2]()
+    comptime out_idx_type = get_defined_dtype["out_idx_type", DType.int]()
+    comptime sampling = get_defined_bool["sampling", False]()
+    comptime largest = get_defined_bool["largest", True]()
+    comptime use_fi = get_defined_bool["USE_FI_TOPK_KERNEL", False]()
 
     var m = Bench()
     with DeviceContext() as ctx:

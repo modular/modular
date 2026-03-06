@@ -133,7 +133,6 @@ class DeepseekV3NextN(Module):
             config,
             layer_idx=nextn_layer_idx,
             ep_manager=self.ep_manager,
-            is_nextn=True,
         )
 
         self.shared_head_norm = RMSNorm(
@@ -186,6 +185,7 @@ class DeepseekV3NextN(Module):
             )
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
+
         norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
@@ -256,6 +256,7 @@ class DeepseekV3NextN(Module):
                 ]
             )
 
+        kv_scales: list[BufferValue] = []
         h = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
@@ -264,6 +265,7 @@ class DeepseekV3NextN(Module):
             [kv_collection.cache_lengths for kv_collection in kv_collections],
             [kv_collection.lookup_table for kv_collection in kv_collections],
             [kv_collection.max_lengths for kv_collection in kv_collections],
+            kv_scales,
             freqs_cis=freqs_cis,
             mla_prefill_metadata_flat=mla_inputs,
             input_row_offsets=input_row_offsets_,
@@ -289,6 +291,7 @@ class DeepseekV3NextN(Module):
         norm_last_token = forward_sharded_layers(
             self.shared_head_norm_shards, last_token_distributed
         )
+
         last_logits = ops.cast(
             self.lm_head(norm_last_token, signal_buffers)[0],
             DType.float32,

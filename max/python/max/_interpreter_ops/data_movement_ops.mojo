@@ -359,7 +359,7 @@ fn transpose_op[
         Transpose.execute[
             target="cpu",
             _trace_name="interpreter.transpose",
-            static_permutations = DimList.create_unknown[MAX_RANK](),
+            static_permutations=DimList.create_unknown[MAX_RANK](),
             dtype=dtype,
             rank=MAX_RANK,
         ](output_tensor, input_tensor, perm_tensor, DeviceContextPtr())
@@ -370,7 +370,7 @@ fn transpose_op[
                 Transpose.execute[
                     target="gpu",
                     _trace_name="interpreter.transpose",
-                    static_permutations = DimList.create_unknown[MAX_RANK](),
+                    static_permutations=DimList.create_unknown[MAX_RANK](),
                     dtype=dtype,
                     rank=MAX_RANK,
                 ](output_tensor, input_tensor, perm_tensor, device_ctx)
@@ -750,7 +750,7 @@ fn memcpy_op[
     if not ctx:
         # TODO(MXF-108): Remove use_blocking_impl=True
         elementwise[
-            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
         ](IndexList[1](count))
     else:
         # GPU execution

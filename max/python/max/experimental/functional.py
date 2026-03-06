@@ -235,7 +235,7 @@ def lazy() -> Generator[None]:
 
         from max.experimental import functional as F
         from max.experimental.tensor import Tensor
-        from max.nn.module_v3 import Linear
+        from max.experimental.nn import Linear
 
         with F.lazy():
             model = Linear(2, 3)
@@ -735,6 +735,9 @@ def prod(x: TensorValueLike, axis: int | None = -1) -> TensorValue:
 #: Creates a tensor with evenly spaced values.
 #: See :func:`max.graph.ops.range` for details.
 arange = functional(ops.range)
+#: Rebinds the shape of a tensor, asserting dimension consistency at runtime.
+#: See :func:`max.graph.ops.rebind` for details.
+rebind = functional(ops.rebind)
 #: Applies the ReLU activation function.
 #: See :func:`max.graph.ops.relu` for details.
 relu = functional(ops.relu)

@@ -21,8 +21,14 @@ from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
-from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+    row_major,
+)
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -234,9 +240,9 @@ fn gather_reduce[
                     )
 
                     comptime for unroll_idx in range(0, unroll_factor):
-                        var gather_chunk = input.load[width=simd_width](
-                            (Idx(Int(idxs[unroll_idx])), Idx(k))
-                        )
+                        var gather_chunk = input.load[
+                            width=simd_width, alignment=1
+                        ]((Idx(Int(idxs[unroll_idx])), Idx(k)))
                         out[unroll_idx] = reduce_fn[dtype, simd_width](
                             accums[unroll_idx], gather_chunk
                         )
@@ -263,7 +269,7 @@ fn gather_reduce[
                     )[0]
 
                 var out_idx = Coord(Idx(i), Idx(k))
-                output.store[width=simd_width](out_idx, accum)
+                output.store[width=simd_width, alignment=1](out_idx, accum)
 
             tile[
                 gather_k_tile,
@@ -343,7 +349,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == input.flat_rank
-        return input.load[width=width](coords)
+        return input.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -352,7 +358,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == indices.flat_rank
-        return indices.load[width=width](coords)
+        return indices.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -361,7 +367,9 @@ fn gather[
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert coords.flat_rank == output.flat_rank
-        output.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        output.store[width=width, alignment=1](
+            coords, rebind[SIMD[dtype, width]](val)
+        )
 
     gather[
         dtype=dtype,
@@ -447,7 +455,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == input.flat_rank
-        return input.load[width=width](coords)
+        return input.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -456,7 +464,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == indices.flat_rank
-        return indices.load[width=width](coords)
+        return indices.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -465,7 +473,9 @@ fn gather[
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert coords.flat_rank == output.flat_rank
-        output.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        output.store[width=width, alignment=1](
+            coords, rebind[SIMD[dtype, width]](val)
+        )
 
     gather[
         dtype=dtype,
@@ -710,7 +720,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype](),
+                simd_width=simd_width_of[dtype](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
@@ -823,7 +833,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype, target=compile_target](),
+                simd_width=simd_width_of[dtype, target=compile_target](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -882,13 +892,11 @@ fn scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1115,13 +1123,11 @@ fn scatter_nd[
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1130,7 +1136,7 @@ fn scatter_nd[
         output_type,
         indices_type,
         single_thread_blocking_override,
-        oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
+        oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
         target=target,
         reduce_fn=None,
     ](data, indices, updates, output, context)
@@ -1277,11 +1283,11 @@ fn scatter_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: ManagedTensorSlice[dtype=input_type, rank=rank],
-    indices: ManagedTensorSlice[dtype=indices_type, rank=rank],
-    updates: ManagedTensorSlice[dtype=input_type, rank=rank],
+    input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
+    updates: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     _axis: Int,
-    output: ManagedTensorSlice[dtype=input_type, rank=rank],
+    output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1648,8 +1654,8 @@ fn _gather_nd_impl[
         var output_coord = Coord(output_idx)
         comptime assert data_coord.flat_rank == data.flat_rank
         comptime assert output_coord.flat_rank == output.flat_rank
-        output.store[width=simd_width](
-            output_coord, data.load[width=simd_width](data_coord)
+        output.store[width=simd_width, alignment=1](
+            output_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
     comptime compile_target = _current_target() if is_cpu[

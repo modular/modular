@@ -65,6 +65,12 @@ what we publish.
 
 #### Python API {#26-2-max-python}
 
+- `Tensor.constant()` is deprecated. Use the `Tensor(data, dtype=...,
+  device=...)` constructor directly, matching PyTorch's `torch.tensor()`
+  semantics. For example, replace `Tensor.constant([1.0, 2.0])` with
+  `Tensor([1.0, 2.0])`. `Tensor.constant()` will be removed in a future
+  release.
+
 - `DeviceEvent` now accepts an `enable_timing=True` parameter to enable GPU
   event timing. Use `start.elapsed_time(end)` to measure elapsed GPU time in
   milliseconds between two timing-enabled events.
@@ -111,6 +117,19 @@ what we publish.
   `max.random` have moved back under `max.experimental` (i.e.,
   `max.experimental.tensor`, `max.experimental.functional`,
   `max.experimental.random`). Update imports accordingly.
+
+- **Experimental APIs moved under `max.experimental`**. Two additional packages
+  have moved under the `max.experimental` namespace to co-locate all
+  experimental APIs:
+
+  - `max.torch` is now `max.experimental.torch`. Update imports from
+    `from max.torch import CustomOpLibrary, graph_op` to
+    `from max.experimental.torch import CustomOpLibrary, graph_op`.
+
+  - `max.nn.module_v3` is now `max.experimental.nn` (the `v3` suffix has been
+    dropped). Update imports from
+    `from max.nn.module_v3 import Module, Linear` to
+    `from max.experimental.nn import Module, Linear`.
 
 #### Mojo API {#26-2-max-mojo}
 

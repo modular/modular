@@ -27,7 +27,7 @@ from std.ffi import external_call
 from std.sys import (
     align_of,
     codegen_unreachable,
-    env_get_string,
+    get_defined_string,
     is_compile_time,
     is_gpu,
     llvm_intrinsic,
@@ -123,8 +123,8 @@ fn _memcmp_impl[
 fn memcmp[
     type: AnyType, address_space: AddressSpace
 ](
-    s1: UnsafePointer[mut=False, type, address_space=address_space],
-    s2: UnsafePointer[mut=False, type, address_space=address_space],
+    s1: UnsafePointer[mut=False, type, _, address_space=address_space],
+    s2: UnsafePointer[mut=False, type, _, address_space=address_space],
     count: Int,
 ) -> Int:
     """Compares two buffers. Both strings are assumed to be of the same length.
@@ -238,8 +238,8 @@ fn memcpy[
     T: AnyType
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.
@@ -277,8 +277,8 @@ fn memmove[
     T: AnyType
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.
@@ -324,7 +324,7 @@ fn _memset_impl(
 
 
 @always_inline
-fn memset(ptr: UnsafePointer[mut=True, _, ...], value: Byte, count: Int):
+fn memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
     Args:
@@ -341,7 +341,7 @@ fn memset(ptr: UnsafePointer[mut=True, _, ...], value: Byte, count: Int):
 
 
 @always_inline
-fn memset_zero(ptr: UnsafePointer[mut=True, _, ...], count: Int):
+fn memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
 
     Args:
@@ -441,25 +441,25 @@ fn stack_allocation[
 
         comptime if address_space == AddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
-                name = _get_kgen_string[global_name](),
-                count = count._mlir_value,
-                memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
-                _type = UnsafePointer[
+                name=_get_kgen_string[global_name](),
+                count=count._mlir_value,
+                memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
+                _type=UnsafePointer[
                     type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type,
-                alignment = alignment._mlir_value,
+                alignment=alignment._mlir_value,
             ]()
         elif address_space == AddressSpace.CONSTANT:
             # No need to annotation this global_alloc because constants in
             # GPU shared memory won't prevent llvm module splitting to
             # happen since they are immutables.
             return __mlir_op.`pop.global_alloc`[
-                name = _get_kgen_string[global_name](),
-                count = count._mlir_value,
-                _type = UnsafePointer[
+                name=_get_kgen_string[global_name](),
+                count=count._mlir_value,
+                _type=UnsafePointer[
                     type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type,
-                alignment = alignment._mlir_value,
+                alignment=alignment._mlir_value,
             ]()
 
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
@@ -467,23 +467,23 @@ fn stack_allocation[
         # addrspacecast the resulting pointer.
         elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
-                count = count._mlir_value,
-                _type = UnsafePointer[type, MutExternalOrigin]._mlir_type,
-                alignment = alignment._mlir_value,
+                count=count._mlir_value,
+                _type=UnsafePointer[type, MutExternalOrigin]._mlir_type,
+                alignment=alignment._mlir_value,
             ]()
             return __mlir_op.`pop.pointer.bitcast`[
-                _type = UnsafePointer[
+                _type=UnsafePointer[
                     type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type
             ](generic_ptr)
 
     # Perform a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
-        count = count._mlir_value,
-        _type = UnsafePointer[
+        count=count._mlir_value,
+        _type=UnsafePointer[
             type, MutExternalOrigin, address_space=address_space
         ]._mlir_type,
-        alignment = alignment._mlir_value,
+        alignment=alignment._mlir_value,
     ]()
 
 
@@ -504,11 +504,11 @@ fn _malloc[
     out res: UnsafePointer[
         type,
         MutExternalOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ],
 ):
     comptime if is_gpu():
-        comptime enable_gpu_malloc = env_get_string[
+        comptime enable_gpu_malloc = get_defined_string[
             "ENABLE_GPU_MALLOC", "true"
         ]()
         # no runtime allocation on GPU
@@ -520,12 +520,12 @@ fn _malloc[
         comptime U = UnsafePointer[
             NoneType,
             MutExternalOrigin,
-            address_space = AddressSpace.GENERIC,
+            address_space=AddressSpace.GENERIC,
         ]
         var ptr = external_call["malloc", U](size)
         return ptr.bitcast[type]()
     else:
-        return __mlir_op.`pop.aligned_alloc`[_type = type_of(res)._mlir_type](
+        return __mlir_op.`pop.aligned_alloc`[_type=type_of(res)._mlir_type](
             alignment._mlir_value, size._mlir_value
         )
 
@@ -556,8 +556,8 @@ fn uninit_move_n[
     overlapping: Bool,
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=True, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=True, T, _],
     count: Int,
 ):
     """Move `count` values from `src` into memory at `dest`.
@@ -619,8 +619,8 @@ fn uninit_copy_n[
     overlapping: Bool,
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
     count: Int,
 ):
     """Copy `count` values from `src` into memory at `dest`.
@@ -676,7 +676,7 @@ fn uninit_copy_n[
 @always_inline
 fn destroy_n[
     T: ImplicitlyDestructible
-](pointer: UnsafePointer[mut=True, T], count: Int):
+](pointer: UnsafePointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
     This function runs the destructor for each of the `count` values, leaving

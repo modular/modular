@@ -170,7 +170,7 @@ struct _FormatUtils:
 
         @always_inline
         fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
@@ -279,7 +279,7 @@ struct _FormatUtils:
         format: StringSlice,
     ) -> Variant[
         _PrecompiledEntriesRuntime[
-            format_origin = ImmutOrigin(format.origin), *Ts
+            format_origin=ImmutOrigin(format.origin), *Ts
         ],
         Error,
     ]:
@@ -300,7 +300,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntriesRuntime[
-        format_origin = ImmutOrigin(format.origin), *Ts
+        format_origin=ImmutOrigin(format.origin), *Ts
     ]:
         """Parses and compiles a format string at runtime.
 
@@ -522,7 +522,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 

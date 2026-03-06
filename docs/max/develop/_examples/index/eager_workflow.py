@@ -19,7 +19,7 @@ from max.experimental import random
 from max.experimental.tensor import Tensor
 
 # Create input data
-x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU())
+x = Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU())
 
 # Create random weights
 w = random.gaussian(

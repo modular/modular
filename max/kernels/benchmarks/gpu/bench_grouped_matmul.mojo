@@ -14,10 +14,10 @@
 from std.os import abort
 from std.math import ceildiv, align_up
 from std.sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
-    env_get_string,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
     has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
@@ -56,10 +56,15 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import Coord, Idx, RuntimeInt, TileTensor
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
 from linalg.utils import elementwise_epilogue_type
@@ -85,7 +90,7 @@ fn _get_run_name[
     has_epilogue: Bool = False,
 ](num_active_experts: Int, total_num_tokens: Int, N: Int, K: Int) -> String:
     var vendor_str = "vendor_gmm" if use_vendor_blas else "gmm"
-    var type_str = String(t"({in_type} -> {out_type}) : ")
+    var type_str = String("(", in_type, " -> ", out_type, ") : ")
     # num_active_experts
     var num_active_experts_str = String(num_active_experts)
     # total_num_tokens
@@ -145,7 +150,6 @@ fn bench_grouped_matmul[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
-    cta_group: Int = 1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -407,9 +411,7 @@ fn bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Index(
-                        128 * cta_group, 128 * cta_group, 32
-                    )
+                    comptime umma_shape = Index(128, 128, 32)
                     comptime transpose_b = True
                     comptime config = BlockScaledMatmulConfig[
                         a_type,
@@ -420,15 +422,13 @@ fn bench_grouped_matmul[
                         transpose_b,
                     ](
                         scaling_kind=UMMAKind.KIND_MXF4NVF4,
-                        cluster_shape=Index(cta_group, 1, 1),
+                        cluster_shape=Index(1, 1, 1),
                         mma_shape=umma_shape,
                         block_swizzle_size=8,
-                        cta_group=cta_group,
+                        cta_group=1,
                         AB_swapped=AB_swapped,
                         k_group_size=1,
-                        num_accum_pipeline_stages=1 if umma_shape[1]
-                        == 256 else 2,
-                        is_gmm=True,
+                        num_accum_pipeline_stages=2,
                     )
                     grouped_matmul_1d1d_nvfp4[
                         transpose_b=transpose_b,
@@ -565,7 +565,7 @@ fn bench_grouped_matmul[
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                         config=config,
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -634,7 +634,7 @@ fn bench_grouped_matmul[
 
                 else:
                     grouped_matmul[
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -697,7 +697,6 @@ fn create_grouped_matmul_bench[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
-    cta_group: Int = 1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -715,7 +714,6 @@ fn create_grouped_matmul_bench[
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
         AB_swapped=AB_swapped,
-        cta_group=cta_group,
     ](
         ctx,
         bench,
@@ -737,9 +735,9 @@ fn string_to_list(string: String) raises -> List[Int]:
 
 
 def main() raises:
-    comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
-    comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
-    comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()
+    comptime in_type = get_defined_dtype["in_type", DType.bfloat16]()
+    comptime out_type = get_defined_dtype["out_type", DType.bfloat16]()
+    comptime scaling_kind_str = get_defined_string["scaling_kind", "1d2d"]()
 
     var num_active_experts = Int(arg_parse("num_active_experts", 1))
     var num_tokens_by_expert_string = String(
@@ -750,23 +748,16 @@ def main() raises:
     var num_tokens_by_expert = string_to_list(num_tokens_by_expert_string)
     var expert_ids = string_to_list(expert_ids_string)
 
-    comptime N = env_get_int["N", 256]()
-    comptime K = env_get_int["K", 256]()
-    comptime num_experts = env_get_int["num_experts", 1]()
+    comptime N = get_defined_int["N", 256]()
+    comptime K = get_defined_int["K", 256]()
+    comptime num_experts = get_defined_int["num_experts", 1]()
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    comptime has_epilogue = env_get_bool["has_epilogue", False]()
-    comptime config_str = env_get_string["config", "noswap_1sm"]()
-    comptime AB_swapped = config_str == "swapped_2sm" or config_str == "swapped_1sm"
-    comptime cta_group = 2 if config_str == "swapped_2sm" else 1
-    comptime assert (
-        config_str == "swapped_2sm"
-        or config_str == "swapped_1sm"
-        or config_str == "noswap_1sm"
-    ), "config must be one of: swapped_2sm, swapped_1sm, noswap_1sm"
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+    comptime has_epilogue = get_defined_bool["has_epilogue", False]()
+    comptime AB_swapped = get_defined_bool["AB_swapped", False]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -781,7 +772,6 @@ def main() raises:
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
             AB_swapped=AB_swapped,
-            cta_group=cta_group,
         ](
             ctx,
             b,

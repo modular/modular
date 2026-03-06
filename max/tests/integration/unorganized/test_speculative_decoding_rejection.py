@@ -30,6 +30,7 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib.config.kv_cache_config import KVCacheConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -73,7 +74,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
+        runtime=PipelineRuntimeConfig(max_batch_size=4),
     )
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
@@ -196,7 +197,9 @@ def test_speculative_decoding_no_rejection(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens.to_numpy(),
         recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
+        bonus_tokens=bonus_tokens.to_numpy()
+        if bonus_tokens is not None
+        else None,
         draft_tokens=draft_tokens.to_numpy(),
         num_draft_tokens_generated=num_steps,
     )
@@ -255,6 +258,7 @@ def test_speculative_decoding_partial_rejection(
 
     # Permute to [batch, num_steps, vocab] and set large logit values for half the tokens in the first batch.
     # Then permute back to the expected shape
+    assert all_draft_logits is not None
     all_draft_logits_host = np.permute_dims(
         np.copy(all_draft_logits.to_numpy()), [1, 0, 2]
     )
@@ -294,7 +298,9 @@ def test_speculative_decoding_partial_rejection(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens_host,
         recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
+        bonus_tokens=bonus_tokens.to_numpy()
+        if bonus_tokens is not None
+        else None,
         draft_tokens=draft_tokens_host,
         num_draft_tokens_generated=num_steps,
     )

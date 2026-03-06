@@ -197,8 +197,8 @@ fn allreduce_test[
     comptime for i in range(ngpus):
         allreduce[
             ngpus=ngpus,
-            output_lambda = Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i]
+            output_lambda=Optional[elementwise_epilogue_type](
+                outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
@@ -361,10 +361,10 @@ def allreduce_naive_test() raises -> None:
     # Launch naive allreduce per device
     comptime for i in range(ngpus):
         _allreduce_naive_single[
-            dtype = DType.float32,
+            dtype=DType.float32,
             rank=1,
             ngpus=ngpus,
-            output_lambda = outputs_lambda[input_index=i],
+            output_lambda=outputs_lambda[input_index=i, ...],
         ](in_bufs, out_bufs[i], 216, ctxs[i])
 
     # Synchronize and verify

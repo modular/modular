@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
+import std.math
 from std.os import abort
 
 from std.python import PythonObject

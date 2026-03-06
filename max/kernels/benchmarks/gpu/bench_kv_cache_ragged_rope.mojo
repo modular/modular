@@ -13,7 +13,7 @@
 
 from std.collections import Set
 from std.random import random_ui64, seed
-from std.sys import env_get_dtype, env_get_int
+from std.sys import get_defined_dtype, get_defined_int
 
 from std.benchmark import (
     Bench,
@@ -36,8 +36,8 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import row_major
 from layout._fillers import random
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
@@ -244,11 +244,11 @@ def execute_kv_cache_ragged_rope[
 
 
 def main() raises:
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
-    comptime head_dim = env_get_int["head_dim", 128]()
-    comptime num_q_heads = env_get_int["num_q_heads", 32]()
-    comptime num_kv_heads = env_get_int["num_kv_heads", 8]()
+    comptime head_dim = get_defined_int["head_dim", 128]()
+    comptime num_q_heads = get_defined_int["num_q_heads", 32]()
+    comptime num_kv_heads = get_defined_int["num_kv_heads", 8]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_seq_lengths = arg_parse("use_random_lengths", False)

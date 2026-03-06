@@ -234,6 +234,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",
         "no-sandbox",
         "requires-network",
     ],
@@ -394,7 +395,9 @@ modular_py_test(
     deps = [
         "//max/python/max",
         "//max/python/max/entrypoints",
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:mocks",
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+        "//max/tests/integration/test_common:registry",
     ],
 )
 

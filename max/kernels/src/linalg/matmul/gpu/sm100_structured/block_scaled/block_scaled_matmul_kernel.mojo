@@ -87,7 +87,7 @@ from ..structured_kernels.config import (
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Structured kernel imports
-from ..structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
     compute_tma_tile_dims,
@@ -104,8 +104,8 @@ from ..structured_kernels.tile_pipeline import (
     ConsumerTiles,
     BlockScaledTilePayload,
 )
-from layout._layout import RowMajorLayout, _IntToComptimeInt
-from ..structured_kernels.tile_types import (
+from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from structured_kernels.tile_types import (
     TMATile,
     internal_k_major_128B,
     tma_desc_layout_3d,
@@ -114,9 +114,9 @@ from ..structured_kernels.tile_types import (
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
-from ..structured_kernels.tmem import TmemAllocation
+from ..structured_kernels.tmem import TmemAllocation, TmemDeallocBarrier
 from ..structured_kernels.tile_pipeline import OutputTilePipeline
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
@@ -239,13 +239,13 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Shared Memory Layout Types ==========
 
     comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
+        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
     ]()
 
     comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]()
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
@@ -296,7 +296,7 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.CLUSTER_M,
         Self.CLUSTER_N,
         Self.cta_group,
-        AB_swapped = Self.config.AB_swapped,
+        AB_swapped=Self.config.AB_swapped,
     ]()
     comptime a_tile_dim0 = Self._tma_tile_dims[0]
     comptime b_tile_dim0 = Self._tma_tile_dims[1]
@@ -402,7 +402,7 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.sfa_dtype,
         Self.sfb_dtype,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -416,12 +416,12 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Kernel Context Type ==========
@@ -435,14 +435,14 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
-        num_stages = Self.num_clc_pipeline_stages,
-        cluster_shape = Index[dtype = DType.uint32](
+        num_stages=Self.num_clc_pipeline_stages,
+        cluster_shape=Index[dtype=DType.uint32](
             Self.config.cluster_shape[0],
             Self.config.cluster_shape[1],
             Self.config.cluster_shape[2],
         ),
-        block_swizzle_size = Self.config.block_swizzle_size,
-        rasterize_order = Self.config.raster_order,
+        block_swizzle_size=Self.config.block_swizzle_size,
+        rasterize_order=Self.config.raster_order,
     ]
 
     # ========== Tile Pipeline Type ==========
@@ -511,17 +511,17 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Block-Scaled Output Tile Writer ==========
     # Uses structured building blocks with 3D batch coordinates for TMA stores
     comptime TileWriterType = TileWriter[
-        a_type = Self.a_type,
-        accum_type = Self.accum_type,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        opc = Self.opc,
-        c_swizzle = Self.config.c_swizzle,
-        transpose_c = Self.config.AB_swapped,
-        c_smem_dim0 = Self.SmemType.Core.OutputM,
-        c_smem_dim1 = Self.SmemType.Core.OutputN,
-        num_output_stages = Self.config.num_output_stages,
-        num_output_warps = Self.num_output_warps,
+        a_type=Self.a_type,
+        accum_type=Self.accum_type,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        opc=Self.opc,
+        c_swizzle=Self.config.c_swizzle,
+        transpose_c=Self.config.AB_swapped,
+        c_smem_dim0=Self.SmemType.Core.OutputM,
+        c_smem_dim1=Self.SmemType.Core.OutputN,
+        num_output_stages=Self.config.num_output_stages,
+        num_output_warps=Self.num_output_warps,
         batched=True,  # Block-scaled uses 3D batched coordinates
     ]
 
@@ -878,7 +878,7 @@ struct BlackwellBlockScaledMatmulKernel[
         # ===== Shared Memory Setup (structured pattern with typed accessors) =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

@@ -1117,8 +1117,8 @@ Here is an example of implementing a `Timer` context manager, which prints the
 amount of time spent executing the `with` code block:
 
 ```mojo title="context_mgr.mojo"
-import sys
-import time
+import std.sys
+import std.time
 
 @fieldwise_init
 struct Timer(ImplicitlyCopyable):
@@ -1193,7 +1193,7 @@ The following is an example of a context manager that suppresses only a certain
 error condition and propagates all others:
 
 ```mojo title="conditional_context_mgr.mojo"
-import time
+import std.time
 
 @fieldwise_init
 struct ConditionalTimer(ImplicitlyCopyable):

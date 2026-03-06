@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.math import ceildiv, clamp, gcd
 from std.sys import size_of
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout.layout import (
@@ -40,6 +41,12 @@ from std.utils.numerics import get_accum_type
 from std.utils.index import Index
 
 comptime logger = Logger()
+
+# Maximum number of split-K partitions the combine kernel supports.
+# Optimized for DeepSeek V3/R1 (num_heads=128, BM=64) where
+# wave_quantum = sm_count / gcd(ctas_per_partition, sm_count) = 74.
+comptime MAX_NUM_SPLITS = 74
+
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     QOTMATile,
@@ -51,6 +58,292 @@ from nn.mla_decode_sm100_kv_bf16 import MLA_SM100_Decode_KV_BF16
 from nn.mla_decode_sm100_kv_fp8 import MLA_SM100_Decode_KV_FP8
 from nn.mla_decode_sm100_qkv_fp8 import MLA_SM100_Decode_QKV_FP8
 from nn.mla_decode_sm100_combine import mla_decode_combine_partial_outputs
+
+
+# ------------------------------------------------------------------------------
+# Compute num_partitions heuristic (shared by dispatch and pre-compute op)
+# ------------------------------------------------------------------------------
+fn _compute_num_partitions[
+    num_heads: Int,
+    is_fp8_kv: Bool = False,
+](
+    batch_size: Int,
+    effective_max_cache_len: Int,
+    q_max_seq_len: Int,
+    split_page_size: Int,
+    sm_count: Int,
+) -> Int:
+    """Wave-aligned split count heuristic for MLA decode split-K.
+
+    Computes num_partitions to make total_CTAs as close as possible to a
+    multiple of sm_count, eliminating GPU wave quantization waste.
+
+    Parameters:
+        num_heads: Number of Q attention heads (compile-time).
+        is_fp8_kv: Whether the KV cache is FP8 (compile-time).
+
+    Args:
+        batch_size: Current batch size.
+        effective_max_cache_len: Max KV cache length (adjusted for
+            _is_cache_length_accurate).
+        q_max_seq_len: Max query sequence length (1 for decode).
+        split_page_size: Page granularity for split-K (64 or 128).
+        sm_count: Number of SMs on the target GPU.
+
+    Returns:
+        The number of split-K partitions.
+    """
+    # Compute num_kv_cache_pages using the parametric split_page_size.
+    # This determines how finely KV work is divided across split-K partitions.
+    var num_kv_cache_pages = ceildiv(effective_max_cache_len, split_page_size)
+
+    # Wave-aligned split count: num_partitions is chosen to make total_CTAs as
+    # close as possible to multiple of sm_count, eliminating GPU wave
+    # quantization waste.
+    #
+    # Total CTAs launched = ctas_per_partition * num_partitions, where
+    # ctas_per_partition = ceildiv(num_heads, BM) * q_max_seq_len * batch_size.
+    # For perfect wave alignment: total_CTAs % sm_count == 0.
+    # This requires num_partitions to be a multiple of:
+    #   wave_quantum = sm_count / gcd(ctas_per_partition, sm_count)
+    #
+    # On B200 (sm_count=148, BM=64, num_heads=128 => ctas_per_partition=2*bs):
+    #   bs=1: wave_quantum=74, bs>=2: wave_quantum=37
+    #
+    # We start with 1 wave quantum and add more wave quanta only if
+    # pages_per_split exceeds the max threshold, keeping combine overhead
+    # low while ensuring enough parallelism.
+    var ctas_per_partition = ceildiv(num_heads, 64) * q_max_seq_len * batch_size
+    var wave_quantum = sm_count // gcd(ctas_per_partition, sm_count)
+
+    # Minimum partitions to keep pages_per_split <= max threshold.
+    # 18 pages * 128 tokens/page = 2304 tokens per split.
+    # This threshold is chosen to balance decode work per split against wave
+    # quantization. At 18 pages, the largest context (cl=163840, 1281 pages)
+    # needs ceil(1281/18)=72 splits, which fits in 1 decode wave (72*2=144
+    # CTAs on 148 SMs, 97.3% efficiency). For all other configs
+    # (cl<=131072), max_pages_per_split doesn't affect the final np since
+    # those are bounded by wave_quantum or MAX_NUM_SPLITS instead.
+    comptime max_pages_per_split = 18
+    var min_partitions_for_work = ceildiv(
+        num_kv_cache_pages, max_pages_per_split
+    )
+
+    # The key is to have enough splits so total CTAs fill the GPU,
+    # but not so many that each split has trivial work
+    # (< min_pages_per_split pages).
+    # This prevents the wave_quantum from creating 32 splits with only
+    # 1-2 pages each when batch_size is moderate (16-32), while still
+    # giving 2-4 splits for large batch (64-128) to improve SM utilization.
+    #
+    # min_pages_per_split is batch-size-aware to jointly optimize (np, wph):
+    #  - Small batch (bs<=8): min_pages_per_split=4, allows many splits
+    #    (37-74) with high wph (8) for parallelism since combine CTAs are
+    #    few.
+    #  - Medium batch (bs=16-32): min_pages_per_split=4, moderate splits
+    #    (7-13) with moderate wph (4-8).
+    #  - Large batch (bs>=64): min_pages_per_split=8, caps splits at 2-4 to
+    #    keep combine CTA count low. E.g., bs=64/2K gets np=2 with wph=4
+    #    (few-split regime prefers wph=4 over wph=2 for lower per-CTA
+    #    latency).
+    #
+    # Note: When split_page_size=64 (short cache path), pages are half the
+    # size of 128. The same min_pages_per_split thresholds still work
+    # correctly because the resulting
+    # num_kv_cache_pages // min_pages_per_split naturally produces low split
+    # counts (often 0), letting target_partitions dominate, which gives the
+    # right np for these configs.
+    #
+    # FP8 adjustment: FP8 KV tiles are half the bytes of BF16, so TMA
+    # loads complete ~2x faster. This means each split finishes faster,
+    # making the combine kernel overhead a larger fraction of total time.
+    # To compensate, use 2x min_pages_per_split for FP8 to produce fewer,
+    # larger splits.
+    #
+    # Exception: very small batches (bs <= 8) benefit from more splits
+    # regardless of dtype because wave efficiency dominates. At bs=8 with
+    # long cache, FP8 gets np=37 at min_pps=4 vs np=29 at min_pps=8,
+    # giving ~5% speedup. For medium batch (bs=16-32), FP8 still needs
+    # the higher threshold to avoid over-splitting and combine overhead.
+    comptime _min_pps_large_batch = 16 if is_fp8_kv else 8
+    comptime _min_pps_small_batch = 8 if is_fp8_kv else 4
+    var min_pages_per_split: Int
+    if batch_size >= 64:
+        min_pages_per_split = _min_pps_large_batch
+    elif batch_size <= 8 and is_fp8_kv:
+        # Very small batch FP8: use BF16 threshold (4) to allow more
+        # splits. Wave efficiency matters more than combine overhead.
+        min_pages_per_split = 4
+    else:
+        min_pages_per_split = _min_pps_small_batch
+
+    var target_partitions = ceildiv(sm_count, ctas_per_partition)
+    # Use wave_quantum for alignment when it gives reasonable split sizes,
+    # otherwise use the SM-fill target directly.
+    var num_waves = max(1, ceildiv(min_partitions_for_work, wave_quantum))
+    var wave_aligned = num_waves * wave_quantum
+    # Pick the smaller of wave-aligned and page-constrained to avoid
+    # over-splitting. Ensure at least target_partitions for SM fill.
+    var num_partitions = max(
+        target_partitions,
+        min(wave_aligned, num_kv_cache_pages // min_pages_per_split),
+    )
+
+    # Clamp num_partitions to:
+    # 1. MAX_NUM_SPLITS (74) - combine kernel supports up to 74 splits
+    # 2. num_kv_cache_pages - at least 1 page per split to avoid empty splits
+    #    (empty splits cause hangs due to barrier deadlocks or infinite loops)
+    # 3. min_partitions floor:
+    #    - Allow np=1 when cache is very short and batch is large enough
+    #      (combine overhead dominates, np=1 eliminates it entirely).
+    #      Tested extensively for bs>=64 with cache_len<=256 (<=2 pages @128).
+    #    - For FP8: allow np=1 with a higher cache threshold since each split
+    #      finishes faster and combine overhead is proportionally larger.
+    #    - Otherwise require np>=2 when we have enough pages.
+    #    - Fall back to np=1 for very short cache (<=1 page) as safety net.
+    # FP8: allow np=1 with higher cache threshold (512 vs 256) since each
+    # split finishes faster and combine overhead is proportionally larger.
+    comptime _np1_cache_threshold = 512 if is_fp8_kv else 256
+    var min_partitions: Int
+    if effective_max_cache_len <= _np1_cache_threshold and batch_size >= 64:
+        min_partitions = 1
+    elif num_kv_cache_pages >= 2:
+        min_partitions = 2
+    else:
+        min_partitions = 1
+    num_partitions = clamp(
+        num_partitions, min_partitions, min(MAX_NUM_SPLITS, num_kv_cache_pages)
+    )
+
+    # Eliminate empty splits caused by ceil division mismatch.
+    # The main kernel uses pages_per_split =
+    # ceildiv(total_pages, num_partitions), which means only
+    # ceildiv(total_pages, pages_per_split) splits actually have work.
+    # Splits beyond that have start_page >= total_pages and return early
+    # with uninitialized LSE, causing combine kernel corruption.
+    # Recompute to ensure every split has at least 1 page of work.
+    if num_partitions > 1 and num_kv_cache_pages > 0:
+        var pages_per_split = ceildiv(num_kv_cache_pages, num_partitions)
+        num_partitions = ceildiv(num_kv_cache_pages, pages_per_split)
+    return num_partitions
+
+
+# ------------------------------------------------------------------------------
+# Public pre-compute function for MOGG ops
+# ------------------------------------------------------------------------------
+fn compute_mla_dispatch_scalar_args[
+    num_heads: Int,
+    _is_cache_length_accurate: Bool = False,
+    is_fp8_kv: Bool = False,
+](
+    output_ptr: UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin],
+    batch_size: Int,
+    max_cache_valid_length: Int,
+    q_max_seq_len: Int,
+    ctx: DeviceContext,
+) raises:
+    """Compute the 4 scalar dispatch args and write them to the device buffer.
+
+    The output buffer layout is:
+        [0] batch_size
+        [1] q_max_seq_len
+        [2] num_partitions
+        [3] max_cache_valid_length
+
+    This is called once per device before the layer loop by the
+    ``mo.mla.compute_dispatch_args.paged`` MOGG op.
+    """
+
+    var effective = max_cache_valid_length
+
+    comptime if not _is_cache_length_accurate:
+        effective += q_max_seq_len
+
+    var split_page_size = 64 if (effective <= 512 and batch_size >= 32) else 128
+    comptime sm_count = ctx.default_device_info.sm_count
+    var num_partitions = _compute_num_partitions[num_heads, is_fp8_kv](
+        batch_size, effective, q_max_seq_len, split_page_size, sm_count
+    )
+
+    var host_args = InlineArray[Int64, 4](uninitialized=True)
+    host_args[0] = Int64(batch_size)
+    host_args[1] = Int64(q_max_seq_len)
+    host_args[2] = Int64(num_partitions)
+    host_args[3] = Int64(max_cache_valid_length)
+    # Write to GPU buffer (H2D copy).
+    var output_buf = DeviceBuffer[DType.int64](ctx, output_ptr, 4, owning=False)
+    output_buf.enqueue_copy_from(
+        UnsafePointer(to=host_args).bitcast[Scalar[DType.int64]]()
+    )
+
+
+struct MLADispatchScalarArgs[
+    num_heads: Int,
+    _is_cache_length_accurate: Bool = False,
+    is_fp8_kv: Bool = False,
+]:
+    """Pre-computed scalar dispatch args for MLA decode legacy (non-capturable) path.
+
+    Holds a GPU buffer containing
+    ``[batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]``
+    and stores the scalar values as plain Int fields for host-side dispatch.
+
+    Usage::
+
+        var args = MLADispatchScalarArgs[num_heads=128](
+            batch_size, max_cache_len, q_max_seq_len, ctx,
+        )
+        var gpu_lt = args.gpu_layout_tensor()
+        mla_decode_sm100_dispatch[...](
+            ..., gpu_lt,
+            args.batch_size, args.q_max_seq_len, args.max_cache_valid_length,
+            ctx,
+        )
+        _ = args  # keepalive
+    """
+
+    comptime MLAScalarArgsLT = LayoutTensor[
+        DType.int64, Layout.row_major(4), MutAnyOrigin
+    ]
+
+    var gpu_buf: DeviceBuffer[DType.int64]
+    var batch_size: Int
+    var q_max_seq_len: Int
+    var max_cache_valid_length: Int
+
+    fn __init__(
+        out self,
+        batch_size: Int,
+        max_cache_len: Int,
+        q_max_seq_len: Int,
+        ctx: DeviceContext,
+    ) raises:
+        self.gpu_buf = ctx.enqueue_create_buffer[DType.int64](4)
+        self.batch_size = batch_size
+        self.q_max_seq_len = q_max_seq_len
+        self.max_cache_valid_length = max_cache_len
+        compute_mla_dispatch_scalar_args[
+            num_heads=Self.num_heads,
+            _is_cache_length_accurate=Self._is_cache_length_accurate,
+            is_fp8_kv=Self.is_fp8_kv,
+        ](
+            self.gpu_buf.unsafe_ptr()
+            .bitcast[Scalar[DType.int64]]()
+            .as_any_origin(),
+            batch_size,
+            max_cache_len,
+            q_max_seq_len,
+            ctx,
+        )
+
+    fn gpu_layout_tensor(
+        self,
+    ) -> Self.MLAScalarArgsLT:
+        return Self.MLAScalarArgsLT(
+            rebind[UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]](
+                self.gpu_buf.unsafe_ptr()
+            ),
+        )
 
 
 # ------------------------------------------------------------------------------
@@ -73,34 +366,46 @@ fn mla_decode_sm100_dispatch[
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
     output: LayoutTensor[
-        output_type, output_layout, address_space = AddressSpace.GENERIC, ...
+        output_type, output_layout, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
-    batch_size: Int,
-    max_cache_valid_length: Int,  # longest KV cache entry
-    q_max_seq_len: Int,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
+    scalar_args_buf: LayoutTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
+    ],
+    batch_size: Int,
+    q_max_seq_len: Int,
+    max_cache_valid_length: Int,
     ctx: DeviceContext,
 ) raises:
     # Get the base pointer to the scales tensor from the operand.
     var scales_ptr = k.scales_raw_ptr()
 
-    # CRITICAL: The kernel's OffsetPosition adds q_max_seq_len to num_keys when
-    # _is_cache_length_accurate=False. We must use the same effective num_keys
-    # here to compute num_partitions correctly, otherwise there's a mismatch
-    # between how the dispatcher divides work and how the kernel sees it.
+    # Compute num_partitions from the scalar args (same logic as
+    # compute_mla_dispatch_scalar_args).
     var effective_max_cache_len = max_cache_valid_length
 
     comptime if not _is_cache_length_accurate:
         effective_max_cache_len += q_max_seq_len
+
+    var split_page_size = 64 if (
+        effective_max_cache_len <= 512 and batch_size >= 32
+    ) else 128
+    comptime sm_count = ctx.default_device_info.sm_count
+    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+    var num_partitions = _compute_num_partitions[num_heads, _is_fp8_kv](
+        batch_size,
+        effective_max_cache_len,
+        q_max_seq_len,
+        split_page_size,
+        sm_count,
+    )
 
     # =========================================================================
     # split_page_size routing: use finer split granularity for short cache
@@ -135,12 +440,15 @@ fn mla_decode_sm100_dispatch[
             k,
             output,
             scale,
-            batch_size,
-            effective_max_cache_len,
-            q_max_seq_len,
             valid_length,
             mask,
             scales_ptr,
+            scalar_args_buf,
+            batch_size,
+            q_max_seq_len,
+            num_partitions,
+            max_cache_valid_length,
+            effective_max_cache_len,
             ctx,
         )
     else:
@@ -165,12 +473,15 @@ fn mla_decode_sm100_dispatch[
             k,
             output,
             scale,
-            batch_size,
-            effective_max_cache_len,
-            q_max_seq_len,
             valid_length,
             mask,
             scales_ptr,
+            scalar_args_buf,
+            batch_size,
+            q_max_seq_len,
+            num_partitions,
+            max_cache_valid_length,
+            effective_max_cache_len,
             ctx,
         )
 
@@ -196,41 +507,33 @@ fn _mla_decode_sm100_dispatch_impl[
     decoding_warp_split_k: Bool = False,
     split_page_size: Int = 128,
 ](
-    q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
     output: LayoutTensor[
-        output_type, output_layout, address_space = AddressSpace.GENERIC, ...
+        output_type, output_layout, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
-    batch_size: Int,
-    effective_max_cache_len: Int,
-    q_max_seq_len: Int,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scalar_args_buf: LayoutTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
+    ],
+    batch_size: Int,
+    q_max_seq_len: Int,
+    num_partitions: Int,
+    max_cache_valid_length: Int,
+    effective_max_cache_len: Int,
     ctx: DeviceContext,
 ) raises:
     comptime hw_info = ctx.default_device_info
     comptime sm_count = hw_info.sm_count
-    # Maximum number of splits the combine kernel is instantiated for.
-    # Optimized for the DeepSeek V3/R1 production config (num_heads=128).
-    #
-    # wave_quantum = sm_count / gcd(ctas_per_partition, sm_count).
-    # For DeepSeek (num_heads=128, BM=64): ctas_per_partition >= 2,
-    # so wave_quantum = 148 / gcd(2, 148) = 148 / 2 = 74.
-    #
-    # Models with num_heads <= 64 have ctas_per_partition=1, giving
-    # wave_quantum = 148, which exceeds this limit. Since this kernel
-    # targets DeepSeek, 74 is sufficient and avoids 2x compile-time
-    # cost of the combine kernel's @parameter for loops.
-    comptime max_num_splits = 74
 
     comptime AccumType = get_accum_type[output.dtype]()
     comptime v_depth = depth - 64
+    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
 
     # Ensure KV cache page_size is evenly divisible by split_page_size.
     # If the KV cache page_size shrinks in the future, splits must not
@@ -239,131 +542,6 @@ fn _mla_decode_sm100_dispatch_impl[
         k_t.page_size % split_page_size == 0
     ), "KV cache page_size must be divisible by split_page_size"
 
-    # Compute num_kv_cache_pages using the parametric split_page_size.
-    # This determines how finely KV work is divided across split-K partitions.
-    var num_kv_cache_pages = ceildiv(effective_max_cache_len, split_page_size)
-
-    # Wave-aligned split count: num_partitions is chosen to make total_CTAs as
-    # close as possible to multiple of sm_count, eliminating GPU wave quantization waste.
-    #
-    # Total CTAs launched = ctas_per_partition * num_partitions, where
-    # ctas_per_partition = ceildiv(num_heads, BM) * q_max_seq_len * batch_size.
-    # For perfect wave alignment: total_CTAs % sm_count == 0.
-    # This requires num_partitions to be a multiple of:
-    #   wave_quantum = sm_count / gcd(ctas_per_partition, sm_count)
-    #
-    # On B200 (sm_count=148, BM=64, num_heads=128 => ctas_per_partition=2*bs):
-    #   bs=1: wave_quantum=74, bs>=2: wave_quantum=37
-    #
-    # We start with 1 wave quantum and add more wave quanta only if pages_per_split
-    # exceeds the max threshold, keeping combine overhead low while ensuring enough parallelism.
-    var ctas_per_partition = ceildiv(num_heads, 64) * q_max_seq_len * batch_size
-    var wave_quantum = sm_count // gcd(ctas_per_partition, sm_count)
-
-    # Minimum partitions to keep pages_per_split <= max threshold.
-    # 18 pages * 128 tokens/page = 2304 tokens per split.
-    # This threshold is chosen to balance decode work per split against wave
-    # quantization. At 18 pages, the largest context (cl=163840, 1281 pages)
-    # needs ceil(1281/18)=72 splits, which fits in 1 decode wave (72*2=144
-    # CTAs on 148 SMs, 97.3% efficiency). For all other configs
-    # (cl<=131072), max_pages_per_split doesn't affect the final np since
-    # those are bounded by wave_quantum or max_num_splits instead.
-    comptime max_pages_per_split = 18
-    var min_partitions_for_work = ceildiv(
-        num_kv_cache_pages, max_pages_per_split
-    )
-
-    # The key is to have enough splits so total CTAs fill the GPU,
-    # but not so many that each split has trivial work (< min_pages_per_split pages).
-    # This prevents the wave_quantum from creating 32 splits with only
-    # 1-2 pages each when batch_size is moderate (16-32), while still
-    # giving 2-4 splits for large batch (64-128) to improve SM utilization.
-    #
-    # min_pages_per_split is batch-size-aware to jointly optimize (np, wph):
-    #  - Small batch (bs<=8): min_pages_per_split=4, allows many splits (37-74)
-    #    with high wph (8) for parallelism since combine CTAs are few.
-    #  - Medium batch (bs=16-32): min_pages_per_split=4, moderate splits (7-13)
-    #    with moderate wph (4-8).
-    #  - Large batch (bs>=64): min_pages_per_split=8, caps splits at 2-4 to
-    #    keep combine CTA count low. E.g., bs=64/2K gets np=2 with wph=4
-    #    (few-split regime prefers wph=4 over wph=2 for lower per-CTA latency).
-    #
-    # Note: When split_page_size=64 (short cache path), pages are half the
-    # size of 128. The same min_pages_per_split thresholds still work correctly
-    # because the resulting num_kv_cache_pages // min_pages_per_split naturally
-    # produces low split counts (often 0), letting target_partitions dominate,
-    # which gives the right np for these configs.
-    #
-    # FP8 adjustment: FP8 KV tiles are half the bytes of BF16, so TMA
-    # loads complete ~2x faster. This means each split finishes faster,
-    # making the combine kernel overhead a larger fraction of total time.
-    # To compensate, use 2x min_pages_per_split for FP8 to produce fewer,
-    # larger splits.
-    #
-    # Exception: very small batches (bs <= 8) benefit from more splits
-    # regardless of dtype because wave efficiency dominates. At bs=8 with
-    # long cache, FP8 gets np=37 at min_pps=4 vs np=29 at min_pps=8,
-    # giving ~5% speedup. For medium batch (bs=16-32), FP8 still needs
-    # the higher threshold to avoid over-splitting and combine overhead.
-    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
-    comptime _min_pps_large_batch = 16 if _is_fp8_kv else 8
-    comptime _min_pps_small_batch = 8 if _is_fp8_kv else 4
-    var min_pages_per_split: Int
-    if batch_size >= 64:
-        min_pages_per_split = _min_pps_large_batch
-    elif batch_size <= 8 and _is_fp8_kv:
-        # Very small batch FP8: use BF16 threshold (4) to allow more
-        # splits. Wave efficiency matters more than combine overhead.
-        min_pages_per_split = 4
-    else:
-        min_pages_per_split = _min_pps_small_batch
-
-    var target_partitions = ceildiv(sm_count, ctas_per_partition)
-    # Use wave_quantum for alignment when it gives reasonable split sizes,
-    # otherwise use the SM-fill target directly.
-    var num_waves = max(1, ceildiv(min_partitions_for_work, wave_quantum))
-    var wave_aligned = num_waves * wave_quantum
-    # Pick the smaller of wave-aligned and page-constrained to avoid
-    # over-splitting. Ensure at least target_partitions for SM fill.
-    var num_partitions = max(
-        target_partitions,
-        min(wave_aligned, num_kv_cache_pages // min_pages_per_split),
-    )
-
-    # Clamp num_partitions to:
-    # 1. max_num_splits (74) - combine kernel supports up to 74 splits
-    # 2. num_kv_cache_pages - at least 1 page per split to avoid empty splits
-    #    (empty splits cause hangs due to barrier deadlocks or infinite loops)
-    # 3. min_partitions floor:
-    #    - Allow np=1 when cache is very short and batch is large enough
-    #      (combine overhead dominates, np=1 eliminates it entirely).
-    #      Tested extensively for bs>=64 with cache_len<=256 (<=2 pages @128).
-    #    - For FP8: allow np=1 with a higher cache threshold since each split
-    #      finishes faster and combine overhead is proportionally larger.
-    #    - Otherwise require np>=2 when we have enough pages.
-    #    - Fall back to np=1 for very short cache (<=1 page) as safety net.
-    # FP8: allow np=1 with higher cache threshold (512 vs 256) since each
-    # split finishes faster and combine overhead is proportionally larger.
-    comptime _np1_cache_threshold = 512 if _is_fp8_kv else 256
-    var min_partitions: Int
-    if effective_max_cache_len <= _np1_cache_threshold and batch_size >= 64:
-        min_partitions = 1
-    elif num_kv_cache_pages >= 2:
-        min_partitions = 2
-    else:
-        min_partitions = 1
-    num_partitions = clamp(
-        num_partitions, min_partitions, min(max_num_splits, num_kv_cache_pages)
-    )
-    # Eliminate empty splits caused by ceil division mismatch.
-    # The main kernel uses pages_per_split = ceildiv(total_pages, num_partitions),
-    # which means only ceildiv(total_pages, pages_per_split) splits actually have
-    # work. Splits beyond that have start_page >= total_pages and return early
-    # with uninitialized LSE, causing combine kernel corruption.
-    # Recompute to ensure every split has at least 1 page of work.
-    if num_partitions > 1 and num_kv_cache_pages > 0:
-        var pages_per_split = ceildiv(num_kv_cache_pages, num_partitions)
-        num_partitions = ceildiv(num_kv_cache_pages, pages_per_split)
     var block_z = batch_size * num_partitions
 
     if num_partitions > 1:
@@ -441,6 +619,7 @@ fn _mla_decode_sm100_dispatch_impl[
             valid_length,
             mask,
             scales_ptr,
+            scalar_args_buf,
             ctx,
         )
 
@@ -450,7 +629,7 @@ fn _mla_decode_sm100_dispatch_impl[
         ](valid_length.to_device_buffer(ctx).unsafe_ptr())
 
         # Dispatch to specialized kernel based on num_partitions for compile-time unrolling.
-        # Supports up to max_num_splits splits to allow higher SM utilization on B200.
+        # Supports up to MAX_NUM_SPLITS splits to allow higher SM utilization on B200.
         @parameter
         fn launch_combine[n_splits: Int, wph: Int]() raises:
             mla_decode_combine_partial_outputs[
@@ -540,7 +719,7 @@ fn _mla_decode_sm100_dispatch_impl[
             #   bs=128, cl=1024: np=2, wph=1, 2048 CTAs (14 waves)
             #     vs wph=4: 8192 CTAs (56 waves). 4x fewer waves.
 
-            comptime for i in range(2, max_num_splits + 1):
+            comptime for i in range(2, MAX_NUM_SPLITS + 1):
                 if num_partitions == i:
                     launch_combine[i, 1]()
         elif combine_ctas_base >= 2048 and num_partitions > 4:
@@ -548,7 +727,7 @@ fn _mla_decode_sm100_dispatch_impl[
             # number of combine CTAs. Each CTA has enough reduction work
             # (>4 splits) to amortize launch overhead.
 
-            comptime for i in range(5, max_num_splits + 1):
+            comptime for i in range(5, MAX_NUM_SPLITS + 1):
                 if num_partitions == i:
                     launch_combine[i, 2]()
         elif combine_ctas_base >= 512:
@@ -557,7 +736,7 @@ fn _mla_decode_sm100_dispatch_impl[
             # with np=2), the combine work per CTA is tiny and wph=4 hides
             # per-CTA latency better than wph=2.
 
-            comptime for i in range(2, max_num_splits + 1):
+            comptime for i in range(2, MAX_NUM_SPLITS + 1):
                 if num_partitions == i:
                     launch_combine[i, 4]()
         else:
@@ -565,7 +744,7 @@ fn _mla_decode_sm100_dispatch_impl[
             # parallelism with wph=8. The extra CTAs from higher wph are not
             # a concern since the grid is small.
 
-            comptime for i in range(2, max_num_splits + 1):
+            comptime for i in range(2, MAX_NUM_SPLITS + 1):
                 if num_partitions == i:
                     launch_combine[i, 8]()
     else:
@@ -601,6 +780,7 @@ fn _mla_decode_sm100_dispatch_impl[
             valid_length,
             mask,
             scales_ptr,
+            scalar_args_buf,
             ctx,
         )
 
@@ -623,11 +803,9 @@ fn mla_decode_sm100_sink_split_k[
     decoding_warp_split_k: Bool,
     split_page_size: Int = 128,
 ](
-    q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[q_type, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[address_space=AddressSpace.GENERIC, ...],
     lse_accum_split_ptr: SplitAccumType,
     scale: Float32,
     batch_size: Int,
@@ -635,10 +813,13 @@ fn mla_decode_sm100_sink_split_k[
     num_partitions: Int,
     q_max_seq_len: Int,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scalar_args_buf: LayoutTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     comptime _scale_block_size = k_t.quantization_granularity if k_t.quantization_enabled else 0
@@ -677,20 +858,20 @@ fn mla_decode_sm100_sink_split_k[
     var num_rows_q = num_matrix_view_rows_decode(q)
 
     k_tma_op = k.create_tma_tile[
-        BN = mla_config.BK1,  # tile_m =64
-        depth = mla_config.q_depth,
-        BK = mla_config.BK0,  # tile_n =576
-        swizzle_mode = mla_config.kv_tma_swizzle_mode,
+        BN=mla_config.BK1,  # tile_m =64
+        depth=mla_config.q_depth,
+        BK=mla_config.BK0,  # tile_n =576
+        swizzle_mode=mla_config.kv_tma_swizzle_mode,
     ](ctx)
     o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
         output.to_device_buffer(ctx).unsafe_ptr()
     )
     var num_rows_o = num_matrix_view_rows_decode(output)
     o_tma_op = tma_tile_qo[
-        swizzle_mode = mla_config.swizzle_mode,
-        BM = mla_config.out_rows,
-        BK = mla_config.BN,
-        depth = mla_config.depth,
+        swizzle_mode=mla_config.swizzle_mode,
+        BM=mla_config.out_rows,
+        BK=mla_config.BN,
+        depth=mla_config.depth,
     ](ctx, o_ptr, num_rows_o)
 
     # For native FP8: Q data is already FP8 in the Q buffer (like FlashInfer).
@@ -702,10 +883,10 @@ fn mla_decode_sm100_sink_split_k[
             UnsafePointer[Scalar[k_t.dtype], origin=MutAnyOrigin]
         ](q.to_device_buffer(ctx).unsafe_ptr())
         q_tma_fp8 = tma_tile_qo[
-            swizzle_mode = mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
-            BM = mla_config.BM,
-            BK = mla_config.BK0,
-            depth = mla_config.q_depth,
+            swizzle_mode=mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+            BM=mla_config.BM,
+            BK=mla_config.BK0,
+            depth=mla_config.q_depth,
         ](ctx, q_ptr_fp8, num_rows_q)
 
         if ragged:
@@ -737,6 +918,7 @@ fn mla_decode_sm100_sink_split_k[
                 valid_len,
                 mask,
                 scales_ptr,
+                scalar_args_buf,
                 ctx,
             )
         else:
@@ -766,6 +948,7 @@ fn mla_decode_sm100_sink_split_k[
                 valid_len,
                 mask,
                 scales_ptr,
+                scalar_args_buf,
                 ctx,
             )
     else:
@@ -774,10 +957,10 @@ fn mla_decode_sm100_sink_split_k[
             q.to_device_buffer(ctx).unsafe_ptr()
         )
         q_tma_op = tma_tile_qo[
-            swizzle_mode = mla_config.swizzle_mode,
-            BM = mla_config.BM,
-            BK = mla_config.BK0,
-            depth = mla_config.q_depth,
+            swizzle_mode=mla_config.swizzle_mode,
+            BM=mla_config.BM,
+            BK=mla_config.BK0,
+            depth=mla_config.q_depth,
         ](ctx, q_ptr, num_rows_q)
 
         if ragged:
@@ -809,6 +992,7 @@ fn mla_decode_sm100_sink_split_k[
                 valid_len,
                 mask,
                 scales_ptr,
+                scalar_args_buf,
                 ctx,
             )
         else:
@@ -838,6 +1022,7 @@ fn mla_decode_sm100_sink_split_k[
                 valid_len,
                 mask,
                 scales_ptr,
+                scalar_args_buf,
                 ctx,
             )
 
@@ -856,21 +1041,21 @@ fn launch_mla_sm100_decode_enqueue_kernel[
 ](
     q_tma: QOTMATile[
         dtype=q_type,
-        BM = config.BM,  # tile_m =64
-        BK = config.BK0,  # tile_n =576
-        swizzle_mode = config.swizzle_mode,
+        BM=config.BM,  # tile_m =64
+        BK=config.BK0,  # tile_n =576
+        swizzle_mode=config.swizzle_mode,
     ],
     k_tma: KVTMATile[
-        dtype = KVLUTType.dtype,
-        swizzle_mode = config.kv_tma_swizzle_mode,
-        BN = config.BK1,  # tile_m =64
-        BK = config.BK0,  # tile_n =576
+        dtype=KVLUTType.dtype,
+        swizzle_mode=config.kv_tma_swizzle_mode,
+        BN=config.BK1,  # tile_m =64
+        BK=config.BK0,  # tile_n =576
     ],
     o_tma: QOTMATile[
         dtype=output_type,
-        BM = config.out_rows,
-        BK = config.BN,
-        swizzle_mode = config.swizzle_mode,
+        BM=config.out_rows,
+        BK=config.BN,
+        swizzle_mode=config.swizzle_mode,
     ],
     kv_lut: KVLUTType,
     lse_accum_split_ptr: SplitAccumType,
@@ -882,6 +1067,9 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     valid_len: ValidLengthType,
     mask: MaskType,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scalar_args_buf: LayoutTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     var mla_decode_pack = MLA_Decode_Pack[
@@ -987,17 +1175,16 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     # Enable PDL (Programmatic Dependent Launch) for split-K mode to chain
     # the MLA decode kernel with the combine kernel, reducing host synchronization.
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+
     ctx.enqueue_function[kernel, kernel](
         q_tma,
         k_tma,
         o_tma,
         kv_lut,
         scale,
-        batch_size,
-        q_max_seq_len,
-        num_partitions,
         mla_decode_pack,
         scales_ptr,
+        scalar_args_buf,
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
@@ -1021,22 +1208,22 @@ fn launch_mla_sm100_decode_native_fp8[
     ragged: Bool = False,
 ](
     q_tma: QOTMATile[
-        dtype = KVLUTType.dtype,  # FP8 Q TMA
-        BM = config.BM,
-        BK = config.BK0,
-        swizzle_mode = config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+        dtype=KVLUTType.dtype,  # FP8 Q TMA
+        BM=config.BM,
+        BK=config.BK0,
+        swizzle_mode=config.kv_tma_swizzle_mode,  # SWIZZLE_64B
     ],
     k_tma: KVTMATile[
-        dtype = KVLUTType.dtype,
-        swizzle_mode = config.kv_tma_swizzle_mode,
-        BN = config.BK1,
-        BK = config.BK0,
+        dtype=KVLUTType.dtype,
+        swizzle_mode=config.kv_tma_swizzle_mode,
+        BN=config.BK1,
+        BK=config.BK0,
     ],
     o_tma: QOTMATile[
         dtype=output_type,
-        BM = config.out_rows,
-        BK = config.BN,
-        swizzle_mode = config.swizzle_mode,
+        BM=config.out_rows,
+        BK=config.BN,
+        swizzle_mode=config.swizzle_mode,
     ],
     kv_lut: KVLUTType,
     lse_accum_split_ptr: SplitAccumType,
@@ -1048,6 +1235,9 @@ fn launch_mla_sm100_decode_native_fp8[
     valid_len: ValidLengthType,
     mask: MaskType,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    scalar_args_buf: LayoutTensor[
+        DType.int64, address_space=AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """Launch the native FP8 MLA decode kernel with FP8 Q TMA.
@@ -1084,11 +1274,9 @@ fn launch_mla_sm100_decode_native_fp8[
         o_tma,
         kv_lut,
         scale,
-        batch_size,
-        q_max_seq_len,
-        num_partitions,
         mla_decode_pack,
         scales_ptr,
+        scalar_args_buf,
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,

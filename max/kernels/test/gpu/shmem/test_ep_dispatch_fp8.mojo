@@ -24,7 +24,7 @@ from std.os.path import dirname
 from std.pathlib import Path
 from std.random import randint, randn, seed
 from std.sys import align_of, argv, simd_width_of, size_of
-from std.sys.param_env import env_get_string
+from std.sys.defines import get_defined_string
 
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
@@ -72,7 +72,7 @@ fn welford_update(
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -110,8 +110,8 @@ fn test_dispatch[
     comptime token_fmt_type = BlockwiseFP8TokenFormat[
         fp8_dtype=fp8_dtype,
         scales_dtype=scales_dtype,
-        output_layout = Layout(),
-        scales_layout = Layout(),
+        output_layout=Layout(),
+        scales_layout=Layout(),
         hidden_size,
         top_k,
         gpu_alignment,
@@ -557,11 +557,11 @@ def main() raises:
         with SHMEMContext() as shmem_ctx:
             var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
             test_dispatch[
-                fp8_dtype = DType.float8_e4m3fn,
-                scales_dtype = DType.float32,
+                fp8_dtype=DType.float8_e4m3fn,
+                scales_dtype=DType.float32,
                 hidden_size=7168,
                 top_k=8,
-                n_experts = min(num_gpus * 32, 256),
+                n_experts=min(num_gpus * 32, 256),
                 n_ranks=num_gpus,
                 n_tokens_per_rank=128,
             ](shmem_ctx.get_device_context(), Int(mype_node))

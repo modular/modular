@@ -25,9 +25,6 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from std.memory import stack_allocation
 
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul_kernel import (
     _ProblemSizesTile,
 )
@@ -76,7 +73,7 @@ fn test_scheduler_kernel[
     """Kernel that iterates over all tiles and records their coordinates."""
     # Convert LayoutTensor to TileTensor for the scheduler
     from std.memory import UnsafePointer as NewPtr
-    from layout._layout import row_major as new_row_major
+    from layout.tile_layout import row_major as new_row_major
 
     var problem_sizes_tt = _ProblemSizesTile[max_groups](
         ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](

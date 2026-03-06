@@ -40,7 +40,7 @@ stdout). Messages below the configured level will be silently ignored.
 import std.sys
 from std.format._utils import _WriteBufferStack
 from std.os import abort
-from std.sys.param_env import env_get_string
+from std.sys.defines import get_defined_string
 from std.utils._ansi import Text, Color
 
 from std.reflection import call_location, SourceLocation
@@ -50,7 +50,7 @@ from std.reflection import call_location, SourceLocation
 # ===-----------------------------------------------------------------------===#
 
 comptime DEFAULT_LEVEL = Level._from_str(
-    env_get_string["LOGGING_LEVEL", "NOTSET"]()
+    get_defined_string["LOGGING_LEVEL", "NOTSET"]()
 )
 """The default logging level, determined by the LOGGING_LEVEL environment variable."""
 
@@ -461,7 +461,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         _level: Level
     ](
         self,
-        values: VariadicPack[element_trait=Writable],
+        values: VariadicPack[element_trait=Writable, ...],
         *,
         location: SourceLocation,
         sep: StaticString = " ",

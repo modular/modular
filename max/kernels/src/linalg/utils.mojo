@@ -114,9 +114,9 @@ struct GemmShape(TrivialRegisterPassable):
         layout_a: Layout,
         layout_b: Layout,
     ](
-        c: LayoutTensor[_, layout_c, _, ...],
-        a: LayoutTensor[_, layout_a, _, ...],
-        b: LayoutTensor[_, layout_b, _, ...],
+        c: LayoutTensor[_, layout_c, ...],
+        a: LayoutTensor[_, layout_a, ...],
+        b: LayoutTensor[_, layout_b, ...],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -283,7 +283,7 @@ fn _get_tile_n_k[
     kernel_cols: Int,
     transpose_b: Bool,
     layout: Layout,
-](b: LayoutTensor[b_type, layout, _, ...]) -> IndexList[2]:
+](b: LayoutTensor[b_type, layout, ...]) -> IndexList[2]:
     comptime assert b.rank == 2
     var tile_n_k: IndexList[2]
 
@@ -770,7 +770,7 @@ fn apply_epilogue[
 
                 var vec = src.ptr.load[
                     width=vec_width,
-                    alignment = align_of[SIMD[src.dtype, vec_width]](),
+                    alignment=align_of[SIMD[src.dtype, vec_width]](),
                 ](src_idx)
 
                 var m = (dst_idx + offset) // N

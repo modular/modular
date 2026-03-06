@@ -167,6 +167,12 @@ _B200_TESTS = [
     "test_matmul_sm100_batched_block_scaled_nvfp4.mojo",
     "test_matmul_sm100_batched_2sm_bf16.mojo",
     "test_matmul_sm100_batched_1sm_bf16.mojo",
+    "test_matmul_sm100_2sm_fp8_normal_epilogue.mojo",
+    "test_matmul_sm100_2sm_bf16_normal_epilogue.mojo",
+    "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo",
+    "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo",
+    "test_matmul_sm100_block_scaled_nvfp4_small_bn.mojo",
 ]
 
 _GPU_MEMORY = {
@@ -197,6 +203,12 @@ _GPU_MEMORY = {
     "test_matmul_sm100_batched_block_scaled_nvfp4.mojo": "3",
     "test_matmul_sm100_batched_2sm_bf16.mojo": "3",
     "test_matmul_sm100_batched_1sm_bf16.mojo": "3",
+    "test_matmul_sm100_2sm_fp8_normal_epilogue.mojo": "3",
+    "test_matmul_sm100_2sm_bf16_normal_epilogue.mojo": "3",
+    "test_matmul_sm100_1sm_fp8_normal_epilogue.mojo": "3",
+    "test_matmul_sm100_1sm_bf16_normal_epilogue.mojo": "3",
+    "test_matmul_sm100_block_scaled_mxfp8_small_bn.mojo": "3",
+    "test_matmul_sm100_block_scaled_nvfp4_small_bn.mojo": "3",
 }
 
 [
@@ -212,6 +224,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
         ],
     )
@@ -245,6 +258,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -272,6 +286,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -298,6 +313,7 @@ _GPU_MEMORY = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -343,13 +359,16 @@ mojo_test(
         deps = [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:structured_kernels",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + ["test_matmul_pdl_race.mojo"],
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + [
+            "test_matmul_pdl_race.mojo",
+        ],
     )
 ]
 

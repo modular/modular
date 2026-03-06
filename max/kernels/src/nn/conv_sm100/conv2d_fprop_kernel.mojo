@@ -56,7 +56,7 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileIm2col,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     TMATile,
     TmaOpType,
     TmaOpTypeIm2col,
@@ -67,16 +67,16 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
 )
 
 # Import shared components from matmul structured kernels
-from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
@@ -88,8 +88,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     InputConsumer,
     OutputTilePipeline,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
-    TmemDeallocBarrier,
+from structured_kernels.barriers import (
     WarpGroupBarrier,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
@@ -97,6 +96,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
+    TmemDeallocBarrier,
     TmemTensor,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.warp_context import (
@@ -243,7 +243,7 @@ struct Conv2dFpropKernel[
         Self.act_type,
         Self.filter_type,
         Self.out_type,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -253,23 +253,23 @@ struct Conv2dFpropKernel[
         Self.filter_type,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
         transpose_b=True,  # Filter is transposed
     ]
 
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = TileScheduler[
-        num_stages = Self.num_clc_pipeline_stages,
-        cluster_shape = Index[dtype = DType.uint32](
+        num_stages=Self.num_clc_pipeline_stages,
+        cluster_shape=Index[dtype=DType.uint32](
             Self.config.cluster_shape[0],
             Self.config.cluster_shape[1],
             Self.config.cluster_shape[2],
         ),
-        block_swizzle_size = Self.config.block_swizzle_size,
+        block_swizzle_size=Self.config.block_swizzle_size,
     ]
 
     # ========== Tile Pipeline Type ==========
@@ -288,11 +288,11 @@ struct Conv2dFpropKernel[
 
     # ========== Tile Loader Types ==========
     comptime ActTileLoaderTypeIm2col = TileLoaderTMAIm2col[
-        cta_group = Self.cta_group
+        ..., cta_group=Self.cta_group
     ]
-    comptime FilterTileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+    comptime FilterTileLoaderType = TileLoaderTMA[..., cta_group=Self.cta_group]
     # Source C tile loader for residual (same structure as output)
-    comptime SrcTileLoaderType = TileLoaderTMA[cta_group=1]
+    comptime SrcTileLoaderType = TileLoaderTMA[..., cta_group=1]
 
     # TMA expected bytes
     comptime act_expected_bytes = Self.SmemType.act_smem_layout.size() * size_of[
@@ -385,7 +385,7 @@ struct Conv2dFpropKernel[
     comptime Tmem = TmemAllocation[Self.opc.cta_group]
     comptime accum_layout = LegacyLayout.row_major(Self.MMA_M, Self.MMA_N)
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.accum_layout, cta_group = Self.cta_group
+        Self.accum_type, Self.accum_layout, cta_group=Self.cta_group
     ]
 
     # ========== Output Pipeline Type ==========
@@ -422,20 +422,20 @@ struct Conv2dFpropKernel[
 
     # ========== Output Writer ==========
     comptime TileWriterType = TileWriter[
-        a_type = Self.act_type,
-        accum_type = Self.accum_type,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        opc = Self.opc,
-        c_swizzle = Self.config.c_swizzle,
+        a_type=Self.act_type,
+        accum_type=Self.accum_type,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        opc=Self.opc,
+        c_swizzle=Self.config.c_swizzle,
         transpose_c=False,
-        c_smem_dim0 = Self.SmemType.OutputM,
-        c_smem_dim1 = Self.SmemType.OutputN,
-        num_output_stages = Self.SmemType.num_output_stages,
-        num_output_warps = Self.num_output_warps,
+        c_smem_dim0=Self.SmemType.OutputM,
+        c_smem_dim1=Self.SmemType.OutputN,
+        num_output_stages=Self.SmemType.num_output_stages,
+        num_output_warps=Self.num_output_warps,
         # Epilogue lambda for fusion (bias, activation, residual add)
-        elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
-        register_based_epilogue = Self.register_based_epilogue,
+        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
+        register_based_epilogue=Self.register_based_epilogue,
     ]
 
     # ========== Source C Tile Type (for write_with_residual) ==========
@@ -577,16 +577,18 @@ struct Conv2dFpropKernel[
         act_loader: TileLoaderTMAIm2col[
             act_tma_origin,
             Self.act_type,
-            Self.ActTmaOp.layout,
-            Self.ActTmaOp.desc_layout,
-            cta_group = Self.cta_group,
+            Self.ActTmaOp.rank,
+            Self.ActTmaOp.tile_shape,
+            Self.ActTmaOp.desc_shape,
+            cta_group=Self.cta_group,
         ],
         filter_loader: TileLoaderTMA[
             filter_tma_origin,
             Self.filter_type,
-            Self.FilterTmaOp.layout,
-            Self.FilterTmaOp.desc_layout,
-            cta_group = Self.cta_group,
+            Self.FilterTmaOp.rank,
+            Self.FilterTmaOp.tile_shape,
+            Self.FilterTmaOp.desc_shape,
+            cta_group=Self.cta_group,
         ],
         tiles: ProducerTiles[
             tiles_origin,
@@ -684,8 +686,9 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=False,
-            _src_layout = Self.OutTmaOp.layout,
-            _src_desc_layout = Self.OutTmaOp.desc_layout,
+            _src_rank=Self.OutTmaOp.rank,
+            _src_tile_shape=Self.OutTmaOp.tile_shape,
+            _src_desc_shape=Self.OutTmaOp.desc_shape,
         ](
             act_tma_op,
             filter_tma_op,
@@ -725,8 +728,9 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=True,
-            _src_layout = Self.SrcTmaOp.layout,
-            _src_desc_layout = Self.SrcTmaOp.desc_layout,
+            _src_rank=Self.SrcTmaOp.rank,
+            _src_tile_shape=Self.SrcTmaOp.tile_shape,
+            _src_desc_shape=Self.SrcTmaOp.desc_shape,
         ](
             act_tma_op,
             filter_tma_op,
@@ -743,13 +747,16 @@ struct Conv2dFpropKernel[
     @always_inline
     fn _run_impl[
         has_residual: Bool,
-        _src_layout: LegacyLayout = Self.SrcTmaOp.layout,
-        _src_desc_layout: LegacyLayout = Self.SrcTmaOp.desc_layout,
+        _src_rank: Int = Self.SrcTmaOp.rank,
+        _src_tile_shape: IndexList[_src_rank] = Self.SrcTmaOp.tile_shape,
+        _src_desc_shape: IndexList[_src_rank] = Self.SrcTmaOp.desc_shape,
     ](
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
         out_tma_op: Self.OutTmaOp,
-        src_tma_op: TMATensorTile[Self.out_type, _src_layout, _src_desc_layout],
+        src_tma_op: TMATensorTile[
+            Self.out_type, _src_rank, _src_tile_shape, _src_desc_shape
+        ],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         beta: Float32,
@@ -763,9 +770,11 @@ struct Conv2dFpropKernel[
 
         Parameters:
             has_residual: Whether to load source C and apply residual add.
-            _src_layout: Source C global memory layout (internal, set by
+            _src_rank: Rank of source C TMA tile/descriptor shapes (internal,
+                set by entry points).
+            _src_tile_shape: Source C TMA tile shape (internal, set by
                 entry points).
-            _src_desc_layout: Source C TMA descriptor layout (internal, set
+            _src_desc_shape: Source C TMA descriptor shape (internal, set
                 by entry points).
 
         Args:
@@ -781,7 +790,7 @@ struct Conv2dFpropKernel[
         # Access shared memory
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

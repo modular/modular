@@ -27,7 +27,6 @@ from max.graph import TensorType
 from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
-from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLModel
 from ..clip import ClipModel
@@ -267,10 +266,10 @@ class FluxPipeline(DiffusionPipeline):
         if tokens_2.array.ndim == 1:
             tokens_2.array = np.expand_dims(tokens_2.array, axis=0)
 
-        text_input_ids = Tensor.constant(
+        text_input_ids = Tensor(
             tokens.array, dtype=DType.int64, device=self.text_encoder.devices[0]
         )
-        text_input_ids_2 = Tensor.constant(
+        text_input_ids_2 = Tensor(
             tokens_2.array,
             dtype=DType.int64,
             device=self.text_encoder_2.devices[0],
@@ -435,7 +434,7 @@ class FluxPipeline(DiffusionPipeline):
 
         num_timesteps = int(model_inputs.sigmas.shape[0]) - 1
 
-        for i in tqdm(range(num_timesteps), desc="Denoising"):
+        for i in range(num_timesteps):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 

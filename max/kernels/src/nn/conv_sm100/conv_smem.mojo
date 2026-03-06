@@ -34,7 +34,7 @@ from std.utils.index import IndexList
 from layout.tensor_core_async import tile_layout_k_major
 
 # Import pipeline storage from matmul structured kernels
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline_storage import (
+from structured_kernels.pipeline_storage import (
     StandardTileStorage,
     OutputTileStorage,
     SourceTileStorage,
@@ -103,7 +103,7 @@ struct Conv2dSmem[
         Self.act_type,
         Self.BM,
         Self.BK,
-        swizzle_mode = Self.config.a_swizzle,
+        swizzle_mode=Self.config.a_swizzle,
     ]()
 
     # Filter tiles use K-major layout (transposed GEMM B)
@@ -111,7 +111,7 @@ struct Conv2dSmem[
         Self.filter_type,
         Self.BN,
         Self.BK,
-        swizzle_mode = Self.config.b_swizzle,
+        swizzle_mode=Self.config.b_swizzle,
     ]()
 
     # Output tiles use row-major layout

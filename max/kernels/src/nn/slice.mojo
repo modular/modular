@@ -16,8 +16,8 @@ from std.math import clamp
 from std.algorithm import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
-from layout._layout import Layout, row_major
-from layout import TileTensor
+from layout.tile_layout import Layout
+from layout import TileTensor, row_major
 from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import simd_width_of, _current_target
 
@@ -51,11 +51,11 @@ fn slice_dim_as_view[
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
-        stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+        shape_types=DynamicCoord[DType.int64, tensor.rank].element_types,
+        stride_types=DynamicCoord[DType.int64, tensor.rank].element_types,
     ],
     tensor.origin,
-    address_space = tensor.address_space,
+    address_space=tensor.address_space,
 ]:
     var new_shape = coord_to_index_list(tensor.layout.shape_coord())
     var new_stride = coord_to_index_list(tensor.layout.stride_coord())
@@ -110,11 +110,11 @@ fn slice_as_view[
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
-        stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+        shape_types=DynamicCoord[DType.int64, tensor.rank].element_types,
+        stride_types=DynamicCoord[DType.int64, tensor.rank].element_types,
     ],
     tensor.origin,
-    address_space = tensor.address_space,
+    address_space=tensor.address_space,
 ]:
     comptime assert starts.flat_rank == 1
     comptime assert ends.flat_rank == 1

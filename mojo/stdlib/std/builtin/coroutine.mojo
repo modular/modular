@@ -32,7 +32,7 @@ fn _suspend_async[body: fn(AnyCoroutine) capturing -> None]():
         body(hdl)
         __mlir_op.`co.suspend.end`()
 
-    __mlir_op.`co.suspend`[_region = "await_body".value]()
+    __mlir_op.`co.suspend`[_region="await_body".value]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -57,7 +57,7 @@ struct _CoroutineContext(TrivialRegisterPassable):
 @always_inline
 fn _coro_get_resume_fn(handle: AnyCoroutine) -> fn(AnyCoroutine) -> None:
     """This function is a generic coroutine resume function."""
-    return __mlir_op.`co.resume`[_type= fn(AnyCoroutine) -> None](handle)
+    return __mlir_op.`co.resume`[_type=fn(AnyCoroutine) -> None](handle)
 
 
 @always_inline
@@ -110,7 +110,7 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[
-            _type = __mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
         ](self._handle)
 
     @always_inline
@@ -194,7 +194,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[
-            _type = __mlir_type[`!kgen.pointer<`, ctx_type, `>`]
+            _type=__mlir_type[`!kgen.pointer<`, ctx_type, `>`]
         ](self._handle)
 
     @always_inline
@@ -242,7 +242,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
         # Don't you dare copy this code! 😤
         var handle = self^._take_handle()
         var error: Error
-        if __mlir_op.`co.await`[_type = __mlir_type.i1](
+        if __mlir_op.`co.await`[_type=__mlir_type.i1](
             handle,
             __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
             __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),

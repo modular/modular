@@ -21,8 +21,13 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
 from std.random import Random
-from layout import Coord, CoordLike, Idx, TileTensor
-from layout._layout import row_major
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    TileTensor,
+    row_major,
+)
 from std.memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
@@ -92,8 +97,8 @@ fn topk_wrapper[
     # # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
         TopK_2[T, largest],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[TopK_2[T, largest]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[TopK_2[T, largest]](),
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
@@ -297,27 +302,27 @@ fn radix_sort_pairs_kernel[
     var s_counts = stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var total_counts = stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var total_offsets = stack_allocation[
         (NUM_BUCKETS + 1),  # +1 extended size for descending
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var total_offsets_descending = stack_allocation[
         NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var s_thread_offsets = stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
         Int32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Initialize counts[NUM_BUCKETS]
@@ -518,7 +523,7 @@ fn run_radix_sort_pairs_gpu[
     ctx: DeviceContext,
     mut keys: DoubleBuffer[dtype, ...],
     mut key_ids: DoubleBuffer[out_idx_type, ...],
-    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool]],
+    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool], _],
     in_shape: IndexList,
 ) raises:
     var batch_size = in_shape[0]
@@ -662,9 +667,9 @@ fn _topp_minp_sampling_gpu[
 ](
     ctx: DeviceContext,
     p_thresholds: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -843,9 +848,9 @@ fn top_p_sampling_gpu[
 ](
     ctx: DeviceContext,
     top_ps: TileTensor[dtype, ...],
-    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -872,10 +877,10 @@ fn min_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    min_ps: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     out_token_ids: TileTensor[
-        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, out_idx_type, address_space=AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:

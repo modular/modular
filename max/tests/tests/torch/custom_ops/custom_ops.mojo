@@ -41,8 +41,8 @@ struct Grayscale:
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype = DType.uint8, rank=2],
-        img_in: InputTensor[dtype = DType.uint8, rank=3],
+        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -74,9 +74,9 @@ struct MyAdd:
     fn execute[
         type: DType, rank: Int, target: StaticString
     ](
-        C: OutputTensor[dtype=type, rank=rank],
-        A: InputTensor[dtype=type, rank=rank],
-        B: InputTensor[dtype=type, rank=rank],
+        C: OutputTensor[dtype=type, rank=rank, ...],
+        A: InputTensor[dtype=type, rank=rank, ...],
+        B: InputTensor[dtype=type, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -97,8 +97,8 @@ struct ParameterIncrement:
     fn execute[
         type: DType, rank: Int, increment: Int, target: StaticString
     ](
-        B: OutputTensor[dtype=type, rank=rank],
-        A: InputTensor[dtype=type, rank=rank],
+        B: OutputTensor[dtype=type, rank=rank, ...],
+        A: InputTensor[dtype=type, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -118,7 +118,7 @@ struct ScalarAdd:
     fn execute[
         dtype: DType,
     ](
-        C: OutputTensor[dtype=dtype, rank=1],
+        C: OutputTensor[dtype=dtype, rank=1, ...],
         A: Scalar[dtype],
         B: Scalar[dtype],
     ) raises:
@@ -131,8 +131,8 @@ struct UnsupportedTypeOp:
     fn execute[
         dtype: DType, rank: Int
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        input: InputTensor[dtype=dtype, rank=rank],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
         message: String,  # String is not a supported type for PyTorch custom ops
     ) raises:
         # This operation is for testing error handling only

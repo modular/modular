@@ -25,7 +25,7 @@ struct AddConstantCustom[value: Int]:
         target: StaticString,
     ](
         outp: OutputTensor,
-        x: InputTensor[dtype = outp.dtype, rank = outp.rank],
+        x: InputTensor[dtype=outp.dtype, rank=outp.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter

@@ -17,7 +17,7 @@ import std.format._utils as fmt
 
 
 @always_inline
-fn _strlen(ptr: UnsafePointer[mut=False, Byte]) -> Int:
+fn _strlen(ptr: UnsafePointer[mut=False, Byte, _]) -> Int:
     var offset = 0
     while ptr[offset]:
         offset += 1
@@ -45,7 +45,7 @@ struct TString[
     """
 
     comptime _InjectedValues = VariadicPack[
-        origin = Self.origins, False, Writable, *Self.Ts
+        origin=Self.origins, False, Writable, *Self.Ts
     ]
     var _values: Self._InjectedValues
 
@@ -56,7 +56,7 @@ struct TString[
 
     @always_inline
     fn _write_to_impl(
-        self, mut writer: Some[Writer], encoded_bytes: Span[mut=False, Byte]
+        self, mut writer: Some[Writer], encoded_bytes: Span[mut=False, Byte, _]
     ):
         var offset = 0
 
@@ -129,7 +129,7 @@ fn __make_tstring[
 ](
     *args: *Ts,
     out tstring: TString[
-        origins = ImmutOrigin(type_of(args).origin),
+        origins=ImmutOrigin(type_of(args).origin),
         StaticString(format_string),
         *Ts,
     ],

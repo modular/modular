@@ -224,7 +224,7 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         _mma_amd[block_size](d, a, b, c)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -354,7 +354,7 @@ fn st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
     ptr: UnsafePointer[
-        mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
     d: SIMD[DType.float32, simd_width],
 ):
@@ -506,7 +506,7 @@ struct WGMMADescriptor[dtype: DType](
     ](
         smem_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
     ) -> Self:
@@ -704,10 +704,10 @@ fn wgmma_async[
         " scale in values."
     )
 
-    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_a_desc.desc._mlir_value
     )
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
 
@@ -721,16 +721,16 @@ fn wgmma_async[
     var llvmst = array_to_llvm_struct[c_dtype, width](c_reg)
     # TODO: Simplify with parametric alias
     var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
-        shape = _get_shape[m, n, k](),
-        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
-        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        shape=_get_shape[m, n, k](),
+        typeA=_dtype_to_nvvm_wgmma_type[a_type](),
+        typeB=_dtype_to_nvvm_wgmma_type[b_type](),
         typeD=type_d_value,
-        scaleD = _to_nvvm_scale_out[scale_d](),
-        scaleA = _to_nvvm_scale_in[scale_a](),
-        scaleB = _to_nvvm_scale_in[scale_b](),
-        layoutA = _to_nvvm_layout[layout_a](),
-        layoutB = _to_nvvm_layout[layout_b](),
-        _type = __mlir_type[
+        scaleD=_to_nvvm_scale_out[scale_d](),
+        scaleA=_to_nvvm_scale_in[scale_a](),
+        scaleB=_to_nvvm_scale_in[scale_b](),
+        layoutA=_to_nvvm_layout[layout_a](),
+        layoutB=_to_nvvm_layout[layout_b](),
+        _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -832,10 +832,10 @@ fn wgmma_async[
         " scale in values."
     )
 
-    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_a_desc.desc._mlir_value
     )
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
 
@@ -848,16 +848,16 @@ fn wgmma_async[
     var llvmst = simd_to_llvm_struct[c_dtype, width](c_reg)
     # TODO: Simplify with parametric alias
     var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
-        shape = _get_shape[m, n, k](),
-        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
-        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        shape=_get_shape[m, n, k](),
+        typeA=_dtype_to_nvvm_wgmma_type[a_type](),
+        typeB=_dtype_to_nvvm_wgmma_type[b_type](),
         typeD=type_d_value,
-        scaleD = _to_nvvm_scale_out[scale_d](),
-        scaleA = _to_nvvm_scale_in[scale_a](),
-        scaleB = _to_nvvm_scale_in[scale_b](),
-        layoutA = _to_nvvm_layout[layout_a](),
-        layoutB = _to_nvvm_layout[layout_b](),
-        _type = __mlir_type[
+        scaleD=_to_nvvm_scale_out[scale_d](),
+        scaleA=_to_nvvm_scale_in[scale_a](),
+        scaleB=_to_nvvm_scale_in[scale_b](),
+        layoutA=_to_nvvm_layout[layout_a](),
+        layoutB=_to_nvvm_layout[layout_b](),
+        _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -960,7 +960,7 @@ fn wgmma_async[
         layout_b == "row" and b_type == DType.bfloat16
     )
 
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
     comptime trans_b = 1 if layout_b == "row" else 0

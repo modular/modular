@@ -13,9 +13,9 @@
 
 from std.collections import InlineArray
 from std.sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     size_of,
     simd_width_of,
 )
@@ -30,8 +30,7 @@ from std.benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
-from layout import Idx, TileTensor
-from layout._layout import row_major
+from layout import Idx, TileTensor, row_major
 from comm import MAX_GPUS, Signal
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
@@ -90,7 +89,7 @@ fn bench_reducescatter_2d[
 ) raises:
     comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
     comptime assert axis == 0 or axis == 1
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var multimem_tag = "-multimem" if use_multimem else ""
     var cache_tag = "-cachebust" if cache_busting else ""
@@ -521,13 +520,13 @@ fn bench_reducescatter[
 
 
 def main() raises:
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
-    comptime num_gpus = env_get_int["num_gpus", 2]()
-    comptime axis = env_get_int["axis", -1]()
-    comptime use_multimem = env_get_bool["multimem", False]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime num_gpus = get_defined_int["num_gpus", 2]()
+    comptime axis = get_defined_int["axis", -1]()
+    comptime use_multimem = get_defined_bool["multimem", False]()
     comptime cache_busting = True
 
-    var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
+    var max_nb = get_defined_int["TUNE_MAX_NUM_BLOCKS", -1]()
     var max_num_blocks: Optional[Int] = Optional[Int]()
     if max_nb > 0:
         max_num_blocks = Optional[Int](max_nb)
@@ -552,9 +551,9 @@ def main() raises:
     comptime if axis == -1:
         # 1D flat reduce-scatter
         var num_bytes = arg_parse("num_bytes", 16 * 1024)
-        comptime rank = env_get_int["rank", 1]()
-        comptime ragged = env_get_bool["ragged", False]()
-        comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+        comptime rank = get_defined_int["rank", 1]()
+        comptime ragged = get_defined_bool["ragged", False]()
+        comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
         comptime if ragged:
             num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()

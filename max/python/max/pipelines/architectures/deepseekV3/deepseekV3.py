@@ -33,6 +33,7 @@ from max.graph import (
 )
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
+    MLADecodeMetadata,
     MLAPrefillMetadata,
 )
 from max.nn.attention.multi_latent_attention_fp8 import (
@@ -66,18 +67,26 @@ from .model_config import DeepseekV3Config
 def _unpack_kv_collections(
     kv_collections: Sequence[PagedCacheValues],
 ) -> tuple[
-    list[BufferValue], list[TensorValue], list[TensorValue], list[TensorValue]
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[BufferValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales). kv_scales is empty when KV cache is not quantized.
     """
+    kv_scales = [
+        kv.kv_scales for kv in kv_collections if kv.kv_scales is not None
+    ]
     return (
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
         [kv.max_lengths for kv in kv_collections],
+        kv_scales,
     )
 
 
@@ -108,12 +117,10 @@ class DeepseekV3DecoderLayer(Module):
         config: DeepseekV3Config,
         layer_idx: int,
         ep_manager: EPBatchManager | None = None,
-        is_nextn: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
         self.ep_manager = ep_manager
-        self.is_nextn = is_nextn
         num_devices = len(config.devices)
 
         # Create Multi-head Latent Attention layer.
@@ -272,9 +279,11 @@ class DeepseekV3DecoderLayer(Module):
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
+        kv_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
+        mla_decode_scalar_args: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -286,6 +295,7 @@ class DeepseekV3DecoderLayer(Module):
                 kv_cache_lengths[i],
                 kv_lookup_table[i],
                 kv_max_lengths[i],
+                kv_scales=kv_scales[i] if kv_scales else None,
             )
             for i in range(len(kv_blocks))
         ]
@@ -304,6 +314,14 @@ class DeepseekV3DecoderLayer(Module):
                     )
                 )
 
+        # Wrap already-GPU scalar args into MLADecodeMetadata.
+        mla_decode_metadata: list[MLADecodeMetadata] | None = None
+        if mla_decode_scalar_args is not None:
+            mla_decode_metadata = [
+                MLADecodeMetadata(scalar_args=mla_decode_scalar_args[i])
+                for i in range(num_devices)
+            ]
+
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -315,6 +333,7 @@ class DeepseekV3DecoderLayer(Module):
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
+            mla_decode_metadata=mla_decode_metadata,
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
@@ -335,12 +354,7 @@ class DeepseekV3DecoderLayer(Module):
             # Single-GPU non-EP path
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
-        if self.is_nextn:
-            # NextN/MTP decoder: skip the second residual connection.
-            # The MoE output is used directly as hidden_states.
-            hs = mlp_outs
-        else:
-            hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
@@ -510,9 +524,19 @@ class DeepseekV3(Module):
             )
 
         # Unpack KV collections once for use throughout the method
-        kv_blocks, cache_lengths, lookup_tables, max_lengths = (
+        kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales = (
             _unpack_kv_collections(kv_collections)
         )
+
+        # Extract dispatch metadata from KV collections (already on GPU
+        # for MLA, on CPU for MHA — placed by the KV cache manager).
+        mla_decode_scalar_args: list[TensorValue] | None = None
+        if kv_collections[0].dispatch_metadata is not None:
+            mla_decode_scalar_args = [
+                kv.dispatch_metadata.tensor
+                for kv in kv_collections
+                if kv.dispatch_metadata is not None
+            ]
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
@@ -522,10 +546,16 @@ class DeepseekV3(Module):
             [length.type for length in cache_lengths],
             [table.type for table in lookup_tables],
             [length.type for length in max_lengths],
+            [scale.type for scale in kv_scales],
             [freq.type for freq in freqs_cis],
             [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
         ]
+
+        if mla_decode_scalar_args is not None:
+            subgraph_input_types.append(
+                [m.type for m in mla_decode_scalar_args]
+            )
 
         if self.ep_manager is not None:
             subgraph_input_types.append(list(self.ep_manager.input_types()))
@@ -565,9 +595,15 @@ class DeepseekV3(Module):
                             *cache_lengths,
                             *lookup_tables,
                             *max_lengths,
+                            *kv_scales,
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
+                            *(
+                                mla_decode_scalar_args
+                                if mla_decode_scalar_args is not None
+                                else ()
+                            ),
                             *(ep_inputs if ep_inputs is not None else ()),
                             prefix=f"layers.{idx}.",
                         )
@@ -582,9 +618,11 @@ class DeepseekV3(Module):
                     cache_lengths,
                     lookup_tables,
                     max_lengths,
+                    kv_scales,
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
+                    mla_decode_scalar_args=mla_decode_scalar_args,
                     ep_inputs=ep_inputs,
                 )
                 assert isinstance(h, list)

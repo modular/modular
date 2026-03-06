@@ -21,6 +21,54 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now enforces a more explicit parameter bindings rules:
+  - `[]` is mandatory to make type more concrete:
+
+    ```mojo
+    struct SomeStruct[a : Int = 1]:
+      pass
+
+    # SS1 is a parametric type
+    comptime SS1 = SomeStruct
+
+    # SS2 a concrete type alias of `SomeStruct[1]
+    comptime SS2 = SomeStruct[]
+
+    ```
+
+  - When `[]` is used, it must produce a concrete type unless `_`/`...` is used
+   to unbind a specific/multiple missing parameters.
+
+    ```mojo
+    struct SomeStruct[a : Int, b: Int, c: Int = 2]:
+      pass
+
+    # Error: can not infer `b`, since `[]` must produce a concrete type, without `_`/`...``
+    comptime SS1 = SomeStruct[1]
+
+    # This is a concrete type alias of `SomeStruct[1, 1, 2]`
+    comptime SS2 = SomeStruct[1, 1]
+
+    # Using `...` defers binding of b and c, and produces `SomeStruct[1, ?, ?]` (preserving possible defaults)
+    comptime SS3 = SomeStruct[1, ...]
+
+    # Even SS3 unbinds `c`, Mojo keeps track of the fact that there is a default value for c:
+    # This install b (using 1) and c (using default value), and produce `SomeStruct[1, 1, 2]`
+    comptime SS4 = SS3[1]
+
+    # This installs the default and is identical to `SomeStruct[1, ?, 2]`
+    comptime SS5 = SomeStruct[1, _]
+
+    # This unbind the default explicitly and is identical to `SomeStruct[1, ?, ?]`
+    comptime SS6 = SomeStruct[1, _, _]
+
+
+    # The following two are equivalent:
+    comptime SS7 = SomeStruct
+    comptime SS8 = SomeStruct[...]
+
+    ```
+
 - Mojo now supports t-strings (template strings) for building structured
   string templates with interpolated expressions. T-strings use the `t"..."`
   prefix and produce a `TString` value that captures both the static
@@ -266,6 +314,15 @@ what we publish.
   `Writable` conformance is enough without manually implementing `write_to()`
   or `write_repr_to()`, however, you can manually implement these to get custom
   output.
+
+- The `env_get_bool()`, `env_get_int()`, `env_get_string()`, and
+  `env_get_dtype()` functions in the `sys.param_env` module have been renamed to
+  `get_defined_bool()`, `get_defined_int()`, `get_defined_string()`, and
+  `get_defined_dtype()` in the new `sys.defines` module. The new names better
+  reflect that these functions read compile-time defines (set via `-D`), not
+  runtime environment variables. The `is_defined()` function has also moved to
+  `sys.defines` without renaming. The old names in `sys.param_env` are
+  deprecated but still available.
 
 - `TString.write_to()` now uses a compact encoding for format strings. The
   format string is flattened at compile time into NUL-terminated literal

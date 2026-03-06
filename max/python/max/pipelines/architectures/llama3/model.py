@@ -19,16 +19,18 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -87,7 +89,6 @@ class Llama3Inputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
         if self.data_parallel_splits is not None:
             if isinstance(self.data_parallel_splits, Buffer):
                 splits_tensor = self.data_parallel_splits
@@ -106,7 +107,7 @@ class Llama3Inputs(ModelInputs):
                 self.input_row_offsets,
                 self.return_n_logits,
                 splits_tensor,
-                *kv_cache_inputs,
+                *(self.kv_cache_inputs or ()),
             )
 
         return (
@@ -114,7 +115,7 @@ class Llama3Inputs(ModelInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *kv_cache_inputs,
+            *(self.kv_cache_inputs or ()),
         )
 
 
@@ -187,11 +188,10 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
-
+        assert model_inputs.kv_cache_inputs is not None
         if self.pipeline_config.model.data_parallel_degree > 1:
             model_outputs = self.model.execute(*model_inputs.buffers)
         elif self._lora_manager:
-            curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
             model_outputs = self.model.execute(
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
@@ -205,7 +205,7 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
                 model_inputs.lora_ids_kv,  # type: ignore
                 model_inputs.lora_grouped_offsets_kv,  # type: ignore
                 *model_inputs.signal_buffers,
-                *curr_kv_cache_inputs,
+                *model_inputs.kv_cache_inputs,
             )
         else:
             model_outputs = self.model.execute(*model_inputs.buffers)
@@ -398,6 +398,7 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
         This should avoid any device synchronization or copy operations.
         """
         assert isinstance(prev_model_inputs, Llama3Inputs)
+        assert self._input_row_offsets_prealloc is not None
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
@@ -429,13 +430,20 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step
-        assert self.pipeline_config.max_batch_size, (
+        # We do this to avoid materializing and copying a buffer with each multistep step.
+        # Skip in virtual device mode (warm-cache/cross-compilation) since
+        # VirtualDeviceContext does not support memAlloc.
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
+        self._input_row_offsets_prealloc: Buffer | None = None
+        if not is_virtual_device_mode():
+            self._input_row_offsets_prealloc = Buffer.from_numpy(
+                np.arange(
+                    self.pipeline_config.runtime.max_batch_size + 1,
+                    dtype=np.uint32,
+                )
+            ).to(self.devices[0])
 
         timer = CompilationTimer("model")
         graph = self._build_graph(self.weights, self.adapter)

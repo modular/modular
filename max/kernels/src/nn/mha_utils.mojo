@@ -16,8 +16,8 @@ from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
     align_of,
-    env_get_int,
-    env_get_bool,
+    get_defined_int,
+    get_defined_bool,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -65,7 +65,7 @@ fn as_dynamic_row_major_1d[
     dtype: DType
 ](
     tensor: LayoutTensor[
-        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
     return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
@@ -227,7 +227,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             return 0
 
         comptime persistent = (
-            env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
+            get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
         ) and sm_90
         sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
@@ -291,7 +291,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             reg_per = 224 if self.num_queries_per_block > 64 else 256
             if num_keys_per_block:
                 self.num_keys_per_block = num_keys_per_block.value()
-            elif depth == 64:  # FIXME: larger values cause inworld failures
+            # FIXME: for depth == 64, larger num_keys_per_block values currently
+            #        trigger correctness issues; this hardcoded value is a
+            #        temporary workaround and should be revisited.
+            elif depth == 64:
                 self.num_keys_per_block = 64
             else:
                 # BN
@@ -302,7 +305,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 # BN <= (4*reg_per - 2*depth - 16)//3
                 reg_upper_bound = (4 * reg_per - 2 * Int(depth) - 16) // 3
                 comptime persistent = (
-                    env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
+                    get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
                 smem_total = 227000
                 # smem_total >= 2*(BN * depth * pipeline_stages + BM*depth*(1+persistent))
@@ -332,7 +335,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
-            comptime use_experimental_cdna4_kernel = env_get_bool[
+            comptime use_experimental_cdna4_kernel = get_defined_bool[
                 "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
             ]()
             # BN
@@ -419,10 +422,10 @@ fn _copy_frag_to_smem_nvidia[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, ...
+        type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space=AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -446,7 +449,7 @@ fn _copy_frag_to_smem_nvidia[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
         ImmutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](p_smem_iter.ptr.as_immutable())
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
         Int(warp_y), Int(warp_x)
@@ -518,10 +521,10 @@ fn _copy_frag_to_smem_amd[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, ...
+        type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space=AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -542,7 +545,7 @@ fn _copy_frag_to_smem_amd[
         p_smem_iter.dtype,
         Layout.row_major(Int(BM), Int(BN)),
         ImmutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](p_smem_iter.ptr.as_immutable())
 
     var p_smem_warp_tile = p_smem_tile.tile[Int(WM), Int(WN)](
@@ -598,10 +601,10 @@ fn _copy_frag_to_smem[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, ...
+        type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space=AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -616,7 +619,7 @@ fn _copy_frag_to_smem[
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 

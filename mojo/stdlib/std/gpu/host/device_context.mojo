@@ -26,8 +26,8 @@ from std.pathlib import Path
 from std.ffi import c_char, c_int, c_uint, external_call
 from std.sys import (
     bit_width_of,
-    env_get_bool,
-    env_get_string,
+    get_defined_bool,
+    get_defined_string,
     is_defined,
     is_gpu,
     size_of,
@@ -40,7 +40,7 @@ from std.sys.info import (
     is_triple,
 )
 from std.sys.intrinsics import _type_is_eq
-from std.sys.param_env import _is_bool_like
+from std.sys.defines import _is_bool_like
 
 from std.reflection import call_location, SourceLocation
 from std.builtin.device_passable import DevicePassable
@@ -556,7 +556,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -1153,7 +1153,7 @@ struct DeviceBuffer[dtype: DType](
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -1943,9 +1943,9 @@ struct DeviceFunction[
         var result: _DeviceFunctionPtr = {}
         self._func_impl = _compile_code[
             Self.func,
-            emission_kind = self._emission_kind,
-            target = Self.target,
-            compile_options = Self.compile_options,
+            emission_kind=self._emission_kind,
+            target=Self.target,
+            compile_options=Self.compile_options,
         ]()
         var debug_level = String(DebugLevel)
         _checked(
@@ -2005,10 +2005,10 @@ struct DeviceFunction[
         comptime env_var = "DUMP_GPU_" + name.upper()
 
         comptime if is_defined[env_var]():
-            comptime env_val = env_get_string[env_var]()
+            comptime env_val = get_defined_string[env_var]()
 
             comptime if _is_bool_like[env_val]():
-                comptime env_bool_val = env_get_bool[env_var]()
+                comptime env_bool_val = get_defined_bool[env_var]()
                 return env_bool_val, _DumpPath(env_bool_val)
             elif _is_path_like(env_val):
                 return True, _DumpPath(Path(env_val))
@@ -2097,8 +2097,8 @@ struct DeviceFunction[
             return _compile_code[
                 Self.func,
                 emission_kind="asm",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
         comptime if Self._ptxas_info_verbose:
@@ -2159,8 +2159,8 @@ struct DeviceFunction[
             var llvm = _compile_code[
                 Self.func,
                 emission_kind="llvm-opt",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
             comptime if dump_llvm_val.isa[fn() capturing -> Path]():
@@ -3340,7 +3340,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ](self._handle)
 
     @doc_private
-    fn __init__(out self, handle: OpaquePointer[mut=True]):
+    fn __init__(out self, handle: OpaquePointer[mut=True, _]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
@@ -3643,7 +3643,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             Optional[Variadic.TypesOfTrait[AnyType]](None),
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3802,7 +3802,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3877,7 +3877,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3954,7 +3954,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],

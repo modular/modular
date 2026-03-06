@@ -13,10 +13,10 @@
 
 from std.math import align_up, ceildiv
 from std.sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
-    env_get_string,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
     has_nvidia_gpu_accelerator,
     size_of,
     align_of,
@@ -131,9 +131,9 @@ fn _get_run_name[
     micro_scaling_mode: StaticString = "",
 ](M: Int, N: Int, K: Int,) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
-    var type_str = String(t"({micro_scaling_mode}_{dtype}) : ")
+    var type_str = String("(", micro_scaling_mode, "_", String(dtype), ") : ")
     # M
-    var m_str = String(t"{M}_dynamic")
+    var m_str = String(M, "_dynamic")
     # N
     var n_str = String(
         N,
@@ -592,14 +592,14 @@ fn get_dtype[micro_scaling_mode: StaticString]() -> DType:
 
 
 def main() raises:
-    comptime micro_scaling_mode = env_get_string["scaling_mode", "nvfp4"]()
+    comptime micro_scaling_mode = get_defined_string["scaling_mode", "nvfp4"]()
     comptime dtype = get_dtype[micro_scaling_mode]()
 
     var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int[
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int[
         "K", 2
-    ]() // 2 if micro_scaling_mode == "nvfp4" else env_get_int["K", 1]()
+    ]() // 2 if micro_scaling_mode == "nvfp4" else get_defined_int["K", 1]()
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
@@ -607,9 +607,9 @@ def main() raises:
     var verify = arg_parse("verify", False)
     comptime cache_busting = True
     comptime transpose_b = True
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    comptime epilogue = env_get_bool["epilogue", False]()
-    comptime register_based_epilogue = env_get_bool[
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+    comptime epilogue = get_defined_bool["epilogue", False]()
+    comptime register_based_epilogue = get_defined_bool[
         "register_based_epilogue", True
     ]()
 

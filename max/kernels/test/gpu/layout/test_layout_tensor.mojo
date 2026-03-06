@@ -96,7 +96,7 @@ fn _create_tensor_2x2[
         dtype,
         Layout.row_major(2, 2),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ].stack_allocation()
 
 
@@ -177,7 +177,7 @@ def test_different_layouts_arithmetic() raises:
         DType.float32,
         Layout.col_major(2, 2),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ].stack_allocation()
     for i, j in product(range(2), range(2)):
         b[i, j] = a[i, j]

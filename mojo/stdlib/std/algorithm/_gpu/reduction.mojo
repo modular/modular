@@ -40,7 +40,7 @@ from std.memory import stack_allocation
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
-from std.sys import env_get_int
+from std.sys import get_defined_int
 from std.sys.info import simd_width_of
 
 
@@ -119,7 +119,7 @@ fn block_reduce[
     var shared = stack_allocation[
         (BLOCK_SIZE // WARP_SIZE) * num_reductions * simd_width,
         dtype,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     var warp = warp_id()
@@ -151,7 +151,9 @@ fn block_reduce[
     var result = StaticTuple[Scalar[dtype], num_reductions]()
 
     comptime for i in range(num_reductions):
-        result[i] = result_packed[i].reduce[reduce_fn[dtype, reduction_idx=i]]()
+        result[i] = result_packed[i].reduce[
+            reduce_fn[dtype, reduction_idx=i, ...]
+        ]()
 
     return result
 
@@ -556,7 +558,7 @@ fn reduce_launch[
         # TODO: a shape which *only just* saturates the device might be
         # more performant without SIMD, but the dispatch is more complicated
         comptime simd_packing_factor = simd_width_of[dtype, get_gpu_target()]()
-        comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
+        comptime BLOCK_SIZE = get_defined_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
 
         comptime for ax in range(rank):
             if axis == ax:
@@ -582,7 +584,9 @@ fn reduce_launch[
     # When the row size is smaller than the warp so we can use
     # multiple warps within a block to reduce rows and save shared memory sync
     else:
-        comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 128]()
+        comptime BLOCK_SIZE = get_defined_int[
+            "MOJO_REDUCTION_BLOCK_SIZE", 128
+        ]()
         if shape[axis] < WARP_SIZE:
             comptime for ax in range(rank):
                 if axis == ax:

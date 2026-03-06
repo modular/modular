@@ -94,7 +94,7 @@ from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 from std.memory import LegacyUnsafePointer
 
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     MbarPtr,
     ProducerConsumerPipeline,
 )

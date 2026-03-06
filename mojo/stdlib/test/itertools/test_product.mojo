@@ -270,10 +270,10 @@ struct TestCopyIterator[
 ](Copyable, Iterator):
     comptime Element = NoneType
 
-    var counter: Observable[CopyOrigin = Self.CopyOrigin]
+    var counter: Observable[CopyOrigin=Self.CopyOrigin]
 
     fn __init__(out self, ref[Self.CopyOrigin] copies: Int):
-        self.counter = Observable[CopyOrigin = Self.CopyOrigin](
+        self.counter = Observable[CopyOrigin=Self.CopyOrigin](
             copies=Pointer(to=copies)
         )
 

@@ -55,14 +55,14 @@ fn test_correlation() raises:
             (0.1 * Float64(i) + 0.1 * Float64(j)).cast[DType.float32](),
         )
 
-    assert_almost_equal(1.0, correlation[out_type = DType.float64](u, u, len))
-    assert_almost_equal(-1.0, correlation[out_type = DType.float64](u, v, len))
+    assert_almost_equal(1.0, correlation[out_type=DType.float64](u, u, len))
+    assert_almost_equal(-1.0, correlation[out_type=DType.float64](u, v, len))
     # +/- 0.773957299203321 is the exactly rounded fp64 answer calculated using mpfr
     assert_almost_equal(
-        0.773957299203321, correlation[out_type = DType.float64](u, x, len)
+        0.773957299203321, correlation[out_type=DType.float64](u, x, len)
     )
     assert_almost_equal(
-        -0.773957299203321, correlation[out_type = DType.float64](v, x, len)
+        -0.773957299203321, correlation[out_type=DType.float64](v, x, len)
     )
     u.free()
     v.free()

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -49,7 +50,18 @@ from ..pipeline_variants.text_generation import (
     get_eos_tokens,
     get_weight_paths,
 )
-from ..sampling import rejection_sampler_with_residuals, token_sampler
+from ..sampling import (
+    greedy_acceptance_sampler,
+    rejection_sampler,
+    rejection_sampler_with_residuals,
+    token_sampler,
+    typical_acceptance_sampler,
+)
+from ..sampling.sampling_logits_processor import (
+    FrequencyData,
+    _build_token_frequency_csr,
+    _check_need_penalties,
+)
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -165,6 +177,144 @@ def get_vocab_size(huggingface_config: AutoConfig) -> int:
         raise ValueError(
             "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
         )
+
+
+class _TypicalAcceptanceRunner:
+    """Routes per-batch: temp=0 uses greedy (argmax), temp>0 uses stochastic."""
+
+    def __init__(
+        self,
+        greedy_model: Any,
+        stochastic_model: Any,
+        target_device: Device,
+    ) -> None:
+        self._greedy = greedy_model
+        self._stochastic = stochastic_model
+        self._device = target_device
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        assert context_batch is not None
+        temps = [ctx.sampling_params.temperature for ctx in context_batch]
+        all_greedy = all(t == 0 for t in temps)
+        if all_greedy:
+            a, b, c = self._greedy(
+                draft_tokens,
+                target_logits,
+                target_logit_offsets,
+            )
+        else:
+            top_k_np = np.array(
+                [ctx.sampling_params.top_k for ctx in context_batch],
+                dtype=np.int64,
+            )
+            top_p_np = np.array(
+                [ctx.sampling_params.top_p for ctx in context_batch],
+                dtype=np.float32,
+            )
+            temps_np = np.array(temps, dtype=np.float32)
+            np.clip(temps_np, a_min=1e-6, a_max=None, out=temps_np)
+            a, b, c = self._stochastic(
+                draft_tokens,
+                target_logits,
+                target_logit_offsets,
+                Buffer.from_numpy(temps_np).to(self._device),
+                Buffer.from_numpy(top_k_np).to(self._device),
+                Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
+                Buffer.from_numpy(top_p_np).to(self._device),
+                Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
+            )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
+class _GreedyRunner:
+    """Always argmax acceptance. No draft logits needed."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        a, b, c = self._model(
+            draft_tokens,
+            target_logits,
+            target_logit_offsets,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
+class _LogitComparisonRunner:
+    """draft_logit <= target_logit + eps. No bonus token (returns None)."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, None]:
+        a, b = self._model(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        return a, b, None
+
+
+class _ResidualRunner:
+    """p_target/p_draft ratio acceptance. Needs all_draft_logits."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        a, b, c = self._model(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+            all_draft_logits,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
 
 
 class SpeculativeDecodingPipelineBase(
@@ -354,12 +504,21 @@ class SpeculativeDecodingPipelineBase(
             )
         )
 
-        # TODO: add option to load greedy sampler
-        self._rejection_sampler = target_session.load(
-            rejection_sampler_with_residuals(
-                device=DeviceRef.from_device(self.target_devices[0])
-            )
+        strategy = self._speculative_config.rejection_sampling_strategy
+        if strategy is None:
+            if (
+                self._speculative_config.is_eagle()
+                or self._speculative_config.is_mtp()
+            ):
+                strategy = "typical-acceptance"
+            else:
+                strategy = "residual"
+        logger.info(f"Using '{strategy}' rejection sampling strategy")
+        target_device_ref = DeviceRef.from_device(self.target_devices[0])
+        self._run_rejection_sampler = self._build_rejection_runner(
+            strategy, target_session, target_device_ref
         )
+        self._needs_all_draft_logits = strategy == "residual"
 
         # Initialize metrics tracker
         self._metrics = SpeculativeDecodingMetrics()
@@ -396,7 +555,7 @@ class SpeculativeDecodingPipelineBase(
         assert isinstance(target_kv_params, KVCacheParams)
         self._target_kv_manager: PagedKVCacheManager = load_kv_manager(
             params=target_kv_params,
-            max_batch_size=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._target_model.max_seq_len,
             session=self._target_session,
             available_cache_memory=self._target_model.kv_cache_config._available_cache_memory,
@@ -405,7 +564,7 @@ class SpeculativeDecodingPipelineBase(
         assert isinstance(draft_kv_params, KVCacheParams)
         self._draft_kv_manager: PagedKVCacheManager = load_kv_manager(
             params=draft_kv_params,
-            max_batch_size=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._draft_model.max_seq_len,
             session=self._draft_session,
             available_cache_memory=self._draft_model.kv_cache_config._available_cache_memory,
@@ -535,6 +694,67 @@ class SpeculativeDecodingPipelineBase(
 
         return (top_k, max_k, temperature, top_p, min_top_p, seed)
 
+    def _create_penalty_inputs(
+        self,
+        batch: list[TextContext],
+        device: Device,
+        num_steps: int = 1,
+    ) -> tuple[list[FrequencyData], Buffer, Buffer, Buffer] | None:
+        """Create penalty input tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters.
+            device: Device to place the tensors on.
+            num_steps: Number of generation steps for frequency CSR padding.
+
+        Returns:
+            Tuple of (frequency_data, frequency_penalty, presence_penalty,
+            repetition_penalty) or None if penalties are disabled and not
+            needed.
+        """
+        if not self.pipeline_config.sampling.enable_penalties:
+            _check_need_penalties(batch)
+            return None
+
+        frequency_data = [
+            _build_token_frequency_csr(batch, num_steps, device),
+            _build_token_frequency_csr(
+                batch, num_steps, device, include_prompt=True
+            ),
+        ]
+
+        frequency_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.frequency_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+        presence_penalty = Buffer.from_numpy(
+            np.array(
+                [context.sampling_params.presence_penalty for context in batch],
+                dtype=np.float32,
+            )
+        ).to(device)
+        repetition_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.repetition_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+
+        return (
+            frequency_data,
+            frequency_penalty,
+            presence_penalty,
+            repetition_penalty,
+        )
+
     @traced
     def sample_draft_logits(
         self,
@@ -547,9 +767,13 @@ class SpeculativeDecodingPipelineBase(
         top_p: Buffer,
         min_top_p: Buffer,
         seed: Buffer,
+        frequency_data: list[FrequencyData] | None = None,
+        frequency_penalty: Buffer | None = None,
+        presence_penalty: Buffer | None = None,
+        repetition_penalty: Buffer | None = None,
     ) -> tuple[Buffer, Buffer, Buffer]:
         """Samples draft tokens from the draft model logits."""
-        graph_inputs = [
+        graph_inputs: list[Buffer] = [
             model_outputs.logits,
             prev_tokens,
             top_k,
@@ -560,6 +784,15 @@ class SpeculativeDecodingPipelineBase(
             seed,
             prev_logits,
         ]
+        if frequency_data is not None:
+            assert frequency_penalty is not None
+            assert presence_penalty is not None
+            assert repetition_penalty is not None
+            for freq_data in frequency_data:
+                graph_inputs.extend([freq_data.data, freq_data.offsets])
+            graph_inputs.extend(
+                [frequency_penalty, presence_penalty, repetition_penalty]
+            )
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)
@@ -583,12 +816,77 @@ class SpeculativeDecodingPipelineBase(
         ):
             logger.info(f"Speculative decoding metrics: {self._metrics}")
 
+    def _build_rejection_runner(
+        self,
+        strategy: str,
+        target_session: InferenceSession,
+        device_ref: DeviceRef,
+    ) -> Callable[..., Any]:
+        """Loads the compiled rejection sampler graph and returns a runner."""
+        if strategy == "typical-acceptance":
+            return _TypicalAcceptanceRunner(
+                greedy_model=target_session.load(
+                    greedy_acceptance_sampler(device=device_ref)
+                ),
+                stochastic_model=target_session.load(
+                    typical_acceptance_sampler(device=device_ref)
+                ),
+                target_device=self.target_devices[0],
+            )
+        if strategy == "greedy":
+            return _GreedyRunner(
+                target_session.load(
+                    greedy_acceptance_sampler(device=device_ref)
+                )
+            )
+        if strategy == "logit-comparison":
+            return _LogitComparisonRunner(
+                target_session.load(rejection_sampler(device=device_ref))
+            )
+        return _ResidualRunner(
+            target_session.load(
+                rejection_sampler_with_residuals(device=device_ref)
+            )
+        )
+
+    def _call_rejection_sampler(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer | None,
+        context_batch: list[TextContext] | None = None,
+    ) -> tuple[Buffer, Buffer, Buffer | None]:
+        """Calls the rejection sampler with the appropriate arguments.
+
+        Args:
+            draft_tokens: Draft token ids.
+            draft_logits: Logits for sampled draft tokens.
+            target_logits: Target model logits.
+            target_logit_offsets: Offsets into target_logits per batch element.
+            all_draft_logits: Full draft logits (used by residual sampler).
+            context_batch: Batch contexts for per-request sampling params.
+
+        Returns:
+            A tuple of (first_rejected_tokens, recovered_tokens, bonus_tokens).
+            bonus_tokens is None when using logit-comparison strategy.
+        """
+        return self._run_rejection_sampler(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+            all_draft_logits,
+            context_batch,
+        )
+
     def update_contexts(
         self,
         context_batch: list[TextContext],
         first_rejected_tokens: npt.NDArray[np.integer[Any]],
         recovered_tokens: npt.NDArray[np.integer[Any]],
-        bonus_tokens: npt.NDArray[np.integer[Any]],
+        bonus_tokens: npt.NDArray[np.integer[Any]] | None,
         draft_tokens: npt.NDArray[np.integer[Any]],
         num_draft_tokens_generated: int,
     ) -> None:
@@ -615,11 +913,19 @@ class SpeculativeDecodingPipelineBase(
                 token = int(draft_tokens[idx, token_idx])
                 context.update(token)
 
-            if rejected_token_idx == num_draft_tokens_generated:
+            if (
+                rejected_token_idx == num_draft_tokens_generated
+                and bonus_tokens is not None
+            ):
                 context.update(bonus_tokens[idx, 0].item())
                 total_bonus_used += 1
             else:
-                context.update(recovered_tokens[idx, rejected_token_idx].item())
+                # For residual sampler, index by rejected position;
+                # for greedy sampler (or no bonus), always index 0.
+                recover_idx = (
+                    rejected_token_idx if bonus_tokens is not None else 0
+                )
+                context.update(recovered_tokens[idx, recover_idx].item())
 
             total_draft_accepted += rejected_token_idx
             acceptance_lengths.append(rejected_token_idx)

@@ -34,7 +34,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     MMASmemDescriptorPair,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
+from structured_kernels.barriers import (
     WarpGroupBarrier,
 )
 from std.gpu.compute.arch.tcgen05 import (
@@ -49,8 +49,8 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from layout._layout import Layout as InternalLayout, row_major
-from layout import TileTensor
+from layout.tile_layout import Layout as InternalLayout
+from layout import TileTensor, row_major
 from layout import stack_allocation as tt_stack_allocation
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
@@ -68,20 +68,20 @@ comptime LocalTensor[
 ] = TileTensor[
     dtype,
     InternalLayout[
-        shape_types = layout.shape_types,
-        stride_types = layout.stride_types,
+        shape_types=layout.shape_types,
+        stride_types=layout.stride_types,
     ],
     MutExternalOrigin,
-    address_space = AddressSpace.LOCAL,
+    address_space=AddressSpace.LOCAL,
 ]
 comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
     InternalLayout[
-        shape_types = layout.shape_types,
-        stride_types = layout.stride_types,
+        shape_types=layout.shape_types,
+        stride_types=layout.stride_types,
     ],
     MutExternalOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ]
 
 # Legacy LayoutTensor aliases for TMA/MMA API boundaries
@@ -91,20 +91,20 @@ comptime LocalLT[
     dtype,
     layout,
     MutAnyOrigin,
-    address_space = AddressSpace.LOCAL,
+    address_space=AddressSpace.LOCAL,
     element_layout=element_layout,
 ]
 comptime SharedMemLT[dtype: DType, layout: Layout] = LayoutTensor[
     dtype,
     layout,
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
-    layout_int_type = DType.int32,
-    linear_idx_type = DType.int32,
+    address_space=AddressSpace.SHARED,
+    layout_int_type=DType.int32,
+    linear_idx_type=DType.int32,
     alignment=128,
 ]
 comptime SharedMemPointer[type: AnyType] = UnsafePointer[
-    type, MutAnyOrigin, address_space = AddressSpace.SHARED
+    type, MutAnyOrigin, address_space=AddressSpace.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
 
@@ -240,8 +240,8 @@ struct STMatrixOffsets[
     comptime STLayout = STMatrixLayout[
         Self.BM,
         Self.BN,
-        num_threads = Self.num_threads,
-        accum_type_size = Self.accum_type_size,
+        num_threads=Self.num_threads,
+        accum_type_size=Self.accum_type_size,
     ]
 
     comptime tmem_col_offset = Self.cumulative_repeat * Self.STLayout.frag_simdwidth * Self.STLayout.thread_cols
@@ -298,7 +298,7 @@ struct TMemTile[
             return self.tmem_addr
         else:
             comptime linear = _tmem_offset[
-                Self.dtype, MMA_N = Self.BN, m_mma=m_mma, n_mma=n_mma
+                Self.dtype, MMA_N=Self.BN, m_mma=m_mma, n_mma=n_mma
             ]()
 
             return self.tmem_addr + UInt32(linear)
@@ -312,7 +312,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
+            accum_type_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         res = type_of(res).stack_allocation()
@@ -326,7 +326,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
+            accum_type_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         comptime assert Self.dtype_size <= 4
@@ -335,7 +335,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
+            accum_type_size=Self.dtype_size,
         ]
         comptime assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
 
@@ -349,26 +349,26 @@ struct TMemTile[
                         Self.BM,
                         Self.BN,
                         num_threads=num_threads,
-                        accum_type_size = Self.dtype_size,
+                        accum_type_size=Self.dtype_size,
                         curr_repeat=pow_two,
                         cumulative_repeat=offset,
                         m_mma=m_mma,
                     ]()
                     tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    frag = ptr.load[width = offsets.local_frag_size_b32](
+                    frag = ptr.load[width=offsets.local_frag_size_b32](
                         offsets.ptr_offset
                     )
                     # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
                     tcgen05_st[
                         datapaths=16,  # first dimension of the shape
-                        bits = st_mat_layout.bits,  # second dimension of the shape
+                        bits=st_mat_layout.bits,  # second dimension of the shape
                         repeat=pow_two,
                         pack=False,
                     ](tmem, frag)
 
         comptime max_value = 64 if st_mat_layout.bits == 128 else 32
         break_into_powers_of_two[
-            func=store_fn, N = st_mat_layout.repeat, max_value=max_value
+            func=store_fn, N=st_mat_layout.repeat, max_value=max_value
         ]()
 
     @always_inline
@@ -380,7 +380,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
+            accum_type_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         comptime assert (
@@ -390,7 +390,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
+            accum_type_size=Self.dtype_size,
         ]()
         comptime assert (st_mat_layout.num_m_tiles == 1) or (
             st_mat_layout.num_m_tiles == 2
@@ -404,7 +404,7 @@ struct TMemTile[
         self.load_st_matrix_chunk[
             num_threads=num_threads,
             start_repeat=0,
-            num_repeats = st_mat_layout.repeat,
+            num_repeats=st_mat_layout.repeat,
         ](dst)
 
     @always_inline
@@ -416,7 +416,7 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
+            accum_type_size=Self.dtype_size,
         ].TensorType[Self.dtype],
     ):
         """Load a range of repeat columns from tmem into a pre-allocated
@@ -434,14 +434,14 @@ struct TMemTile[
             Self.BM,
             Self.BN,
             num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
+            accum_type_size=Self.dtype_size,
         ]()
         comptime load_dtype = DType.uint32
         var ptr = rebind[
             UnsafePointer[
                 Scalar[load_dtype],
                 MutAnyOrigin,
-                address_space = AddressSpace.LOCAL,
+                address_space=AddressSpace.LOCAL,
             ]
         ](dst.ptr)
 
@@ -455,19 +455,19 @@ struct TMemTile[
                         Self.BM,
                         Self.BN,
                         num_threads=num_threads,
-                        accum_type_size = Self.dtype_size,
+                        accum_type_size=Self.dtype_size,
                         curr_repeat=pow_two,
-                        cumulative_repeat = start_repeat + local_offset,
+                        cumulative_repeat=start_repeat + local_offset,
                         m_mma=m_mma,
                     ]()
                     tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
                     frag = tcgen05_ld[
                         datapaths=16,
-                        bits = st_mat_layout.bits,
+                        bits=st_mat_layout.bits,
                         repeat=pow_two,
                         dtype=load_dtype,
                         pack=False,
-                        width = offsets.local_frag_size_b32,
+                        width=offsets.local_frag_size_b32,
                     ](tmem)
                     ptr.store(offsets.ptr_offset, frag)
 
@@ -482,7 +482,7 @@ struct TMemTile[
         out dst: LocalTensor[Self.dtype, row_major[Self.BN]()],
     ):
         dst = tt_stack_allocation[
-            dtype = Self.dtype, address_space = AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
         ](row_major[Self.BN]())
         comptime repeat = Self.dtype_size * Self.BN // 4
         comptime dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
@@ -496,7 +496,7 @@ struct TMemTile[
                         datapaths=32,  # first dimension of the shape
                         bits=32,  # second dimension of the shape
                         repeat=pow_two,
-                        dtype = Self.dtype,
+                        dtype=Self.dtype,
                         pack=False,
                         width=pow_two,
                     ](self.tmem_addr + UInt32(offset))
@@ -506,7 +506,7 @@ struct TMemTile[
                         datapaths=32,  # first dimension of the shape
                         bits=32,  # second dimension of the shape
                         repeat=pow_two,
-                        dtype = DType.uint32,
+                        dtype=DType.uint32,
                         pack=False,
                         width=pow_two,
                     ](self.tmem_addr + UInt32(offset))
@@ -528,7 +528,7 @@ struct TMemTile[
 
                 comptime if src_type == Self.dtype:
                     frag = src.ptr.bitcast[UInt32]().load[
-                        width = pow_two * Self.dtype_size // 4
+                        width=pow_two * Self.dtype_size // 4
                     ](offset)
                 else:
                     comptime src_offset = offset
@@ -543,11 +543,11 @@ struct TMemTile[
                 tcgen05_st[
                     datapaths=32,  # first dimension of the shape
                     bits=32,  # second dimension of the shape
-                    repeat = pow_two * Self.dtype_size // 4,
+                    repeat=pow_two * Self.dtype_size // 4,
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
-        break_into_powers_of_two[func=store_fn, N = Self.BN, max_value=128]()
+        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
 
 
 struct SM100TensorAccumulatorSS[
@@ -596,8 +596,8 @@ struct SM100TensorAccumulatorSS[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
-        transpose_b = Self.transpose_b,
+        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b=Self.transpose_b,
     ]()
 
     comptime AType = MMASmemDescriptorPair
@@ -621,9 +621,9 @@ struct SM100TensorAccumulatorSS[
             bulk_mma[
                 Self.a_layout,
                 Self.b_layout,
-                num_k_mmas = Self.num_k_mmas,
-                mma_k = Self.MMA_K,
-                operand_size = Self.operand_size,
+                num_k_mmas=Self.num_k_mmas,
+                mma_k=Self.MMA_K,
+                operand_size=Self.operand_size,
             ](Self.idesc, a, b, c, c_scale, elect)
         else:
             comptime k_batch_start = Self.num_k_blocks_per_stage * stage_idx
@@ -647,9 +647,9 @@ struct SM100TensorAccumulatorSS[
             bulk_mma[
                 Self.a_layout,
                 Self.b_layout,
-                num_k_mmas = k_batch_end - k_batch_start,
-                mma_k = Self.MMA_K,
-                operand_size = Self.operand_size,
+                num_k_mmas=k_batch_end - k_batch_start,
+                mma_k=Self.MMA_K,
+                operand_size=Self.operand_size,
             ](
                 Self.idesc,
                 a + UInt32(a_byte_offset),
@@ -704,8 +704,8 @@ struct SM100TensorAccumulatorTS[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
-        transpose_b = Self.transpose_b,
+        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b=Self.transpose_b,
     ]()
 
     @staticmethod
@@ -722,9 +722,9 @@ struct SM100TensorAccumulatorTS[
             # Original single-stage behavior
             bulk_mma[
                 Self.b_layout,
-                mma_k = Self.MMA_K,
-                num_k_mmas = Self.num_k_mmas,
-                operand_size = Self.operand_size,
+                mma_k=Self.MMA_K,
+                num_k_mmas=Self.num_k_mmas,
+                operand_size=Self.operand_size,
             ](Self.idesc, a, b, c, c_scale, elect)
         else:
             comptime start = 3 * stage_idx if Self.use_3_then_1_split else stage_idx
@@ -750,9 +750,9 @@ struct SM100TensorAccumulatorTS[
                 scale = 1
             bulk_mma[
                 Self.b_layout,
-                mma_k = Self.MMA_K,
-                num_k_mmas = k_batch_end - k_batch_start,
-                operand_size = Self.operand_size,
+                mma_k=Self.MMA_K,
+                num_k_mmas=k_batch_end - k_batch_start,
+                operand_size=Self.operand_size,
             ](
                 Self.idesc,
                 a + UInt32(a_tmem_offset),
@@ -1143,7 +1143,7 @@ fn exp2_emulation[
 fn elect_mma_arrive[
     cta_group: Int = 1
 ](
-    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, ...],
+    mbar_ptr: UnsafePointer[address_space=AddressSpace.SHARED, ...],
     elect: Int32,
 ):
     """Arrive at the mbar pointer for the MMA instruction.
@@ -1586,10 +1586,10 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     ):
         self.pipeline = pipeline
         self.smem_desc = smem_descriptor[
-            BMN = Self.BMN,
-            BK = Self.BK,
-            swizzle_mode = Self.config.swizzle_mode,
-            is_k_major = Self.is_k_major,
+            BMN=Self.BMN,
+            BK=Self.BK,
+            swizzle_mode=Self.config.swizzle_mode,
+            is_k_major=Self.is_k_major,
         ](smem)
 
     @always_inline
@@ -1939,7 +1939,7 @@ fn apply_mask[
                 vs[frag_col_simd] = rebind[vs.ElementType](
                     apply_oob_mask[
                         mask_strategy=mask_strategy,
-                        apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+                        apply_log2e_after_mask=MaskType.apply_log2e_after_mask,
                     ](
                         s,
                         prompt_idx=prompt_idx,
@@ -1969,7 +1969,7 @@ fn apply_mask[
 
             comptime if MaskStrategy.COMPUTED in mask_strategy:
                 s = mask.mask(
-                    IndexList[4, element_type = DType.uint32](
+                    IndexList[4, element_type=DType.uint32](
                         Int(prompt_idx),
                         Int(q_head_idx),
                         Int(score_row),
@@ -1981,7 +1981,7 @@ fn apply_mask[
             vs[n] = rebind[vs.ElementType](
                 apply_oob_mask[
                     mask_strategy=mask_strategy,
-                    apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+                    apply_log2e_after_mask=MaskType.apply_log2e_after_mask,
                 ](
                     s,
                     prompt_idx=prompt_idx,

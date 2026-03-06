@@ -70,8 +70,8 @@ from ...structuring import SMemTile
 fn distance[
     dtype: DType, //
 ](
-    arg0: UnsafePointer[Scalar[dtype]],
-    arg1: UnsafePointer[Scalar[dtype]],
+    arg0: UnsafePointer[Scalar[dtype], _],
+    arg1: UnsafePointer[Scalar[dtype], _],
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 
@@ -96,12 +96,13 @@ fn warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
+        mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
     ],
     smem: UnsafePointer[
         mut=True,
         Scalar[c_type],
-        address_space = AddressSpace.SHARED,
+        _,
+        address_space=AddressSpace.SHARED,
     ],
 ):
     comptime red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
@@ -118,7 +119,7 @@ fn warp_split_k_reduction[
             c_type,
             Layout.row_major(1, BM * BN),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](
             smem.bitcast[Scalar[c_type]]()
             + ((warp_k_part_id % i_red) * BM * BN)
@@ -156,15 +157,15 @@ fn warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
+        mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
     ],
 ):
     comptime c_frag_size = c_layout.shape[1].value()
 
     var smem = external_memory[
         Scalar[c_type],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[c_type, c_frag_size]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[c_type, c_frag_size]](),
     ]()
 
     warp_split_k_reduction[
@@ -208,7 +209,7 @@ fn multistage_mma[
     k_group_size: UInt = 1,
 ](
     c: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
+        mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
     ],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
@@ -216,14 +217,14 @@ fn multistage_mma[
         mut=True,
         a_type,
         a_smem_layout,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         ...,
     ],
     mut b_smem_iter: LayoutTensorIter[
         mut=True,
         b_type,
         b_smem_layout,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         ...,
     ],
     num_iters: Int,
@@ -295,11 +296,11 @@ fn multistage_mma[
         return {
             tensor.ptr,
             RuntimeLayout[
-                element_type = tensor.layout_int_type,
-                linear_idx_type = tensor.linear_idx_type,
+                element_type=tensor.layout_int_type,
+                linear_idx_type=tensor.linear_idx_type,
             ](
                 RuntimeTuple[
-                    tensor.layout.shape, element_type = tensor.layout_int_type
+                    tensor.layout.shape, element_type=tensor.layout_int_type
                 ](num_rows, tensor.dim[1]()),
                 tensor.runtime_layout.stride,
             ),
@@ -394,7 +395,7 @@ fn multistage_mma[
             a_type,
             a_reg_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .split[2 * Int(k_group_size)]()
@@ -408,7 +409,7 @@ fn multistage_mma[
             b_type,
             b_reg_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
@@ -772,11 +773,9 @@ fn multistage_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx_swizzle = block_swizzle(
-        Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-        Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index[dtype = DType.uint32](
-        block_idx.x, block_idx.y
-    )
+        Index[dtype=DType.uint32](block_idx.x, block_idx.y),
+        Index[dtype=DType.uint32](grid_dim.x, grid_dim.y),
+    ) if swizzle_block else Index[dtype=DType.uint32](block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(warp_id, num_warps_n)
@@ -786,14 +785,15 @@ fn multistage_gemm_kernel[
     comptime alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
-        address_space = a_smem.address_space,
+        _,
+        address_space=a_smem.address_space,
         alignment=alignment,
         circular=True,
     ]
@@ -813,7 +813,8 @@ fn multistage_gemm_kernel[
     comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var b_smem_iter = IteratorTypeB(
@@ -858,7 +859,7 @@ fn multistage_gemm_kernel[
             accum_type,
             c_reg_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()  # ALIGN-TODO: pass alignment here?
         .fill(0)
@@ -873,8 +874,8 @@ fn multistage_gemm_kernel[
         Int(num_threads_per_warp_k_part),
         Int(num_pipeline_stages),
         transpose_b,
-        k_group_size = config.k_group_size,
-        swizzle_a = is_nvidia_gpu(),
+        k_group_size=config.k_group_size,
+        swizzle_a=is_nvidia_gpu(),
     ](
         c_reg_tile,
         a_gmem_iter,
@@ -941,7 +942,7 @@ fn multistage_gemm_kernel[
             if m < Int(M) and n < Int(N):
                 var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
-                    alignment = align_of[SIMD[c_type, src_simd_width_y]](),
+                    alignment=align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
 
                 comptime if dst_simd_width_x == 1:
@@ -959,18 +960,18 @@ fn multistage_gemm_kernel[
     # we stage the fragments in shared memory so that each thread can store 16B.
     comptime if c_type.is_half_float() and is_nvidia_gpu():
         comptime swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+            num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
         var accum_smem_warp_tile = LayoutTensor[
             c_type,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(WN))
 
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4),
+            thread_layout=Layout.row_major(8, 4),
             swizzle=swizzle,
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
@@ -1030,7 +1031,7 @@ fn multistage_gemm_kernel[
                     )
         else:
             copy_sram_to_dram[
-                thread_layout = Layout.row_major(
+                thread_layout=Layout.row_major(
                     WARP_SIZE * simd_size // WN, WN // simd_size
                 ),
                 swizzle=swizzle,
@@ -1048,13 +1049,13 @@ fn multistage_gemm_kernel[
                 c_type,
                 c_reg_tile.layout,
                 MutAnyOrigin,
-                address_space = AddressSpace.LOCAL,
+                address_space=AddressSpace.LOCAL,
             ].stack_allocation()
 
             comptime for i in range(c_reg_tile.shape[0]()):
                 comptime for j in range(c_reg_tile.shape[1]()):
                     c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
-            copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+            copy_local_to_dram[dst_thread_layout=Layout.row_major(4, 16)](
                 c_gmem_warp_tile.vectorize[4, 1](),
                 c_reg_tile_out.vectorize[1, 4](),
             )
@@ -1064,12 +1065,12 @@ fn multistage_gemm_kernel[
             apply_epilogue()
         else:
             comptime if is_nvidia_gpu():
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+                copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
                     c_gmem_warp_tile.vectorize[1, 2](),
                     c_reg_tile.vectorize[1, 2]().transpose(),
                 )
             else:
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+                copy_local_to_dram[dst_thread_layout=Layout.row_major(4, 16)](
                     c_gmem_warp_tile.vectorize[4, 1](),
                     c_reg_tile.vectorize[1, 4](),
                 )
@@ -1109,7 +1110,7 @@ fn multistage_gemm_split_k_kernel[
     var a_part = a.split[axis=1, split_alignment=BK](
         num_partitions, Int(block_idx.z)
     )
-    var b_part = b.split[axis= 1 if transpose_b else 0, split_alignment=BK](
+    var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
         num_partitions, Int(block_idx.z)
     )
 
@@ -1121,10 +1122,10 @@ fn multistage_gemm_split_k_kernel[
         work_space.ptr + block_idx.z * UInt(M) * UInt(N),
         RuntimeLayout[
             c_layout,
-            element_type = work_space_tensor_type.layout_int_type,
-            linear_idx_type = work_space_tensor_type.linear_idx_type,
+            element_type=work_space_tensor_type.layout_int_type,
+            linear_idx_type=work_space_tensor_type.linear_idx_type,
         ].row_major(
-            IndexList[2, element_type = work_space_tensor_type.layout_int_type](
+            IndexList[2, element_type=work_space_tensor_type.layout_int_type](
                 M, N
             )
         ),
