@@ -692,7 +692,7 @@ class AutoencoderKLLTX2Audio(nn.Module[[Tensor], Tensor]):
         return self.decoder(z)
 
 
-class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
+class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
     """Fused BN-denorm + VAE decode in a single compiled graph.
 
     Eliminates the inter-graph boundary and intermediate tensor materialization
@@ -728,27 +728,15 @@ class PostprocessAndDecode(nn.Module[[Tensor, Tensor, Tensor], Tensor]):
         return decoded
 
     def input_types(self) -> tuple[TensorType, ...]:
-        return (
-            TensorType(
-                self._dtype,
-                shape=[
-                    "batch_size",
-                    self._num_channels,
-                    "audio_num_frames",
-                    "num_mel_bins",
-                ],
-                device=self._device,
-            ),
-            TensorType(
-                self._dtype,
-                shape=[self._num_channels],
-                device=self._device,
-            ),
-            TensorType(
-                self._dtype,
-                shape=[self._num_channels],
-                device=self._device,
-            ),
+        return TensorType(
+            self._dtype,
+            shape=[
+                "batch_size",
+                self._num_channels,
+                "audio_num_frames",
+                "num_mel_bins",
+            ],
+            device=self._device,
         )
 
 
@@ -862,7 +850,7 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
                 fused_weights["latents_std"] = weight_data
 
         with F.lazy():
-            autoencoder = AutoencoderKLFlux2(self.config)
+            autoencoder = AutoencoderKLLTX2Audio(self.config)
             fused = PostprocessAndDecode(
                 decoder=autoencoder.decoder,
                 bn_mean=self.bn_running_mean,
