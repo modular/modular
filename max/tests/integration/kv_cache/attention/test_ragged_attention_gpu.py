@@ -21,12 +21,22 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+)
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
+    cross_attention_ragged,
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
+from max.nn.kv_cache.cache_params import KVCacheParams
+from max.nn.kv_cache.input_types import PagedCacheValues
 from modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 
@@ -330,3 +340,141 @@ def test_ragged_flash_attention_gpu(
             ragged_slice, reference_slice, rtol=1e-2, atol=2e-2
         )
         start_idx = end_idx
+
+
+def test_flash_attention_ragged_gpu_rejects_max_seq_len_on_gpu() -> None:
+    """max_seq_len must be on CPU; passing a GPU tensor should raise."""
+    n_heads = 4
+    head_dim = 64
+    dtype = DType.bfloat16
+
+    qkv_type = TensorType(
+        dtype,
+        shape=["total_seq_len", n_heads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
+    )
+    # Wrong: max_seq_len on GPU instead of CPU
+    max_seq_len_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.GPU()
+    )
+
+    with pytest.raises(ValueError, match=r"max_seq_len.*device"):
+        with Graph(
+            "bad_ragged_flash_attn",
+            input_types=[
+                qkv_type,
+                qkv_type,
+                qkv_type,
+                input_row_offsets_type,
+                max_seq_len_type,
+            ],
+        ) as g:
+            assert are_all_tensor_values(g.inputs)
+            q, k, v, input_row_offsets, max_seq_len = g.inputs
+            flash_attention_ragged_gpu(
+                q,
+                k,
+                v,
+                input_row_offsets,
+                max_seq_len,
+                mask_variant=MHAMaskVariant.NULL_MASK,
+                scale=math.sqrt(1.0 / head_dim),
+            )
+
+
+def test_cross_attention_ragged_rejects_q_max_seq_len_on_gpu() -> None:
+    """q_max_seq_len must be on CPU; passing a GPU tensor should raise."""
+    n_kv_heads = 4
+    head_dim = 64
+    num_layers = 1
+    page_size = 128
+    dtype = DType.bfloat16
+
+    kv_params = KVCacheParams(
+        dtype=dtype,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        num_layers=num_layers,
+        devices=[DeviceRef.GPU()],
+        page_size=page_size,
+    )
+
+    input_type = TensorType(
+        dtype, ["total_seq_len", n_kv_heads, head_dim], DeviceRef.GPU()
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["batch_plus_one"], DeviceRef.GPU()
+    )
+    kv_blocks_type = BufferType(
+        dtype, ["blocks", 2, page_size, n_kv_heads, head_dim], DeviceRef.GPU()
+    )
+    cache_lengths_type = TensorType(DType.uint32, ["batch"], DeviceRef.GPU())
+    lookup_table_type = TensorType(
+        DType.uint32, ["batch", "max_pages"], DeviceRef.GPU()
+    )
+    max_lengths_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
+    layer_idx_type = TensorType(DType.uint32, [1], DeviceRef.CPU())
+    kv_input_row_offsets_type = TensorType(
+        DType.uint32, ["kv_batch_plus_one"], DeviceRef.GPU()
+    )
+    # Wrong: q_max_seq_len on GPU instead of CPU
+    q_max_seq_len_type = TensorType(DType.uint32, [1], DeviceRef.GPU())
+
+    with pytest.raises(ValueError, match=r"q_max_seq_len.*device"):
+        with Graph(
+            "bad_cross_attn",
+            input_types=[
+                input_type,
+                input_row_offsets_type,
+                kv_blocks_type,
+                cache_lengths_type,
+                lookup_table_type,
+                max_lengths_type,
+                layer_idx_type,
+                kv_input_row_offsets_type,
+                q_max_seq_len_type,
+            ],
+        ) as g:
+            (
+                inp,
+                input_row_offsets,
+                kv_blocks,
+                cache_lengths,
+                lookup_table,
+                max_lengths,
+                layer_idx,
+                kv_input_row_offsets,
+                q_max_seq_len,
+            ) = g.inputs
+
+            assert isinstance(inp, TensorValue)
+            assert isinstance(input_row_offsets, TensorValue)
+            assert isinstance(kv_blocks, BufferValue)
+            assert isinstance(cache_lengths, TensorValue)
+            assert isinstance(lookup_table, TensorValue)
+            assert isinstance(max_lengths, TensorValue)
+            assert isinstance(layer_idx, TensorValue)
+            assert isinstance(kv_input_row_offsets, TensorValue)
+            assert isinstance(q_max_seq_len, TensorValue)
+
+            kv_collection = PagedCacheValues(
+                kv_blocks=kv_blocks,
+                cache_lengths=cache_lengths,
+                lookup_table=lookup_table,
+                max_lengths=max_lengths,
+            )
+
+            cross_attention_ragged(
+                kv_params=kv_params,
+                input=inp,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                kv_input_row_offsets=kv_input_row_offsets,
+                q_max_seq_len=q_max_seq_len,
+                scale=math.sqrt(1.0 / head_dim),
+            )

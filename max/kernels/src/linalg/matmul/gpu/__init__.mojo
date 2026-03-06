@@ -100,12 +100,12 @@ fn matmul_kernel[
     var a_shared = stack_allocation[
         tile_size * tile_size,
         a_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         tile_size * tile_size,
         b_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Global index in C.
@@ -450,7 +450,7 @@ fn _matmul_gpu[
             comptime assert (
                 output.dtype == c.type
             ), "compute epilogue lambda output and c type mismatch"
-            c.store[alignment = alignment * size_of[c.type]()](
+            c.store[alignment=alignment * size_of[c.type]()](
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
@@ -835,7 +835,7 @@ fn split_k_reduce[
     work_space: LayoutTensor[work_space_type, work_space_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime simd_width = simd_width_of[c_type, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()

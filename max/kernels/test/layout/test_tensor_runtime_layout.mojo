@@ -31,10 +31,10 @@ def test_fill_and_print() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](4, 8),
-        RuntimeTuple[layout.stride, element_type = DType.int32](8, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](4, 8),
+        RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -42,8 +42,8 @@ def test_fill_and_print() raises:
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage, dynamic_layout)
     arange(tensor)
 
@@ -63,10 +63,10 @@ def test_set_and_get_items() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](4, 4),
-        RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](4, 4),
+        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -74,8 +74,8 @@ def test_set_and_get_items() raises:
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage, dynamic_layout)
 
     for i in range(4):
@@ -98,10 +98,10 @@ def test_tile() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](4, 4),
-        RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](4, 4),
+        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -109,8 +109,8 @@ def test_tile() raises:
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage, dynamic_layout)
     arange(tensor)
 
@@ -147,7 +147,7 @@ fn test_tile_and_distribute():
 
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int64, linear_idx_type = DType.int64
+        layout, element_type=DType.int64, linear_idx_type=DType.int64
     ](
         RuntimeTuple[layout.shape](8, 8).cast[DType.int64](),
         RuntimeTuple[layout.stride](8, 1).cast[DType.int64](),
@@ -158,8 +158,8 @@ fn test_tile_and_distribute():
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int64,
-        linear_idx_type = DType.int64,
+        layout_int_type=DType.int64,
+        linear_idx_type=DType.int64,
     ](storage, dynamic_layout)
     arange(tensor)
 
@@ -253,10 +253,10 @@ fn test_tile_and_vectorize():
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](16, 16),
-        RuntimeTuple[layout.stride, element_type = DType.int32](16, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](16, 16),
+        RuntimeTuple[layout.stride, element_type=DType.int32](16, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -264,8 +264,8 @@ fn test_tile_and_vectorize():
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage, dynamic_layout)
     arange(tensor)
 
@@ -476,24 +476,24 @@ fn test_copy_from():
     )
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](8, 8),
-        RuntimeTuple[layout.stride, element_type = DType.int32](8, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](8, 8),
+        RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout)
     arange(src_tensor)
 
     var dst_tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout).fill(
         0
     )
@@ -513,16 +513,16 @@ fn test_linspace_fill():
     )
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](8, 8),
-        RuntimeTuple[layout.stride, element_type = DType.int32](8, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](8, 8),
+        RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout)
     arange(src_tensor)
 
@@ -576,7 +576,7 @@ fn test_random_fill():
     comptime layout = Layout(8 * 8 * 8 * 8)
 
     comptime RuntimeLayoutType = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ]
 
     var dynamic_layout = RuntimeLayoutType(
@@ -586,8 +586,8 @@ fn test_random_fill():
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout)
     random(src_tensor)
     var sum: Float32 = 0.0
@@ -616,18 +616,18 @@ fn test_iterator():
     comptime layout = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](8, 8),
-        RuntimeTuple[layout.stride, element_type = DType.int32](8, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](8, 8),
+        RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
     var ptr = UnsafePointer[Float32].alloc(dynamic_layout.size())
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](ptr, dynamic_layout)
     arange(tensor)
 
@@ -663,16 +663,16 @@ fn test_iterator():
         IntTuple(4, UNKNOWN_VALUE), IntTuple(2, UNKNOWN_VALUE)
     )
     var dynamic_layout1 = RuntimeLayout[
-        layout1, element_type = DType.int32, linear_idx_type = DType.int32
+        layout1, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout1.shape, element_type = DType.int32](4, 2),
-        RuntimeTuple[layout1.stride, element_type = DType.int32](2, 1),
+        RuntimeTuple[layout1.shape, element_type=DType.int32](4, 2),
+        RuntimeTuple[layout1.stride, element_type=DType.int32](2, 1),
     )
     var iter = LayoutTensorIter[
         DType.float32,
         layout1,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         circular=True,
     ](ptr, 64, dynamic_layout1)
     iter += 9
@@ -689,16 +689,16 @@ fn test_iterator():
     # alias layout = Layout.row_major(M, N)
     var runtime_layout = RuntimeLayout[
         unknown_layout,
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ].row_major(IndexList[2, element_type = DType.int32](M, N))
+        element_type=DType.int32,
+        linear_idx_type=DType.int32,
+    ].row_major(IndexList[2, element_type=DType.int32](M, N))
     var ptr1 = UnsafePointer[Scalar[type]].alloc(M * N)
 
     var tensor1 = LayoutTensor[
         type,
         unknown_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](ptr1, runtime_layout)
     arange(tensor1)
 
@@ -726,16 +726,16 @@ fn test_split():
 
     comptime layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var dynamic_layout_2x4 = RuntimeLayout[
-        layout_Ux4, element_type = DType.int32, linear_idx_type = DType.int32
+        layout_Ux4, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout_Ux4.shape, element_type = DType.int32](2, 4),
-        RuntimeTuple[layout_Ux4.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout_Ux4.shape, element_type=DType.int32](2, 4),
+        RuntimeTuple[layout_Ux4.stride, element_type=DType.int32](4, 1),
     )
     var tensor_Ux4 = LayoutTensor[
         DType.float32,
         layout_Ux4,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](ptr, dynamic_layout_2x4)
     arange(tensor_Ux4)
     # CHECK: 0.0 1.0
@@ -747,16 +747,16 @@ fn test_split():
 
     comptime layout_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
     var dynamic_layout_4x4 = RuntimeLayout[
-        layout_4x4, element_type = DType.int32, linear_idx_type = DType.int32
+        layout_4x4, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout_4x4.shape, element_type = DType.int32](4, 4),
-        RuntimeTuple[layout_4x4.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout_4x4.shape, element_type=DType.int32](4, 4),
+        RuntimeTuple[layout_4x4.stride, element_type=DType.int32](4, 1),
     )
     var tensor_4x4 = LayoutTensor[
         DType.float32,
         layout_4x4,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](ptr, dynamic_layout_4x4)
     arange(tensor_4x4)
     var tensor_4x4_split0 = tensor_4x4.split[axis=0](2, 0)
@@ -780,16 +780,16 @@ fn test_split():
 
     comptime layout_Ux8 = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
     var dynamic_layout_Ux8 = RuntimeLayout[
-        layout_Ux8, element_type = DType.int32, linear_idx_type = DType.int32
+        layout_Ux8, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout_Ux8.shape, element_type = DType.int32](2, 8),
-        RuntimeTuple[layout_Ux8.stride, element_type = DType.int32](8, 1),
+        RuntimeTuple[layout_Ux8.shape, element_type=DType.int32](2, 8),
+        RuntimeTuple[layout_Ux8.stride, element_type=DType.int32](8, 1),
     )
     var tensor_Ux8 = LayoutTensor[
         DType.float32,
         layout_Ux8,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](ptr, dynamic_layout_Ux8)
     var tensor_Ux8_split0 = tensor_Ux8.split[1, split_alignment=3](3, 0)
     var tensor_Ux8_split1 = tensor_Ux8.split[1, split_alignment=3](3, 1)

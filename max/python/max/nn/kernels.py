@@ -1953,6 +1953,10 @@ def flash_attention_ragged_gpu(
             f"input_row_offsets must be rank 1, got {input_row_offsets.rank}"
         )
 
+    _validate_argument_tensor(
+        "max_seq_len", max_seq_len, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+
     parameters = _mha_parameters(
         mask_variant, local_window_size=local_window_size
     )
@@ -2192,12 +2196,16 @@ def flare_mla_prefill_plan(
         buffer_size, DType.uint32, device=DeviceRef.CPU()
     )
 
+    op_name = "mo.mla.prefill.ragged.plan"
     results = ops.inplace_custom(
-        "mo.mla.prefill.ragged.plan",
+        op_name,
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            *kv_collection,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            kv_collection.max_lengths,
             layer_idx,
             buffer_size_tensor,
         ],
@@ -2659,6 +2667,8 @@ def mla_prefill_decode_graph(
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
+    elif kv_collection.kv_scales is not None:
+        op_name += ".quantized"
 
     if scalar_args is not None:
         op_name += ".capturable"
@@ -2792,10 +2802,12 @@ def cross_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if q_max_seq_len and (q_max_seq_len.dtype != DType.uint32):
-        raise ValueError(
-            f"expected q_max_seq_len to be uint32 but got {q_max_seq_len.dtype}"
-        )
+    _validate_argument_tensor(
+        "q_max_seq_len",
+        q_max_seq_len,
+        dtype=DType.uint32,
+        device=DeviceRef.CPU(),
+    )
 
     parameters = _mha_parameters(
         mask_variant, local_window_size=local_window_size

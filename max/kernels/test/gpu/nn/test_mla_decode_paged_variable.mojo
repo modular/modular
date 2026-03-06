@@ -329,7 +329,7 @@ fn run_test_paged_variable[
     # -----------------------------------------------------------------------
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
-        is_fp8_kv = (kv_type == DType.float8_e4m3fn),
+        is_fp8_kv=(kv_type == DType.float8_e4m3fn),
     ](
         batch_size,
         max_cache_len,
@@ -783,7 +783,7 @@ fn run_test_paged_variable_multiq[
     # -----------------------------------------------------------------------
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
-        is_fp8_kv = (kv_type == DType.float8_e4m3fn),
+        is_fp8_kv=(kv_type == DType.float8_e4m3fn),
     ](
         batch_size,
         max_cache_len,
@@ -1278,7 +1278,7 @@ fn run_test_paged_variable_ragged_q[
     # -----------------------------------------------------------------------
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
-        is_fp8_kv = (kv_type == DType.float8_e4m3fn),
+        is_fp8_kv=(kv_type == DType.float8_e4m3fn),
     ](
         batch_size,
         max_cache_len,
@@ -1717,7 +1717,7 @@ fn run_bench_paged_variable[
     # Step 7: Pre-compute scalar args and benchmark
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
-        is_fp8_kv = (kv_type == DType.float8_e4m3fn),
+        is_fp8_kv=(kv_type == DType.float8_e4m3fn),
     ](
         batch_size,
         max_cache_len,
@@ -2050,7 +2050,7 @@ fn run_test_paged_variable_native_fp8[
     # -----------------------------------------------------------------------
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
-        is_fp8_kv = (kv_type == DType.float8_e4m3fn),
+        is_fp8_kv=(kv_type == DType.float8_e4m3fn),
     ](
         batch_size,
         max_cache_len,
@@ -2470,7 +2470,7 @@ fn run_bench_paged_variable_native_fp8[
     # Step 7: Pre-compute scalar args and benchmark
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
-        is_fp8_kv = (kv_type == DType.float8_e4m3fn),
+        is_fp8_kv=(kv_type == DType.float8_e4m3fn),
     ](
         batch_size,
         max_cache_len,

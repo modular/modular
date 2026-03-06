@@ -125,3 +125,21 @@ def format_input(
             )
 
         return messages
+
+
+def format_input_klein(
+    prompts: list[str],
+    images: list[Image.Image] | list[list[Image.Image]] | None = None,
+) -> list[list[dict[str, Any]]]:
+    """Format prompts for Flux2 Klein (Qwen3): user-only plain-string content."""
+    cleaned_txt = [prompt.replace("[IMG]", "") for prompt in prompts]
+    if images is None or len(images) == 0:
+        return [[{"role": "user", "content": prompt}] for prompt in cleaned_txt]
+
+    assert len(images) == len(prompts), (
+        "Number of images must match number of prompts"
+    )
+    return [
+        [{"role": "user", "content": cleaned_txt[i]}]
+        for i in range(len(cleaned_txt))
+    ]

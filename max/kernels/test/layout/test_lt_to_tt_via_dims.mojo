@@ -20,7 +20,7 @@ from layout.coord import (
     ComptimeInt,
     RuntimeInt,
 )
-from layout._layout import Layout as InternalLayout
+from layout.tile_layout import Layout as InternalLayout
 from layout import TileTensor
 
 
@@ -113,7 +113,7 @@ fn test_dimlist_from_dynamic_layout_shape() raises:
     from layout import Layout, UNKNOWN_VALUE
 
     # Public layout with one dynamic dim
-    comptime lt_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
+    comptime lt_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
 
     comptime shape_dim0 = lt_layout.shape[0].value()
     comptime shape_dim1 = lt_layout.shape[1].value()
@@ -138,7 +138,7 @@ fn test_tiletensor_type_from_public_layout() raises:
     print("--- test_tiletensor_type_from_public_layout ---")
     from layout import Layout, UNKNOWN_VALUE
 
-    comptime lt_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
+    comptime lt_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
 
     # Helper: convert IntTuple element to Dim
     @parameter
@@ -257,7 +257,7 @@ fn test_lt_to_tt_function() raises:
     print("  static: rank =", tt1.rank)
 
     # Test with dynamic layout
-    comptime dynamic_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
+    comptime dynamic_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
     var array2 = InlineArray[Float32, 32](fill=2.0)
     var lt2 = LayoutTensor[DType.float32, dynamic_layout](
         array2.unsafe_ptr(),

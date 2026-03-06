@@ -103,7 +103,7 @@ struct Conv2dSmem[
         Self.act_type,
         Self.BM,
         Self.BK,
-        swizzle_mode = Self.config.a_swizzle,
+        swizzle_mode=Self.config.a_swizzle,
     ]()
 
     # Filter tiles use K-major layout (transposed GEMM B)
@@ -111,7 +111,7 @@ struct Conv2dSmem[
         Self.filter_type,
         Self.BN,
         Self.BK,
-        swizzle_mode = Self.config.b_swizzle,
+        swizzle_mode=Self.config.b_swizzle,
     ]()
 
     # Output tiles use row-major layout

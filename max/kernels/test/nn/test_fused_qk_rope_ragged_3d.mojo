@@ -29,8 +29,9 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import Layout as TileLayout, row_major
+from layout.tile_layout import Layout as TileLayout
 from std.memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_3d_goldens import (
@@ -231,8 +232,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     fused_qk_rope_ragged[
         kv_collection.CacheType,
         interleaved=False,
-        target = StaticString("cpu"),
-        mrope_types = mrope_section.element_types,
+        target=StaticString("cpu"),
+        mrope_types=mrope_section.element_types,
         mrope_section=mrope_section,
     ](
         q_proj=q,

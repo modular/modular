@@ -23,7 +23,7 @@ fn outer[y: Int]():
     print(
         _compile_code[
             param[y],
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 

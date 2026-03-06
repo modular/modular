@@ -1058,8 +1058,8 @@ fn naively_compute_total_iters[
         iter_count += UInt32(
             Int(
                 mask.status(
-                    Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
-                    Index[dtype = DType.int32](BM, BN),
+                    Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
+                    Index[dtype=DType.int32](BM, BN),
                 )
                 != TileMaskStatus.FULL_MASK
             )
@@ -1075,8 +1075,8 @@ fn naively_get_first_nonempty_mask_col[
     var kv_row: UInt32 = 0
     while (
         mask.status(
-            Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
-            Index[dtype = DType.int32](BM, BN),
+            Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
+            Index[dtype=DType.int32](BM, BN),
         )
         == TileMaskStatus.FULL_MASK
     ):

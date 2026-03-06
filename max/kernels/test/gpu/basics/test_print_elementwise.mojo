@@ -29,7 +29,7 @@ fn test_elementwise_print[
     var M = c01.dim[0]()
     var N = c01.dim[1]() // 2
     comptime simd_width = simd_width_of[
-        c_type, target = get_gpu_target["sm_80"]()
+        c_type, target=get_gpu_target["sm_80"]()
     ]()
 
     @always_inline

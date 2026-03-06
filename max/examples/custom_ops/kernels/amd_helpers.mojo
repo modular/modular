@@ -165,7 +165,7 @@ fn copy_local_to_dram_32_32_8[
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
 
-            var src_element = Element[index_type = src.linear_idx_type].load(
+            var src_element = Element[index_type=src.linear_idx_type].load(
                 src.ptr + src_idx,
                 src.runtime_element_layout,
             )
@@ -219,16 +219,16 @@ struct AMD_MMA[
         Self.in_type,
         smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment = Self.type_alignment,
+        address_space=AddressSpace.SHARED,
+        alignment=Self.type_alignment,
     ]
 
     comptime MMARegTileType[num_mmas: Int] = LayoutTensor[
         Self.in_type,
         Layout.row_major(num_mmas * Self.num_k_tiles, Self.simd_width),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-        alignment = Self.type_alignment,
+        address_space=AddressSpace.LOCAL,
+        alignment=Self.type_alignment,
     ]
 
     comptime SharedMemWarpTileType[
@@ -242,8 +242,8 @@ fn mma[
     swap_a_b: Bool,
     MMAType: type_of(AMD_MMA),
 ](
-    a_tiles: MMATileBuffers[mma_type=MMAType],
-    b_tiles: MMATileBuffers[mma_type=MMAType],
+    a_tiles: MMATileBuffers[mma_type=MMAType, ...],
+    b_tiles: MMATileBuffers[mma_type=MMAType, ...],
     c_reg_tile: LayoutTensor[mut=True, ...],
 ):
     """
@@ -364,9 +364,9 @@ struct MMATileBuffers[
         Uses structured thread cooperation to efficiently transfer data.
         """
         copy_local_to_shared[
-            thread_layout = Self.thread_layout,
-            swizzle = Self.mma_type.swizzle,
-            thread_scope = ThreadScope.BLOCK,
+            thread_layout=Self.thread_layout,
+            swizzle=Self.mma_type.swizzle,
+            thread_scope=ThreadScope.BLOCK,
             row_major=True,
         ](
             self.shared_mem_tile.vectorize[1, Self.mma_type.simd_width](),
@@ -377,8 +377,8 @@ struct MMATileBuffers[
     fn load_from_dram(mut self) -> None:
         """Load data from global memory (DRAM) to thread-local memory."""
         copy_dram_to_local[
-            src_thread_layout = Self.thread_layout,
-            thread_scope = ThreadScope.BLOCK,
+            src_thread_layout=Self.thread_layout,
+            thread_scope=ThreadScope.BLOCK,
         ](
             self.load_reg_tile.vectorize[1, Self.mma_type.simd_width](),
             self.gmem_iter[].vectorize[1, Self.mma_type.simd_width](),
@@ -407,7 +407,7 @@ struct MMATileBuffers[
     fn load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
         comptime if is_a:
             Self.mma_type.tensor_core_mma.mma_op.load_a[
-                swizzle = Self.mma_type.swizzle
+                swizzle=Self.mma_type.swizzle
             ](
                 self.shared_mem_warp_tile,
                 self.mma_reg_tile[k_tile_idx]
@@ -417,7 +417,7 @@ struct MMATileBuffers[
             )
         else:
             Self.mma_type.tensor_core_mma.mma_op.load_b[
-                swizzle = Self.mma_type.swizzle
+                swizzle=Self.mma_type.swizzle
             ](
                 self.shared_mem_warp_tile,
                 self.mma_reg_tile[k_tile_idx]

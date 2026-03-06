@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 from max import mlir
 from max._mlir_context import default_mlir_context
+from max.experimental.torch import CustomOpLibrary
 from max.graph import KernelLibrary
-from max.torch import CustomOpLibrary
 
 
 @pytest.fixture

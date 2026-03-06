@@ -29,8 +29,8 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import row_major
 from std.memory import memcpy
 
 from nn.concat import concat
@@ -1064,8 +1064,8 @@ fn reshape_contiguous_buffer[
     dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
 ](
     buffer: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, old_rank].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, old_rank].create_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
@@ -1126,8 +1126,8 @@ fn to_managed_tensor_slice[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape: UnsafePointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
@@ -1161,8 +1161,8 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Scalar[dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
@@ -1183,8 +1183,8 @@ fn _to_managed_tensor_slice_index_list_shape[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape_tuple: IndexList[rank],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
@@ -1206,8 +1206,8 @@ fn to_managed_tensor_slice_list[
     raw_list_ptr: OpaquePointer[MutAnyOrigin],
     out out_list: List[
         ManagedTensorSlice[
-            io_spec = IOSpec[mut, input](),
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+            io_spec=IOSpec[mut, input](),
+            static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
         ]
     ],
 ):
@@ -1541,8 +1541,8 @@ fn mogg_tensor_init[
 ](
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank](
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank](
         static_shape,
         static_stride,
         alignment,
@@ -1601,8 +1601,8 @@ fn tmp_reshape_contiguous_buffer[
     buffer: ManagedTensorSlice,
     shape: IndexList[new_rank],
 ) -> ManagedTensorSlice[
-    io_spec = buffer.io_spec,
-    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+    io_spec=buffer.io_spec,
+    static_spec=StaticTensorSpec[buffer.dtype, new_rank](
         static_shape,
         static_stride,
         1,

@@ -240,77 +240,77 @@ def main() raises:
         # M = 1, K % simd_width == 0, transpose_b = True
 
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=True,
             M=None,
-            N = Int(4096),
-            K = Int(4096),
+            N=Int(4096),
+            K=Int(4096),
         ](bench, ctx, 1, 4096, 4096)
 
         # M = 1, N % TILE_N != 0, K % simd_width == 0, transpose_b = True
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=True,
             M=None,
-            N = Int(75837),
-            K = Int(5120),
+            N=Int(75837),
+            K=Int(5120),
         ](bench, ctx, 1, 75837, 5120)
 
         # GEMV_KERNEL_VECTOR
 
         # N = 1, K % simd_width == 0, transpose_b = False
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=False,
             M=None,
-            N = Int(1),
-            K = Int(4096),
+            N=Int(1),
+            K=Int(4096),
         ](bench, ctx, 4096, 1, 4096)
 
         # N = 1, K % simd_width == 0, transpose_b = True
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.bfloat16,
+            in_type=DType.bfloat16,
+            out_type=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(1),
-            K = Int(13824),
+            N=Int(1),
+            K=Int(13824),
         ](bench, ctx, 5120, 1, 13824)
 
         # GEMV_KERNEL
 
         # M = 1, K % simd_width !=0, transpose_b = True
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=True,
             M=None,
-            N = Int(4096),
-            K = Int(4095),
+            N=Int(4096),
+            K=Int(4095),
         ](bench, ctx, 1, 4096, 4095)
 
         # N = 1, K % simd_width !=0, transpose_b = False
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=False,
             M=None,
-            N = Int(1),
-            K = Int(4095),
+            N=Int(1),
+            K=Int(4095),
         ](bench, ctx, 4096, 1, 4095)
 
         # matmaul_naive
         # M = 1, K % WARP_SIZE != 0, transpose_b = False
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=False,
             M=None,
-            N = Int(4096),
-            K = Int(4095),
+            N=Int(4096),
+            K=Int(4095),
         ](bench, ctx, 1, 4096, 4095)
 
     bench.dump_report()

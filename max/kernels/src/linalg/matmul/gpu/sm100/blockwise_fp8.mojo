@@ -69,12 +69,15 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     c_layout: Layout,
     a_scales_layout: Layout,
     b_scales_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    a_scales_tile_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
+    a_scales_tile_rank: Int,
+    a_scales_tile_shape: IndexList[a_scales_tile_rank],
+    a_scales_desc_shape: IndexList[a_scales_tile_rank],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -84,11 +87,14 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     num_threads: UInt = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        a_scales_type,
+        a_scales_tile_rank,
+        a_scales_tile_shape,
+        a_scales_desc_shape,
     ],
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -148,7 +154,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     a_smem = external_memory[
         Scalar[a_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         name="tmem_test_dynamic_shared_memory",
     ]().as_any_origin()
@@ -157,21 +163,21 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime a_scales_smem_tile_t = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -179,21 +185,21 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_type,
         a_smem_layout_3D,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t_3D = LayoutTensor[
         b_type,
         b_smem_layout_3D,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime a_scales_smem_tile_t_3D = LayoutTensor[
         a_scales_type,
         a_scales_smem_layout_3D,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
 
@@ -475,12 +481,15 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     c_layout: Layout,
     a_scales_layout: Layout,
     b_scales_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    a_scales_tile_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
+    a_scales_tile_rank: Int,
+    a_scales_tile_shape: IndexList[a_scales_tile_rank],
+    a_scales_desc_shape: IndexList[a_scales_tile_rank],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -490,11 +499,14 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     num_threads: UInt = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        a_scales_type,
+        a_scales_tile_rank,
+        a_scales_tile_shape,
+        a_scales_desc_shape,
     ],
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -514,12 +526,15 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         c_layout,
         a_scales_layout,
         b_scales_layout,
-        a_tile_layout,
-        b_tile_layout,
-        a_scales_tile_layout,
-        a_desc_layout,
-        b_desc_layout,
-        a_scales_desc_layout,
+        a_tile_rank,
+        a_tile_shape,
+        a_desc_shape,
+        b_tile_rank,
+        b_tile_shape,
+        b_desc_shape,
+        a_scales_tile_rank,
+        a_scales_tile_shape,
+        a_scales_desc_shape,
         block_tile_shape,
         mma_shape,
         transpose_b=True,
@@ -577,36 +592,36 @@ fn matmul_sm100_blockwise_scaled_fp8[
         a_type,
         _3D_layout[a.layout, a.rank],
         MutAnyOrigin,
-        address_space = a.address_space,
-        element_layout = a.element_layout,
-        layout_int_type = a.layout_int_type,
-        linear_idx_type = a.linear_idx_type,
-        masked = a.masked,
-        alignment = a.alignment,
+        address_space=a.address_space,
+        element_layout=a.element_layout,
+        layout_int_type=a.layout_int_type,
+        linear_idx_type=a.linear_idx_type,
+        masked=a.masked,
+        alignment=a.alignment,
     ]
 
     comptime b_layout_tensor_3D = LayoutTensor[
         b_type,
         _3D_layout[b.layout, b.rank],
         MutAnyOrigin,
-        address_space = b.address_space,
-        element_layout = b.element_layout,
-        layout_int_type = b.layout_int_type,
-        linear_idx_type = b.linear_idx_type,
-        masked = b.masked,
-        alignment = b.alignment,
+        address_space=b.address_space,
+        element_layout=b.element_layout,
+        layout_int_type=b.layout_int_type,
+        linear_idx_type=b.linear_idx_type,
+        masked=b.masked,
+        alignment=b.alignment,
     ]
 
     comptime a_scales_layout_tensor_3D = LayoutTensor[
         a_scales_type,
         _3D_layout[a_scales.layout, a_scales.rank],
         MutAnyOrigin,
-        address_space = a_scales.address_space,
-        element_layout = a_scales.element_layout,
-        layout_int_type = a_scales.layout_int_type,
-        linear_idx_type = a_scales.linear_idx_type,
-        masked = a_scales.masked,
-        alignment = a_scales.alignment,
+        address_space=a_scales.address_space,
+        element_layout=a_scales.element_layout,
+        layout_int_type=a_scales.layout_int_type,
+        linear_idx_type=a_scales.linear_idx_type,
+        masked=a_scales.masked,
+        alignment=a_scales.alignment,
     ]
 
     var a_3D = a_layout_tensor_3D(
@@ -683,7 +698,6 @@ fn matmul_sm100_blockwise_scaled_fp8[
     var a_tma_op = create_tensor_tile[
         Index(1, BM, BK),
         swizzle_mode=a_swizzle,
-        __tile_layout = Layout.row_major(1, BM, BK),
     ](ctx, a_3D)
 
     comptime b_tile_shape = Index(1, BN, BK) if transpose_b else Index(
@@ -693,15 +707,13 @@ fn matmul_sm100_blockwise_scaled_fp8[
     var b_tma_op = create_tensor_tile[
         b_tile_shape,
         swizzle_mode=b_swizzle,
-        __tile_layout = Layout.row_major(b_tile_shape),
     ](ctx, b_3D)
 
     var a_scales_tma_op = create_tensor_tile[
         Index(1, 1, BM),
-        __tile_layout = Layout.row_major(1, 1, BM),
-        __desc_layout = Layout(IntTuple(1, 1, BM), IntTuple(1, 1, 1)),
+        __desc_shape=Index(1, 1, BM),
     ](ctx, a_scales_3D)
-    # NOTE: desc layout must be specified otherwise a constraint fails
+    # NOTE: desc shape must be specified otherwise a constraint fails
 
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
@@ -719,12 +731,15 @@ fn matmul_sm100_blockwise_scaled_fp8[
         type_of(c).layout,
         type_of(a_scales_3D).layout,
         type_of(b_scales).layout,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
-        type_of(a_scales_tma_op).layout,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
-        type_of(a_scales_tma_op).desc_layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(a_scales_tma_op).rank,
+        type_of(a_scales_tma_op).tile_shape,
+        type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,
         umma_shape,
         transpose_b=True,

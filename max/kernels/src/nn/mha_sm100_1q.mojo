@@ -234,7 +234,7 @@ trait WriteableMMAOperandDescriptor(TrivialRegisterPassable):
             src_type,
             src_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             element_layout=src_element_layout,
         ],
     ):
@@ -261,13 +261,13 @@ fn local_tensor_type[
         dtype,
         layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
         element_layout=element_layout,
     ]
 ):
     dummy_arg = {
         UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space = AddressSpace.LOCAL
+            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.LOCAL
         ]()
     }
 
@@ -297,7 +297,7 @@ trait AccumulatorTile(TrivialRegisterPassable):
             Self.dtype,
             Self.rows_of_frags_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         ...
@@ -474,7 +474,7 @@ struct TMemAccumulator[
             return self.tmem_addr
         else:
             comptime linear = _tmem_offset[
-                Self.dtype, MMA_N = Self.MMA_N, m_mma=m_mma, n_mma=n_mma
+                Self.dtype, MMA_N=Self.MMA_N, m_mma=m_mma, n_mma=n_mma
             ]()
 
             return self.tmem_addr + UInt32(linear)
@@ -487,7 +487,7 @@ struct TMemAccumulator[
             Self.dtype,
             Self.rows_of_frags_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
     ):
         Self.check_constraints()
@@ -569,7 +569,7 @@ struct TMemAccumulator[
                         datapaths=16,  # first dimension of the shape
                         bits=256,  # second dimension of the shape
                         repeat=repeat,
-                        dtype = DType.uint32,
+                        dtype=DType.uint32,
                         pack=False,
                         width=frag_size_b32,
                     ](tmem)
@@ -617,7 +617,7 @@ struct TMemOperand[
             return self.tmem_addr
         else:
             comptime linear = _tmem_offset[
-                DType.bfloat16, MMA_N = Self.MMA_K, m_mma=m_mma, n_mma=k_mma
+                DType.bfloat16, MMA_N=Self.MMA_K, m_mma=m_mma, n_mma=k_mma
             ]()
             return self.tmem_addr + UInt32(linear)
 
@@ -633,7 +633,7 @@ struct TMemOperand[
             src_type,
             src_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             element_layout=src_element_layout,
         ],
     ):
@@ -673,8 +673,8 @@ struct TMemOperand[
                 IntTuple(Self.frag_size),
             ),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-            element_layout = Layout.row_major(Self.frag_size),
+            address_space=AddressSpace.LOCAL,
+            element_layout=Layout.row_major(Self.frag_size),
         ](src.ptr)
         # frags = src.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
@@ -710,7 +710,7 @@ struct TMemOperand[
             dst_type,
             dst_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             element_layout=dst_element_layout,
         ],
     ):
@@ -753,7 +753,7 @@ struct TMemOperand[
                         datapaths=16,  # first dimension of the shape
                         bits=bits,  # second dimension of the shape
                         repeat=repeat,
-                        dtype = DType.uint32,
+                        dtype=DType.uint32,
                         pack=False,
                         width=frag_size_b32,
                     ](tmem)
@@ -832,7 +832,7 @@ struct SM100TensorAccumulatorSS[
     comptime smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t],
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
 
     comptime a_offset = MMAOperandOffsetFn[
@@ -858,8 +858,8 @@ struct SM100TensorAccumulatorSS[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
-        transpose_b = Self.transpose_b,
+        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b=Self.transpose_b,
     ]()
 
     comptime ab_t: DescriptorPair = UMMADescriptorSS[Self.operand_t]
@@ -875,7 +875,7 @@ struct SM100TensorAccumulatorSS[
     ]
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var pipeline: PipelineState[Self.pipeline_stages]
 
@@ -901,7 +901,7 @@ struct SM100TensorAccumulatorSS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
     ):
         Self.check_constraints()
@@ -922,10 +922,10 @@ struct SM100TensorAccumulatorSS[
         dtype_a: DType, dtype_b: DType
     ](
         p_a: UnsafePointer[
-            Scalar[dtype_a], MutAnyOrigin, address_space = AddressSpace.SHARED
+            Scalar[dtype_a], MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         p_b: UnsafePointer[
-            Scalar[dtype_b], MutAnyOrigin, address_space = AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
     ) -> Self.ab_t:
         Self.check_constraints()
@@ -1062,7 +1062,7 @@ struct SM100TensorAccumulatorTS[
     comptime smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t],
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
 
     comptime num_m_mmas = Self.BM // Self.MMA_M
@@ -1075,10 +1075,10 @@ struct SM100TensorAccumulatorTS[
         Self.operand_t,
         Self.num_m_blocks_per_warp,
         Self.num_n_mmas,
-        MMA_M = Self.BM // Self.num_m_blocks_per_warp,
-        MMA_N = Self.BK,
-        MMA_K = Self.MMA_K,
-        consumer_group_size = Self.num_softmax_threads,
+        MMA_M=Self.BM // Self.num_m_blocks_per_warp,
+        MMA_N=Self.BK,
+        MMA_K=Self.MMA_K,
+        consumer_group_size=Self.num_softmax_threads,
     ]
     comptime a_t: WriteableMMAOperandDescriptor = Self.ab_t.a_t
     comptime b_t: MMAOperandDescriptor = Self.ab_t.b_t
@@ -1105,12 +1105,12 @@ struct SM100TensorAccumulatorTS[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype = DType.uint32](Self.MMA_M, Self.MMA_N),
-        transpose_b = Self.transpose_b,
+        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        transpose_b=Self.transpose_b,
     ]()
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var phase: UInt32
 
@@ -1131,7 +1131,7 @@ struct SM100TensorAccumulatorTS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
     ):
         Self.check_constraints()
@@ -1155,7 +1155,7 @@ struct SM100TensorAccumulatorTS[
         dtype_b: DType
     ](
         p_b: UnsafePointer[
-            Scalar[dtype_b], MutAnyOrigin, address_space = AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
     ) -> Self.ab_t.b_t:
         Self.check_constraints()
@@ -1333,32 +1333,32 @@ fn mha_sm100_dispatch[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
-            BM = Int(new_config.block_m()),
-            depth = Int(new_config.depth),
+            BM=Int(new_config.block_m()),
+            depth=Int(new_config.depth),
             group=group,
-            decoding = _is_decoding[MaxPromptLenType](),
+            decoding=_is_decoding[MaxPromptLenType](),
         ]
     ](
         q_tma[
             swizzle_mode,
-            BM = Int(BM),
-            depth = Int(new_config.depth),
-            q_num_heads = Int(new_config.num_heads),
+            BM=Int(BM),
+            depth=Int(new_config.depth),
+            q_num_heads=Int(new_config.num_heads),
             group=group,
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
     k_tma_op = k.create_tma_tile[
         swizzle_mode,
-        BN = Int(new_config.block_n()),
-        depth = Int(new_config.depth),
-        BK = Int(new_config.padded_depth),
+        BN=Int(new_config.block_n()),
+        depth=Int(new_config.depth),
+        BK=Int(new_config.padded_depth),
     ](ctx)
     v_tma_op = v.create_tma_tile[
         swizzle_mode,
-        BN = Int(new_config.block_n()),
-        depth = Int(new_config.depth),
-        BK = Int(new_config.padded_depth),
+        BN=Int(new_config.block_n()),
+        depth=Int(new_config.depth),
+        BK=Int(new_config.padded_depth),
     ](ctx)
 
     comptime SchedulerType = TransientScheduler[
@@ -1459,22 +1459,22 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = Int(config.block_m()),
-        depth = Int(config.depth),
+        BM=Int(config.block_m()),
+        depth=Int(config.depth),
         group=group,
-        decoding = _is_decoding[MaxSeqLenType](),
+        decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1587,22 +1587,22 @@ fn _mha_sm100_valid_length_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = Int(config.block_m()),
-        depth = Int(config.depth),
+        BM=Int(config.block_m()),
+        depth=Int(config.depth),
         group=group,
-        decoding = _is_decoding[MaxSeqLenType](),
+        decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1709,22 +1709,22 @@ fn _mha_sm100_enqueue[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = Int(config.block_m()),
-        depth = Int(config.depth),
+        BM=Int(config.block_m()),
+        depth=Int(config.depth),
         group=group,
-        decoding = _is_decoding[MaxSeqLenType](),
+        decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1853,22 +1853,22 @@ fn _mha_sm100[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM = Int(config.block_m()),
-        depth = Int(config.depth),
+        BM=Int(config.block_m()),
+        depth=Int(config.depth),
         group=group,
-        decoding = _is_decoding[MaxSeqLenType](),
+        decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN = Int(config.block_n()),
-        BK = Int(config.padded_depth),
+        BN=Int(config.block_n()),
+        BK=Int(config.padded_depth),
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     kv_lut: KVLUTType,
@@ -1986,7 +1986,7 @@ fn _mha_sm100[
         BM=BM,  # 128
         BN=BN,  # BN
         BK=BK,  # depth
-        compute_BK = align_up(depth, 16),
+        compute_BK=align_up(depth, 16),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2022,7 +2022,7 @@ fn _mha_sm100[
     comptime q_smem_size = BM * padded_depth
     q_smem = external_memory[
         Scalar[kv_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         name="mha_dynamic_shared_memory",
     ]()
@@ -2228,7 +2228,7 @@ fn _mha_sm100[
 
     var position: PositionType = get_position(initial_seq_info)
     startend = position.get_start_and_end_for_partitions[
-        page_size = KVLUTType.page_size
+        page_size=KVLUTType.page_size
     ](partition, mask)
     var kv_tile_start_row: UInt32 = startend[0]
     var end: UInt32 = startend[1]
@@ -2273,7 +2273,7 @@ fn _mha_sm100[
             )
         elif warp_id() == 0:  # warp id == 0: Q @ K'
             startend = position.get_start_and_end_for_partitions[
-                page_size = KVLUTType.page_size
+                page_size=KVLUTType.page_size
             ](partition, mask)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
@@ -2358,7 +2358,7 @@ fn _mha_sm100[
 
         elif warp_id() == 1:  # warp id 1: P @ V
             startend = position.get_start_and_end_for_partitions[
-                page_size = KVLUTType.page_size
+                page_size=KVLUTType.page_size
             ](partition, mask)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
@@ -2486,26 +2486,26 @@ fn _mha_sm100[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation()
         rowsum = LayoutTensor[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation()
         comptime VecPType = LayoutTensor[
             accum_type,
             p_vec_output_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             element_layout=element_layout,
         ]
         comptime VecOType = LayoutTensor[
             accum_type,
             o_vec_output_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             element_layout=element_layout,
         ]
 
@@ -2606,14 +2606,14 @@ fn _mha_sm100[
             ), "we don't support Float32 output"
             comptime assert size_of[kv_type]() == size_of[output_type]()
             comptime swizzle = make_swizzle[
-                num_rows = WM // 2, row_size=BN, access_size=8
+                num_rows=WM // 2, row_size=BN, access_size=8
             ]()
             # Reuse a_smem for c tile in smem
             comptime q_tile_size: UInt32 = q_smem_size // 2
             accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, Int(config.padded_depth)),
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
             ]((q_smem).bitcast[Scalar[output_type]]())
             accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
                 Int(warp_y), Int(warp_x)
@@ -2635,7 +2635,7 @@ fn _mha_sm100[
             # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
-                thread_layout = Layout.row_major(
+                thread_layout=Layout.row_major(
                     num_softmax_threads * simd_size // depth,
                     depth // simd_size,
                 ),

@@ -216,8 +216,8 @@ fn fence[
         return
 
     __mlir_op.`pop.fence`[
-        ordering = ordering.__mlir_attr(),
-        syncscope = _get_kgen_string[scope](),
+        ordering=ordering.__mlir_attr(),
+        syncscope=_get_kgen_string[scope](),
         _type=None,
     ]()
 
@@ -277,8 +277,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             return ptr[]
 
         return __mlir_op.`pop.load`[
-            ordering = ordering.__mlir_attr(),
-            syncscope = _get_kgen_string[Self.scope](),
+            ordering=ordering.__mlir_attr(),
+            syncscope=_get_kgen_string[Self.scope](),
         ](ptr.address)
 
     @always_inline
@@ -328,10 +328,10 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             return res
 
         var res = __mlir_op.`pop.atomic.rmw`[
-            bin_op = __mlir_attr.`#pop<bin_op add>`,
-            ordering = ordering.__mlir_attr(),
-            syncscope = _get_kgen_string[Self.scope](),
-            _type = Scalar[Self.dtype]._mlir_type,
+            bin_op=__mlir_attr.`#pop<bin_op add>`,
+            ordering=ordering.__mlir_attr(),
+            syncscope=_get_kgen_string[Self.scope](),
+            _type=Scalar[Self.dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
             rhs._mlir_value,
@@ -368,9 +368,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             return res
 
         var res = __mlir_op.`pop.atomic.rmw`[
-            bin_op = __mlir_attr.`#pop<bin_op xchg>`,
-            ordering = ordering.__mlir_attr(),
-            _type = Scalar[Self.dtype]._mlir_type,
+            bin_op=__mlir_attr.`#pop<bin_op xchg>`,
+            ordering=ordering.__mlir_attr(),
+            _type=Scalar[Self.dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
             value._mlir_value,
@@ -403,9 +403,9 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             return
 
         _ = __mlir_op.`pop.atomic.rmw`[
-            bin_op = __mlir_attr.`#pop<bin_op xchg>`,
-            ordering = ordering.__mlir_attr(),
-            _type = Scalar[Self.dtype]._mlir_type,
+            bin_op=__mlir_attr.`#pop<bin_op xchg>`,
+            ordering=ordering.__mlir_attr(),
+            _type=Scalar[Self.dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
             value._mlir_value,
@@ -479,10 +479,10 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
         var value_addr = UnsafePointer(to=self.value._mlir_value)
         var res = __mlir_op.`pop.atomic.rmw`[
-            bin_op = __mlir_attr.`#pop<bin_op sub>`,
-            ordering = ordering.__mlir_attr(),
-            syncscope = _get_kgen_string[Self.scope](),
-            _type = Scalar[Self.dtype]._mlir_type,
+            bin_op=__mlir_attr.`#pop<bin_op sub>`,
+            ordering=ordering.__mlir_attr(),
+            syncscope=_get_kgen_string[Self.scope](),
+            _type=Scalar[Self.dtype]._mlir_type,
         ](value_addr.address, rhs._mlir_value)
         return Scalar[Self.dtype](mlir_value=res)
 
@@ -543,7 +543,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
         comptime if Self.dtype.is_integral():
             return _compare_exchange_integral_impl[
-                scope = Self.scope,
+                scope=Self.scope,
                 failure_ordering=failure_ordering,
                 success_ordering=success_ordering,
             ](ptr, UnsafePointer(to=expected), desired)
@@ -561,7 +561,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var desired_integral = bitcast[integral_type](desired)
 
         return _compare_exchange_integral_impl[
-            scope = Self.scope,
+            scope=Self.scope,
             failure_ordering=failure_ordering,
             success_ordering=success_ordering,
         ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
@@ -625,7 +625,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
-        _max_impl[scope = Self.scope, ordering=ordering](ptr, rhs)
+        _max_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @always_inline
     fn max[
@@ -681,7 +681,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
-        _min_impl[scope = Self.scope, ordering=ordering](ptr, rhs)
+        _min_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @always_inline
     fn min[
@@ -732,9 +732,9 @@ fn _compare_exchange_integral_impl[
     comptime assert dtype.is_integral(), "the input type must be integral"
 
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
-        failure_ordering = failure_ordering.__mlir_attr(),
-        success_ordering = success_ordering.__mlir_attr(),
-        syncscope = _get_kgen_string[scope](),
+        failure_ordering=failure_ordering.__mlir_attr(),
+        success_ordering=success_ordering.__mlir_attr(),
+        syncscope=_get_kgen_string[scope](),
     ](
         atomic_ptr.bitcast[Scalar[dtype]._mlir_type]().address,
         expected_ptr[]._mlir_value,
@@ -742,17 +742,17 @@ fn _compare_exchange_integral_impl[
     )
 
     var loaded_value = Scalar[dtype](
-        mlir_value=__mlir_op.`kgen.struct.extract`[
-            index = __mlir_attr.`0:index`
-        ](cmpxchg_res)
+        mlir_value=__mlir_op.`kgen.struct.extract`[index=__mlir_attr.`0:index`](
+            cmpxchg_res
+        )
     )
 
     expected_ptr[] = loaded_value
 
     var success = Bool(
-        mlir_value=__mlir_op.`kgen.struct.extract`[
-            index = __mlir_attr.`1:index`
-        ](cmpxchg_res)
+        mlir_value=__mlir_op.`kgen.struct.extract`[index=__mlir_attr.`1:index`](
+            cmpxchg_res
+        )
     )
 
     return success
@@ -764,10 +764,10 @@ fn _max_impl_base[
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
-        bin_op = __mlir_attr.`#pop<bin_op max>`,
-        ordering = ordering.__mlir_attr(),
-        syncscope = _get_kgen_string[scope](),
-        _type = Scalar[dtype]._mlir_type,
+        bin_op=__mlir_attr.`#pop<bin_op max>`,
+        ordering=ordering.__mlir_attr(),
+        syncscope=_get_kgen_string[scope](),
+        _type=Scalar[dtype]._mlir_type,
     ](value_addr.address, rhs._mlir_value)
 
 
@@ -777,10 +777,10 @@ fn _min_impl_base[
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
-        bin_op = __mlir_attr.`#pop<bin_op min>`,
-        ordering = ordering.__mlir_attr(),
-        syncscope = _get_kgen_string[scope](),
-        _type = Scalar[dtype]._mlir_type,
+        bin_op=__mlir_attr.`#pop<bin_op min>`,
+        ordering=ordering.__mlir_attr(),
+        syncscope=_get_kgen_string[scope](),
+        _type=Scalar[dtype]._mlir_type,
     ](value_addr.address, rhs._mlir_value)
 
 
