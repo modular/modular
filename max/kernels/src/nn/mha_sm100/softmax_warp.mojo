@@ -38,10 +38,10 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
-from layout._layout import row_major
-from layout import stack_allocation as tt_stack_allocation
+from layout import row_major, stack_allocation as tt_stack_allocation
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.fa4_config import FA4Config, EnableForcedOrdering, EnableEarlyAdd
 from nn.sm100_attention_utils import (
     LocalTensor,
@@ -84,41 +84,43 @@ fn fa4_scale_write_output[
     qkv_type: DType,
     output_type: DType,
     config: FA4Config,
+    output_swizzle_mode: TensorMapSwizzle = config.swizzle_mode,
+    kv_depth: Int = config.depth,
+    half_bm: Int = config.BM // 2,
+    tmem_kv_depth: Int = config.padded_depth,
 ](
     local_row: UInt32,
     local_warp_idx: UInt32,
     warp_group_idx: UInt32,
     inv_row_sum: Float32,
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
-    o_tmem_arg: TMemTile[DType.float32, config.BM // 2, config.padded_depth],
+    o_tmem_arg: TMemTile[DType.float32, half_bm, tmem_kv_depth],
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
-        BM = config.BM // 2,
-        BN = config.depth,
+        output_swizzle_mode,
+        BM=half_bm,
+        BN=kv_depth,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
 ):
     comptime accum_type = DType.float32
-    comptime BM = config.BM
-    comptime padded_depth = config.padded_depth
 
-    comptime swizzle_granularity = config.swizzle_mode.bytes() // size_of[
+    comptime swizzle_granularity = output_swizzle_mode.bytes() // size_of[
         output_type
     ]()
-    comptime iters = padded_depth // swizzle_granularity
+    comptime iters = tmem_kv_depth // swizzle_granularity
 
     comptime ST = STMatrixLayout[
-        BM // 2,
+        half_bm,
         swizzle_granularity,
         num_threads=WARPGROUP_SIZE,
         accum_type_size=4,
     ]
     comptime num_rows = ST.vec_local_layout[0].size()
 
-    comptime swizzle = make_swizzle[output_type, config.swizzle_mode]()
+    comptime swizzle = make_swizzle[output_type, output_swizzle_mode]()
 
     comptime swizzle_block_size: UInt32 = UInt32(
         WARP_SIZE * swizzle_granularity
@@ -130,7 +132,7 @@ fn fa4_scale_write_output[
             ragged_tma_store.prefetch_descriptor()
 
     # Allocate register tiles for double-buffered pipeline.
-    comptime ChunkTMemType = TMemTile[accum_type, BM // 2, swizzle_granularity]
+    comptime ChunkTMemType = TMemTile[accum_type, half_bm, swizzle_granularity]
     var o_cur = ChunkTMemType.allocate_register_tile[
         num_threads=WARPGROUP_SIZE
     ]()
@@ -146,7 +148,7 @@ fn fa4_scale_write_output[
             UnsafePointer[
                 Scalar[load_dtype],
                 MutAnyOrigin,
-                address_space = AddressSpace.LOCAL,
+                address_space=AddressSpace.LOCAL,
             ]
         ](dst.ptr)
         chunk_tmem_addr = o_tmem_arg.tmem_addr + UInt32(
@@ -159,7 +161,7 @@ fn fa4_scale_write_output[
             comptime assert pow_two + local_offset <= ST.repeat
             comptime if pow_two > 0:
                 comptime offsets = STMatrixOffsets[
-                    BM // 2,
+                    half_bm,
                     swizzle_granularity,
                     num_threads=WARPGROUP_SIZE,
                     accum_type_size=4,
@@ -170,22 +172,22 @@ fn fa4_scale_write_output[
                 tmem = chunk_tmem_addr + UInt32(offsets.tmem_offset)
                 frag = tcgen05_ld[
                     datapaths=16,
-                    bits = ST.bits,
+                    bits=ST.bits,
                     repeat=pow_two,
                     dtype=load_dtype,
                     pack=False,
-                    width = offsets.local_frag_size_b32,
+                    width=offsets.local_frag_size_b32,
                 ](tmem)
                 ptr.store(offsets.ptr_offset, frag)
 
         comptime max_value = 64 if ST.bits == 128 else 32
         break_into_powers_of_two[
-            func=load_fn, N = ST.repeat, max_value=max_value
+            func=load_fn, N=ST.repeat, max_value=max_value
         ]()
 
     load_chunk[0, 0](o_cur)
     inv_row_sums = tt_stack_allocation[
-        dtype=accum_type, address_space = AddressSpace.LOCAL
+        dtype=accum_type, address_space=AddressSpace.LOCAL
     ](row_major[num_rows]())
     lane = local_row % 32
     lane_row = lane // 4
@@ -221,7 +223,7 @@ fn fa4_scale_write_output[
         )
 
         comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
-            j * (BM // 2) * swizzle_granularity
+            j * half_bm * swizzle_granularity
         )
         comptime smem_layout = row_major[16, swizzle_granularity]()
         var accum_smem_warp_tile = _SharedMemTT[output_type, smem_layout](
@@ -297,9 +299,9 @@ fn fa4_softmax[
     MaxSeqLenType: OptionallyStaticInt,
 ](
     mbars: FA4MiscMBars[
-        num_qk_stages = config.num_qk_stages,
-        num_pv_stages = config.num_pv_stages,
-        num_kv_stages = config.num_kv_stages,
+        num_qk_stages=config.num_qk_stages,
+        num_pv_stages=config.num_pv_stages,
+        num_kv_stages=config.num_kv_stages,
         separate_kv=True,
         use_order_barriers=EnableForcedOrdering,
     ],
@@ -312,8 +314,8 @@ fn fa4_softmax[
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
         config.swizzle_mode,
-        BM = config.BM // 2,
-        BN = config.depth,
+        BM=config.BM // 2,
+        BN=config.depth,
     ],
     sink_weights: SinkType,
 ):
@@ -349,11 +351,11 @@ fn fa4_softmax[
         accum_type,
         MMA_M=HalfBM,
         MMA_N=BN,
-        BK = align_up(config.depth, config.MMA_K),
-        swizzle_a = config.swizzle_mode,
-        swizzle_b = config.swizzle_mode,
+        BK=align_up(config.depth, config.MMA_K),
+        swizzle_a=config.swizzle_mode,
+        swizzle_b=config.swizzle_mode,
         transpose_b=True,
-        num_stages = config.num_qk_stages,
+        num_stages=config.num_qk_stages,
     ]
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         qkv_type,
@@ -361,9 +363,9 @@ fn fa4_softmax[
         MMA_M=HalfBM,
         MMA_N=padded_depth,
         BK=BN,
-        swizzle_b = config.swizzle_mode,
+        swizzle_b=config.swizzle_mode,
         transpose_b=False,
-        num_stages = config.num_pv_stages,
+        num_stages=config.num_pv_stages,
     ]
     comptime PositionType = MHAPosition[
         config.BM,
@@ -466,9 +468,9 @@ fn fa4_softmax[
     )
 
     gmem_row = PositionType.get_q_gmem_row[ragged=ragged](seq_info, max_seq_len)
-    s = tt_stack_allocation[
-        dtype=accum_type, address_space = AddressSpace.LOCAL
-    ](row_major[config.BN]())
+    s = tt_stack_allocation[dtype=accum_type, address_space=AddressSpace.LOCAL](
+        row_major[config.BN]()
+    )
 
     comptime max_unroll = 8
 
@@ -741,27 +743,27 @@ fn fa4_softmax[
     comptime assert num_sets == 1 or mask_sets[0] != TileMaskStatus.UNKNOWN_MASK
 
     comptime if num_sets == 1:
-        row_max = load_mask_max[mask_strategy = mask_strategies[0]](kv_row)
+        row_max = load_mask_max[mask_strategy=mask_strategies[0]](kv_row)
         mask_iters[0] -= 1
     else:
         # find out which strategy to apply
         if mask_iters[0] > 0:
-            row_max = load_mask_max[mask_strategy = mask_strategies[0]](kv_row)
+            row_max = load_mask_max[mask_strategy=mask_strategies[0]](kv_row)
             mask_iters[0] -= 1
         else:
             comptime if num_sets == 2:
-                row_max = load_mask_max[mask_strategy = mask_strategies[1]](
+                row_max = load_mask_max[mask_strategy=mask_strategies[1]](
                     kv_row
                 )
                 mask_iters[1] -= 1
             else:
                 if mask_iters[1] > 1:
-                    row_max = load_mask_max[mask_strategy = mask_strategies[1]](
+                    row_max = load_mask_max[mask_strategy=mask_strategies[1]](
                         kv_row
                     )
                     mask_iters[1] -= 1
                 else:
-                    row_max = load_mask_max[mask_strategy = mask_strategies[2]](
+                    row_max = load_mask_max[mask_strategy=mask_strategies[2]](
                         kv_row
                     )
                     mask_iters[2] -= 1
@@ -842,8 +844,8 @@ fn fa4_softmax[
             if kv_row >= num_keys:
                 break
             cur_mask_status = mask.status(
-                Index[dtype = DType.int32](Int(score_row), Int(kv_row)),
-                Index[dtype = DType.int32](BM, BN),
+                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
+                Index[dtype=DType.int32](BM, BN),
             )
             if cur_mask_status == TileMaskStatus.FULL_MASK:
                 continue
@@ -852,12 +854,12 @@ fn fa4_softmax[
             var new_row_max: Scalar[accum_type]
             if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
                 new_row_max = load_mask_max[
-                    mask_strategy = MaskStrategy.COMPUTED
+                    mask_strategy=MaskStrategy.COMPUTED
                     | MaskStrategy.OUT_OF_BOUNDS
                 ](kv_row, old_max)
             else:
                 new_row_max = load_mask_max[
-                    mask_strategy = MaskStrategy.OUT_OF_BOUNDS
+                    mask_strategy=MaskStrategy.OUT_OF_BOUNDS
                 ](kv_row, old_max)
 
             diff = sub_ftz(old_max, new_row_max)

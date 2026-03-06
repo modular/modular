@@ -433,11 +433,10 @@ struct Trace[
 
         # Debug assert the AsyncRT profiler => StaticString invariant for now,
         # to avoid making this raising.
-        debug_assert(
+        assert (
             is_profiling_disabled[Self.category, Self.level]()
-            or _name_value.isa[StaticString](),
-            "the AsyncRT profiler only supports `StaticString` names",
-        )
+            or _name_value.isa[StaticString]()
+        ), "the AsyncRT profiler only supports `StaticString` names"
 
         # Validate that only one tracing system is enabled
         enabled_systems = _get_enabled_tracing_systems[Self.level]()

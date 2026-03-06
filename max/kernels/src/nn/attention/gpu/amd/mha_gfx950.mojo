@@ -237,7 +237,7 @@ struct KVBuffer[
             Self.num_mmas * Self.num_k_mmas2 * Self.num_k_tiles, Self.simd_width
         ),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     var mma_tile: Self.MMATileType
 
@@ -248,7 +248,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         Self.smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
 
@@ -275,7 +275,7 @@ struct KVBuffer[
         head_idx: UInt,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         end: UInt,
@@ -322,7 +322,7 @@ struct KVBuffer[
                 Int(self.warp_id) // 2, Int(self.warp_id) % 2
             )
             # load from dram to sram directly
-            copy_dram_to_sram_lds[swizzle = Self.swizzle,](
+            copy_dram_to_sram_lds[swizzle=Self.swizzle,](
                 smem_warp_tile,
                 gmem_warp_tile,
             )
@@ -339,7 +339,7 @@ struct KVBuffer[
                     Int(warp_row), Int(warp_col) + num_warps * depth_tile
                 )
                 # load from dram to sram directly
-                copy_dram_to_sram_lds[swizzle = Self.swizzle,](
+                copy_dram_to_sram_lds[swizzle=Self.swizzle,](
                     smem_warp_tile,
                     gmem_warp_tile,
                     self.lds_base_ptrs[buffer_idx],
@@ -381,7 +381,7 @@ struct KVBuffer[
             var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
                 wtile_coord0, wtile_coord1
             )
-            var load_b_tile = load_b[Self.mma_shape, swizzle = Self.swizzle](
+            var load_b_tile = load_b[Self.mma_shape, swizzle=Self.swizzle](
                 warp_tile
             )
 
@@ -427,7 +427,7 @@ struct KVBuffer[
                         smem_tile.dtype,
                         tile_layout,
                         MutAnyOrigin,
-                        address_space = smem_tile.address_space,
+                        address_space=smem_tile.address_space,
                     ](smem_tile.ptr + offset)
                     frags[i, 0] = rebind[frags.element_type](
                         load_b_tr[Self.mma_shape](tile)
@@ -512,16 +512,16 @@ __extension Attention:
         )
         var high_warps = warp_id // 4
         var k_buffer = KVBuffer[
-            mma_shape = Self.mma_shape,
-            k_group_size = Self.k_group_size,
-            swizzle = Swizzle(3, 0, 4) if Self.mma_shape[0]
+            mma_shape=Self.mma_shape,
+            k_group_size=Self.k_group_size,
+            swizzle=Swizzle(3, 0, 4) if Self.mma_shape[0]
             == 32 else Optional[Swizzle](None),
-            BN = Int(Self.BN),
-            WN = Int(Self.WN),
-            BK = Int(Self.BK),
-            num_threads = Int(Self.num_threads),
-            depth = Int(Self.depth),
-            kv_num_heads = Int(Self.num_heads) // Self.group,
+            BN=Int(Self.BN),
+            WN=Int(Self.WN),
+            BK=Int(Self.BK),
+            num_threads=Int(Self.num_threads),
+            depth=Int(Self.depth),
+            kv_num_heads=Int(Self.num_heads) // Self.group,
             transpose=True,
         ](
             self.k,
@@ -533,15 +533,15 @@ __extension Attention:
         )
 
         var v_buffer = KVBuffer[
-            mma_shape = Self.mma_shape,
-            k_group_size = Self.k_group_size,
+            mma_shape=Self.mma_shape,
+            k_group_size=Self.k_group_size,
             swizzle=None,
-            BN = Int(Self.BN),
-            WN = Int(Self.WN),
-            BK = Int(Self.BK),
-            num_threads = Int(Self.num_threads),
-            depth = Int(Self.depth),
-            kv_num_heads = Int(Self.num_heads) // Self.group,
+            BN=Int(Self.BN),
+            WN=Int(Self.WN),
+            BK=Int(Self.BK),
+            num_threads=Int(Self.num_threads),
+            depth=Int(Self.depth),
+            kv_num_heads=Int(Self.num_heads) // Self.group,
             transpose=False,
         ](
             self.v,
@@ -562,7 +562,7 @@ __extension Attention:
                 accum_type,
                 q_type,
                 Self.mma_shape,
-                group_size = Self.k_group_size,
+                group_size=Self.k_group_size,
                 transpose_b=True,
             ]()
             self.zero_p_buffer[stage]()
@@ -574,7 +574,7 @@ __extension Attention:
                     ]()
 
                     var k_mma_tile = k_buffer.get_mma_tile[Int(k_mma), Int(i)]()
-                    tensor_core_mma.mma[swap_a_b = Self.swap_a_b](
+                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
                         q_mma_tile,
                         k_mma_tile,
                         self.p_reg_buffer.get_reg_tile[stage](),
@@ -587,13 +587,13 @@ __extension Attention:
                 accum_type,
                 q_type,
                 Self.mma_shape,
-                group_size = Self.k_group_size,
+                group_size=Self.k_group_size,
                 transpose_b=True,
             ]()
 
             comptime for i in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
-                    tensor_core_mma.mma[swap_a_b = Self.swap_a_b](
+                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
                         self.p_reg_buffer.get_mma_tile[Int(i), k_mma, stage](),
                         v_buffer.get_mma_tile[k_mma, Int(i)](),
                         self.out_reg_buffer.reg_tile,
@@ -660,7 +660,7 @@ __extension Attention:
             comptime if break_mask:
                 self.apply_mask[1]()
             mma_pv[0]()
-            self.online_softmax_step_0[1, mask = not break_mask]()
+            self.online_softmax_step_0[1, mask=not break_mask]()
             scheduling_hints_pv[2]()
             set_priority[0]()
             barrier()
@@ -689,7 +689,7 @@ __extension Attention:
             comptime if break_mask:
                 self.apply_mask[0]()
             mma_pv[1]()
-            self.online_softmax_step_0[0, mask = not break_mask]()
+            self.online_softmax_step_0[0, mask=not break_mask]()
 
             scheduling_hints_pv[4]()
             set_priority[0]()
@@ -791,7 +791,7 @@ __extension Attention:
         barrier()
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
+            self.softmax.rowsum_tensor.to_layout_tensor()
         )
 
         if high_warps == 0:

@@ -50,10 +50,10 @@ fn test_ldmatrix_fp8[
     var d = SIMD[accum_type, c_frag_size](0)
 
     var a_shared = stack_allocation[
-        M * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
     var b_shared = stack_allocation[
-        N * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
     for i in range(lane_id(), M * K, WARP_SIZE):

@@ -45,6 +45,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.pipelines.lib import PixelGenerationTokenizer
+from max.support import fetch_bytes_from_s3
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
 
@@ -68,6 +69,14 @@ def _decode_base64_image_to_numpy(image_data: str) -> np.ndarray:
     if img_array.ndim == 2:
         img_array = np.stack([img_array] * 3, axis=-1)
     return img_array
+
+
+def _load_input_image(image_uri: str) -> Image.Image:
+    """Load an input image for image-to-image requests."""
+    if image_uri.startswith("s3://"):
+        image_bytes = fetch_bytes_from_s3(image_uri)
+        return Image.open(BytesIO(image_bytes)).convert("RGB")
+    return Image.open(image_uri).convert("RGB")
 
 
 NUM_STEPS = 10
@@ -128,8 +137,8 @@ def _create_requests(
 
 
 def run_model(
-    pipeline: pipelines.TextGenerationPipelineInterface,
-    tokenizer: PipelineTokenizer,
+    pipeline: pipelines.TextGenerationPipelineInterface,  # type: ignore[type-arg]
+    tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
     requests: Sequence[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
@@ -204,7 +213,7 @@ class StoreLogits:
     def __init__(
         self,
         ids: Sequence[RequestID],
-        tokenizer: PipelineTokenizer,
+        tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
         generate_logprobs: bool = False,
     ) -> None:
         self.values: dict[RequestID, list[TokenInfo]] = {id: [] for id in ids}
@@ -287,7 +296,7 @@ class ReplaceLogitsWithReference:
 
 
 def run_pixel_generation(
-    pipeline: pipelines.PixelGenerationPipeline,
+    pipeline: pipelines.PixelGenerationPipeline,  # type: ignore[type-arg]
     tokenizer: PixelGenerationTokenizer,
     requests: list[MockPixelGenerationRequest],
     num_steps: int,
@@ -327,7 +336,12 @@ def run_pixel_generation(
         )
 
         # Create context from request using tokenizer
-        context = asyncio.run(tokenizer.new_context(request))
+        input_image = (
+            _load_input_image(mock_request.input_image)
+            if mock_request.input_image is not None
+            else None
+        )
+        context = asyncio.run(tokenizer.new_context(request, input_image))
 
         if print_outputs:
             print(

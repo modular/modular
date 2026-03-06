@@ -62,7 +62,7 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx_int as thread_idx
 from layout import Layout, LayoutTensor
 from std.memory import UnsafePointer
 from std.utils.index import Index, IndexList
@@ -175,12 +175,8 @@ fn causal_conv1d_channel_first_fwd_cpu[
             return
 
         # Validate bias tensor has valid dimensions (use debug_assert since we can't raise in @parameter fn)
-        debug_assert(
-            bias.dim(0) > 0, "Bias tensor must have at least one element"
-        )
-        debug_assert(
-            c < bias.dim(0), "Channel index out of bounds for bias tensor"
-        )
+        assert bias.dim(0) > 0, "Bias tensor must have at least one element"
+        assert c < bias.dim(0), "Channel index out of bounds for bias tensor"
 
         var weight_c_base_offset = UInt32(c * Int(weight_c_stride))
         var bias_offset = UInt32(c * Int(bias_stride))
@@ -820,7 +816,7 @@ fn causal_conv1d_channel_first_fwd_gpu[
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -1080,7 +1076,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
     5. Better thread utilization and memory bandwidth usage
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -1325,7 +1321,7 @@ fn causal_conv1d_channel_last_fwd_gpu[
     operations along channels, and process multiple sequence positions per thread.
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_chunk_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -1538,7 +1534,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
     5. Better thread utilization and memory bandwidth usage
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_chunk_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -1749,7 +1745,7 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     7. seq_idx support for conditional processing
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_chunk_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -2110,7 +2106,7 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     6. seq_idx support for conditional processing
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_chunk_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -2449,7 +2445,7 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     Offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_chunk_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -2800,7 +2796,7 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     Offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
     """
 
-    var tidx: Int = Int(thread_idx.x)
+    var tidx: Int = thread_idx.x
     var batch_id: Int = Int(block_idx.z)
     var channel_chunk_id: Int = Int(block_idx.y)
     var chunk_id: Int = Int(block_idx.x)
@@ -3496,7 +3492,7 @@ fn causal_conv1d_update_gpu[
     """
     var b = Int(block_idx.x)
     var c_base = Int(block_idx.y) * kNThreads
-    var c = c_base + Int(thread_idx.x)
+    var c = c_base + thread_idx.x
 
     if b >= batch or c >= dim:
         return
@@ -3663,7 +3659,7 @@ fn causal_conv1d_update_gpu_no_bias[
     """
     var b = Int(block_idx.x)
     var c_base = Int(block_idx.y) * kNThreads
-    var c = c_base + Int(thread_idx.x)
+    var c = c_base + thread_idx.x
 
     if b >= batch or c >= dim:
         return

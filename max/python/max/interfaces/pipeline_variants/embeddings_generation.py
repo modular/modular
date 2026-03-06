@@ -71,6 +71,8 @@ EmbeddingsGenerationContextType = TypeVar(
 
 @dataclass(frozen=True)
 class EmbeddingsGenerationInputs(PipelineInputs):
+    """Batched inputs for an embeddings generation pipeline step."""
+
     batches: list[dict[RequestID, EmbeddingsContext]]
 
     @property

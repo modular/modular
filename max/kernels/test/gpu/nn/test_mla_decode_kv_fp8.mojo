@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.collections import Optional
 from std.math import ceildiv, isclose
 from std.random import randn
@@ -64,8 +61,8 @@ fn host_cast_k_fp8_to_bf16[
     kv_fp8_t: DType,
     k_bf16_t: DType,
 ](
-    k_fp8: UnsafePointer[Scalar[kv_fp8_t]],
-    k_bf16: UnsafePointer[Scalar[k_bf16_t]],
+    k_fp8: UnsafePointer[Scalar[kv_fp8_t], _],
+    k_bf16: UnsafePointer[mut=True, Scalar[k_bf16_t], _],
     depth: Int,
     num_keys: Int,
     kv_num_heads: Int,
@@ -154,12 +151,12 @@ fn test[
     )
 
     # Allocate memory for all variables.
-    var q_ptr = UnsafePointer[Scalar[q_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[kv_type]].alloc(k_size)  # fp8 host
-    var k_bf16_ptr = UnsafePointer[Scalar[q_type]].alloc(k_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ptr = UnsafePointer[Scalar[q_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[q_type]].alloc(o_size)
+    var q_ptr = alloc[Scalar[q_type]](q_size)
+    var k_ptr = alloc[Scalar[kv_type]](k_size)  # fp8 host
+    var k_bf16_ptr = alloc[Scalar[q_type]](k_size)
+    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+    var output_ptr = alloc[Scalar[q_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[q_type]](o_size)
 
     # Q, K, V are randomly initialized.
     randn[q_type](q_ptr, q_size)
@@ -383,7 +380,7 @@ fn test[
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE)
             ](
-                UnsafePointer[UInt32](),
+                UnsafePointer[UInt32, MutAnyOrigin](),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     Index(0)
                 ),

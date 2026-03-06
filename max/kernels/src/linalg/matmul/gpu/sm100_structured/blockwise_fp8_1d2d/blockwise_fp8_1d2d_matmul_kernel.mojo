@@ -38,10 +38,10 @@ from std.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from std.gpu.sync import named_barrier, syncwarp
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from layout import TileTensor
 from structured_kernels.tile_types import (
-    TMATile,
+    TmaOpType,
     static_row_major,
 )
 
@@ -180,7 +180,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.c_type,
         Self.a_scales_type,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -191,12 +191,12 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.b_type,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Tile Pipeline Types ==========
@@ -290,14 +290,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime AScalesLayout = static_row_major[1, Self.BM]
 
     # TMA operation types (derived from new Layout types)
-    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime ATmaOp = Self.ATmaTile.InnerType
-    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime BTmaOp = Self.BTmaTile.InnerType
-    comptime AScalesTmaTile = TMATile[
+    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime AScalesTmaOp = TmaOpType[
         Self.a_scales_type, Self.AScalesLayout, Self.AScalesLayout
     ]
-    comptime AScalesTmaOp = Self.AScalesTmaTile.InnerType
 
     # TMA load size constants (from desc layout dimensions)
     comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
@@ -311,10 +308,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]()
 
     comptime accum_dims = get_accumulator_dims[
-        c_smem_dim1 = Self.OutputN,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
+        c_smem_dim1=Self.OutputN,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        cta_group=Self.cta_group,
     ]()
 
     comptime Accumulator = BlockwiseFP8Accumulator[
@@ -335,21 +332,21 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.accum_type,
         Self.accum_dims[0],
         Self.accum_dims[1],
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        is_lower_frag_required = Self.is_lower_required,
-        cta_group = Self.cta_group,
-        num_output_stages = Self.num_output_stages,
-        num_output_warps = Self.num_output_warps,
-        c_swizzle = Self.config.c_swizzle,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        is_lower_frag_required=Self.is_lower_required,
+        cta_group=Self.cta_group,
+        num_output_stages=Self.num_output_stages,
+        num_output_warps=Self.num_output_warps,
+        c_swizzle=Self.config.c_swizzle,
     ]
 
     # ========== Work Iterator Type ==========
     comptime WorkIterator = GroupedWorkIterator1D1D[
-        static_N = Self.static_N,
-        tile_shape = Self.config.block_tile_shape,
-        cluster = Self.config.cluster_shape,
-        cta_group = Self.cta_group,
+        static_N=Self.static_N,
+        tile_shape=Self.config.block_tile_shape,
+        cluster=Self.config.cluster_shape,
+        cta_group=Self.cta_group,
     ]
 
     # ========== Validation ==========
@@ -410,8 +407,8 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                         Self.CLUSTER_M,
                         Self.CLUSTER_N,
                         Self.cta_group,
-                        CLUSTER_SIZE = Self.CLUSTER_SIZE,
-                        epilogue_threads = WarpRole1D1D.NUM_EPILOGUE_THREADS,
+                        CLUSTER_SIZE=Self.CLUSTER_SIZE,
+                        epilogue_threads=WarpRole1D1D.NUM_EPILOGUE_THREADS,
                     ]()
                 ),
                 accum_barriers.ptr,
@@ -460,7 +457,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

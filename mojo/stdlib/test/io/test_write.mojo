@@ -202,7 +202,7 @@ def test_closure_non_capturing() raises:
 
     def write_non_capturing[
         func: fn(mut writer: Some[Writer]) raises -> None
-    ]():
+    ]() raises:
         var writer2 = String()
         func(writer2)
 

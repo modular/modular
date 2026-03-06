@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn as nn
+from conftest import TorchPatchMergerMLP
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -42,36 +42,14 @@ def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
     return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(TORCH_DTYPE)
 
 
-class TorchPatchMergerMLP(nn.Module):
-    """PyTorch reference for PatchMergerMLP."""
-
-    def __init__(self):
-        super().__init__()
-        self.hidden_size = INPUT_DIM
-        self.pre_norm = nn.LayerNorm(MM_HIDDEN_SIZE, eps=EPS)
-        self.proj = nn.Sequential(
-            nn.Linear(self.hidden_size, self.hidden_size),
-            nn.GELU(),
-            nn.Linear(self.hidden_size, HIDDEN_SIZE),
-        )
-
-    def forward(
-        self, x: list[torch.Tensor], *args, **kwargs
-    ) -> list[torch.Tensor]:
-        x = [
-            self.proj(self.pre_norm(item).view(item.shape[0], -1)) for item in x
-        ]
-        return x
-
-
 def _create_weights() -> dict[str, torch.Tensor]:
     return {
         "pre_norm.weight": _generate_tensor((MM_HIDDEN_SIZE,)),
         "pre_norm.bias": _generate_tensor((MM_HIDDEN_SIZE,)),
-        "proj.0.weight": _generate_tensor((INPUT_DIM, INPUT_DIM)),
-        "proj.0.bias": _generate_tensor((INPUT_DIM,)),
-        "proj.2.weight": _generate_tensor((HIDDEN_SIZE, INPUT_DIM)),
-        "proj.2.bias": _generate_tensor((HIDDEN_SIZE,)),
+        "linear1.weight": _generate_tensor((INPUT_DIM, INPUT_DIM)),
+        "linear1.bias": _generate_tensor((INPUT_DIM,)),
+        "linear2.weight": _generate_tensor((HIDDEN_SIZE, INPUT_DIM)),
+        "linear2.bias": _generate_tensor((HIDDEN_SIZE,)),
     }
 
 
@@ -86,20 +64,6 @@ def _create_patch_merger_mlp(device: DeviceRef) -> PatchMergerMLP:
     )
 
 
-_PROJ_TO_MAX_KEYS = {
-    "proj.0.weight": "linear1.weight",
-    "proj.0.bias": "linear1.bias",
-    "proj.2.weight": "linear2.weight",
-    "proj.2.bias": "linear2.bias",
-}
-
-
-def _remap_keys_for_max(
-    state_dict: dict[str, torch.Tensor],
-) -> dict[str, torch.Tensor]:
-    return {_PROJ_TO_MAX_KEYS.get(k, k): v for k, v in state_dict.items()}
-
-
 def _build_and_run(
     state_dict: dict[str, torch.Tensor],
     x: torch.Tensor,
@@ -108,7 +72,7 @@ def _build_and_run(
     device_ref = DeviceRef.from_device(device)
 
     mlp = _create_patch_merger_mlp(device_ref)
-    mlp.load_state_dict(_remap_keys_for_max(state_dict))
+    mlp.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[device])
 
@@ -155,11 +119,12 @@ def test_patch_merger_mlp_gpu() -> None:
     x = torch.cat([item_a, item_b], dim=0)
     max_output = _build_and_run(state_dict, x)
 
-    # Run torch reference per-item.
-    ref = TorchPatchMergerMLP()
+    # Run torch reference on concatenated input (same shape as MAX).
+    ref = TorchPatchMergerMLP(
+        MM_HIDDEN_SIZE, HIDDEN_SIZE, MERGE_KERNEL_SIZE, EPS
+    )
     ref.load_state_dict(state_dict)
     ref = ref.to(TORCH_DTYPE)
-    torch_outputs = ref([item_a, item_b])
-    torch_output = torch.cat(torch_outputs, dim=0).detach()
+    torch_output = ref(x).detach()
 
     _assert_close(torch_output, max_output)

@@ -19,7 +19,7 @@ from std.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
     grid_dim,
 )
 from std.gpu import warp_id
@@ -29,9 +29,6 @@ from std.gpu.memory import AddressSpace
 from std.gpu.compute.mma import mma
 from std.sys import llvm_intrinsic
 from std.gpu.sync import barrier, schedule_barrier, s_waitcnt
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.memory.unsafe import bitcast
 
 from std.utils import Index, IndexList, StaticTuple
@@ -278,7 +275,7 @@ struct TileLoaderLDS[
             var tile_row = src_row + i * Self.rows_per_iteration
             var uniform_offset = src_col + tile_row * self.stride
 
-            self.buffer.load_to_lds[width = Self.load_width](
+            self.buffer.load_to_lds[width=Self.load_width](
                 Int32(lane_offset),
                 smem_ptr,
                 scalar_offset=Int32(uniform_offset),
@@ -292,7 +289,9 @@ fn _load_from_lds[
     width: Int = 1,
 ](
     shared_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
+        Scalar[dtype],
+        _,
+        address_space=AddressSpace.SHARED,
     ],
 ) -> SIMD[dtype, width]:
     """Load a SIMD vector from LDS with LLVM alias scopes.
@@ -305,7 +304,7 @@ fn _load_from_lds[
 
     # Convert to LLVM address space 3 (shared memory)
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr<3>`
+        _type=__mlir_type.`!llvm.ptr<3>`
     ](shared_ptr)
 
     # Compute alignment based on total load size
@@ -317,40 +316,40 @@ fn _load_from_lds[
     comptime if dtype == DType.bfloat16 and width == 4:
         # BF16 x4 = 64 bits = ds_read_b64
         var llvm_res = __mlir_op.`llvm.load`[
-            _type = __mlir_type.`vector<4 x bf16>`,
-            alignment = to_i64(Int64(alignment)),
+            _type=__mlir_type.`vector<4 x bf16>`,
+            alignment=to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type = SIMD[DType.bfloat16, 4]._mlir_type
+                _type=SIMD[DType.bfloat16, 4]._mlir_type
             ](llvm_res)
         )
     elif dtype == DType.bfloat16 and width == 8:
         # BF16 x8 = 128 bits = ds_read_b128
         var llvm_res = __mlir_op.`llvm.load`[
-            _type = __mlir_type.`vector<8 x bf16>`,
-            alignment = to_i64(Int64(alignment)),
+            _type=__mlir_type.`vector<8 x bf16>`,
+            alignment=to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type = SIMD[DType.bfloat16, 8]._mlir_type
+                _type=SIMD[DType.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
     elif dtype == DType.float8_e4m3fn and width == 8:
         # FP8 x8 = 64 bits = ds_read_b64
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
-            _type = __mlir_type.`vector<8 x i8>`,
-            alignment = to_i64(Int64(alignment)),
+            _type=__mlir_type.`vector<8 x i8>`,
+            alignment=to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
-            _type = SIMD[DType.uint8, 8]._mlir_type
+            _type=SIMD[DType.uint8, 8]._mlir_type
         ](llvm_res)
         # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
         return bitcast[dtype, width](
@@ -360,13 +359,13 @@ fn _load_from_lds[
         # FP8 x16 = 128 bits = ds_read_b128
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
-            _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(Int64(alignment)),
+            _type=__mlir_type.`vector<16 x i8>`,
+            alignment=to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
-            _type = SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[DType.uint8, 16]._mlir_type
         ](llvm_res)
         # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
         return bitcast[dtype, width](
@@ -377,27 +376,27 @@ fn _load_from_lds[
         # Used for 32×32×64 MMA (mfma_scale_f32_32x32x64)
         # Load as two 128-bit chunks using pointer arithmetic
         var llvm_res0 = __mlir_op.`llvm.load`[
-            _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(Int64(alignment)),
+            _type=__mlir_type.`vector<16 x i8>`,
+            alignment=to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         # Offset pointer by 16 bytes for second load
         var shared_ptr_offset = shared_ptr + 16
         var shared_ptr3_hi = __mlir_op.`builtin.unrealized_conversion_cast`[
-            _type = __mlir_type.`!llvm.ptr<3>`
+            _type=__mlir_type.`!llvm.ptr<3>`
         ](shared_ptr_offset)
         var llvm_res1 = __mlir_op.`llvm.load`[
-            _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(Int64(alignment)),
+            _type=__mlir_type.`vector<16 x i8>`,
+            alignment=to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3_hi)
         var uint8_vec0 = __mlir_op.`pop.cast_from_builtin`[
-            _type = SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[DType.uint8, 16]._mlir_type
         ](llvm_res0)
         var uint8_vec1 = __mlir_op.`pop.cast_from_builtin`[
-            _type = SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[DType.uint8, 16]._mlir_type
         ](llvm_res1)
         var uint8_vec = rebind[SIMD[DType.uint8, 16]](uint8_vec0).join(
             rebind[SIMD[DType.uint8, 16]](uint8_vec1)
@@ -708,7 +707,7 @@ struct MmaOp[
     comptime RegTile[num_mmas: Int] = RegTile[
         Self.in_type,
         Layout.row_major(num_mmas, Self.num_k_mmas * Self.mma_frag_width),
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
     comptime ARegTile = Self.RegTile[Self.num_m_mmas]
     comptime BRegTile = Self.RegTile[Self.num_n_mmas]
@@ -723,7 +722,7 @@ struct MmaOp[
     comptime OutRegTile = RegTile[
         Self.accum_type,
         Self.out_reg_layout,
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
 
     # Quadrant dimensions for tile view access
@@ -783,8 +782,8 @@ struct MmaOp[
             Self.quadrant_m_mmas, Self.num_k_mmas * Self.mma_frag_width
         ](which, 0).vectorize[1, Self.lds_frag_width]()
         load_lds_fragment[
-            mma_access_layout = Self.mma_access_layout,
-            swizzle = Self.elem_swizzle,
+            mma_access_layout=Self.mma_access_layout,
+            swizzle=Self.elem_swizzle,
         ](smem_frag, reg_frag)
 
     @always_inline
@@ -804,8 +803,8 @@ struct MmaOp[
             Self.quadrant_n_mmas, Self.num_k_mmas * Self.mma_frag_width
         ](which, 0).vectorize[1, Self.lds_frag_width]()
         load_lds_fragment[
-            mma_access_layout = Self.mma_access_layout,
-            swizzle = Self.elem_swizzle,
+            mma_access_layout=Self.mma_access_layout,
+            swizzle=Self.elem_swizzle,
         ](smem_frag, reg_frag)
 
     @always_inline
@@ -931,7 +930,7 @@ struct TileBuffers[
     comptime SMemTile[rows: Int, cols: Int] = SMemTile[
         Self.in_type,
         Layout.row_major(rows, cols),
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
 
     # Half-tile types - allocated directly (groups are staggered, independent)
@@ -985,7 +984,9 @@ struct TileBuffers[
 
     # LDS pointer type aliases
     comptime smem_ptr = UnsafePointer[
-        Scalar[Self.in_type], address_space = AddressSpace.SHARED
+        Scalar[Self.in_type],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     # =========================================================================
@@ -1196,7 +1197,7 @@ struct TileBuffers[
             var tile_row = which * half_data_rows + i * rows_per_iter_4warp
             var uniform_offset = k_offset + tile_row * self.K
 
-            loader.buffer.load_to_lds[width = Self.load_width](
+            loader.buffer.load_to_lds[width=Self.load_width](
                 Int32(lane_offset),
                 smem_ptr,
                 scalar_offset=Int32(uniform_offset),
@@ -1367,19 +1368,19 @@ struct AMDPingPongMatmul[
             Self.a_type,
             Self.a_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.GENERIC,
+            address_space=AddressSpace.GENERIC,
         ],
         b: LayoutTensor[
             Self.b_type,
             Self.b_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.GENERIC,
+            address_space=AddressSpace.GENERIC,
         ],
         c: LayoutTensor[
             Self.c_type,
             Self.c_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.GENERIC,
+            address_space=AddressSpace.GENERIC,
         ],
     ):
         var M = a.dim(0)
@@ -1433,7 +1434,7 @@ struct AMDPingPongMatmul[
         # See module header and TileBuffers struct for detailed swizzle documentation.
 
         # Thread and warp identification
-        var thread_id = Int(thread_idx.x)
+        var thread_id = thread_idx.x
         var lane_id = Int(lane_id())
         var warp_id = readfirstlane(Int(warp_id()))
 
@@ -1546,11 +1547,11 @@ struct AMDPingPongMatmul[
             mma_op.load_a[1](buffers.a_mma_tiles[stage][1])  # +8 = 24
 
             # Wait for b[0], a[0] complete
-            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_a0_b0)]()
+            s_waitcnt[lgkmcnt=UInt32(lgkm_wait_a0_b0)]()
             mma_op.mma[0, 0]()  # Uses a[0], b[0] ✓
 
             # Wait for b[1] complete (a[1] still in flight)
-            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_b1)]()
+            s_waitcnt[lgkmcnt=UInt32(lgkm_wait_b1)]()
             mma_op.mma[0, 1]()  # Uses a[0] (done), b[1] ✓
 
             # Wait for a[1] (drain remaining)

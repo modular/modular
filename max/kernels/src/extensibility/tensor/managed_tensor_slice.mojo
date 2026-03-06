@@ -29,7 +29,7 @@ from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor, TileTensor
 from layout.coord import Coord, _DimsToCoordLike
-from layout._layout import Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout
 from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -393,7 +393,7 @@ comptime _FusedComputeOutputTensor = ManagedTensorSlice[
 
 comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
     io_spec=IOUnknown,
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]
 
 
@@ -566,10 +566,9 @@ struct ManagedTensorSlice[
         comptime assert (
             not Self.static_spec.in_lambda
         ), "Direct load on fused tensor is forbidden"
-        debug_assert(
-            len(indices) == Self.rank,
-            "mismatch between requested index and rank",
-        )
+        assert (
+            len(indices) == Self.rank
+        ), "mismatch between requested index and rank"
         return self[IndexList[Self.rank](indices)]
 
     @always_inline
@@ -584,10 +583,9 @@ struct ManagedTensorSlice[
         comptime assert (
             not Self.static_spec.out_lambda
         ), "Direct store on fused tensor is forbidden"
-        debug_assert(
-            len(indices) == Self.rank,
-            "mismatch between requested index and rank",
-        )
+        assert (
+            len(indices) == Self.rank
+        ), "mismatch between requested index and rank"
         self[IndexList[Self.rank](indices)] = val
 
     @always_inline
@@ -842,7 +840,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec, ...],
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ):
@@ -873,7 +871,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec, ...],
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing:
@@ -902,8 +900,8 @@ struct ManagedTensorSlice[
         element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[
-            io_spec = IOSpec[True, Self.input](),
-            static_spec = Self.static_spec,
+            io_spec=IOSpec[True, Self.input](),
+            static_spec=Self.static_spec,
         ],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
@@ -921,7 +919,7 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec, ...],
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing -> SIMD[Self.dtype, width]:
@@ -949,8 +947,8 @@ struct ManagedTensorSlice[
         offset_ptr: Optional[UnsafePointer[Scalar[Self.dtype]]] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
-            io_spec = Self.io_spec,
-            static_spec = Self.static_spec.with_layout[new_rank](
+            io_spec=Self.io_spec,
+            static_spec=Self.static_spec.with_layout[new_rank](
                 new_static_shape, new_static_strides
             ),
         ],
@@ -961,10 +959,9 @@ struct ManagedTensorSlice[
         comptime assert (
             len(new_static_strides) == new_rank
         ), "static strides has incorrect rank"
-        debug_assert(
-            _is_consistent[new_static_shape](new_runtime_shape)
-            and _is_consistent[new_static_strides](new_runtime_strides)
-        )
+        assert _is_consistent[new_static_shape](
+            new_runtime_shape
+        ) and _is_consistent[new_static_strides](new_runtime_strides)
 
         return {
             offset_ptr.or_else(self._ptr),
@@ -979,10 +976,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=FusedInput,
-            static_spec = rebuild_static_tensor_specs_with_input_lambda(
+            static_spec=rebuild_static_tensor_specs_with_input_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1001,10 +998,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=FusedOutput,
-            static_spec = rebuild_static_tensor_specs_with_output_lambda(
+            static_spec=rebuild_static_tensor_specs_with_output_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1023,10 +1020,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=_FusedComputeOutput,
-            static_spec = rebuild_static_tensor_specs_with_compute_output_lambda(
+            static_spec=rebuild_static_tensor_specs_with_compute_output_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1045,10 +1042,10 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: ManagedTensorSlice[
-            dtype = Self.dtype,
-            rank = Self.rank,
+            dtype=Self.dtype,
+            rank=Self.rank,
             io_spec=_FusedComputeOutput,
-            static_spec = rebuild_static_tensor_specs_with_output_lambda(
+            static_spec=rebuild_static_tensor_specs_with_output_lambda(
                 Self.static_spec, lambda_fn
             ),
         ],
@@ -1082,13 +1079,13 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: TileTensor[
-            dtype = Self.dtype,
+            dtype=Self.dtype,
             origin=MutExternalOrigin,
-            LayoutType = TileLayout[
-                shape_types = _DimsToCoordLike[
+            LayoutType=TileLayout[
+                shape_types=_DimsToCoordLike[
                     coord_dtype, Self.static_spec.shape
                 ],
-                stride_types = _DimsToCoordLike[
+                stride_types=_DimsToCoordLike[
                     coord_dtype, Self.static_spec.strides
                 ],
             ],
@@ -1116,7 +1113,7 @@ struct ManagedTensorSlice[
 
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            layout._layout.Layout(shape_tuple, stride_tuple),
+            layout.tile_layout.Layout(shape_tuple, stride_tuple),
         }
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -1266,7 +1263,7 @@ struct VariadicTensors[
     ](
         self,
         out result: ManagedTensorSlice[
-            io_spec = Self.io_spec, static_spec = Self.static_specs[index]
+            io_spec=Self.io_spec, static_spec=Self.static_specs[index]
         ],
     ):
         """Returns the tensor at the given position in the variadic argument
@@ -1302,7 +1299,7 @@ fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
         comptime if CompilationTarget[get_gpu_target()]._is_arch["sm_100a"]():
             return 32 // size_of[dtype]()
 
-        return simd_width_of[dtype, target = get_gpu_target()]()
+        return simd_width_of[dtype, target=get_gpu_target()]()
 
     return simd_width_of[dtype]()
 
@@ -1341,10 +1338,9 @@ fn foreach[
         tensor: The output tensor slice which receives the return values from `func`.
         ctx: The call context (forward this from the custom operation).
     """
-    debug_assert(
-        ctx._handle or is_cpu[target](),
-        "Expecting non-null device ctx for GPU kernels",
-    )
+    assert (
+        ctx._handle or is_cpu[target]()
+    ), "Expecting non-null device ctx for GPU kernels"
 
     @parameter
     @always_inline
@@ -1399,10 +1395,9 @@ fn foreach[
         tensor: The input tensor slice which the consumed values.
         ctx: The call context (forward this from the custom operation).
     """
-    debug_assert(
-        ctx._handle or is_cpu[target](),
-        "Expecting non-null device ctx for GPU kernels",
-    )
+    assert (
+        ctx._handle or is_cpu[target]()
+    ), "Expecting non-null device ctx for GPU kernels"
 
     @parameter
     @always_inline
@@ -1491,7 +1486,7 @@ fn view_copy_impl[
     comptime assert _compatible_with[
         x._static_shape, z._static_shape
     ](), "static shapes not compatible"
-    debug_assert(x.shape() == z.shape(), "runtime shapes not compatible")
+    assert x.shape() == z.shape(), "runtime shapes not compatible"
 
     @parameter
     @always_inline

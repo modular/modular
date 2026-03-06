@@ -35,8 +35,8 @@ struct MyAdd:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        y: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0] + y[0]
 
@@ -53,7 +53,7 @@ struct OpWidthDeviceContext:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
     ):
         output[0] = x[0]
@@ -70,8 +70,8 @@ struct OpWithMultipleOutputs:
     @staticmethod
     fn execute(
         out0: OutputTensor,
-        out1: OutputTensor[dtype = out0.dtype, rank = out0.rank, ...],
-        x: InputTensor[dtype = out0.dtype, rank = out0.rank, ...],
+        out1: OutputTensor[dtype=out0.dtype, rank=out0.rank, ...],
+        x: InputTensor[dtype=out0.dtype, rank=out0.rank, ...],
     ):
         out0[0] = 2 * x[0]
         out1[0] = 4 * x[0]
@@ -105,7 +105,7 @@ struct MyIntMemory(Movable):
 @compiler.register("make_my_int_memory")
 struct MakeMyIntMemory:
     @staticmethod
-    fn execute(x: InputTensor[dtype = DType.int32, rank=1, ...]) -> MyIntMemory:
+    fn execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntMemory:
         return MyIntMemory(Int(x[0]))
 
 
@@ -117,7 +117,7 @@ struct MyIntReg(TrivialRegisterPassable):
 @compiler.register("make_my_int_reg")
 struct MakeMyIntReg:
     @staticmethod
-    fn execute(x: InputTensor[dtype = DType.int32, rank=1, ...]) -> MyIntReg:
+    fn execute(x: InputTensor[dtype=DType.int32, rank=1, ...]) -> MyIntReg:
         return MyIntReg(Int(x[0]))
 
 
@@ -161,8 +161,8 @@ struct BinaryKernelWithRaises:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        y: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ) raises:
         output[0] = x[0] + y[0]
 
@@ -186,7 +186,7 @@ struct OpWithIntParameter[IntParameter: Int]:
     @staticmethod
     fn execute(
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.IntParameter)
@@ -197,7 +197,7 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
     fn execute(
         output: OutputTensor[...],
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.DTypeParameter)
@@ -208,7 +208,7 @@ struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
     fn execute(
         output: OutputTensor[...],
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
@@ -219,7 +219,7 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
     fn execute(
         output: OutputTensor[...],
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
@@ -230,7 +230,7 @@ struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
     fn execute(
         output: OutputTensor[...],
-        x: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
     ):
         output[0] = x[0]
         print(Self.StringParameter)
@@ -245,8 +245,8 @@ struct ExternalCubinVecAdd:
         target: StaticString
     ](
         output: OutputTensor[rank=1, ...],
-        lhs: InputTensor[dtype = output.dtype, rank = output.rank, ...],
-        rhs: InputTensor[dtype = output.dtype, rank = output.rank, ...],
+        lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert target == "gpu"
@@ -294,9 +294,9 @@ struct IntentionalGpuCrash:
         target: StaticString,
     ](
         output: OutputTensor[rank=1, ...],
-        x: InputTensor[dtype = output.dtype, rank=1, ...],
+        x: InputTensor[dtype=output.dtype, rank=1, ...],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         comptime assert target == "gpu"
         gpu_ctx = ctx.get_device_context()
 

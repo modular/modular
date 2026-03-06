@@ -28,11 +28,12 @@ from std.gpu import (
     block_idx,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
     warp_id,
 )
 from std.gpu.compute.mma import mma as _mma_intrinsic
-from layout import Layout, LayoutTensor
+from layout.tile_layout import TensorLayout
+from layout.tile_tensor import TileTensor
 from std.memory import stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -64,16 +65,16 @@ fn gemm_kernel_rdna[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -84,6 +85,9 @@ fn gemm_kernel_rdna[
     memory tiling. On older RDNA (gfx10xx), falls back to a per-thread naive
     matmul that iterates over the K dimension with scalar accumulation.
     """
+    comptime assert c.flat_rank == 2, "c must have flat_rank == 2"
+    comptime assert a.flat_rank == 2, "a must have flat_rank == 2"
+    comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
 
     comptime if _is_amd_rdna2_or_earlier() or a_type not in (
         DType.float16,
@@ -118,16 +122,16 @@ fn _naive_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
     transpose_b: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     s_type: DType,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -138,9 +142,13 @@ fn _naive_matmul_kernel[
     assigned to it within the block's 64x64 tile. With 128 threads covering
     4096 elements, each thread handles 32 output elements.
     """
+    comptime assert c.flat_rank == 2, "c must have flat_rank == 2"
+    comptime assert a.flat_rank == 2, "a must have flat_rank == 2"
+    comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
+
     var block_m_offset = Int(block_idx.y) * BLOCK_M
     var block_n_offset = Int(block_idx.x) * BLOCK_N
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     # 128 threads handle 64*64 = 4096 elements → 32 elements per thread
     comptime for elem in range(32):
@@ -178,16 +186,16 @@ fn _wmma_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
     transpose_b: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     s_type: DType,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -198,6 +206,10 @@ fn _wmma_matmul_kernel[
     Each workgroup computes a 64x64 output tile using 4 warps in a 2x2 layout.
     Each warp computes a 32x32 sub-tile using 2x2 = 4 WMMA operations per K step.
     """
+    comptime assert c.flat_rank == 2, "c must have flat_rank == 2"
+    comptime assert a.flat_rank == 2, "a must have flat_rank == 2"
+    comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
+
     # Block coordinates
     var block_n = Int(block_idx.x)
     var block_m = Int(block_idx.y)
@@ -206,7 +218,7 @@ fn _wmma_matmul_kernel[
     var block_n_offset = block_n * BLOCK_N
 
     # Thread identification
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var wid = Int(warp_id())
     var lid = Int(lane_id())
 
@@ -221,12 +233,12 @@ fn _wmma_matmul_kernel[
     var a_shared = stack_allocation[
         BLOCK_M * BLOCK_K,
         a_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         BLOCK_N * BLOCK_K,
         b_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Initialize C accumulators to zero (4 tiles x 8 f32 elements each)

@@ -507,7 +507,7 @@ fn shuffle_idx[
     comptime if is_nvidia_gpu():
         return _shuffle[
             "idx",
-            WIDTH_MASK = Int32(_WIDTH_MASK),
+            WIDTH_MASK=Int32(_WIDTH_MASK),
         ](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
@@ -518,7 +518,7 @@ fn shuffle_idx[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -614,7 +614,7 @@ fn shuffle_up[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -703,7 +703,7 @@ fn shuffle_down[
     """
 
     comptime if is_nvidia_gpu():
-        return _shuffle["down", WIDTH_MASK = Int32(_WIDTH_MASK)](
+        return _shuffle["down", WIDTH_MASK=Int32(_WIDTH_MASK)](
             mask, val, offset
         )
     elif is_amd_gpu():
@@ -715,7 +715,7 @@ fn shuffle_down[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -805,7 +805,7 @@ fn shuffle_xor[
     """
 
     comptime if is_nvidia_gpu():
-        return _shuffle["bfly", WIDTH_MASK = Int32(_WIDTH_MASK)](
+        return _shuffle["bfly", WIDTH_MASK=Int32(_WIDTH_MASK)](
             mask, val, offset
         )
     elif is_amd_gpu():
@@ -817,7 +817,7 @@ fn shuffle_xor[
     else:
         return CompilationTarget.unsupported_target_error[
             SIMD[dtype, simd_width],
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -931,6 +931,46 @@ fn reduce[
 
 
 # ===-----------------------------------------------------------------------===#
+# Shared broadcast-reduce dispatch
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _lane_group_broadcast_reduce[
+    val_type: DType,
+    simd_width: Int,
+    //,
+    func: _ReduceFn,
+    num_lanes: Int,
+    stride: Int = 1,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Shared broadcast-reduce dispatch: CDNA4 permlane, AMD DPP, or
+    shuffle_xor fallback."""
+    comptime if (
+        num_lanes == WARP_SIZE // stride
+        and stride in (16, 32)
+        and _cdna_4_or_newer()
+    ):
+        var out = func(val, permlane_shuffle[32](val))
+
+        comptime if stride == 16:
+            out = func(out, permlane_shuffle[16](out))
+
+        return out
+    elif (
+        stride == 1
+        and num_lanes >= 2
+        and num_lanes.is_power_of_two()
+        and is_amd_gpu()
+    ):
+        return _dpp_reduce_and_broadcast[func, num_lanes=num_lanes](val)
+    else:
+        return lane_group_reduce[
+            shuffle_xor, func, num_lanes=num_lanes, stride=stride
+        ](val)
+
+
+# ===-----------------------------------------------------------------------===#
 # Warp Sum
 # ===-----------------------------------------------------------------------===#
 
@@ -943,11 +983,11 @@ fn lane_group_sum[
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Computes the sum of values across a group of lanes using warp-level operations.
+    """Computes the sum of values across a group of lanes and broadcasts to all lanes.
 
     This function performs a parallel reduction across a group of lanes to compute their sum.
-    The reduction is done using warp shuffle operations for efficient communication between lanes.
-    The result is stored in all participating lanes.
+    The result is broadcast to all participating lanes using optimized hardware-specific
+    paths (AMD DPP, Blackwell redux, or butterfly shuffle pattern).
 
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
@@ -967,12 +1007,16 @@ fn lane_group_sum[
     fn _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
-    return lane_group_reduce[
-        shuffle_down, _reduce_add, num_lanes=num_lanes, stride=stride
+    return _lane_group_broadcast_reduce[
+        _reduce_add, num_lanes=num_lanes, stride=stride
     ](val)
 
 
 @always_inline
+@deprecated(
+    "use `lane_group_sum` instead, which now always broadcasts the result to"
+    " all lanes"
+)
 fn lane_group_sum_and_broadcast[
     val_type: DType,
     simd_width: Int,
@@ -982,9 +1026,8 @@ fn lane_group_sum_and_broadcast[
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Computes the sum across a lane group and broadcasts the result to all lanes.
 
-    This function performs a parallel reduction using a butterfly pattern to compute the sum,
-    then broadcasts the result to all participating lanes. The butterfly pattern ensures
-    efficient communication between lanes through warp shuffle operations.
+    Deprecated: Use `lane_group_sum` instead, which now always broadcasts
+    the result to all lanes.
 
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
@@ -999,42 +1042,16 @@ fn lane_group_sum_and_broadcast[
         A SIMD value where all participating lanes contain the sum found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-
-    @parameter
-    fn _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
-        return x + y
-
-    comptime if (
-        num_lanes == WARP_SIZE // stride
-        and stride in (16, 32)
-        and _cdna_4_or_newer()
-    ):
-        var out = _reduce_add(val, permlane_shuffle[32](val))
-
-        comptime if stride == 16:
-            out = _reduce_add(out, permlane_shuffle[16](out))
-
-        return out
-    elif (
-        stride == 1
-        and num_lanes >= 2
-        and num_lanes.is_power_of_two()
-        and is_amd_gpu()
-    ):
-        return _dpp_reduce_and_broadcast[_reduce_add, num_lanes=num_lanes](val)
-    else:
-        return lane_group_reduce[
-            shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
-        ](val)
+    return lane_group_sum[num_lanes=num_lanes, stride=stride](val)
 
 
 @always_inline
 fn sum(val: SIMD) -> Scalar[val.dtype]:
     """Computes the sum of values across all lanes in a warp.
 
-    This is a convenience wrapper around lane_group_sum_and_broadcast that
-    operates on the entire warp.  It performs a parallel reduction using warp
-    shuffle operations to find the global sum across all lanes in the warp.
+    This is a convenience wrapper around `lane_group_sum` that operates on the
+    entire warp. It performs a parallel reduction using warp shuffle operations
+    to find the global sum across all lanes in the warp.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to the sum.
@@ -1042,7 +1059,7 @@ fn sum(val: SIMD) -> Scalar[val.dtype]:
     Returns:
         The scalar sum of values across all lanes in the warp.
     """
-    return lane_group_sum_and_broadcast[num_lanes=WARP_SIZE](val.reduce_add())
+    return lane_group_sum[num_lanes=WARP_SIZE](val.reduce_add())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1143,11 +1160,11 @@ fn lane_group_max[
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Reduces a SIMD value to its maximum within a lane group using warp-level operations.
+    """Reduces a SIMD value to its maximum within a lane group and broadcasts to all lanes.
 
     This function performs a parallel reduction across a group of lanes to find the maximum value.
-    The reduction is done using warp shuffle operations for efficient communication between lanes.
-    The result is stored in all participating lanes.
+    The result is broadcast to all participating lanes using optimized hardware-specific
+    paths (AMD DPP, Blackwell redux, or butterfly shuffle pattern).
 
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
@@ -1173,12 +1190,16 @@ fn lane_group_max[
     fn _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
-    return lane_group_reduce[
-        shuffle_down, _reduce_max, num_lanes=num_lanes, stride=stride
+    return _lane_group_broadcast_reduce[
+        _reduce_max, num_lanes=num_lanes, stride=stride
     ](val)
 
 
 @always_inline
+@deprecated(
+    "use `lane_group_max` instead, which now always broadcasts the result to"
+    " all lanes"
+)
 fn lane_group_max_and_broadcast[
     val_type: DType,
     simd_width: Int,
@@ -1188,9 +1209,8 @@ fn lane_group_max_and_broadcast[
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Reduces and broadcasts the maximum value within a lane group using warp-level operations.
 
-    This function performs a parallel reduction to find the maximum value and broadcasts it to all lanes.
-    The reduction and broadcast are done using warp shuffle operations in a butterfly pattern for
-    efficient all-to-all communication between lanes.
+    Deprecated: Use `lane_group_max` instead, which now always broadcasts
+    the result to all lanes.
 
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
@@ -1205,39 +1225,7 @@ fn lane_group_max_and_broadcast[
         A SIMD value where all participating lanes contain the maximum value found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-
-    comptime if (
-        _has_redux_f32_support[val_type, simd_width]()
-        and num_lanes == WARP_SIZE
-    ):
-        return _redux_f32_max_min["max"](val)
-
-    @parameter
-    fn _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
-        return _max(x, y)
-
-    comptime if (
-        num_lanes == WARP_SIZE // stride
-        and stride in (16, 32)
-        and _cdna_4_or_newer()
-    ):
-        var out = _reduce_max(val, permlane_shuffle[32](val))
-
-        comptime if stride == 16:
-            out = _reduce_max(out, permlane_shuffle[16](out))
-
-        return out
-    elif (
-        stride == 1
-        and num_lanes >= 2
-        and num_lanes.is_power_of_two()
-        and is_amd_gpu()
-    ):
-        return _dpp_reduce_and_broadcast[_reduce_max, num_lanes=num_lanes](val)
-    else:
-        return lane_group_reduce[
-            shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
-        ](val)
+    return lane_group_max[num_lanes=num_lanes, stride=stride](val)
 
 
 @always_inline
@@ -1270,11 +1258,11 @@ fn lane_group_min[
     num_lanes: Int,
     stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    """Reduces a SIMD value to its minimum within a lane group using warp-level operations.
+    """Reduces a SIMD value to its minimum within a lane group and broadcasts to all lanes.
 
     This function performs a parallel reduction across a group of lanes to find the minimum value.
-    The reduction is done using warp shuffle operations for efficient communication between lanes.
-    The result is stored in all participating lanes.
+    The result is broadcast to all participating lanes using optimized hardware-specific
+    paths (AMD DPP, Blackwell redux, or butterfly shuffle pattern).
 
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
@@ -1300,8 +1288,8 @@ fn lane_group_min[
     fn _reduce_min(x: SIMD, y: type_of(x)) -> type_of(x):
         return _min(x, y)
 
-    return lane_group_reduce[
-        shuffle_down, _reduce_min, num_lanes=num_lanes, stride=stride
+    return _lane_group_broadcast_reduce[
+        _reduce_min, num_lanes=num_lanes, stride=stride
     ](val)
 
 
@@ -1439,5 +1427,5 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
         return _vote_amd_helper[ret_type](val)
     else:
         return CompilationTarget.unsupported_target_error[
-            Scalar[ret_type], operation = __get_current_function_name()
+            Scalar[ret_type], operation=__get_current_function_name()
         ]()

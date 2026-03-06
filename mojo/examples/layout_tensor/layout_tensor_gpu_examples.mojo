@@ -113,7 +113,7 @@ def shared_memory_alloc_example() raises:
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
         # end-shared-memory-alloc-example
 
@@ -241,7 +241,7 @@ fn simple_copy_example():
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
 
         if global_idx.y < rows and global_idx.x < cols:
@@ -311,7 +311,7 @@ fn copy_from_async_example():
                 dtype,
                 tile_layout,
                 MutAnyOrigin,
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
             ].stack_allocation()
 
             # Create thread layouts for copying

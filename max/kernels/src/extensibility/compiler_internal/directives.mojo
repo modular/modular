@@ -106,12 +106,9 @@ struct StaticTensorSpec[
             "initializing `StaticTensorSpec` with just a shape only"
             " supports rank 1 to 3"
         )
-        debug_assert(
-            len(shape) == Self.rank,
-            (
-                "initialized `StaticTensorSpec` with a shape length not equal"
-                "to the `rank` parameter"
-            ),
+        assert len(shape) == Self.rank, (
+            "initialized `StaticTensorSpec` with a shape length not equal"
+            "to the `rank` parameter"
         )
         self.shape = shape
         self.strides = _row_major_strides[Self.rank](shape)

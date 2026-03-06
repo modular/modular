@@ -13,11 +13,11 @@
 
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import LayerNorm
+from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.norm import LayerNorm
-from max.nn.module_v3.sequential import ModuleList
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (
@@ -36,6 +36,7 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
         in_channels: int = 256,
         embedding_dim: int = 6144,
         bias: bool = False,
+        guidance_embeds: bool = True,
     ):
         """Initialize Flux2TimestepGuidanceEmbeddings.
 
@@ -43,6 +44,7 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
             in_channels: Number of sinusoidal channels.
             embedding_dim: Output embedding dimension.
             bias: Whether to use bias in MLP layers.
+            guidance_embeds: If True, include guidance embedder.
         """
         self.time_proj = Timesteps(
             num_channels=in_channels,
@@ -54,11 +56,16 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
             time_embed_dim=embedding_dim,
             sample_proj_bias=bias,
         )
-        self.guidance_embedder = TimestepEmbedding(
-            in_channels=in_channels,
-            time_embed_dim=embedding_dim,
-            sample_proj_bias=bias,
-        )
+        self.guidance_embedder: TimestepEmbedding | None
+        if guidance_embeds:
+            self.guidance_embedder = TimestepEmbedding(
+                in_channels=in_channels,
+                time_embed_dim=embedding_dim,
+                sample_proj_bias=bias,
+            )
+        else:
+            # Distilled checkpoints can omit guidance embedding weights.
+            self.guidance_embedder = None
 
     def forward(self, timestep: Tensor, guidance: Tensor) -> Tensor:
         """Compute combined timestep and guidance embeddings.
@@ -77,15 +84,13 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
         )
 
         # Project guidance to sinusoidal embeddings
-        guidance_proj = self.time_proj(guidance)
-        guidance_emb = self.guidance_embedder(
-            guidance_proj.cast(guidance.dtype)
-        )
-
-        # Combine embeddings
-        time_guidance_emb = timesteps_emb + guidance_emb
-
-        return time_guidance_emb
+        if guidance is not None and self.guidance_embedder is not None:
+            guidance_proj = self.time_proj(guidance)
+            guidance_emb = self.guidance_embedder(
+                guidance_proj.cast(guidance.dtype)
+            )
+            return timesteps_emb + guidance_emb
+        return timesteps_emb
 
 
 class Flux2Modulation(
@@ -436,6 +441,7 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
             in_channels=timestep_guidance_channels,
             embedding_dim=self.inner_dim,
             bias=False,
+            guidance_embeds=getattr(config, "guidance_embeds", True),
         )
 
         # 3. Modulation layers
@@ -504,7 +510,6 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         )
 
         # Store config for input_types
-        self.max_device = device
         self.max_dtype = dtype
         self.in_channels = in_channels
         self.joint_attention_dim = joint_attention_dim
@@ -518,28 +523,28 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "image_seq_len", self.in_channels],
-            device=self.max_device,
+            device=self.device,
         )
         encoder_hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "text_seq_len", self.joint_attention_dim],
-            device=self.max_device,
+            device=self.device,
         )
         timestep_type = TensorType(
-            self.max_dtype, shape=["batch_size"], device=self.max_device
+            self.max_dtype, shape=["batch_size"], device=self.device
         )
         img_ids_type = TensorType(
             DType.int64,
             shape=["batch_size", "image_seq_len", 4],
-            device=self.max_device,
+            device=self.device,
         )
         txt_ids_type = TensorType(
             DType.int64,
             shape=["batch_size", "text_seq_len", 4],
-            device=self.max_device,
+            device=self.device,
         )
         guidance_type = TensorType(
-            self.max_dtype, shape=["batch_size"], device=self.max_device
+            self.max_dtype, shape=["batch_size"], device=self.device
         )
 
         return (

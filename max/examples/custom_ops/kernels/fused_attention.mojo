@@ -83,10 +83,10 @@ struct FusedAttention:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        query: InputTensor[dtype=dtype, rank=rank],
-        key: InputTensor[dtype=dtype, rank=rank],
-        value: InputTensor[dtype=dtype, rank=rank],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        query: InputTensor[dtype=dtype, rank=rank, ...],
+        key: InputTensor[dtype=dtype, rank=rank, ...],
+        value: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert rank == 2, "rank must be 2"
@@ -122,10 +122,10 @@ struct FusedAttentionAlias:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        query: InputTensor[dtype=dtype, rank=rank],
-        key: InputTensor[dtype=dtype, rank=rank],
-        value: InputTensor[dtype=dtype, rank=rank],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        query: InputTensor[dtype=dtype, rank=rank, ...],
+        key: InputTensor[dtype=dtype, rank=rank, ...],
+        value: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         FusedAttention.execute[BN=BN, BD=BD, target=target](
@@ -238,10 +238,10 @@ fn matmul[
         lhs.dtype,
         Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
         MutAnyOrigin,
-        address_space = lhs.address_space,
-        element_layout = lhs.element_layout,
-        layout_int_type = lhs.layout_int_type,
-        linear_idx_type = lhs.linear_idx_type,
+        address_space=lhs.address_space,
+        element_layout=lhs.element_layout,
+        layout_int_type=lhs.layout_int_type,
+        linear_idx_type=lhs.linear_idx_type,
     ],
 ):
     res = type_of(res).stack_allocation()
@@ -264,7 +264,7 @@ fn matmul[
             res.dtype,
             Layout.row_major(M, N),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
 
         comptime BK = 8

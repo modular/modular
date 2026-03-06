@@ -24,7 +24,7 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout import Layout as LegacyLayout, TileTensor
-from structured_kernels.tile_types import create_tma_tile, lt_to_tt
+from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -153,35 +153,35 @@ fn blockwise_fp8_matmul[
         type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=corrected_config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(corrected_config.cluster_shape[0]),
             Int32(corrected_config.cluster_shape[1]),
             Int32(corrected_config.cluster_shape[2]),
         ),
     ]
 
-    # Create TMA descriptors using kernel's derived legacy layouts
+    # Create TMA descriptors using kernel's layout types
     a_tma_op = create_tma_tile[
-        Kernel.ATmaTile.tile_layout,
-        Kernel.ATmaTile.desc_layout,
+        Kernel.ATileLayout,
+        Kernel.ADescLayout,
         Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
     b_tma_op = create_tma_tile[
-        Kernel.BTmaTile.tile_layout,
-        Kernel.BTmaTile.desc_layout,
+        Kernel.BTileLayout,
+        Kernel.BDescLayout,
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
     a_scales_tma_op = create_tma_tile[
-        Kernel.AScalesTmaTile.tile_layout,
-        Kernel.AScalesTmaTile.desc_layout,
+        Kernel.AScalesLayout,
+        Kernel.AScalesLayout,
         Index(1, BM),
     ](ctx, a_scales)
 
@@ -191,10 +191,10 @@ fn blockwise_fp8_matmul[
     ) else c_tma_tile_shape_mma128
 
     var c_tma_op = create_tma_tile[
-        Kernel.CTmaTile.tile_layout,
-        Kernel.CTmaTile.desc_layout,
+        Kernel.CTileLayout,
+        Kernel.CDescLayout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c)
 
     var grid_dim = (

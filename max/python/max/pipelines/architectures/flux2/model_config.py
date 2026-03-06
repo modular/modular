@@ -35,6 +35,8 @@ class Flux2ConfigBase(MAXModelConfigBase):
     axes_dims_rope: tuple[int, ...] = (32, 32, 32, 32)
     rope_theta: int = 2000
     eps: float = 1e-6
+    guidance_embeds: bool = True
+    """If False (Klein/distilled), no guidance embedder weights are expected."""
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
 

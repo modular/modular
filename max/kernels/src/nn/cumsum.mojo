@@ -11,8 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 
 from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
@@ -52,10 +57,9 @@ fn cumsum[
     comptime accum_type = DType.float64 if dtype == DType.float32 else get_accum_type[
         dtype
     ]()
-    debug_assert(
-        -input.rank <= axis < input.rank,
-        "Axis value must be in range [-rank, rank)",
-    )
+    assert (
+        -input.rank <= axis < input.rank
+    ), "Axis value must be in range [-rank, rank)"
     var axis_pos = axis if axis >= 0 else axis + input.rank
 
     var shape = coord_to_index_list(input.layout.shape_coord())

@@ -32,7 +32,12 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     warpgroup_fence,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    _idx_product,
+    create_tma_tile,
+)
 from std.memory import stack_allocation
 from std.testing import assert_almost_equal
 
@@ -46,11 +51,13 @@ fn multicast_tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
     c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
     a_smem_layout: Layout,
@@ -61,8 +68,8 @@ fn multicast_tma_wgmma_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     partitioned_multicast: Bool = False,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
@@ -70,7 +77,7 @@ fn multicast_tma_wgmma_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -78,7 +85,7 @@ fn multicast_tma_wgmma_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -96,10 +103,10 @@ fn multicast_tma_wgmma_kernel[
     comptime CLUSTER_M = cluster_shape[0]
     comptime CLUSTER_N = cluster_shape[1]
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -112,7 +119,7 @@ fn multicast_tma_wgmma_kernel[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)
@@ -130,7 +137,7 @@ fn multicast_tma_wgmma_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -388,11 +395,13 @@ def test_multicast_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
         Layout.row_major(M, N),
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         a_smem_layout,
@@ -475,10 +484,10 @@ def main() raises:
                 Index(64, 16, 64),
                 Index(64, 8, 16),
                 Index(2, 1, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -489,10 +498,10 @@ def main() raises:
                 Index(64, 160, 64),
                 Index(64, 80, 16),
                 Index(2, 1, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -503,10 +512,10 @@ def main() raises:
                 Index(64, 16, 32),
                 Index(64, 8, 16),
                 Index(2, 1, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -517,10 +526,10 @@ def main() raises:
                 Index(64, 160, 32),
                 Index(64, 80, 16),
                 Index(2, 1, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -531,10 +540,10 @@ def main() raises:
                 Index(64, 16, 16),
                 Index(64, 8, 16),
                 Index(2, 1, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -545,10 +554,10 @@ def main() raises:
                 Index(64, 160, 16),
                 Index(64, 80, 16),
                 Index(2, 1, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
         # 2x2 cluster tests
@@ -583,10 +592,10 @@ def main() raises:
                 Index(64, 16, 64),
                 Index(64, 8, 16),
                 Index(2, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -597,10 +606,10 @@ def main() raises:
                 Index(64, 160, 64),
                 Index(64, 80, 16),
                 Index(2, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -611,10 +620,10 @@ def main() raises:
                 Index(64, 16, 32),
                 Index(64, 8, 16),
                 Index(2, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -625,10 +634,10 @@ def main() raises:
                 Index(64, 160, 32),
                 Index(64, 80, 16),
                 Index(2, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -639,10 +648,10 @@ def main() raises:
                 Index(64, 16, 16),
                 Index(64, 8, 16),
                 Index(2, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -653,10 +662,10 @@ def main() raises:
                 Index(64, 160, 16),
                 Index(64, 80, 16),
                 Index(2, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
         # 1x2 cluster tests
@@ -691,10 +700,10 @@ def main() raises:
                 Index(64, 16, 64),
                 Index(64, 8, 16),
                 Index(1, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -705,10 +714,10 @@ def main() raises:
                 Index(64, 160, 64),
                 Index(64, 80, 16),
                 Index(1, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -719,10 +728,10 @@ def main() raises:
                 Index(64, 16, 32),
                 Index(64, 8, 16),
                 Index(1, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -733,10 +742,10 @@ def main() raises:
                 Index(64, 160, 32),
                 Index(64, 80, 16),
                 Index(1, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -747,10 +756,10 @@ def main() raises:
                 Index(64, 16, 16),
                 Index(64, 8, 16),
                 Index(1, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)
 
             test_multicast_tma_wgmma[
@@ -761,8 +770,8 @@ def main() raises:
                 Index(64, 160, 16),
                 Index(64, 80, 16),
                 Index(1, 2, 1),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
                 transpose_b=True,
-                partitioned_multicast = Bool(multicast_mode),
+                partitioned_multicast=Bool(multicast_mode),
             ](ctx)

@@ -26,6 +26,7 @@ from max.nn.kernels import (
 from max.nn.sampling import (
     RejectionSampler,
     RejectionSamplerWithResiduals,
+    TypicalAcceptanceSampler,
 )
 
 from .sampling_config import SamplingConfig
@@ -332,27 +333,12 @@ def rejection_sampler(
         A graph that takes draft tokens, draft logits, and target logits and
         outputs accepted tokens and metadata.
     """
-    # We have two distributions:
-    #   p(x) - The target model distribution
-    #   q(x) - The draft model distribution
-    #
-    # For any given token idx x_i, we have two probabilities p(x_i) and q(x_i)
-    # We accept the token with a probability of p(x_i) > q(x_i)
-    #
-    # If rejected, we should just sample a new token from the target distribution.
-    #
-    # We then resample from this distribution.
-
     graph_inputs = [
-        # Sampled Draft Tokens
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
-        # Logits for Sampled Tokens
         TensorType(DType.float32, ["batch_size", "num_steps"], device=device),
-        # Target Logits
         TensorType(
             DType.float32, ["total_output_len", "vocab_size"], device=device
         ),
-        # Target Logit Offsets
         TensorType(DType.int64, ["logit_offsets_len"], device=device),
     ]
     with Graph("rejection_sampler", input_types=graph_inputs) as graph:
@@ -388,19 +374,15 @@ def rejection_sampler_with_residuals(
     tokens.
     """
     graph_inputs = [
-        # Sampled Draft Tokens
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
-        # Logits for Sampled Tokens
         TensorType(DType.float32, ["batch_size", "num_steps"], device=device),
-        # Target Logits
         TensorType(
             DType.float32,
             ["total_output_len", "vocab_size"],
             device=device,
         ),
-        # Target Logit Offsets
         TensorType(DType.int64, ["logit_offsets_len"], device=device),
-        # All draft logits, num_steps first so that slice indexing is contiguous
+        # num_steps first so that slice indexing is contiguous
         TensorType(
             DType.float32,
             ["num_steps", "batch_size", "vocab_size"],
@@ -408,13 +390,11 @@ def rejection_sampler_with_residuals(
         ),
     ]
     if debug:
-        # random number input for rejection sampling
         graph_inputs.append(
             TensorType(
                 DType.float32, ["batch_size", "num_steps"], device=device
             ),
         )
-        # random number input for multinomial sampling
         graph_inputs.append(
             TensorType(
                 DType.float32,
@@ -461,5 +441,104 @@ def rejection_sampler_with_residuals(
         graph.output(
             first_rejected_token_idx, sampled_target_tokens, bonus_token_ids
         )
+
+        return graph
+
+
+def greedy_acceptance_sampler(
+    device: DeviceRef,
+) -> Graph:
+    """Builds a graph that implements strict greedy acceptance for MTP.
+
+    Draft tokens are accepted only when they match the argmax of the
+    target logits at each position. Always produces a recovered token
+    for every draft position and a bonus token from the final (+1)
+    target position.
+
+    Args:
+        device: Device for the graph.
+
+    Returns:
+        A graph that takes draft tokens, target logits, and target logit
+        offsets and outputs the first rejected index, target tokens for
+        all draft positions, and a bonus token.
+    """
+    graph_inputs = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device
+        ),
+        TensorType(DType.int64, ["logit_offsets_len"], device=device),
+    ]
+    with Graph("greedy_acceptance_sampler", input_types=graph_inputs) as graph:
+        draft_tokens, target_logits, target_logit_offsets = graph.inputs
+
+        sampler = TypicalAcceptanceSampler(device=device, greedy=True)
+        first_rejected_idx, target_tokens, bonus_tokens = sampler(
+            draft_tokens.tensor,
+            target_logits.tensor,
+            target_logit_offsets.tensor,
+        )
+        graph.output(first_rejected_idx, target_tokens, bonus_tokens)
+
+        return graph
+
+
+def typical_acceptance_sampler(
+    device: DeviceRef,
+    *,
+    seed: int = 0,
+) -> Graph:
+    """Builds a target-only stochastic rejection sampler for speculative decoding.
+
+    Accepts draft tokens based on ``coin < p_target(draft_token)`` where
+    p_target is computed after applying temperature, top-k, and top-p
+    filtering.  No draft probabilities are needed.
+
+    Args:
+        device: Device for the graph.
+        seed: Random seed for sampling.
+
+    Returns:
+        A graph that takes draft tokens, target logits, target logit
+        offsets, and sampling parameters, and outputs the first rejected
+        index, recovered tokens, and a bonus token.
+    """
+    graph_inputs = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device
+        ),
+        TensorType(DType.int64, ["logit_offsets_len"], device=device),
+        TensorType(DType.float32, ["batch_size"], device=device),
+        TensorType(DType.int64, ["batch_size"], device=device),
+        TensorType(DType.int64, [], device=DeviceRef.CPU()),
+        TensorType(DType.float32, ["batch_size"], device=device),
+        TensorType(DType.float32, [], device=DeviceRef.CPU()),
+    ]
+    with Graph("typical_acceptance_sampler", input_types=graph_inputs) as graph:
+        (
+            draft_tokens,
+            target_logits,
+            target_logit_offsets,
+            temperature,
+            top_k,
+            max_k,
+            top_p,
+            min_top_p,
+        ) = graph.inputs
+
+        sampler = TypicalAcceptanceSampler(device=device, seed=seed)
+        first_rejected_idx, recovered_tokens, bonus_tokens = sampler(
+            draft_tokens.tensor,
+            target_logits.tensor,
+            target_logit_offsets.tensor,
+            temperature.tensor,
+            top_k.tensor,
+            max_k.tensor,
+            top_p.tensor,
+            min_top_p.tensor,
+        )
+        graph.output(first_rejected_idx, recovered_tokens, bonus_tokens)
 
         return graph

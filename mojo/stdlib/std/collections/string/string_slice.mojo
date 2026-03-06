@@ -617,10 +617,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -664,10 +664,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             c_char,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -690,10 +690,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
         length: Int,
@@ -1256,7 +1256,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     ](
         self,
         out result: StringSlice[
-            mut = Self.mut & other_type.origin.mut,
+            mut=Self.mut & other_type.origin.mut,
             origin_of(Self.origin, other_type.origin),
         ],
     ):
@@ -1336,7 +1336,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         for _ in range(occurrences):
             var idx = self.find(old, current_pos)
 
-            debug_assert(idx >= 0, "expected to find occurrence during find")
+            assert idx >= 0, "expected to find occurrence during find"
 
             # Copy preceding unchanged chars
             res += StringSlice(
@@ -2194,10 +2194,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 while not is_new_line and line_end < UInt(length):
                     b0 = ptr[line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
-                    debug_assert(
-                        line_end + UInt(char_len) <= UInt(length),
-                        "corrupted sequence causing unsafe memory access",
-                    )
+                    assert line_end + UInt(char_len) <= UInt(
+                        length
+                    ), "corrupted sequence causing unsafe memory access"
                     # percentage-wise a newline is uncommon compared to a normal byte
                     is_new_line = unlikely(
                         _is_newline_char_utf8(ptr, line_end, b0, UInt(char_len))
@@ -2460,9 +2459,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         if len(self) >= width:
             return String(self)
-        debug_assert(
-            len(fillchar) == 1, "fill char needs to be a one byte literal"
-        )
+        assert len(fillchar) == 1, "fill char needs to be a one byte literal"
 
         var result = String(capacity=width)
         for _ in range(start):
@@ -2764,7 +2761,7 @@ fn _memmem_impl[
     var haystack_len = len(haystack_span)
     var needle = needle_span.unsafe_ptr()
     var needle_len = len(needle_span)
-    debug_assert(needle_len > 0, "needle_len must be > 0")
+    assert needle_len > 0, "needle_len must be > 0"
     if needle_len == 1:
         output = _memchr(haystack_span, needle[0])
         return

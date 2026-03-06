@@ -12,8 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Coord, Layout, RuntimeLayout, TileTensor
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from layout._utils import ManagedLayoutTensor
 from nn.slice import sliced_add
 
@@ -27,10 +32,9 @@ fn test_sliced_add[
     batch_end_idx: Int,
 ](ctx: DeviceContext) raises:
     """Test the sliced_add_ragged kernel."""
-    debug_assert(
-        batch_end_idx <= rows,
-        "batch_end_idx must be less than or equal to rows",
-    )
+    assert (
+        batch_end_idx <= rows
+    ), "batch_end_idx must be less than or equal to rows"
 
     # Create managed buffers and host views.
     var shape = IndexList[2](rows, cols)

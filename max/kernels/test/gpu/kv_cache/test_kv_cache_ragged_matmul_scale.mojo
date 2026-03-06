@@ -183,10 +183,9 @@ def execute_matmul_k_cache_ragged_scale[
 
     var batch_size = len(prompt_lens)
 
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        "expected prompt_lens and cache_sizes size to be equal",
-    )
+    assert len(prompt_lens) == len(
+        cache_sizes
+    ), "expected prompt_lens and cache_sizes size to be equal"
 
     var kv_block_size = (
         num_paged_blocks
@@ -330,7 +329,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Execute test with scaled implementation.
     _matmul_k_cache_ragged_scale_impl[
         target="gpu",
-        scales_granularity_mnk = IndexList[3](1, block_scale, block_scale),
+        scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
     ](
         hidden_state_ragged_tensor,
         input_row_offsets_tensor,
@@ -368,7 +367,7 @@ def execute_matmul_k_cache_ragged_scale[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=True,
-        scales_granularity_mnk = IndexList[3](1, block_scale, block_scale),
+        scales_granularity_mnk=IndexList[3](1, block_scale, block_scale),
     ](
         ref_output_ndbuffer,
         hidden_state_ragged_ndbuffer,

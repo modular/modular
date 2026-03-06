@@ -146,7 +146,7 @@ fn run_pdl_race_test[
         _matmul_gpu[
             use_tensor_core=True,
             transpose_b=True,
-            pdl_level = PDLLevel.OVERLAP_AT_END,
+            pdl_level=PDLLevel.OVERLAP_AT_END,
         ](c_buf, a_buf, b_buf, ctx)
         #
         # Launch consumer kernel - waits for matmul via PDL

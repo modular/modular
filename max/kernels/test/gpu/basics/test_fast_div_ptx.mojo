@@ -67,12 +67,12 @@ def main() raises:
 
     var asm = _compile_code[
         kernel_fast_div_4,
-        target = get_gpu_target["sm_90"](),
+        target=get_gpu_target["sm_90"](),
     ]().asm
     assert_true(contains_power_of_2_sequence(asm))
 
     asm = _compile_code[
         kernel_fast_div_3,
-        target = get_gpu_target["sm_90"](),
+        target=get_gpu_target["sm_90"](),
     ]().asm
     assert_true(contains_fastdiv_div_sequence(asm))

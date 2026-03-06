@@ -32,8 +32,14 @@ from std.gpu import (
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host.info import is_gpu
-from layout import Coord, CoordLike, Idx, coord_to_index_list
-from layout._layout import TensorLayout, row_major
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
 from layout.tile_tensor import TileTensor, stack_allocation as tensor_alloc
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel
@@ -639,7 +645,7 @@ fn moe_create_indices_bucket_group_kernel[
 
     # Allocate shared memory for temporary storage of matching token indices
     # alignment=128,
-    var smem = tensor_alloc[DType.uint32, address_space = AddressSpace.SHARED](
+    var smem = tensor_alloc[DType.uint32, address_space=AddressSpace.SHARED](
         row_major[1, expected_count]()
     )
 
@@ -912,10 +918,10 @@ fn group_limited_router_kernel[
     var shared_mem = stack_allocation[
         topk_group * n_experts_per_tok,
         TopK_2[scores_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var selected_group = stack_allocation[
-        topk_group, DType.int32, address_space = AddressSpace.SHARED
+        topk_group, DType.int32, address_space=AddressSpace.SHARED
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
@@ -989,7 +995,7 @@ fn group_limited_router_kernel[
                 thd_topk2 = TopK_2[scores_type]()
 
             var global_topk_result = _warp_bitonic_sort[
-                num_lanes = topk_group * n_experts_per_tok
+                num_lanes=topk_group * n_experts_per_tok
             ](thd_topk2)
 
             var weights_sum: Scalar[scores_type] = 0
@@ -1005,9 +1011,9 @@ fn group_limited_router_kernel[
                     ).cast[scores_type]()
                 )
 
-            weights_sum = warp.lane_group_sum_and_broadcast[
-                num_lanes=n_experts_per_tok
-            ](original_weight)
+            weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+                original_weight
+            )
 
             comptime if norm_weights:
                 original_weight /= weights_sum

@@ -38,7 +38,7 @@ struct TensorMemory(TrivialRegisterPassable):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
     var ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     """Pointer to the tensor memory address."""
 
@@ -54,7 +54,7 @@ struct TensorMemory(TrivialRegisterPassable):
         """
         # Bitcast to avoid `cannot implicitly convert` error.
         self.ptr = external_memory[
-            UInt32, address_space = AddressSpace.SHARED, alignment=16
+            UInt32, address_space=AddressSpace.SHARED, alignment=16
         ]().bitcast[UInt32]()
         self.num_cols = num_cols
 
@@ -64,7 +64,7 @@ fn tcgen05_alloc[
     cta_group: Int32
 ](
     ptr_tmem_addr: UnsafePointer[
-        mut=True, UInt32, _, address_space = AddressSpace.SHARED
+        mut=True, UInt32, _, address_space=AddressSpace.SHARED
     ],
     num_cols: UInt32,
 ):

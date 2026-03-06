@@ -58,6 +58,7 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
     var expert_id: Int32
     var is_valid_tile: Bool
     var terminate: Bool
+    var m_start: UInt32  # Expert's start offset in contiguous token space
 
     @always_inline
     fn __init__(out self):
@@ -67,6 +68,7 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
         self.expert_id = 0
         self.is_valid_tile = False
         self.terminate = False
+        self.m_start = 0
 
     @always_inline
     fn is_valid(self) -> Bool:
@@ -98,6 +100,8 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
             self.is_valid_tile,
             ", terminate=",
             self.terminate,
+            ", m_start=",
+            self.m_start,
             ")",
         )
 
@@ -122,6 +126,11 @@ struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
     fn m(self) -> UInt32:
         """M coordinate in contiguous token space."""
         return self.info.m
+
+    @always_inline
+    fn m_start(self) -> UInt32:
+        """Expert's start token offset in contiguous token space."""
+        return self.info.m_start
 
     @always_inline
     fn n(self) -> UInt32:
@@ -155,6 +164,7 @@ struct GroupedWorkIterator1D1D[
     cluster: IndexList[3] = Index(1, 1, 1),
     cta_group: Int = 1,
     swizzle: Bool = False,
+    AB_swapped: Bool = False,
 ]:
     """Work iterator for 1D-1D grouped block-scaled matmul.
 
@@ -183,8 +193,15 @@ struct GroupedWorkIterator1D1D[
     var block_idx_start: UInt32
 
     # Derived constants
+    # For AB_swapped: m=tokens strides by MMA_N (=BN*cta_group),
+    # n=weights strides by MMA_M (=BM*cta_group).
+    # For non-swapped: m=tokens strides by BM, n=weights strides by MMA_N.
     comptime cta_group_tile_shape = Index(
-        Self.tile_shape[0] * Self.cta_group, Self.tile_shape[1]
+        Self.tile_shape[1] * Self.cta_group,
+        Self.tile_shape[0] * Self.cta_group,
+    ) if Self.AB_swapped else Index(
+        Self.tile_shape[0],
+        Self.tile_shape[1] * Self.cta_group,
     )
     comptime div_dynamic_block = FastDiv[DType.uint32](
         Self.cta_group_tile_shape[0]  # M dimension is dynamic
@@ -252,7 +269,10 @@ struct GroupedWorkIterator1D1D[
         while True:
             if self.current_group_idx >= UInt32(self.num_active_experts):
                 # Finished all groups
-                return (GroupedWorkInfo1D1D(0, 0, 0, 0, False, True), UInt32(0))
+                return (
+                    GroupedWorkInfo1D1D(0, 0, 0, 0, False, True, 0),
+                    UInt32(0),
+                )
 
             end_idx = rebind[Scalar[DType.uint32]](
                 self.group_offsets[Int(self.current_group_idx + 1)]
@@ -286,7 +306,7 @@ struct GroupedWorkIterator1D1D[
         if not is_valid:
             return (
                 GroupedWorkInfo1D1D(
-                    0, 0, self.current_group_idx, 0, False, False
+                    0, 0, self.current_group_idx, 0, False, False, 0
                 ),
                 end_idx,
             )
@@ -315,6 +335,7 @@ struct GroupedWorkIterator1D1D[
                 expert_id,
                 True,
                 False,
+                start_idx,
             ),
             end_idx,
         )

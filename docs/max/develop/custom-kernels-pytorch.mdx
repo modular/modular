@@ -65,8 +65,8 @@ need to bridge to our Mojo implementation.
 
 ## Integrate the custom operation
 
-The [`max.torch`](/max/api/python/torch) module provides
-[`CustomOpLibrary`](/max/api/python/torch/#max.torch.CustomOpLibrary), which
+The [`max.torch`](/max/api/python/experimental/torch) module provides
+[`CustomOpLibrary`](/max/api/python/experimental/torch/#max.experimental.torch.CustomOpLibrary), which
 allows you to load and use compiled Mojo operations directly in PyTorch.
 
 Update the `grayscale.py` file to include the following code:
@@ -74,7 +74,7 @@ Update the `grayscale.py` file to include the following code:
 ```python title="grayscale.py"
 from std.pathlib import Path
 import torch
-from max.torch import CustomOpLibrary
+from max.experimental.torch import CustomOpLibrary
 
 # Load the compiled Mojo package containing our custom operations
 mojo_kernels = Path(__file__).parent / "operations"
@@ -116,8 +116,8 @@ struct Grayscale:
     fn execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype = DType.uint8, rank=2],
-        img_in: InputTensor[dtype = DType.uint8, rank=3],
+        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter

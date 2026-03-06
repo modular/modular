@@ -35,10 +35,9 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    Layout as LegacyLayout,
     LayoutTensor,
     TileTensor,
-    UNKNOWN_VALUE,
+    row_major,
 )
 from layout.int_tuple import IntTuple
 from layout.tma_async import (
@@ -48,19 +47,18 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 from std.builtin.variadics import Variadic
-from buffer import Dim, DimList
 from layout.coord import (
     ComptimeInt,
     Coord,
     CoordLike,
     Idx,
     RuntimeInt,
-    _DimsToCoordLike,
 )
-from layout._layout import Layout, TensorLayout, row_major
+from layout.tile_layout import Layout, TensorLayout
 from .smem_types import SMemTileArray as LTSMemTileArray
 from std.utils.index import IndexList
 from std.memory import LegacyUnsafePointer, stack_allocation
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 # Alias for mutable UnsafePointer (same pattern as structuring.mojo)
@@ -229,11 +227,11 @@ comptime SMemTile[
 ] = TileTensor[
     dtype,
     Layout[
-        shape_types = layout.shape_types,
-        stride_types = layout.stride_types,
+        shape_types=layout.shape_types,
+        stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ]
 """Shared memory tile using TileTensor with a Layout.
 
@@ -246,15 +244,7 @@ Parameters:
     alignment: Memory alignment (default 128 for shared memory).
 """
 
-from layout._layout import TensorLayout
-
-
-@parameter
-fn _int_to_dim(value: Int) -> Dim:
-    """Convert IntTuple value to Dim: UNKNOWN_VALUE -> Dim(), else Dim(N)."""
-    if value != UNKNOWN_VALUE:
-        return Dim(value)
-    return Dim()
+from layout.tile_layout import TensorLayout
 
 
 # ============================================================================
@@ -307,24 +297,37 @@ fn _strided_layout[
 
 
 # ============================================================================
-# _to_legacy_layout -- Convert new Layout static dims to legacy Layout
+# _to_index_list -- Extract IndexList of shapes from a TensorLayout
 # ============================================================================
 
 
 @parameter
-fn _to_legacy_layout[L: TensorLayout]() -> LegacyLayout:
-    """Convert a new Layout to a legacy Layout using static dimensions.
+fn _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
+    """Extract static shapes from a TensorLayout into an IndexList.
 
     Works for any rank. TMA layouts are always fully static.
     """
-    var shape = IntTuple()
-    var stride = IntTuple()
+    var result = IndexList[L.rank]()
 
     comptime for i in range(L.rank):
-        shape.append(L.static_shape[i])
-        stride.append(L.static_stride[i])
+        result[i] = L.static_shape[i]
 
-    return LegacyLayout(shape, stride)
+    return result
+
+
+fn _to_index_list[rank: Int, L: TensorLayout]() -> IndexList[rank]:
+    """Extract static shapes from a TensorLayout into an IndexList with explicit rank.
+
+    Used when the compiler can't prove the TensorLayout's rank matches
+    the expected rank.
+    """
+    comptime assert L.rank == rank, "TensorLayout rank must match explicit rank"
+    var result = IndexList[rank]()
+
+    comptime for i in range(rank):
+        result[i] = L.static_shape[i]
+
+    return result
 
 
 # ============================================================================
@@ -426,13 +429,14 @@ comptime TmaOpType[
     desc_layout: TensorLayout,
 ] = TMATensorTile[
     dtype,
-    _to_legacy_layout[tile_layout](),
-    _to_legacy_layout[desc_layout](),
+    tile_layout.rank,
+    _to_index_list[tile_layout](),
+    _to_index_list[tile_layout.rank, desc_layout](),
 ]
 """TMATensorTile type derived from new Layout types.
 
 Single source of truth: new Layout types determine the TMATensorTile
-type parameters via _to_legacy_layout.
+type parameters via _to_index_list.
 """
 
 comptime TmaOpTypeIm2col[
@@ -441,8 +445,9 @@ comptime TmaOpTypeIm2col[
     desc_layout: TensorLayout,
 ] = TMATensorTileIm2col[
     dtype,
-    _to_legacy_layout[tile_layout](),
-    _to_legacy_layout[desc_layout](),
+    tile_layout.rank,
+    _to_index_list[tile_layout](),
+    _to_index_list[tile_layout.rank, desc_layout](),
 ]
 """TMATensorTileIm2col type derived from new Layout types.
 
@@ -450,56 +455,10 @@ Same as TmaOpType but for im2col TMA (used by conv2d activation loads).
 """
 
 
-# ============================================================================
-# TMATile -- New Layout wrapper around TMATensorTile
-# ============================================================================
-
-
-struct TMATile[
-    dtype: DType,
-    tile_layout: TensorLayout,
-    desc_layout: TensorLayout,
-]:
-    """TMA tile descriptor parameterized on new Layout types.
-
-    Thin wrapper around TMATensorTile that preserves new Layout type
-    parameters. The underlying TMATensorTile uses legacy Layout
-    (via _to_legacy_layout), but callers work exclusively with new
-    Layout types.
-
-    The kernel `run()` accepts `Self.InnerType` (TMATensorTile) for
-    DevicePassable compatibility. Host code uses TMATile for type-safe
-    construction, then passes `.inner` through enqueue_function.
-
-    Parameters:
-        dtype: Element data type.
-        tile_layout: Tile shape as a new Layout (TensorLayout).
-        desc_layout: TMA descriptor layout as a new Layout.
-    """
-
-    # The underlying legacy TMATensorTile type
-    comptime InnerType = TmaOpType[
-        Self.dtype, Self.tile_layout, Self.desc_layout
-    ]
-
-    var inner: Self.InnerType
-
-    @always_inline
-    fn __init__(out self, inner: Self.InnerType):
-        """Wrap an existing TMATensorTile.
-
-        Args:
-            inner: The underlying legacy TMATensorTile descriptor.
-        """
-        self.inner = inner
-
-
 def create_tma_tile[
-    rank: Int,
-    //,
     tma_tile_layout: TensorLayout,
     tma_desc_layout: TensorLayout,
-    tile_shape: IndexList[rank],
+    tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
@@ -507,12 +466,11 @@ def create_tma_tile[
 ]:
     """Create a TMATensorTile using new Layout types.
 
-    Converts new Layout types to legacy Layout internally, calls
+    Extracts IndexList shapes from new Layout types internally, calls
     create_tensor_tile, and returns TMATensorTile. No LegacyLayout
     is exposed to callers -- the conversion is encapsulated here.
 
     Parameters:
-        rank: Rank of the tile shape (inferred from tile_shape).
         tma_tile_layout: Tile layout as new TensorLayout.
         tma_desc_layout: Descriptor layout as new TensorLayout.
         tile_shape: Physical tile dimensions for the TMA descriptor.
@@ -528,17 +486,15 @@ def create_tma_tile[
     return create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        __tile_layout = _to_legacy_layout[tma_tile_layout](),
-        __desc_layout = _to_legacy_layout[tma_desc_layout](),
+        __tile_shape=_to_index_list[tma_tile_layout](),
+        __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
     ](ctx, tensor)
 
 
 def create_tma_tile[
-    rank: Int,
-    //,
     tma_tile_layout: TensorLayout,
     tma_desc_layout: TensorLayout,
-    tile_shape: IndexList[rank],
+    tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext, tensor: TileTensor[...]) raises -> TmaOpType[
@@ -552,7 +508,6 @@ def create_tma_tile[
     reshaped views.
 
     Parameters:
-        rank: Rank of the tile shape (inferred from tile_shape).
         tma_tile_layout: Tile layout as new TensorLayout.
         tma_desc_layout: Descriptor layout as new TensorLayout.
         tile_shape: Physical tile dimensions for the TMA descriptor.
@@ -568,134 +523,9 @@ def create_tma_tile[
     return create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        __tile_layout = _to_legacy_layout[tma_tile_layout](),
-        __desc_layout = _to_legacy_layout[tma_desc_layout](),
+        __tile_shape=_to_index_list[tma_tile_layout](),
+        __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
     ](ctx, tensor)
-
-
-# ============================================================================
-# GMEMTile -- TileTensor type for global memory kernel parameters
-# ============================================================================
-
-comptime GMEMTile[
-    dtype: DType,
-    lt_layout: LegacyLayout,
-] = TileTensor[
-    dtype,
-    Layout[
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.shape[0].value()),
-                _int_to_dim(lt_layout.shape[1].value()),
-            ),
-        ],
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.stride[0].value()),
-                _int_to_dim(lt_layout.stride[1].value()),
-            ),
-        ],
-    ],
-    MutAnyOrigin,
-]
-"""Global memory 2D TileTensor derived from a legacy Layout.
-
-Used for kernel parameter types, replacing LayoutTensor parameters.
-"""
-
-
-@always_inline
-fn lt_to_tt[
-    dtype: DType,
-    lt_layout: LegacyLayout,
-](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
-    dtype,
-    Layout[
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.shape[0].value()),
-                _int_to_dim(lt_layout.shape[1].value()),
-            ),
-        ],
-        _DimsToCoordLike[
-            DType.int64,
-            DimList(
-                _int_to_dim(lt_layout.stride[0].value()),
-                _int_to_dim(lt_layout.stride[1].value()),
-            ),
-        ],
-    ],
-    lt.origin,
-]:
-    """Convert a 2D LayoutTensor to a TileTensor.
-
-    Static dimensions are preserved as ComptimeInt, dynamic dimensions
-    (UNKNOWN_VALUE) become RuntimeInt. Uses _DimsToCoordLike via DimList
-    to avoid the _IntTupleToCoordLike compiler crash.
-    """
-    comptime ShapeTypes = _DimsToCoordLike[
-        DType.int64,
-        DimList(
-            _int_to_dim(lt_layout.shape[0].value()),
-            _int_to_dim(lt_layout.shape[1].value()),
-        ),
-    ]
-    comptime StrideTypes = _DimsToCoordLike[
-        DType.int64,
-        DimList(
-            _int_to_dim(lt_layout.stride[0].value()),
-            _int_to_dim(lt_layout.stride[1].value()),
-        ),
-    ]
-    var shape = Coord[*ShapeTypes]()
-    var stride = Coord[*StrideTypes]()
-
-    comptime for i in range(2):
-        comptime if not shape.element_types[i].is_static_value:
-            shape[i] = rebind[shape.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
-            )
-
-        comptime if not stride.element_types[i].is_static_value:
-            stride[i] = rebind[stride.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
-            )
-
-    comptime ResultLayout = Layout[ShapeTypes, StrideTypes]
-    from std.memory import UnsafePointer as Ptr
-
-    var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
-    return TileTensor[dtype, ResultLayout, lt.origin](
-        ptr=ptr,
-        layout=ResultLayout(shape, stride),
-    )
-
-
-@always_inline
-fn lt_to_tt_1d[
-    dtype: DType,
-    lt_layout: LegacyLayout,
-](lt: LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
-    dtype, GMEMLayout1D, lt.origin
-]:
-    """Convert a 1D LayoutTensor to a TileTensor with GMEMLayout1D."""
-    var shape = Coord(
-        RuntimeInt[DType.int64](
-            Scalar[DType.int64](lt.runtime_layout.shape.value[0])
-        )
-    )
-    var stride = Coord(Idx[1]())
-
-    from std.memory import UnsafePointer as Ptr
-
-    var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
-    return TileTensor[dtype, GMEMLayout1D, lt.origin](
-        ptr=ptr,
-        layout=GMEMLayout1D(shape, stride),
-    )
 
 
 # ============================================================================
@@ -790,7 +620,7 @@ struct SMemTileArrayWithLayout[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -810,7 +640,7 @@ struct SMemTileArrayWithLayout[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -867,8 +697,8 @@ struct SMemTileArrayWithLayout[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -915,17 +745,15 @@ struct SMemTileArray[
     # The TileTensor-based tile type with correct shape/stride types
     comptime Tile = TileTensor[
         Self.dtype,
-        Layout[
-            shape_types = Self.shape_types, stride_types = Self.stride_types
-        ],
+        Layout[shape_types=Self.shape_types, stride_types=Self.stride_types],
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
 
     # Layout type for constructing tiles
     comptime TileLayout = Layout[
-        shape_types = Self.shape_types,
-        stride_types = Self.stride_types,
+        shape_types=Self.shape_types,
+        stride_types=Self.stride_types,
     ]
 
     # Size calculations using static shape product
@@ -938,7 +766,7 @@ struct SMemTileArray[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -958,7 +786,7 @@ struct SMemTileArray[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -1024,8 +852,8 @@ struct SMemTileArray[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -1090,7 +918,7 @@ struct SMemTileArray2D[
     comptime Tile = SMemTile[
         Self.dtype,
         internal_k_major[Self.dtype, Self.dim0, Self.dim1, Self.swizzle_bytes],
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
 
     # Size calculations
@@ -1103,7 +931,7 @@ struct SMemTileArray2D[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1123,7 +951,7 @@ struct SMemTileArray2D[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -1159,7 +987,7 @@ struct SMemTileArray2D[
     fn get_with_layout[
         tile_layout: Layout, T: Intable
     ](self, index: T) -> SMemTile[
-        Self.dtype, tile_layout, alignment = Self.alignment
+        Self.dtype, tile_layout, alignment=Self.alignment
     ]:
         """Get tile at the given index with a specified layout.
 
@@ -1178,7 +1006,7 @@ struct SMemTileArray2D[
             A TileTensor with the specified layout at the given index.
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
-        return SMemTile[Self.dtype, tile_layout, alignment = Self.alignment](
+        return SMemTile[Self.dtype, tile_layout, alignment=Self.alignment](
             tile_ptr, tile_layout
         )
 
@@ -1215,8 +1043,8 @@ struct SMemTileArray2D[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)
 
@@ -1257,7 +1085,7 @@ struct SMemTileArray2DRowMajor[
     comptime Tile = SMemTile[
         Self.dtype,
         row_major[Self.dim0, Self.dim1](),
-        alignment = Self.alignment,
+        alignment=Self.alignment,
     ]
 
     # The internal layout matching the Tile type
@@ -1273,7 +1101,7 @@ struct SMemTileArray2DRowMajor[
 
     # Pointer to the array data
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype], address_space=AddressSpace.SHARED
     ]
 
     fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
@@ -1293,7 +1121,7 @@ struct SMemTileArray2DRowMajor[
         out self,
         unsafe_ptr: LegacyUnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             origin=origin,
         ],
     ):
@@ -1353,7 +1181,7 @@ struct SMemTileArray2DRowMajor[
         var ptr = stack_allocation[
             Self.storage_size,
             Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
+            alignment=Self.alignment,
+            address_space=AddressSpace.SHARED,
         ]()
         return Self(ptr)

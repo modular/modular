@@ -23,7 +23,7 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
 from std.algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -36,6 +36,7 @@ from layout import LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
+from layout.tile_tensor import TileTensor
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
 from std.utils import Index, IndexList
@@ -100,12 +101,12 @@ fn matmul_kernel[
     var a_shared = stack_allocation[
         tile_size * tile_size,
         a_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         tile_size * tile_size,
         b_type,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Global index in C.
@@ -450,7 +451,7 @@ fn _matmul_gpu[
             comptime assert (
                 output.dtype == c.type
             ), "compute epilogue lambda output and c type mismatch"
-            c.store[alignment = alignment * size_of[c.type]()](
+            c.store[alignment=alignment * size_of[c.type]()](
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
@@ -496,10 +497,7 @@ fn _matmul_gpu[
     comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
     comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
-    comptime if (
-        has_nvidia_gpu_accelerator()
-        and ctx.default_device_info.compute > H100.compute
-    ):
+    comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -765,25 +763,25 @@ fn _matmul_gpu[
             comptime _NUM_WARPS = 4
             comptime _WARP_SIZE = 32
 
-            var c_lt = from_ndbuffer_row_major(c)
-            var a_lt = from_ndbuffer_row_major(a)
-            var b_lt = from_ndbuffer_row_major(b)
+            var c_tt = TileTensor(c)
+            var a_tt = TileTensor(a)
+            var b_tt = TileTensor(b)
 
             comptime rdna_kernel = gemm_kernel_rdna[
                 c_type,
                 a_type,
                 b_type,
-                c_lt.layout,
-                a_lt.layout,
-                b_lt.layout,
+                type_of(c_tt).LayoutType,
+                type_of(a_tt).LayoutType,
+                type_of(b_tt).LayoutType,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[rdna_kernel, rdna_kernel](
-                c_lt,
-                a_lt,
-                b_lt,
+                c_tt,
+                a_tt,
+                b_tt,
                 m,
                 n,
                 k,
@@ -835,7 +833,7 @@ fn split_k_reduce[
     work_space: LayoutTensor[work_space_type, work_space_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime simd_width = simd_width_of[c_type, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()
@@ -892,9 +890,9 @@ fn multistage_gemm[
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
     comptime if (
         has_amd_gpu_accelerator()
@@ -986,9 +984,9 @@ fn multistage_gemm[
     logger.info(config)
     logger.info("K partitions:", runtime_config.num_k_partitions)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
     if runtime_config.num_k_partitions > 1:
         logger.info(

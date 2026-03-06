@@ -562,7 +562,7 @@ struct ConvDirectNHWC[
             _reduce_output[
                 simd_size,
                 # Only support channel partition for 2D shapes (ResNet).
-                elementwise_epilogue = Self.elementwise_epilogue if input.rank
+                elementwise_epilogue=Self.elementwise_epilogue if input.rank
                 == 4 else None,
             ](
                 output_scratch.ptr,
@@ -1084,7 +1084,7 @@ struct ConvDirectNHWC[
 
         acc.accumulate[
             prefetch_offset=prefetch_offset,
-            partial_load_b = has_residual and not Self.filter_packed,
+            partial_load_b=has_residual and not Self.filter_packed,
         ](
             c_tile_size,
             input,
@@ -1133,7 +1133,7 @@ struct ConvDirectNHWC[
 
         acc.accumulate[
             prefetch_offset=prefetch_offset,
-            partial_load_b = has_residual and not Self.filter_packed,
+            partial_load_b=has_residual and not Self.filter_packed,
         ](
             c_tile_size,
             input_base,
@@ -1355,7 +1355,7 @@ struct ConvDirectNHWC[
                 effected_by_padding,
                 has_residual,
                 last_c_tile,
-                elementwise_epilogue = Self.elementwise_epilogue,
+                elementwise_epilogue=Self.elementwise_epilogue,
             ](
                 output_base,
                 input_base,
@@ -1439,7 +1439,7 @@ struct ConvDirectNHWC[
                     effected_by_padding,
                     has_residual,
                     last_c_tile,
-                    elementwise_epilogue = Self.elementwise_epilogue,
+                    elementwise_epilogue=Self.elementwise_epilogue,
                 ](
                     output_base,
                     input_base,
@@ -1533,7 +1533,7 @@ struct ConvDirectNHWC[
                         effected_by_padding,
                         has_residual,
                         last_c_tile,
-                        elementwise_epilogue = Self.elementwise_epilogue,
+                        elementwise_epilogue=Self.elementwise_epilogue,
                     ](
                         output_base,
                         input_base,
@@ -2530,10 +2530,9 @@ fn pack_filter_shape_impl[
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
     comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     var output_shape = IndexList[6]()
@@ -2573,10 +2572,9 @@ fn pack_conv_filter_shape[
     # Filter is in RSCF layout. The last dim is F no matter it's 1d, 2d, or 3d.
     var F = filter.dim[filter.rank - 1]()
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     # FRSCf layout.
@@ -2613,10 +2611,9 @@ fn pack_filter_shape[
 
     var F = filter.dim[filter.rank - 1]()  # RSCF layout
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     comptime conv_attr = ConvInfoStatic[filter.rank - 2](
@@ -2663,7 +2660,7 @@ fn pack_filter_shape[
 fn _get_group_filter_base(
     packed_filter: LayoutTensor, group_idx: Int, f_per_group: Int
 ) -> UnsafePointer[
-    Scalar[packed_filter.dtype], address_space = packed_filter.address_space
+    Scalar[packed_filter.dtype], address_space=packed_filter.address_space
 ]:
     """Returns the pointer of the input group's start in the packed filter."""
     # Each group is zero padded to
@@ -2848,19 +2845,19 @@ fn conv_shape[
     single_thread_blocking_override: Bool,
 ](
     input_buf: LayoutTensor[
-        input_type, address_space = AddressSpace.GENERIC, ...
+        input_type, address_space=AddressSpace.GENERIC, ...
     ],
     filter_buf: LayoutTensor[
-        filter_type, address_space = AddressSpace.GENERIC, ...
+        filter_type, address_space=AddressSpace.GENERIC, ...
     ],
     strides_buf: LayoutTensor[
-        strides_type, address_space = AddressSpace.GENERIC, ...
+        strides_type, address_space=AddressSpace.GENERIC, ...
     ],
     dilations_buf: LayoutTensor[
-        dilations_type, address_space = AddressSpace.GENERIC, ...
+        dilations_type, address_space=AddressSpace.GENERIC, ...
     ],
     paddings_buf: LayoutTensor[
-        paddings_type, address_space = AddressSpace.GENERIC, ...
+        paddings_type, address_space=AddressSpace.GENERIC, ...
     ],
     num_groups_scalar: Scalar,
 ) raises -> IndexList[input_buf.rank]:
@@ -3001,7 +2998,7 @@ fn conv_nhwc_direct[
             )
         )
 
-    with Trace[TraceLevel.OP, target = StaticString("cpu")](
+    with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "conv",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):

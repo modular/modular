@@ -393,9 +393,9 @@ struct TmemTensor[
     comptime Fragments = TmemFragments[
         Self.dtype,
         Self.frag_size,
-        is_lower_required = Self.is_lower_required,
-        data_paths = Self.data_paths,
-        bits = Self.bits,
+        is_lower_required=Self.is_lower_required,
+        data_paths=Self.data_paths,
+        bits=Self.bits,
     ]
 
     @always_inline
@@ -404,7 +404,7 @@ struct TmemTensor[
     ](self) -> TmemFragments[
         Self.dtype,
         Self.frag_size * repeat,
-        is_lower_required = Self.is_lower_required,
+        is_lower_required=Self.is_lower_required,
     ]:
         """Load both upper and lower fragments in one call.
 
@@ -419,7 +419,7 @@ struct TmemTensor[
         return TmemFragments[
             Self.dtype,
             Self.frag_size,
-            is_lower_required = Self.is_lower_required,
+            is_lower_required=Self.is_lower_required,
         ].load[repeat](self.address())
 
     @always_inline
@@ -430,7 +430,7 @@ struct TmemTensor[
         frags: TmemFragments[
             Self.dtype,
             Self.frag_size * repeat,
-            is_lower_required = Self.is_lower_required,
+            is_lower_required=Self.is_lower_required,
         ],
     ):
         """Store both upper and lower fragments in one call.
@@ -527,7 +527,7 @@ struct TmemFragments[
     ](tmem: TmemAddress) -> TmemFragments[
         Self.dtype,
         Self.frag_size * repeat,
-        is_lower_required = Self.is_lower_required,
+        is_lower_required=Self.is_lower_required,
     ]:
         """Load fragments from TMEM address.
 
@@ -544,7 +544,7 @@ struct TmemFragments[
         """
         comptime width = Self.frag_size * repeat
         var result = TmemFragments[
-            Self.dtype, width, is_lower_required = Self.is_lower_required
+            Self.dtype, width, is_lower_required=Self.is_lower_required
         ]()
         result.upper = tmem.load_upper[
             Self.dtype, width, Self.data_paths, Self.bits, repeat
@@ -582,13 +582,13 @@ struct TmemFragments[
     fn cast[
         target_dtype: DType
     ](self) -> TmemFragments[
-        target_dtype, Self.frag_size, is_lower_required = Self.is_lower_required
+        target_dtype, Self.frag_size, is_lower_required=Self.is_lower_required
     ]:
         """Cast fragments to a different dtype."""
         var result = TmemFragments[
             target_dtype,
             Self.frag_size,
-            is_lower_required = Self.is_lower_required,
+            is_lower_required=Self.is_lower_required,
         ]()
         result.upper = self.upper.cast[target_dtype]()
 
@@ -640,7 +640,7 @@ struct TmemArrayType[
     """
 
     comptime Tile = TmemTensor[
-        Self.dtype, Self.layout, cta_group = Self.cta_group
+        Self.dtype, Self.layout, cta_group=Self.cta_group
     ]
     # TMEM addresses are in column units, so stride is N dimension (shape[1])
     comptime tile_stride = Self.layout.shape[1].value()
@@ -678,6 +678,7 @@ struct BlockScaledTmem[
     cta_group: Int = 1,
     total_cols: Int = 512,
     num_sf_k_tiles: Int = 1,
+    SFB_N: Int = MMA_N,
 ](TrivialRegisterPassable):
     """TMEM region for block-scaled matmul with typed tile accessors.
 
@@ -706,6 +707,11 @@ struct BlockScaledTmem[
         num_sf_k_tiles: Scaling factor tiles per K-iteration.
             MXFP8 uses 1 (one SF vector per K-tile).
             NVFP4 uses 4 (multiple SF vectors per K-tile).
+        SFB_N: SFB N dimension for TMEM layout. Defaults to MMA_N.
+            Set to align_up(MMA_N, SF_MN_GROUP_SIZE) when
+            MMA_N < SF_MN_GROUP_SIZE so the TMEM tile is wide enough
+            for the SMEM-to-TMEM copy (which always writes a full
+            SF_MN_GROUP_SIZE group).
     """
 
     # Tile layouts (stride derived automatically from layout.size())
@@ -716,27 +722,27 @@ struct BlockScaledTmem[
         1, Self.num_sf_k_tiles * (Self.BM // 32)
     )
     comptime sfb_layout = Layout.row_major(
-        1, Self.num_sf_k_tiles * (Self.MMA_N // 32)
+        1, Self.num_sf_k_tiles * (Self.SFB_N // 32)
     )
 
     # Array types for each TMEM region
     comptime AccumArray = TmemArrayType[
         Self.accum_dtype,
         Self.accum_layout,
-        num_tiles = Self.num_accum_stages,
-        cta_group = Self.cta_group,
+        num_tiles=Self.num_accum_stages,
+        cta_group=Self.cta_group,
     ]
     comptime SFAArray = TmemArrayType[
         Self.sf_dtype,
         Self.sfa_layout,
-        num_tiles = Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
+        num_tiles=Self.num_pipeline_stages,
+        cta_group=Self.cta_group,
     ]
     comptime SFBArray = TmemArrayType[
         Self.sf_dtype,
         Self.sfb_layout,
-        num_tiles = Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
+        num_tiles=Self.num_pipeline_stages,
+        cta_group=Self.cta_group,
     ]
 
     # Tile types (for convenience)
@@ -895,9 +901,7 @@ struct TmemStage[
     fn tensor[
         accum_dtype: DType,
         accum_layout: Layout,
-    ](self) -> TmemTensor[
-        accum_dtype, accum_layout, cta_group = Self.cta_group
-    ]:
+    ](self) -> TmemTensor[accum_dtype, accum_layout, cta_group=Self.cta_group]:
         """Get typed TmemTensor view of this stage's accumulator.
 
         Parameters:
@@ -907,9 +911,9 @@ struct TmemStage[
         Returns:
             TmemTensor providing typed access to the accumulator.
         """
-        return TmemTensor[
-            accum_dtype, accum_layout, cta_group = Self.cta_group
-        ](self.base_addr + self.index * Self.stage_stride)
+        return TmemTensor[accum_dtype, accum_layout, cta_group=Self.cta_group](
+            self.base_addr + self.index * Self.stage_stride
+        )
 
     @always_inline
     fn load_upper[

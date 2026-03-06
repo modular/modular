@@ -38,8 +38,6 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
-    Layout as LegacyLayout,
-    LayoutTensor,
     TileTensor,
     flatten_leading,
 )
@@ -49,7 +47,6 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
-from structured_kernels.tile_types import lt_to_tt
 from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from .blockwise_fp8_1d2d_matmul_kernel import BlockwiseFP8_1D2DMatmulKernel
 
@@ -155,7 +152,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         config=config,
         static_N=expert_n,
         static_K=K,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -163,28 +160,28 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     ]
     comptime kernel = KernelType.run
 
-    # Create TMA descriptors using kernel's derived legacy layouts
+    # Create TMA descriptors using kernel's layout types
     var a_tma_op = create_tma_tile[
-        KernelType.ATmaTile.tile_layout,
-        KernelType.ATmaTile.desc_layout,
+        KernelType.ATileLayout,
+        KernelType.ADescLayout,
         Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     var b_tma_op = create_tma_tile[
-        KernelType.BTmaTile.tile_layout,
-        KernelType.BTmaTile.desc_layout,
+        KernelType.BTileLayout,
+        KernelType.BDescLayout,
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
             BK, BN // (config.cluster_shape[0] // config.cta_group)
         ),
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_2d)
 
     var a_scales_tma_op = create_tma_tile[
-        KernelType.AScalesTmaTile.tile_layout,
-        KernelType.AScalesTmaTile.desc_layout,
+        KernelType.AScalesLayout,
+        KernelType.AScalesLayout,
         Index(1, BM),
     ](ctx, a_scales)
 

@@ -97,7 +97,7 @@ def generate_torch_outputs(
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     grid_thw: torch.Tensor,
     cu_window_seqlens: torch.Tensor,
-    vision_config: dict,
+    vision_config: dict,  # type: ignore[type-arg]
     use_window_attention: bool = False,
 ) -> torch.Tensor:
     """Generate reference outputs using HuggingFace Qwen2.5VL implementation."""
@@ -141,7 +141,7 @@ def generate_max_outputs(
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     grid_thw: torch.Tensor,
     cu_window_seqlens: torch.Tensor,
-    qwen2_5vl_config: dict,
+    qwen2_5vl_config: dict,  # type: ignore[type-arg]
     dtype: DType,
     device: Device,
     use_window_attention: bool = False,

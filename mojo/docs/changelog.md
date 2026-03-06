@@ -21,6 +21,69 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports a standalone `assert` statement, similar to Python's
+  `assert`. It checks a condition at runtime and aborts the program if the
+  condition is false:
+
+  ```mojo
+  assert x > 0, "x must be positive"
+  assert len(items) != 0
+  ```
+
+  The condition must be a `Bool` expression and the optional message can be any
+  `Writable` expression (`StringLiteral`, `String`, `Int`, etc.). Under the
+  hood, `assert` desugars to a call to `debug_assert`, so it respects the
+  existing `-D ASSERT` flag: assertions are active when compiled with
+  `-D ASSERT=all` and are no-ops otherwise.
+
+- Mojo now enforces a more explicit parameter bindings rules:
+  - `[]` is mandatory to make type more concrete:
+
+    ```mojo
+    struct SomeStruct[a : Int = 1]:
+      pass
+
+    # SS1 is a parametric type
+    comptime SS1 = SomeStruct
+
+    # SS2 a concrete type alias of `SomeStruct[1]
+    comptime SS2 = SomeStruct[]
+
+    ```
+
+  - When `[]` is used, it must produce a concrete type unless `_`/`...` is used
+   to unbind a specific/multiple missing parameters.
+
+    ```mojo
+    struct SomeStruct[a : Int, b: Int, c: Int = 2]:
+      pass
+
+    # Error: can not infer `b`, since `[]` must produce a concrete type, without `_`/`...``
+    comptime SS1 = SomeStruct[1]
+
+    # This is a concrete type alias of `SomeStruct[1, 1, 2]`
+    comptime SS2 = SomeStruct[1, 1]
+
+    # Using `...` defers binding of b and c, and produces `SomeStruct[1, ?, ?]` (preserving possible defaults)
+    comptime SS3 = SomeStruct[1, ...]
+
+    # Even SS3 unbinds `c`, Mojo keeps track of the fact that there is a default value for c:
+    # This install b (using 1) and c (using default value), and produce `SomeStruct[1, 1, 2]`
+    comptime SS4 = SS3[1]
+
+    # This installs the default and is identical to `SomeStruct[1, ?, 2]`
+    comptime SS5 = SomeStruct[1, _]
+
+    # This unbind the default explicitly and is identical to `SomeStruct[1, ?, ?]`
+    comptime SS6 = SomeStruct[1, _, _]
+
+
+    # The following two are equivalent:
+    comptime SS7 = SomeStruct
+    comptime SS8 = SomeStruct[...]
+
+    ```
+
 - Mojo now supports t-strings (template strings) for building structured
   string templates with interpolated expressions. T-strings use the `t"..."`
   prefix and produce a `TString` value that captures both the static
@@ -142,14 +205,16 @@ what we publish.
 
 - `def` functions now allows a `raises` specifier, and support typed errors.
   `def` will soon *require* an exception specifier to throw, so we strongly
-  recommend changing `def` functions to have an explicit `raises` keyword.
+  recommend changing `def` functions to have an explicit `raises` keyword. To
+  help with migration, the Mojo compiler now produces a warning for `def`
+  functions that lack a `raises` specifier.
 
   ```mojo
   # Older behavior
   def foo():        # implicitly raises Error.
   def bar() raises: # was invalid
   # Current behavior
-  def bar():        # Still implicitly raises Error (not recommended)
+  def bar():        # Still implicitly raises Error (not recommended; warns)
   def bar() raises: # Explicit raises Error (recommended)
   # Near future behavior
   def bar():        # Does not raise.
@@ -254,6 +319,13 @@ what we publish.
   function rather than the module.
 
 ### Library changes
+
+- `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
+  `std.gpu.primitives.warp` now always broadcast the reduction result to all
+  participating lanes, using optimized hardware-specific paths (AMD DPP,
+  Blackwell redux, or butterfly shuffle pattern). The previous
+  `lane_group_sum_and_broadcast()`, `lane_group_max_and_broadcast()` functions
+  are deprecated — use the short names instead.
 
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
@@ -531,6 +603,19 @@ what we publish.
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
+
+- Added the `UnsafeNicheable` and `UnsafeSingleNicheable` traits to
+  `std.utils`. These traits allow types to expose known-invalid bit patterns
+  ("niches") that can be used by containers like `Optional` and `Variant` to avoid
+  storing a separate tag, so that `size_of[Optional[T]]() == size_of[T]()`.
+  `UnsafeSingleNicheable` is a simplified subtrait for the common case where a
+  type has exactly one niche value.
+  - `Variant` and `Optional` now automatically take advantage of this: when the
+    variant types qualify, the discriminant tag is elided entirely, reducing the
+    size of the variant. For example, `size_of[Optional[T]]() == size_of[T]()`
+    for any `T` that implements `UnsafeNicheable`.
+  - `Variant` also only works with `Movable` types in the interim instead of
+    `AnyType` due to some compiler limitations.
 
 - `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
   There are a few restrictions including iteration requiring `T: Copyable`.

@@ -72,7 +72,7 @@ class MockModelInputs(ModelInputs):
         )
 
 
-class MockPipelineModel(PipelineModelWithKVCache):
+class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     def __init__(
         self,
         pipeline_config: PipelineConfig,

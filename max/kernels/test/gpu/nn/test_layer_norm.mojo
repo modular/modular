@@ -16,8 +16,13 @@ from std.sys import simd_width_of
 
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from layout.math import mean, variance
 from nn.normalization import *
 from std.testing import assert_almost_equal
@@ -28,7 +33,7 @@ from std.utils.index import Index, IndexList
 fn run_layer_norm_block[
     dtype: DType,
     *,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
@@ -97,8 +102,8 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_block[
-            LayoutType = beta.LayoutType,
-            origin = beta.origin,
+            LayoutType=beta.LayoutType,
+            origin=beta.origin,
             UInt(simd_width),
             input_fn,
             gamma_fn,
@@ -242,7 +247,7 @@ fn run_layer_norm_gpu[
 fn run_layer_norm_warp_tiling[
     dtype: DType,
     *,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
@@ -312,8 +317,8 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_warp_tiling[
-            LayoutType = beta.LayoutType,
-            origin = beta.origin,
+            LayoutType=beta.LayoutType,
+            origin=beta.origin,
             UInt(simd_width),
             input_fn,
             gamma_fn,

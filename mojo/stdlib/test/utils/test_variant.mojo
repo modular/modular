@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import abort
 from std.ffi import _Global
+from std.memory import UnsafeMaybeUninit
+from std.os import abort
+from std.sys import size_of
 
 from test_utils import (
     MoveCopyCounter,
@@ -21,12 +23,14 @@ from test_utils import (
     MoveOnly,
     ExplicitDelOnly,
     NonMovable,
+    Observable,
     check_write_to,
 )
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from std.benchmark import keep
 
 from std.utils import Variant
+from std.utils._nicheable import UnsafeNicheable
 
 comptime TEST_VARIANT_POISON = _Global[
     "TEST_VARIANT_POISON", _initialize_poison
@@ -159,7 +163,7 @@ def test_take_doesnt_call_deleter() raises:
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
     assert_false(deleted)
-    var v2 = v1.unsafe_take[ObservableDel[]]()
+    var v2 = v1^.unsafe_take[ObservableDel[]]()
     assert_false(deleted)
     _ = v2
     assert_true(deleted)
@@ -261,7 +265,8 @@ def test_variant_trivial_moveinit() raises:
     assert_false(Variant[yes, no].__move_ctor_is_trivial)
 
     # check variant of non-movable type
-    assert_false(Variant[NonMovable].__move_ctor_is_trivial)
+    # # TODO(MOCO-3383): Compiler issue with folding non-struct types
+    # assert_false(Variant[NonMovable].__move_ctor_is_trivial)
 
 
 def test_variant_write_to() raises:
@@ -276,6 +281,78 @@ def test_variant_write_repr_to() raises:
     check_write_to(v, expected="Variant[Int, String](Int(42))", is_repr=True)
     v = "hello"
     check_write_to(v, expected="Variant[Int, String]('hello')", is_repr=True)
+
+
+@fieldwise_init
+struct EmptyAndTrivial[Tag: Int = 0](TrivialRegisterPassable):
+    pass
+
+
+def test_variant_niche_optimization_size() raises:
+    comptime NicheableType = Observable[opt_into_unsafe_niche=True]
+
+    # Fits the optional-niche criteria
+    assert_equal(
+        size_of[Variant[NicheableType, EmptyAndTrivial[]]](),
+        size_of[NicheableType](),
+    )
+    assert_equal(
+        size_of[Variant[EmptyAndTrivial[], NicheableType]](),
+        size_of[NicheableType](),
+    )
+
+    # Int does _not_ implement `UnsafeNicheable`
+    assert_true(size_of[Variant[Int, EmptyAndTrivial[]]]() > size_of[Int]())
+    assert_true(size_of[Variant[EmptyAndTrivial[], Int]]() > size_of[Int]())
+
+    # More than 1 "empty type" does not opt into the niche optimization
+    assert_true(
+        size_of[
+            Variant[NicheableType, EmptyAndTrivial[0], EmptyAndTrivial[1]]
+        ]()
+        > size_of[NicheableType]()
+    )
+
+
+def test_niched_variant_correctly_handles_lifecycle() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+    comptime NicheableType = Observable[
+        CopyOrigin=origin_of(copies),
+        MoveOrigin=origin_of(moves),
+        DelOrigin=origin_of(dels),
+        opt_into_unsafe_niche=True,
+    ]
+    comptime VariantType = Variant[NicheableType, EmptyAndTrivial[]]
+
+    var empty = VariantType(EmptyAndTrivial())
+    _ = empty^
+    assert_equal(copies, 0)
+    assert_equal(moves, 0)
+    assert_equal(dels, 0)
+
+    var observe = VariantType(
+        NicheableType(
+            copies=Pointer(to=copies),
+            moves=Pointer(to=moves),
+            dels=Pointer(to=dels),
+        )
+    )
+    assert_equal(copies, 0)
+    assert_equal(moves, 1)
+    assert_equal(dels, 0)
+
+    var copy_observe = observe.copy()
+    assert_equal(copies, 1)
+    assert_equal(moves, 2)
+    assert_equal(dels, 0)
+
+    _ = copy_observe^
+    _ = observe^
+    assert_equal(copies, 1)
+    assert_equal(moves, 2)
+    assert_equal(dels, 2)
 
 
 def main() raises:

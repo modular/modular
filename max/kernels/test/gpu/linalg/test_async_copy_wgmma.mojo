@@ -69,7 +69,7 @@ fn cpasync_wgmma_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -80,7 +80,7 @@ fn cpasync_wgmma_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -116,7 +116,7 @@ fn cpasync_wgmma_kernel[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)
@@ -166,7 +166,7 @@ fn cpasync_wgmma_kernel[
             comptime v_idx = v_to_idx(local_idx)
             comptime c_idx = v_idx + mma_idx
             casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
-            (c_gmem_ptr + c_idx).store[alignment = align_of[T]()](casted_vec)
+            (c_gmem_ptr + c_idx).store[alignment=align_of[T]()](casted_vec)
 
 
 def test_cpasync_wgmma[
@@ -282,8 +282,8 @@ def main() raises:
             Index(64, 64, 64),
             Index(64, 64, 64),
             Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=False,
         ](ctx)
 
@@ -294,8 +294,8 @@ def main() raises:
             Index(64, 128, 128),
             Index(64, 128, 128),
             Index(64, 128, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=False,
         ](ctx)
 
@@ -306,8 +306,8 @@ def main() raises:
             Index(64, 64, 64),
             Index(64, 64, 64),
             Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](ctx)
 
@@ -318,8 +318,8 @@ def main() raises:
             Index(64, 128, 128),
             Index(64, 128, 128),
             Index(64, 128, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](ctx)
 
@@ -330,7 +330,7 @@ def main() raises:
             Index(128, 64, 128),
             Index(128, 64, 128),
             Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](ctx)

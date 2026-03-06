@@ -675,7 +675,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         var l = len(self)
         var i = normalize_index["LinkedList"](idx, l)
-        debug_assert(0 <= i < l, "index out of bounds")
+        assert 0 <= i < l, "index out of bounds"
         var mid = l // 2
         if i <= mid:
             var curr = self._head
@@ -703,7 +703,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        debug_assert(len(self) > 0, "unable to get item from empty list")
+        assert len(self) > 0, "unable to get item from empty list"
         return self._get_node_ptr(idx)[].value
 
     fn __len__(self) -> Int:
@@ -809,7 +809,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             writer: The writer to write the list to.
         """
-        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr representation of this LinkedList to a Writer.
@@ -823,7 +823,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "LinkedList").params(
             fmt.TypeNames[Self.ElementType](),

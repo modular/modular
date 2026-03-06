@@ -67,9 +67,6 @@ benchmark_config:
   obfuscated_conversations_average_output_len: 175
   obfuscated_conversations_coefficient_of_variation: 0.1
   obfuscated_conversations_shuffle: false
-  random_coefficient_of_variation: "0.3,0.7"
-  random_distribution_type: "normal"  # choices: uniform, normal
-  random_first_turn_ratio: 1.0
   random_image_count: 0
   random_image_size: ""
   random_input_len: 1024

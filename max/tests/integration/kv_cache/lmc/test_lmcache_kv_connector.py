@@ -60,7 +60,7 @@ def get_cache_keys(
     connector: LMCacheConnector,
     block_hashes: list[int],
     block_size: int,
-) -> list:
+) -> list:  # type: ignore[type-arg]
     """Get CacheEngineKey objects from block hashes."""
     offsets = [block_size] * len(block_hashes)
     keys = []

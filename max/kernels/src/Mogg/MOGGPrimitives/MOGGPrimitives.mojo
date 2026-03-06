@@ -29,8 +29,8 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import row_major
 from std.memory import memcpy
 
 from nn.concat import concat
@@ -81,7 +81,7 @@ struct StateContext(TrivialRegisterPassable):
 
     @always_inline
     fn __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
-        debug_assert(0 <= index < self.num_slots, "index must be within bounds")
+        assert 0 <= index < self.num_slots, "index must be within bounds"
         return external_call[
             "MGP_RT_GetContextPayloadPtr",
             OpaquePointer[MutAnyOrigin],
@@ -546,7 +546,7 @@ fn mgp_buffer_constant_external(
     size: UInt64,
     align: UInt64,
 ) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
-    debug_assert(align > 0, "align must be a positive integer value")
+    assert align > 0, "align must be a positive integer value"
 
     if not weights:
         raise Error(
@@ -586,15 +586,12 @@ fn fill_buffer[
 fn mgp_buffer_set_with_index[
     bDevice: StaticString
 ](buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], *vals: Int) raises:
-    debug_assert(
-        is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
-    )
+    assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
-    debug_assert(
-        bufSize % numArgs == 0,
-        "buffer size not divisible by number of index args",
-    )
+    assert (
+        bufSize % numArgs == 0
+    ), "buffer size not divisible by number of index args"
 
     var elSize = bufSize // numArgs
     if elSize == 4:
@@ -610,12 +607,9 @@ fn mgp_buffer_set_with_index[
 fn mgp_buffer_to_bool[
     bDevice: StaticString
 ](buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin]) -> Bool:
-    debug_assert(is_cpu[bDevice](), "to_bool can only work on cpu buffers")
+    assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
     var bufSize = buffer.num_elements()
-    debug_assert(
-        bufSize == 1,
-        "buffer size must be a size of 1",
-    )
+    assert bufSize == 1, "buffer size must be a size of 1"
     return buffer[0] != 0
 
 
@@ -1064,8 +1058,8 @@ fn reshape_contiguous_buffer[
     dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
 ](
     buffer: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, old_rank].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, old_rank].create_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
@@ -1126,8 +1120,8 @@ fn to_managed_tensor_slice[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape: UnsafePointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
@@ -1161,8 +1155,8 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Scalar[dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
@@ -1183,8 +1177,8 @@ fn _to_managed_tensor_slice_index_list_shape[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape_tuple: IndexList[rank],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
@@ -1206,8 +1200,8 @@ fn to_managed_tensor_slice_list[
     raw_list_ptr: OpaquePointer[MutAnyOrigin],
     out out_list: List[
         ManagedTensorSlice[
-            io_spec = IOSpec[mut, input](),
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+            io_spec=IOSpec[mut, input](),
+            static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
         ]
     ],
 ):
@@ -1541,8 +1535,8 @@ fn mogg_tensor_init[
 ](
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank](
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank](
         static_shape,
         static_stride,
         alignment,
@@ -1566,6 +1560,14 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     Marks the chain as ready.
     """
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
+
+
+@register_internal("mogg.async.check_task_error")
+@no_inline
+fn mogg_async_check_task_error(mut error: Optional[Error]) raises:
+    """Raises the captured error from an async task, if present."""
+    if error:
+        raise error.take()
 
 
 @register_internal("mogg.async.error")
@@ -1601,8 +1603,8 @@ fn tmp_reshape_contiguous_buffer[
     buffer: ManagedTensorSlice,
     shape: IndexList[new_rank],
 ) -> ManagedTensorSlice[
-    io_spec = buffer.io_spec,
-    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+    io_spec=buffer.io_spec,
+    static_spec=StaticTensorSpec[buffer.dtype, new_rank](
         static_shape,
         static_stride,
         1,

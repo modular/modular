@@ -28,7 +28,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     fn dynamic_smem_kernel(data: UnsafePointer[Float32]):
         var dynamic_sram = external_memory[
-            Float32, address_space = AddressSpace.SHARED, alignment=4
+            Float32, address_space=AddressSpace.SHARED, alignment=4
         ]()
         dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()
@@ -95,8 +95,8 @@ fn shared_memory_kernel(
     # Get a pointer to shared memory for the indices and values
     var shared_data = external_memory[
         Float32,
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[Float32](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[Float32](),
     ]()
 
     # Load data into shared memory

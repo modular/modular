@@ -22,13 +22,10 @@ from std.sys._assembly import inlined_assembly
 from buffer import DimList
 from layout import Layout, LayoutTensor
 from std.memory import (
-    LegacyUnsafePointer,
     memcpy,
     memset_zero,
     stack_allocation,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # All AMX instructions are of the form
@@ -246,7 +243,7 @@ fn genlut(gpr: Int):
 @always_inline
 fn _encode_load_store[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int) -> Int:
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int) -> Int:
     """
     Utility to do the bit encoding for load and store ops.
     """
@@ -260,42 +257,42 @@ fn _encode_load_store[
 @always_inline
 fn store_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn store_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldy(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn store_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn read_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn read_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     sty(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn load_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stz(_encode_load_store[row_count, dtype](src, start_index))
 
 

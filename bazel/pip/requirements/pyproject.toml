@@ -43,6 +43,7 @@ dependencies = [
   "logbar",
   "markupsafe",
   "matplotlib",
+  "microbench",
   "msgspec",
   "munch",
   "mypy",
@@ -83,6 +84,8 @@ dependencies = [
   "safetensors",
   "sentencepiece",
   "setuptools",
+  "slack-sdk",
+  "tiktoken",
   "simpy",
   "sphinx==7.4.7",
   "sse-starlette",
@@ -91,6 +94,7 @@ dependencies = [
   "taskgroup",
   "termcolor",
   "threadpoolctl",
+  "tiktoken",
   "tokenicer",
   "tomli",
   "tqdm",
@@ -167,7 +171,7 @@ amd = [
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.9.1",
+  "lm-eval[api,ifeval,math]>=0.4.11",
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
@@ -186,7 +190,7 @@ cpu = [
   "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.9.1",
+  "lm-eval[api,ifeval,math]>=0.4.11",
   "mteb",
   "optimum",
   "peft", # For LoRA adapter support
@@ -209,7 +213,7 @@ nvidia = [
   "accelerate",
   "flashinfer-cubin",
   "flashinfer-python",
-  "lm-eval[api,ifeval,math]>=0.4.9.1",
+  "lm-eval[api,ifeval,math]>=0.4.11",
   "mteb",
   "optimum",
   "peft>=0.17.0", # For LoRA adapter support

@@ -29,7 +29,8 @@ from std.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from layout.tma_async import SharedMemBarrier
-from layout._layout import RowMajorLayout, TensorLayout, row_major
+from layout import row_major
+from layout.tile_layout import RowMajorLayout, TensorLayout
 from layout.coord import ComptimeInt, Coord, Idx
 from layout.tile_tensor import TileTensor
 

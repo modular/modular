@@ -27,7 +27,7 @@ from std.utils.index import Index, IndexList
 fn compute_rms_ref[
     dtype: DType
 ](
-    data_ptr: UnsafePointer[Scalar[dtype]], size: Int, eps: Scalar[dtype]
+    data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Scalar[dtype]
 ) -> Scalar[DType.float32]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()

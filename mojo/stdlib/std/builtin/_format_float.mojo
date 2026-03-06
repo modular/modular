@@ -600,7 +600,7 @@ fn _compute_mul_parity[
     CarrierDType: DType
 ](two_f: Scalar[CarrierDType], cache_index: Int, beta: Int) -> _MulParity:
     if CarrierDType == DType.uint64:
-        debug_assert(1 <= beta < 64, "beta must be between 1 and 64")
+        assert 1 <= beta < 64, "beta must be between 1 and 64"
         var r = _umul192_lower128(
             two_f.cast[DType.uint64](),
             global_constant[cache_f64]()[cache_index],
@@ -616,10 +616,9 @@ fn _compute_mul_parity[
             == 0,
         )
     else:
-        debug_assert(
-            1 <= beta < 32,
-            "beta for float types 32bits must be between 1 and 32",
-        )
+        assert (
+            1 <= beta < 32
+        ), "beta for float types 32bits must be between 1 and 32"
         var r = _umul96_lower64(
             two_f.cast[DType.uint32](),
             global_constant[cache_f32]()[cache_index],
@@ -642,7 +641,7 @@ fn _check_divisibility_and_divide_by_pow10[
     divide_magic_number: InlineArray[UInt32, 2],
 ](mut n: Scalar[CarrierDType], N: Int) -> Bool:
     # Make sure the computation for max_n does not overflow.
-    debug_assert(N + 1 <= _floor_log10_pow2(carrier_bits))
+    assert N + 1 <= _floor_log10_pow2(carrier_bits)
 
     var magic_number = materialize[divide_magic_number]()[N - 1]
     var prod = (n * magic_number.cast[CarrierDType]()).cast[DType.uint32]()
@@ -740,7 +739,7 @@ fn _is_finite[exp_bits: Int](exponent: Int) -> Bool:
 fn _count_factors[
     CarrierDType: DType
 ](var n: Scalar[CarrierDType], a: Int) -> Int:
-    debug_assert(a > 1)
+    assert a > 1
     var c = 0
     while n % Scalar[CarrierDType](a) == 0:
         n /= Scalar[CarrierDType](a)

@@ -101,7 +101,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         _static_tuple_construction_checks[Self.size]()
         self._mlir_value = __mlir_op.`pop.array.repeat`[
-            _type = __mlir_type[
+            _type=__mlir_type[
                 `!pop.array<`,
                 Self.size._mlir_value,
                 `, `,
@@ -132,9 +132,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         if len(values) == 1:
             return Self(fill=values[0])
 
-        debug_assert(
-            Self.size == len(values), "mismatch in the number of elements"
-        )
+        assert Self.size == len(values), "mismatch in the number of elements"
 
         self = Self()
 
@@ -155,9 +153,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         if len(values) == 1:
             return Self(fill=values[0])
 
-        debug_assert(
-            Self.size == len(values), "mismatch in the number of elements"
-        )
+        assert Self.size == len(values), "mismatch in the number of elements"
 
         self = Self()
 
@@ -185,8 +181,8 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
-            _type = Self.element_type,
-            index = index._mlir_value,
+            _type=Self.element_type,
+            index=index._mlir_value,
         ](self._mlir_value)
         return val
 
@@ -203,7 +199,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Returns:
             The value at the specified position.
         """
-        debug_assert(Self.size > index(idx), "index must be within bounds")
+        assert Self.size > index(idx), "index must be within bounds"
         return self._unsafe_ref(index(idx))
 
     @always_inline("nodebug")
@@ -217,7 +213,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
             idx: The index into the tuple.
             val: The value to store.
         """
-        debug_assert(Self.size > index(idx), "index must be within bounds")
+        assert Self.size > index(idx), "index must be within bounds"
         self._unsafe_ref(index(idx)) = val
 
     @always_inline("nodebug")
@@ -239,7 +235,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
-        return UnsafePointer[origin = origin_of(self)](ptr)[]
+        return UnsafePointer[origin=origin_of(self)](ptr)[]
 
     @always_inline("nodebug")
     fn _replace[idx: Int](self, val: Self.element_type) -> Self:
@@ -257,14 +253,14 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         comptime assert idx < Self.size
 
         var array = __mlir_op.`pop.array.replace`[
-            _type = __mlir_type[
+            _type=__mlir_type[
                 `!pop.array<`,
                 Self.size._mlir_value,
                 `, `,
                 Self.element_type,
                 `>`,
             ],
-            index = idx._mlir_value,
+            index=idx._mlir_value,
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)

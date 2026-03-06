@@ -112,7 +112,7 @@ class MockGeneralPipelineHandler(GeneralPipelineHandler):
     ) -> AsyncGenerator[GenerationOutput, None]:
         """Mock implementation that yields a simple text response."""
         # Create a simple mock response
-        pixel_data = np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
+        pixel_data = np.array([[1, 2, 3]], dtype=np.uint8)
         yield GenerationOutput(
             request_id=request.request_id,
             final_status=GenerationStatus.END_OF_SEQUENCE,

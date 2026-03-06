@@ -248,7 +248,7 @@ fn _mask_apply[
                     else:
                         comptime fragment_col = fragment_layout(j)
                         p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                            IndexList[4, element_type = DType.uint32](
+                            IndexList[4, element_type=DType.uint32](
                                 Int(block_idx.z),
                                 Int(q_head_idx),
                                 Int(score_row_with_start_pos),
@@ -277,11 +277,11 @@ fn _mask_apply[
                     var bound_x = num_keys if token_gen else seq_len
 
                     p_reg_vectorized[mma_id, 0][j] = _kernel_mask(
-                        IndexList[2, element_type = DType.uint32](
+                        IndexList[2, element_type=DType.uint32](
                             Int(score_row),
                             Int(score_col + UInt32(fragment_col)),
                         ),
-                        IndexList[2, element_type = DType.uint32](
+                        IndexList[2, element_type=DType.uint32](
                             Int(bound_x), Int(bound_y)
                         ),
                         p_reg_vectorized[mma_id, 0][j],
@@ -369,8 +369,8 @@ struct Attention[
         Self.k_group_size,
         # use double buffer as proxy for experimental kernel
         # need to find a better way to determine this
-        tr_load_enabled = Self.attention_config_t.double_buffer,
-        num_stages = 2 if Self.attention_config_t.double_buffer else 1,
+        tr_load_enabled=Self.attention_config_t.double_buffer,
+        num_stages=2 if Self.attention_config_t.double_buffer else 1,
     ]
 
     comptime GlobalMemoryManagerType = GlobalMemoryManager[
@@ -400,15 +400,15 @@ struct Attention[
     ]
 
     comptime QRegisterBufferType = QRegisterBuffer[
-        dtype = Self.q_type,
-        mma_shape = Self.mma_shape,
-        k_group_size = Self.k_group_size,
-        WM = Int(Self.WM),
-        WN = Int(Self.WN),
-        BN = Int(Self.BN),
-        BK = Int(Self.BK),
-        depth = Self.q_depth,
-        thread_layout = Self.warp_layout,
+        dtype=Self.q_type,
+        mma_shape=Self.mma_shape,
+        k_group_size=Self.k_group_size,
+        WM=Int(Self.WM),
+        WN=Int(Self.WN),
+        BN=Int(Self.BN),
+        BK=Int(Self.BK),
+        depth=Self.q_depth,
+        thread_layout=Self.warp_layout,
     ]
 
     var out_reg_buffer: Self.OutputRegisterBufferType
@@ -491,7 +491,7 @@ struct Attention[
             get_accum_type[Self.q_type](),
             Self.q_type,
             Self.mma_shape,
-            group_size = Self.k_group_size,
+            group_size=Self.k_group_size,
             transpose_b=True,
         ],
     ):
@@ -504,7 +504,7 @@ struct Attention[
             get_accum_type[Self.q_type](),
             Self.q_type,
             Self.mma_shape,
-            group_size = Self.k_group_size,
+            group_size=Self.k_group_size,
             transpose_b=False,
         ],
     ):
@@ -520,10 +520,10 @@ struct Attention[
         prefetched_b_tile: Bool = False,
     ](mut self, mut k_buffer: k_buffer_type):
         mma[
-            tensor_core_mma = Self.get_tensor_core_mma_qk(),
-            BK = Int(Self.BK),
+            tensor_core_mma=Self.get_tensor_core_mma_qk(),
+            BK=Int(Self.BK),
             prefetch_function=prefetch_function,
-            swap_a_b = Self.swap_a_b,
+            swap_a_b=Self.swap_a_b,
             beg_iter=beg_iter,
             num_iters=num_iters,
             prefetched_b_tile=prefetched_b_tile,
@@ -541,11 +541,11 @@ struct Attention[
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
         mma[
-            tensor_core_mma = Self.get_tensor_core_mma_pv(),
-            BK = Int(Self.BK),
+            tensor_core_mma=Self.get_tensor_core_mma_pv(),
+            BK=Int(Self.BK),
             prefetch_function=prefetch_function,
-            swap_a_b = Self.swap_a_b,
-            num_iters = Int(Self.BN // Self.BK),
+            swap_a_b=Self.swap_a_b,
+            num_iters=Int(Self.BN // Self.BK),
             prefetched_b_tile=prefetched_b_tile,
         ](
             self.out_reg_buffer,
@@ -561,20 +561,20 @@ struct Attention[
         comptime if Self.token_gen:
             # Decoding with mask checking: check single token at num_keys-1
             return self.mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     self.num_keys - 1,
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype = DType.uint32](Int(1), Int(Self.BN)),
+                Index[dtype=DType.uint32](Int(1), Int(Self.BN)),
             )
         else:
             # Prefill or decoding without mask checking: check full tile
             return self.mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype = DType.uint32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype=DType.uint32](Int(Self.BM), Int(Self.BN)),
             )
 
     @always_inline
@@ -613,17 +613,17 @@ struct Attention[
         @parameter
         fn _mask_apply_impl(masked: Bool):
             _mask_apply[
-                attention_config_t = Self.attention_config_t,
-                accum_type = Self.accum_type,
-                token_gen = Self.token_gen,
-                mma_shape = Self.mma_shape,
-                num_m_mmas = Int(Self.num_m_mmas),
-                num_n_mmas = Int(Self.num_n_mmas),
-                mask_t = Self.mask_t,
-                group = Self.group,
-                fragment_layout = Self.fragment_layout_nested,
-                warp_layout = Self.warp_layout,
-                use_exp2 = Self.use_exp2,
+                attention_config_t=Self.attention_config_t,
+                accum_type=Self.accum_type,
+                token_gen=Self.token_gen,
+                mma_shape=Self.mma_shape,
+                num_m_mmas=Int(Self.num_m_mmas),
+                num_n_mmas=Int(Self.num_n_mmas),
+                mask_t=Self.mask_t,
+                group=Self.group,
+                fragment_layout=Self.fragment_layout_nested,
+                warp_layout=Self.warp_layout,
+                use_exp2=Self.use_exp2,
             ](
                 masked,
                 kv_tile_start_row,
@@ -752,10 +752,9 @@ struct Attention[
         self.kv_start_row = 0
 
         comptime if Self.sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
                 sink_weights.value()[Int(self.q_head_idx())][0].cast[
                     Self.accum_type
@@ -794,8 +793,8 @@ struct Attention[
 
         comptime if Self.mma_shape[0] == 32:
             copy_local_to_dram2[
-                dst_thread_layout = Self.warp_layout,
-                thread_scope = ThreadScope.WARP,
+                dst_thread_layout=Self.warp_layout,
+                thread_scope=ThreadScope.WARP,
             ](
                 output_warp_tile.vectorize[
                     1,
@@ -806,8 +805,8 @@ struct Attention[
             )
         else:
             copy_local_to_dram[
-                dst_thread_layout = Self.warp_layout,
-                thread_scope = ThreadScope.WARP,
+                dst_thread_layout=Self.warp_layout,
+                thread_scope=ThreadScope.WARP,
             ](
                 output_warp_tile.vectorize[
                     Self.fragment_layout.shape[0].value(),

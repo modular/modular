@@ -30,8 +30,14 @@ from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.sync import syncwarp
-from layout import Coord, Idx, TileTensor, stack_allocation
-from layout._layout import TensorLayout, row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
+    stack_allocation,
+)
+from layout.tile_layout import TensorLayout
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -141,7 +147,7 @@ struct BlockwiseFP8Accumulator[
         Self.accum_type,
         Self.AccumLayout,
         MutExternalOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ]
 
     # Fragment load parameters (match TmemFragments defaults)
@@ -159,9 +165,9 @@ struct BlockwiseFP8Accumulator[
     comptime Fragments = TmemFragments[
         Self.accum_type,
         Self.fragment_size,
-        is_lower_required = Self.is_lower_required,
-        data_paths = Self.data_paths,
-        bits = Self.bits,
+        is_lower_required=Self.is_lower_required,
+        data_paths=Self.data_paths,
+        bits=Self.bits,
     ]
 
     var upper: Self.RegTileType
@@ -171,8 +177,8 @@ struct BlockwiseFP8Accumulator[
     fn __init__(out self):
         """Create accumulator with zero-initialized register tiles."""
         var accum_layout = row_major[Self.num_stages, Self.num_elements]()
-        self.upper = stack_allocation[dtype = Self.accum_type](accum_layout)
-        self.lower = stack_allocation[dtype = Self.accum_type](accum_layout)
+        self.upper = stack_allocation[dtype=Self.accum_type](accum_layout)
+        self.lower = stack_allocation[dtype=Self.accum_type](accum_layout)
         _ = self.upper.fill(0.0)
 
         comptime if Self.is_lower_required:
@@ -186,13 +192,14 @@ struct BlockwiseFP8Accumulator[
         num_input_stages: Int,
         # Type parameters
         b_scales_dtype: DType,
+        b_scales_layout: TensorLayout,
         a_scales_dtype: DType,
         # A-scales tile dimensions
         a_scales_dim0: Int,
         a_scales_dim1: Int,
     ](
         mut self,
-        b_scales: TileTensor[b_scales_dtype, _, ImmutAnyOrigin],
+        b_scales: TileTensor[b_scales_dtype, b_scales_layout, ImmutAnyOrigin],
         a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
             a_scales_dim0,
@@ -348,7 +355,7 @@ struct BlockwiseFP8Accumulator[
             var tmem_addr = TmemAddress(
                 tmem_offset + UInt32(stage * Self.stageN)
             )
-            var frags = Self.Fragments.load[repeat = Self.repeats](tmem_addr)
+            var frags = Self.Fragments.load[repeat=Self.repeats](tmem_addr)
             Self.Fragments.wait_load()
 
             var b_scale: Scalar[Self.accum_type]

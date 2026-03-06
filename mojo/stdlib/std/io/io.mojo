@@ -181,8 +181,8 @@ fn _printf_cpu[
     with _fdopen(file) as fd:
         # FIXME: external_call should handle this
         _ = __mlir_op.`pop.external_call`[
-            func = "KGEN_CompilerRT_fprintf".value,
-            variadicType = __mlir_attr[
+            func="KGEN_CompilerRT_fprintf".value,
+            variadicType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<none>,`,
                 `!kgen.pointer<scalar<si8>>`,
@@ -287,7 +287,7 @@ fn _printf[
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.
             return CompilationTarget.unsupported_target_error[
-                operation = __get_current_function_name()
+                operation=__get_current_function_name()
             ]()
 
 
@@ -323,8 +323,8 @@ fn _snprintf[
     # FIXME: external_call should handle this
     return Int(
         __mlir_op.`pop.external_call`[
-            func = "snprintf".value,
-            variadicType = __mlir_attr[
+            func="snprintf".value,
+            variadicType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<scalar<si8>>,`,
                 `!pop.scalar<index>, `,
@@ -427,7 +427,7 @@ fn print[
                 _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
-                    operation = __get_current_function_name()
+                    operation=__get_current_function_name()
                 ]()
         else:
             var buffer = _WriteBufferStack(file)

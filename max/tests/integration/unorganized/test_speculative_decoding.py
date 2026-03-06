@@ -42,7 +42,7 @@ from test_common.registry import prepare_registry
 @dataclass
 class SpeculativeDecodingSetup:
     model_name: str
-    tokenizer: PipelineTokenizer
+    tokenizer: PipelineTokenizer  # type: ignore[type-arg]
     pipeline: StandaloneSpeculativeDecodingPipeline
     context1: TextContext
     context2: TextContext

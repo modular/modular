@@ -25,9 +25,6 @@ from buffer.dimlist import DimList
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from std.memory import LegacyUnsafePointer
-
-comptime MutPointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import IndexList
 
 
@@ -39,8 +36,8 @@ from std.utils.index import IndexList
 fn _transpose_rscf_to_krsc[
     dtype: DType,
 ](
-    src_ptr: MutPointer[Scalar[dtype]],
-    dst_ptr: MutPointer[Scalar[dtype]],
+    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     R: Int,
     S: Int,
     C: Int,
@@ -64,8 +61,8 @@ fn _transpose_rscf_to_krsc[
 fn _transpose_fcrs_to_krsc[
     dtype: DType,
 ](
-    src_ptr: MutPointer[Scalar[dtype]],
-    dst_ptr: MutPointer[Scalar[dtype]],
+    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     F: Int,
     C: Int,
     R: Int,

@@ -20,7 +20,6 @@ from nn.mha_utils import (
 from nn.mha_mask import MHAMask
 from std.gpu.host import DeviceContext
 from layout.layout_tensor import LayoutTensor
-from layout.layout import Layout
 from std.gpu.memory import AddressSpace
 from .mla_prefill_sm100_generic import mla_sm100_prefill_generic
 from .mla_prefill_sm100_blockscale import mla_sm100_prefill_blockscale
@@ -42,16 +41,14 @@ fn mla_sm100_prefill[
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
-    output: LayoutTensor[
-        output_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    q: LayoutTensor[q_type, _, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[q_type, _, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
@@ -70,7 +67,7 @@ fn mla_sm100_prefill[
         ), "blockwise_scale is not supported for generic MLA prefill"
         mla_sm100_prefill_generic[
             config=config,
-            group = Int(group),
+            group=Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
@@ -90,7 +87,7 @@ fn mla_sm100_prefill[
     else:
         mla_sm100_prefill_blockscale[
             config=config,
-            group = Int(group),
+            group=Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,

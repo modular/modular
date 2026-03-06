@@ -112,14 +112,14 @@ fn _convert_input_to_batched_tensor[
     tensor.dtype,
     reshape_layout,
     tensor.origin,
-    address_space = tensor.address_space,
+    address_space=tensor.address_space,
 ]:
     """Convert 2D tensor to 3D batched tensor with batch=1."""
     return LayoutTensor[
         dtype,
         reshape_layout,
         tensor.origin,
-        address_space = tensor.address_space,
+        address_space=tensor.address_space,
     ](
         tensor.ptr,
         RuntimeLayout[reshape_layout].row_major(
@@ -445,7 +445,7 @@ fn grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -460,10 +460,10 @@ fn grouped_block_scaled_matmul[
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
     var a_tma_op = create_tma_tile[
-        KernelType.ATmaTile.tile_layout,
-        KernelType.ATmaTile.desc_layout,
+        KernelType.ATileLayout,
+        KernelType.ADescLayout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_tensor_batched)
 
     # B matrix TMA
@@ -471,10 +471,10 @@ fn grouped_block_scaled_matmul[
         1, BN // (cluster_shape[0] // config.cta_group), BK
     )
     var b_tma_op = create_tma_tile[
-        KernelType.BTmaTile.tile_layout,
-        KernelType.BTmaTile.desc_layout,
+        KernelType.BTileLayout,
+        KernelType.BDescLayout,
         b_tma_tile_shape,
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_tensor_batched)
 
     # C matrix TMA
@@ -482,10 +482,10 @@ fn grouped_block_scaled_matmul[
         1, config.output_tile_shape[0], config.output_tile_shape[1]
     )
     var c_tma_op = create_tma_tile[
-        KernelType.CTmaTile.tile_layout,
-        KernelType.CTmaTile.desc_layout,
+        KernelType.CTileLayout,
+        KernelType.CDescLayout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c_tensor_batched)
 
     # Scaling factors TMA - 5D tensors (using converted batched tensors)
@@ -497,8 +497,8 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfa_tma_op = create_tma_tile[
-        KernelType.SFATmaTile.tile_layout,
-        KernelType.SFATmaTile.desc_layout,
+        KernelType.SFATileLayout,
+        KernelType.SFADescLayout,
         sfa_tma_tile_shape,
     ](ctx, sfa_5d_tensor)
 
@@ -510,8 +510,8 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfb_tma_op = create_tma_tile[
-        KernelType.SFBTmaTile.tile_layout,
-        KernelType.SFBTmaTile.desc_layout,
+        KernelType.SFBTileLayout,
+        KernelType.SFBDescLayout,
         sfb_tma_tile_shape,
     ](ctx, sfb_5d_tensor)
 
@@ -630,7 +630,7 @@ fn grouped_block_scaled_matmul[
     comptime num_threads = 32 * 7
 
     # ===== Create TileTensor wrappers for kernel args =====
-    from layout._layout import row_major as new_row_major
+    from layout.tile_layout import row_major as new_row_major
     from std.memory import UnsafePointer as NewPtr
 
     var a_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(

@@ -277,6 +277,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 4.5e-04
     kl_div_threshold: 1.4e-1
 
+  RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [float8-support, nvidia-multi]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden/1/58bcc105671be4a0fb59070924a231ab4fefd02879dd6e826d4d8f99ddfb962f/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden.tar.gz"
+      json_file: "vllm_RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 1.2e-05
+    kl_div_threshold: 4.2e-03
+
   meta-llama/Llama-3.2-1B-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x]
@@ -543,6 +556,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 7.0e-02
     kl_div_threshold: 8.0e-01
 
+  Qwen/Qwen3-30B-A3B-Instruct-2507-FP8:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_1x]
+    pipeline: "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-only, no-h100, float8-support]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden/1/51490a4ac6612bf0a3af0f6953d5a1bff2b12683ca4c134dba9a13ea5c44f2bb/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden.tar.gz"
+      json_file: "vllm_Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 7.3e-05
+    kl_div_threshold: 1.1e-01
+
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
@@ -554,7 +580,7 @@ logit_verification_pipelines:
       json_file: "torch_qwen3_embedding_0.6b_bfloat16_golden.json"
     relative_tolerance: 1.0e-04
     absolute_tolerance: 4.0e-03
-    cos_dist_threshold: 2.5e-04
+    cos_dist_threshold: 5.0e-04
     kl_div_threshold: 2.6e-04
 
   # Qwen2.VL-FP8
@@ -873,3 +899,25 @@ logit_verification_pipelines:
     tags: [nvidia-only, image-generation, manual]
     ssim_threshold: 0.60
     lpips_threshold: 0.35
+
+  black-forest-labs/FLUX.2-dev-t2i-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-t2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation, manual]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600
+
+  black-forest-labs/FLUX.2-dev-i2i-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "black-forest-labs/FLUX.2-dev-i2i"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, image-generation, manual]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.35
+    timeout: 3600

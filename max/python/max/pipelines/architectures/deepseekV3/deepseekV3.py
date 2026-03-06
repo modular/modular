@@ -67,18 +67,26 @@ from .model_config import DeepseekV3Config
 def _unpack_kv_collections(
     kv_collections: Sequence[PagedCacheValues],
 ) -> tuple[
-    list[BufferValue], list[TensorValue], list[TensorValue], list[TensorValue]
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[BufferValue],
 ]:
     """Unpack KV collections into component lists.
 
     Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths).
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales). kv_scales is empty when KV cache is not quantized.
     """
+    kv_scales = [
+        kv.kv_scales for kv in kv_collections if kv.kv_scales is not None
+    ]
     return (
         [kv.kv_blocks for kv in kv_collections],
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
         [kv.max_lengths for kv in kv_collections],
+        kv_scales,
     )
 
 
@@ -137,7 +145,12 @@ class DeepseekV3DecoderLayer(Module):
         )
         use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
 
-        if config.float8_config is not None and nvfp4_enabled:
+        if (
+            config.float8_config is not None
+            and nvfp4_enabled
+            and config.n_routed_experts
+            != 384  # nvidia/KimiK2.5-NVFP4 out projections are not quantized
+        ):
             mla_kwargs["o_proj_float8_config"] = config.float8_config
             mla_kwargs["o_proj_dtype"] = config.dtype
 
@@ -271,6 +284,7 @@ class DeepseekV3DecoderLayer(Module):
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
+        kv_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
@@ -286,6 +300,7 @@ class DeepseekV3DecoderLayer(Module):
                 kv_cache_lengths[i],
                 kv_lookup_table[i],
                 kv_max_lengths[i],
+                kv_scales=kv_scales[i] if kv_scales else None,
             )
             for i in range(len(kv_blocks))
         ]
@@ -514,7 +529,7 @@ class DeepseekV3(Module):
             )
 
         # Unpack KV collections once for use throughout the method
-        kv_blocks, cache_lengths, lookup_tables, max_lengths = (
+        kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales = (
             _unpack_kv_collections(kv_collections)
         )
 
@@ -536,6 +551,7 @@ class DeepseekV3(Module):
             [length.type for length in cache_lengths],
             [table.type for table in lookup_tables],
             [length.type for length in max_lengths],
+            [scale.type for scale in kv_scales],
             [freq.type for freq in freqs_cis],
             [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
@@ -584,6 +600,7 @@ class DeepseekV3(Module):
                             *cache_lengths,
                             *lookup_tables,
                             *max_lengths,
+                            *kv_scales,
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
@@ -606,6 +623,7 @@ class DeepseekV3(Module):
                     cache_lengths,
                     lookup_tables,
                     max_lengths,
+                    kv_scales,
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,

@@ -33,6 +33,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
@@ -59,13 +60,13 @@ fn _load_a_reg_tile[
         dtype,
         _compute_reg_tile_layout(layout, 16 // size_of[dtype]()),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ],
     smem_tile: LayoutTensor[
         dtype,
         layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         ...,
     ],
 ):
@@ -103,11 +104,13 @@ fn tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
     c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -115,8 +118,8 @@ fn tma_wgmma_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
@@ -139,7 +142,7 @@ fn tma_wgmma_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -147,7 +150,7 @@ fn tma_wgmma_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -167,7 +170,7 @@ fn tma_wgmma_kernel[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)
@@ -179,7 +182,7 @@ fn tma_wgmma_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -323,11 +326,13 @@ def test_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
         Layout.row_major(M, N),
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         transpose_b=transpose_b,
@@ -399,8 +404,8 @@ def main() raises:
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_wgmma[
@@ -410,8 +415,8 @@ def main() raises:
             Index(128, 16, 32),
             Index(128, 16, 32),
             Index(64, 8, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_64B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_64B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_wgmma[
@@ -421,8 +426,8 @@ def main() raises:
             Index(128, 16, 16),
             Index(128, 16, 16),
             Index(64, 8, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_32B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_32B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_32B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         comptime for log2BN in range(6, 8):
@@ -434,8 +439,8 @@ def main() raises:
                 Index(128, 256, 64),
                 Index(64, BN, 64),
                 Index(64, 64, 16),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=True,
             ](ctx)
 
@@ -446,8 +451,8 @@ def main() raises:
                 Index(128, 256, 64),
                 Index(64, BN, 64),
                 Index(64, 64, 16),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=False,
             ](ctx)
 
@@ -458,8 +463,8 @@ def main() raises:
                 Index(128, 256, 16),
                 Index(64, BN, 16),
                 Index(64, 64, 16),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 transpose_b=False,
             ](ctx)
 
@@ -470,8 +475,8 @@ def main() raises:
                 Index(128, 256, 16),
                 Index(64, BN, 16),
                 Index(64, 64, 16),
-                a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
+                b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 a_smem=False,
                 transpose_b=False,
             ](ctx)
@@ -483,8 +488,8 @@ def main() raises:
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_NONE,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             a_smem=False,
             transpose_b=True,
         ](ctx)

@@ -27,7 +27,6 @@ from max.graph import TensorType
 from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
-from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLModel
 from ..clip import ClipModel
@@ -356,7 +355,16 @@ class FluxPipeline(DiffusionPipeline):
         return self._to_numpy(self.vae.decode(latents))
 
     def _to_numpy(self, image: Tensor) -> np.ndarray:
-        cpu_image: Tensor = image.cast(DType.float32).to(CPU())
+        # Perform all post-processing on GPU before transfer:
+        #   cast, denormalize [-1,1]->[0,1], clip, NCHW->NHWC, scale, uint8.
+        # This shrinks the PCIe transfer 4x (float32 -> uint8).
+        image = image.cast(DType.float32)
+        image = image * 0.5 + 0.5
+        image = image.clip(min=0.0, max=1.0)
+        image = F.permute(image, (0, 2, 3, 1))  # NCHW -> NHWC
+        image = image * 255.0
+        image = image.cast(DType.uint8)
+        cpu_image: Tensor = image.to(CPU())
         return np.from_dlpack(cpu_image)
 
     def execute(  # type: ignore[override]
@@ -435,7 +443,7 @@ class FluxPipeline(DiffusionPipeline):
 
         num_timesteps = int(model_inputs.sigmas.shape[0]) - 1
 
-        for i in tqdm(range(num_timesteps), desc="Denoising"):
+        for i in range(num_timesteps):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 

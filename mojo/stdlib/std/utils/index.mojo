@@ -274,10 +274,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         ), "Element type must be of integral type."
         var num_elements = len(values)
 
-        debug_assert(
-            Self.size == num_elements,
-            "[IndexList] mismatch in the number of elements",
-        )
+        assert (
+            Self.size == num_elements
+        ), "[IndexList] mismatch in the number of elements"
 
         var tup = Self()
 
@@ -372,7 +371,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     @always_inline("nodebug")
     fn canonicalize(
         self,
-        out result: IndexList[Self.size, element_type = DType.int64],
+        out result: IndexList[Self.size, element_type=DType.int64],
     ):
         """Canonicalizes the IndexList.
 

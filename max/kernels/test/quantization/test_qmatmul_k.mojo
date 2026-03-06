@@ -110,7 +110,7 @@ trait QuantizedGemm:
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         ...
 
@@ -171,7 +171,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         matmul_qint4[_block_Q4_0.group_size](a, b, c)
 
@@ -203,7 +203,7 @@ struct qgemm_Q4_0(QuantizedGemm):
         var q_packed_bits = (
             block_ptr[]
             .q_bits.unsafe_ptr()
-            .load[width = _block_Q4_0.group_size // 2]()
+            .load[width=_block_Q4_0.group_size // 2]()
         )
 
         for j in range(2):
@@ -269,7 +269,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         matmul_Q4_K(a, b, c)
 
@@ -299,9 +299,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         for i in range(_block_Q4_K.group_count):
             a_block_sums[i] = (
                 a_quant_data.unsafe_ptr()
-                .load[width = _block_Q4_K.group_size](
-                    i * _block_Q4_K.group_size
-                )
+                .load[width=_block_Q4_K.group_size](i * _block_Q4_K.group_size)
                 .cast[DType.int32]()
                 .reduce_add()
             )
@@ -344,7 +342,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         for i in range(_block_Q4_K.group_count):
             sum2 += a_block_sums[i] * b_mins[i].cast[DType.int32]()
 
-        var sum = dot_product_QK_K[group_size = _block_Q4_K.group_size](
+        var sum = dot_product_QK_K[group_size=_block_Q4_K.group_size](
             a_quant_data.unsafe_ptr(),
             b_quant_data.unsafe_ptr(),
             b_scales.unsafe_ptr(),
@@ -404,7 +402,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     fn kernel(
         a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
         b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
     ):
         matmul_Q6_K(a, b, c)
 
@@ -454,7 +452,7 @@ struct qgemm_Q6_K(QuantizedGemm):
                 b_quant_data.unsafe_ptr().store(idx, q_bits_hi | q_bits_lo)
 
         var sum = dot_product_QK_K[
-            group_size = _block_Q6_K.group_size, b_zero_point=32
+            group_size=_block_Q6_K.group_size, b_zero_point=32
         ](
             a_quant_data.unsafe_ptr(),
             b_quant_data.unsafe_ptr(),

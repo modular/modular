@@ -47,10 +47,10 @@ fn block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
     ]()
     var m2_broadcast = stack_allocation[
-        1, dtype, address_space = AddressSpace.SHARED
+        1, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -123,13 +123,13 @@ fn tma_reduction_kernel[
     d_out: UnsafePointer[Scalar[accum_type]],
 ):
     var shmem = external_memory[
-        Scalar[dtype], address_space = AddressSpace.SHARED, alignment=128
+        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
     ]()
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = stack_allocation[1, Int64, address_space = AddressSpace.SHARED]()
+    var mbar = stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
 
     var descriptor_ptr = LegacyUnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
@@ -167,7 +167,7 @@ def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
 ](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,) raises:
     var n = rows * cols
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime accum_type = get_accum_type[dtype]()
 

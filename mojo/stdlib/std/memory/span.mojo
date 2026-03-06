@@ -218,7 +218,7 @@ struct Span[
     @always_inline
     @implicit
     fn __init__[
-        list_origin: Origin[mut = Self.mut],
+        list_origin: Origin[mut=Self.mut],
         U: Copyable,
     ](out self: Span[U, list_origin], ref[list_origin] list: List[U]):
         """Construct a `Span` from a `List`.
@@ -236,7 +236,7 @@ struct Span[
     @always_inline
     @implicit
     fn __init__[
-        array_origin: Origin[mut = Self.mut],
+        array_origin: Origin[mut=Self.mut],
         U: Copyable,
         size: Int,
         //,
@@ -432,7 +432,7 @@ struct Span[
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.T]](writer)
+        self._write_self_to[f=fmt.write_to[Self.T]](writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -447,7 +447,7 @@ struct Span[
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.T]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "Span").params(
             fmt.Named("mut", Self.mut),
@@ -553,10 +553,7 @@ struct Span[
         Args:
             other: The `Span` to copy all elements from.
         """
-        debug_assert(
-            len(self) == len(other),
-            "Spans must be of equal length",
-        )
+        assert len(self) == len(other), "Spans must be of equal length"
         # For trivial types, uninit_copy_n is a single memcpy (no destroy
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
@@ -714,7 +711,7 @@ struct Span[
     ](
         self,
         out result: Span[
-            mut = Self.mut & other_type.origin.mut,
+            mut=Self.mut & other_type.origin.mut,
             Self.T,
             origin_of(Self.origin, other_type.origin),
         ],
@@ -927,10 +924,7 @@ struct Span[
             "offset out of bounds: ",
             offset,
         )
-        debug_assert(
-            0 <= offset + length <= len(self),
-            "subspan out of bounds.",
-        )
+        assert 0 <= offset + length <= len(self), "subspan out of bounds."
         return Self(ptr=self._data + offset, length=length)
 
     fn _binary_search_index[

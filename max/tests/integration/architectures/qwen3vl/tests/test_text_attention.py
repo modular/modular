@@ -64,7 +64,7 @@ def _flatten_sequences(sequences: list[torch.Tensor]) -> torch.Tensor:
 
 
 def generate_text_attention_weights(
-    text_config: dict,
+    text_config: dict,  # type: ignore[type-arg]
 ) -> dict[str, torch.Tensor]:
     """Generate text attention weights for Qwen3VL-MoE.
 
@@ -111,7 +111,7 @@ def generate_text_attention_weights(
 def generate_qwen3_torch_outputs(
     sequences: list[torch.Tensor],
     attention_weights: dict[str, torch.Tensor],
-    text_config: dict,
+    text_config: dict,  # type: ignore[type-arg]
     device: torch.device,
 ) -> torch.Tensor:
     """Generate reference outputs using HF Qwen3VL-MoE attention.
@@ -195,7 +195,7 @@ def generate_qwen3_torch_outputs(
 def generate_qwen3_max_outputs(
     sequences: list[torch.Tensor],
     attention_weights: dict[str, torch.Tensor],
-    qwen3_config: dict,
+    qwen3_config: dict,  # type: ignore[type-arg]
     dtype: DType,
     device: Device,
 ) -> torch.Tensor:

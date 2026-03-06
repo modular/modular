@@ -349,9 +349,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
-        debug_assert(
-            len(elems) == Self.size, "No. of elems must match array size"
-        )
+        assert len(elems) == Self.size, "No. of elems must match array size"
         self = Self(storage=elems^)
 
     @always_inline
@@ -445,7 +443,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         _constrained_conforms_to[
             conforms_to(Self.ElementType, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.ElementType,
+            Element=Self.ElementType,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
         comptime TDestructible = downcast[
@@ -718,7 +716,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr representation of this InlineArray to a Writer.
@@ -732,7 +730,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "InlineArray").params(
             fmt.TypeNames[Self.ElementType](),
