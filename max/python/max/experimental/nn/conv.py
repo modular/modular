@@ -255,7 +255,7 @@ class Conv3d(Module[[Tensor], Tensor]):
         | tuple[int, int, int, int, int, int] = 0,
         dilation: int | tuple[int, int, int] = 1,
         num_groups: int = 1,
-        device: DeviceRef | None = None,
+        device: Device | DeviceRef | None = None,
         has_bias: bool = False,
         permute: bool = False,
         name: str | None = None,
@@ -323,16 +323,14 @@ class Conv3d(Module[[Tensor], Tensor]):
                 out_channels,
             ],
             dtype=self.dtype,
-            device=self.device.to_device() if self.device is not None else None,
+            device=self.device,
         )
 
         if has_bias:
             self.bias = random.normal(
                 [out_channels],
                 dtype=self.dtype,
-                device=self.device.to_device()
-                if self.device is not None
-                else None,
+                device=self.device,
             )
         else:
             self.bias = 0
