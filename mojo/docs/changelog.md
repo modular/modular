@@ -589,6 +589,13 @@ what we publish.
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
 
+- Added the `UnsafeNicheable` and `UnsafeSingleNicheable` traits to
+  `std.utils`. These traits allow types to expose known-invalid bit patterns
+  ("niches") that can be used by containers like `Optional` and `Variant` to avoid
+  storing a separate tag, so that `size_of[Optional[T]]() == size_of[T]()`.
+  `UnsafeSingleNicheable` is a simplified subtrait for the common case where a
+  type has exactly one niche value.
+
 - `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
   There are a few restrictions including iteration requiring `T: Copyable`.
 

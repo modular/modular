@@ -11,10 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import AddressSpace
+from std.memory import AddressSpace, UnsafeMaybeUninit
 from test_utils import check_write_to
 from std.testing import TestSuite
-from std.testing import assert_equal, assert_not_equal, assert_true
+from std.testing import (
+    assert_equal,
+    assert_not_equal,
+    assert_true,
+    assert_false,
+)
 
 
 def test_copy_reference_explicitly() raises:
@@ -118,6 +123,21 @@ def test_merge() raises:
 
     assert_equal(a, [1, 2, 3, 7])
     assert_equal(b, [4, 5, 6, 8])
+
+
+def test_nicheable() raises:
+    var x = 42
+    comptime PointerType = Pointer[Int, ImmutOrigin(origin_of(x))]
+
+    assert_equal(PointerType.niche_count(), 1)
+
+    var memory = UnsafeMaybeUninit[PointerType]()
+
+    PointerType.write_niche(UnsafePointer(to=memory))
+    assert_true(PointerType.isa_niche(UnsafePointer(to=memory)))
+
+    memory.init_from(Pointer(to=x))
+    assert_false(PointerType.isa_niche(UnsafePointer(to=memory)))
 
 
 # We don't actually need to run this,
