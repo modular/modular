@@ -27,8 +27,8 @@ The key scenarios tested:
 
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import IntTuple
-from testing import TestSuite, assert_equal
-from utils import Index, IndexList
+from std.testing import TestSuite, assert_equal
+from std.utils import Index, IndexList
 
 
 fn test_ptr_at_offset_static_2d() raises:
@@ -183,5 +183,5 @@ fn test_ptr_at_offset_view_tensor() raises:
     assert_equal(ptr[], Int32(expected_offset))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

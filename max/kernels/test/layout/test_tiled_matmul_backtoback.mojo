@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import fma, isclose
-from os import abort
-from random import rand
-from sys import CompilationTarget, argv, simd_width_of, size_of
+from std.math import fma, isclose
+from std.os import abort
+from std.random import rand
+from std.sys import CompilationTarget, argv, simd_width_of, size_of
 
-import benchmark
-from algorithm.functional import vectorize
+import std.benchmark
+from std.algorithm.functional import vectorize
 from layout import Layout, RuntimeLayout
 from layout.int_tuple import IntTuple, size
 from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
+from std.testing import assert_false
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 fn matmul_naive[
@@ -105,11 +105,8 @@ fn matmul_ukern[
         SIMD[elt, width], mr * nr
     ]()
 
-    @parameter
-    for m in range(mr):
-
-        @parameter
-        for n in range(nr):
+    comptime for m in range(mr):
+        comptime for n in range(nr):
             acc[n + m * nr] = SIMD[elt, width]()
     var Bloads: StaticTuple[SIMD[elt, width], nr] = StaticTuple[
         SIMD[elt, width], nr
@@ -129,24 +126,18 @@ fn matmul_ukern[
         var Atmp: UnsafePointer[Scalar[elt]] = Ao
         Ao = Ao + 1
         for _ in range(kf):
-
-            @parameter
-            for _ in range(kr):
-
-                @parameter
-                for n in range(nr):
+            comptime for _ in range(kr):
+                comptime for n in range(nr):
                     Bloads[n] = Bo.load[width=width, alignment=Align](n * width)
 
-                @parameter
-                for m in range(mr):
+                comptime for m in range(mr):
                     var Abroadcast: SIMD[elt, width] = SIMD[elt, width](
-                        Atmp.load[width=1, alignment = size_of[elt]()](
+                        Atmp.load[width=1, alignment=size_of[elt]()](
                             m * Astride
                         )
                     )
 
-                    @parameter
-                    for n in range(nr):
+                    comptime for n in range(nr):
                         # breakpoint()
                         acc[n + m * nr] = fma(
                             Abroadcast, Bloads[n], acc[n + m * nr]
@@ -156,28 +147,18 @@ fn matmul_ukern[
     if inc:
         # Note, `C` would have spilled from the L1 cache by the time
         # we load it again had we loaded before the reduction loop.
-        @parameter
-        for m in range(mr):
-
-            @parameter
-            for n0 in range(CstoreReps):
-
-                @parameter
-                for n1 in range(CstoresPer):
+        comptime for m in range(mr):
+            comptime for n0 in range(CstoreReps):
+                comptime for n1 in range(CstoresPer):
                     acc[n1 + n0 * CstoresPer + m * nr] = acc[
                         n1 + n0 * CstoresPer + m * nr
                     ] + C.load[width=width, alignment=Align](
                         (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width
                     )
 
-    @parameter
-    for m in range(mr):
-
-        @parameter
-        for n0 in range(CstoreReps):
-
-            @parameter
-            for n1 in range(CstoresPer):
+    comptime for m in range(mr):
+        comptime for n0 in range(CstoreReps):
+            comptime for n1 in range(CstoresPer):
                 C.store[alignment=Align](
                     (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width,
                     acc[n1 + n0 * CstoresPer + m * nr],
@@ -362,8 +343,7 @@ fn delete_idx(arg: List[Int], idx: Int) -> List[Int]:
 fn strided_load[
     elt: DType, //, W: Int, X: Int
 ](p: UnsafePointer[Scalar[elt]], i: Int) -> SIMD[elt, W]:
-    @parameter
-    if X == 1:
+    comptime if X == 1:
         return p.load[width=W](i)
     else:
         return (p + i * X).strided_load[width=W](X)
@@ -373,8 +353,7 @@ fn strided_load[
 fn strided_store[
     elt: DType, W: Int, //, X: Int
 ](p: UnsafePointer[Scalar[elt]], i: Int, x: SIMD[elt, W]):
-    @parameter
-    if X == 1:
+    comptime if X == 1:
         p.store(i, x)
     else:
         (p + i * X).strided_store(x, X)
@@ -397,8 +376,7 @@ fn vectorize_flat[
     comptime assert len(shape) == len(stride_a)
     comptime assert len(shape) == len(stride_b)
 
-    @parameter
-    if len(shape) == 1:
+    comptime if len(shape) == 1:
         # perform the copy
         comptime int_stride_a: Int = stride_a[0]
         comptime int_stride_b: Int = stride_b[0]
@@ -412,7 +390,7 @@ fn vectorize_flat[
         vectorize[
             vf,
             simd_width,
-            unroll_factor = min(size // simd_width, unroll_factor),
+            unroll_factor=min(size // simd_width, unroll_factor),
         ](size)
     else:
         # we find the maximum min stride, subset, and loop over it.

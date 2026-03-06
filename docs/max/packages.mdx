@@ -1,0 +1,266 @@
+---
+title: Packages
+description: Learn how to install Modular tools, set up your environment, and choose between nightly and stable versions
+---
+
+import InstallModular from '../_includes/install-modular.mdx';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Requirements from '@site/src/components/Requirements';
+import { requirementsNoGPU } from '../requirements';
+
+All the Modular APIs and tools (including MAX and Mojo) are included in a
+single Python/Conda package named `modular`. This page explains what's in the
+package and shows how to install it.
+
+If you just want to get started with Modular, instead see our
+[quickstart guide](/max/get-started).
+
+:::note
+
+**New!** You can now install a standalone [`mojo` package](/mojo/manual/install).
+
+:::
+
+## Package managers
+
+You can install `modular` as a Python or Conda package. The install
+instructions below include commands for popular package managers such as
+`pixi`, `uv`, `pip`, and `conda`, but you can also use something else.
+
+Traditional tools like `pip` and `conda` might be necessary for existing
+production environments or Docker containers, but for your local development,
+we recommend using [Pixi](https://pixi.sh/latest/).
+
+Pixi is both a package manager and virtual environment manager, which alone
+makes development a lot easier, but it's also language agnostic, extremely fast,
+and includes lock files to easily reproduce your project environment.
+
+You'll notice that our [GitHub code
+examples](https://github.com/modular/modular/tree/main/max/examples) include a
+`pixi.toml` file. This file configures the environment to make sure we all use
+the same packages and get the same results—you just need to install `pixi`.
+
+So if you're not set on using a particular package manager, we suggest you try
+`pixi`. If you haven't used it before, check out our [Pixi basics guide](/pixi)
+or the [official Pixi docs](https://pixi.sh/latest/).
+
+
+## Install
+
+To get the latest improvements and new features, we recommend
+installing our nightly build, which we release several times a week. If you
+want a better tested but older version, you can install a stable
+build. (Each release is described in the [changelog](/max/changelog).)
+
+System requirements:
+
+<Requirements requirementsData={requirementsNoGPU}
+url="/max/packages#system-requirements" />
+
+:::tip
+
+We recommend installing with `pixi` for the most reliable experience.
+
+:::
+
+<InstallModular folder="example-project" />
+
+The `modular` package installs MAX, Mojo, and other package dependencies.
+
+:::note GitHub stable branch
+
+If you're using a stable build and want to clone the [Modular
+repo](https://github.com/modular/modular), make sure you checkout the `stable`
+branch (because the `main` branch includes the latest nightly code). For
+example:
+
+```sh
+git clone -b stable https://github.com/modular/modular.git
+```
+
+:::
+
+## Uninstall
+
+<Tabs groupId="install">
+  <TabItem value="pixi" label="pixi">
+  You can uninstall `modular` from your virtual environment with this
+  command:
+
+  ```sh
+  pixi remove modular
+  ```
+
+  To deactivate your virtual environment, run:
+
+  ```sh
+  exit
+  ```
+
+  </TabItem>
+  <TabItem value="uv" label="uv">
+  You can uninstall `modular` from your virtual environment with the following
+  command:
+
+  ```sh
+  uv pip uninstall modular
+  ```
+
+  To deactivate your virtual environment, run:
+  ```sh
+  deactivate
+  ```
+
+  </TabItem>
+  <TabItem value="pip" label="pip">
+  You can uninstall `modular` from your virtual environment with the following
+  command:
+
+  ```sh
+  pip uninstall modular
+  ```
+
+  To deactivate your virtual environment, run:
+  ```sh
+  deactivate
+  ```
+
+  </TabItem>
+  <TabItem value="conda" label="conda">
+  You can uninstall `modular` from your virtual environment with this
+  command:
+
+  ```sh
+  conda remove modular
+  ```
+
+  To deactivate your virtual environment, run:
+
+  ```sh
+  deactivate
+  ```
+
+  </TabItem>
+</Tabs>
+
+## What's included
+
+Here's a summary of what's in the `modular` package.
+
+<Tabs groupId="install">
+  <TabItem value="pixi" label="conda/pixi">
+
+    The `modular` Conda package installs the following:
+
+    - MAX tools and libraries:
+      - [`max` CLI](/max/cli)
+      - [`max` Python library](/max/api/python/)
+      - [`max` Mojo library](/mojo/lib)
+      - [MAX Engine C API](/max/api/c/)
+    - The `mojo` package:
+      - [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
+      - [Mojo standard library](/mojo/lib)
+      - Mojo language server (LSP) for IDE/editor integration
+      - [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
+      - [Mojo code formatter](/mojo/cli/format)
+      - [Mojo REPL](/mojo/cli/repl)
+
+    `pixi` known issues:
+
+    - You might encounter issues if you invoke `pixi` within a `conda` virtual
+    environment. It's best if you don't mix the two tools.
+
+  </TabItem>
+  <TabItem value="pip" label="pip/uv">
+
+    The `modular` Python wheel installs the following:
+
+    - MAX tools and libraries:
+      - [`max` CLI](/max/cli)
+      - [`max` Python library](/max/api/python/)
+      - [`max` Mojo library](/mojo/lib)
+    - The `mojo` package:
+      - [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
+      - [Mojo standard library](/mojo/lib)
+      - Mojo language server (LSP) for IDE/editor integration
+      - [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
+      - [Mojo code formatter](/mojo/cli/format)
+      - [Mojo REPL](/mojo/cli/repl)
+
+  </TabItem>
+</Tabs>
+
+
+:::note Note
+
+For information about the `mojo` package, see the [Mojo install
+guide](/mojo/manual/install).
+
+:::
+
+
+## System requirements
+
+To install `modular`, your system must meet these specifications.
+
+<Tabs groupId="os">
+<TabItem value="mac" label="Mac">
+
+- macOS Sequoia (15) or later
+- Apple silicon (M1 - M5 processor)
+- Python 3.10 - 3.14
+- Xcode or Xcode Command Line Tools 16 or later
+- We have [limited compatibility](#gpu-compatibility) for Apple Silicon GPUs.
+  You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
+  downloads the Metal utilities required for GPU programming in later versions
+  of Xcode.
+
+</TabItem>
+<TabItem value="linux" label="Linux">
+
+- Ubuntu 22.04 LTS
+- x86-64 CPU (with [SSE4.2 or
+  newer](https://www.intel.com/content/www/us/en/support/articles/000057621/processors.html))
+  or AWS Graviton2/3 CPU
+- Minimum 8 GiB RAM (or much more, depending on the model you run)
+- Python 3.10 - 3.14
+- g++ or clang++ C++ compiler
+- To use GPUs, see the [GPU compatibility](#gpu-compatibility)
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+Windows is not officially supported at this time.
+
+In the meantime, you can try MAX on Windows [with
+WSL](https://learn.microsoft.com/en-us/windows/wsl/install), using a compatible
+version of Ubuntu (see our requirements for Linux).
+
+</TabItem>
+</Tabs>
+
+### GPU compatibility
+
+import GpuRequirements from '../mojo/_includes/gpu-requirements.mdx';
+
+The Modular Platform supports both CPUs and GPUs, so you don't always need a
+GPU to serve a model or program with Mojo. But if you do want to accelerate
+your model with GPUs or program for GPUs with Mojo, we support the following
+GPUs.
+
+<GpuRequirements />
+
+:::note Notes
+
+- Many GPUs are available in variants with different amounts of memory, and
+each AI model has different memory requirements. So even if your GPU
+architecture is listed as compatible, you must confirm that the available
+memory is sufficient for the model you're using.
+
+- Modular can serve lots of models on either CPU and GPU, but some models do
+require one or more GPUs. When you browse our [model
+repository](https://builds.modular.com/?category=models), you can filter by
+models that support either CPU or GPU.
+
+:::

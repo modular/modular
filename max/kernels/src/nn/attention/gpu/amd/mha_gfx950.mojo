@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import product
-from math import ceildiv
-from sys import simd_width_of, llvm_intrinsic
-from sys.intrinsics import readfirstlane, _type_is_eq
-from sys.info import _cdna_4_or_newer
-from gpu import (
+from std.itertools import product
+from std.math import ceildiv
+from std.sys import simd_width_of, llvm_intrinsic
+from std.sys.intrinsics import readfirstlane, _type_is_eq
+from std.sys.info import _cdna_4_or_newer
+from std.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
     thread_idx,
 )
-from gpu import warp_id as get_warp_id
-from gpu.sync import (
+from std.gpu import warp_id as get_warp_id
+from std.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
     s_waitcnt,
 )
-from memory.pointer import AddressSpace as BaseAddressSpace
+from std.memory.pointer import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import blocked_product
@@ -44,7 +44,7 @@ from layout.tensor_core import (
     num_matrix_reg,
     TiledTensorCore,
 )
-from memory import bitcast, stack_allocation
+from std.memory import bitcast, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus, CausalMask
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import (
@@ -53,8 +53,8 @@ from nn.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from utils import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 from .mha_gfx942 import Attention
 from .utils import load_b, load_b_tr, copy_dram_to_sram_lds
 
@@ -69,37 +69,31 @@ fn set_priority[priority: Int]():
 
 @always_inline
 fn scheduling_hints_qk[group: Int]():
-    @parameter
-    for i in range(4):
+    comptime for i in range(4):
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
 
-        @parameter
-        for j in range(4):
+        comptime for j in range(4):
             schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, Int32(group))
             schedule_group_barrier(
                 AMDScheduleBarrierMask.TRANS, 1, Int32(group)
             )
 
-    @parameter
-    for i in range(12):
+    comptime for i in range(12):
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
         schedule_group_barrier(AMDScheduleBarrierMask.VALU, 6, Int32(group))
 
 
 @always_inline
 fn scheduling_hints_pv[group: Int]():
-    @parameter
-    for i in range(12):
+    comptime for i in range(12):
         schedule_group_barrier(AMDScheduleBarrierMask.VALU, 4, Int32(group))
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
         schedule_group_barrier(AMDScheduleBarrierMask.VALU, 10, Int32(group))
 
-    @parameter
-    for i in range(4):
+    comptime for i in range(4):
         schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
 
-        @parameter
-        for i in range(4):
+        comptime for i in range(4):
             schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, Int32(group))
             schedule_group_barrier(
                 AMDScheduleBarrierMask.TRANS, 1, Int32(group)
@@ -110,14 +104,12 @@ fn scheduling_hints_pv[group: Int]():
 fn barrier[
     *, schedule_barrier_before: Bool = True, schedule_barrier_after: Bool = True
 ]():
-    @parameter
-    if schedule_barrier_before:
+    comptime if schedule_barrier_before:
         schedule_barrier()
 
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
-    @parameter
-    if schedule_barrier_after:
+    comptime if schedule_barrier_after:
         schedule_barrier()
 
 
@@ -245,7 +237,7 @@ struct KVBuffer[
             Self.num_mmas * Self.num_k_mmas2 * Self.num_k_tiles, Self.simd_width
         ),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     var mma_tile: Self.MMATileType
 
@@ -256,7 +248,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         Self.smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
 
@@ -283,7 +275,7 @@ struct KVBuffer[
         head_idx: UInt,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
         end: UInt,
@@ -303,8 +295,7 @@ struct KVBuffer[
 
         self.lds_base_ptrs = type_of(self.lds_base_ptrs)(uninitialized=True)
 
-        @parameter
-        for i in range(2):
+        comptime for i in range(2):
             var smem_tile = self.smem_iter.next_unsafe(
                 self.smem_iter.linear_uint_type(i)
             )[]
@@ -323,8 +314,7 @@ struct KVBuffer[
             self.smem_iter.linear_uint_type(buffer_idx)
         )[]
 
-        @parameter
-        if Self.depth == 64:
+        comptime if Self.depth == 64:
             var smem_warp_tile = smem_tile.tile[32, Self.BK](
                 Int(self.warp_id) // 2, Int(self.warp_id) % 2
             )
@@ -332,15 +322,14 @@ struct KVBuffer[
                 Int(self.warp_id) // 2, Int(self.warp_id) % 2
             )
             # load from dram to sram directly
-            copy_dram_to_sram_lds[swizzle = Self.swizzle,](
+            copy_dram_to_sram_lds[swizzle=Self.swizzle,](
                 smem_warp_tile,
                 gmem_warp_tile,
             )
         else:
             comptime num_warps = Self.num_threads // WARP_SIZE
 
-            @parameter
-            for depth_tile in range(Self.depth // 128):
+            comptime for depth_tile in range(Self.depth // 128):
                 var warp_row = self.warp_id // UInt32(4)
                 var warp_col = self.warp_id % UInt32(4)
                 var smem_warp_tile = smem_tile.tile[32, Self.BK](
@@ -350,7 +339,7 @@ struct KVBuffer[
                     Int(warp_row), Int(warp_col) + num_warps * depth_tile
                 )
                 # load from dram to sram directly
-                copy_dram_to_sram_lds[swizzle = Self.swizzle,](
+                copy_dram_to_sram_lds[swizzle=Self.swizzle,](
                     smem_warp_tile,
                     gmem_warp_tile,
                     self.lds_base_ptrs[buffer_idx],
@@ -375,14 +364,12 @@ struct KVBuffer[
 
     @always_inline
     fn load_from_shared(self, buffer: UInt):
-        @parameter
-        for bk_tile in range(Self.num_k_tiles):
+        comptime for bk_tile in range(Self.num_k_tiles):
             self.load_from_shared[bk_tile](buffer)
 
     @always_inline
     fn load_from_shared[bk_tile: Int](self, buffer: UInt):
-        @parameter
-        if Self.transpose:
+        comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
             var warp_col = get_warp_id() % UInt(num_warps_n)
             var smem_tile = self.smem_iter.next_unsafe(
@@ -394,7 +381,7 @@ struct KVBuffer[
             var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
                 wtile_coord0, wtile_coord1
             )
-            var load_b_tile = load_b[Self.mma_shape, swizzle = Self.swizzle](
+            var load_b_tile = load_b[Self.mma_shape, swizzle=Self.swizzle](
                 warp_tile
             )
 
@@ -406,8 +393,7 @@ struct KVBuffer[
             comptime MMA_M = Self.mma_shape[0]
             comptime MMA_K = Self.mma_shape[2]
 
-            @parameter
-            for k in range(Self.BK // MMA_K):
+            comptime for k in range(Self.BK // MMA_K):
                 var smem_tile = (
                     self.smem_iter.next_unsafe(
                         self.smem_iter.layout_uint_type(buffer)
@@ -425,8 +411,7 @@ struct KVBuffer[
                     .vectorize[1, Self.simd_width]()
                 )
 
-                @parameter
-                for i in range(Self.depth // MMA_M):
+                comptime for i in range(Self.depth // MMA_M):
                     comptime tile_layout = type_of(
                         smem_tile.tile[MMA_K, MMA_M](0, i)
                     ).layout
@@ -442,7 +427,7 @@ struct KVBuffer[
                         smem_tile.dtype,
                         tile_layout,
                         MutAnyOrigin,
-                        address_space = smem_tile.address_space,
+                        address_space=smem_tile.address_space,
                     ](smem_tile.ptr + offset)
                     frags[i, 0] = rebind[frags.element_type](
                         load_b_tr[Self.mma_shape](tile)
@@ -471,8 +456,7 @@ __extension Attention:
 
     @always_inline
     fn online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
-        @parameter
-        if mask:
+        comptime if mask:
             self.apply_mask[stage]()
         var warp_scratch = self.warp_scratch_tensor.tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
@@ -528,16 +512,16 @@ __extension Attention:
         )
         var high_warps = warp_id // 4
         var k_buffer = KVBuffer[
-            mma_shape = Self.mma_shape,
-            k_group_size = Self.k_group_size,
-            swizzle = Swizzle(3, 0, 4) if Self.mma_shape[0]
+            mma_shape=Self.mma_shape,
+            k_group_size=Self.k_group_size,
+            swizzle=Swizzle(3, 0, 4) if Self.mma_shape[0]
             == 32 else Optional[Swizzle](None),
-            BN = Int(Self.BN),
-            WN = Int(Self.WN),
-            BK = Int(Self.BK),
-            num_threads = Int(Self.num_threads),
-            depth = Int(Self.depth),
-            kv_num_heads = Int(Self.num_heads) // Self.group,
+            BN=Int(Self.BN),
+            WN=Int(Self.WN),
+            BK=Int(Self.BK),
+            num_threads=Int(Self.num_threads),
+            depth=Int(Self.depth),
+            kv_num_heads=Int(Self.num_heads) // Self.group,
             transpose=True,
         ](
             self.k,
@@ -549,15 +533,15 @@ __extension Attention:
         )
 
         var v_buffer = KVBuffer[
-            mma_shape = Self.mma_shape,
-            k_group_size = Self.k_group_size,
+            mma_shape=Self.mma_shape,
+            k_group_size=Self.k_group_size,
             swizzle=None,
-            BN = Int(Self.BN),
-            WN = Int(Self.WN),
-            BK = Int(Self.BK),
-            num_threads = Int(Self.num_threads),
-            depth = Int(Self.depth),
-            kv_num_heads = Int(Self.num_heads) // Self.group,
+            BN=Int(Self.BN),
+            WN=Int(Self.WN),
+            BK=Int(Self.BK),
+            num_threads=Int(Self.num_threads),
+            depth=Int(Self.depth),
+            kv_num_heads=Int(Self.num_heads) // Self.group,
             transpose=False,
         ](
             self.v,
@@ -578,22 +562,19 @@ __extension Attention:
                 accum_type,
                 q_type,
                 Self.mma_shape,
-                group_size = Self.k_group_size,
+                group_size=Self.k_group_size,
                 transpose_b=True,
             ]()
             self.zero_p_buffer[stage]()
 
-            @parameter
-            for i in range(Self.depth // Self.BK):
-
-                @parameter
-                for k_mma in range(Self.num_k_mmas2):
+            comptime for i in range(Self.depth // Self.BK):
+                comptime for k_mma in range(Self.num_k_mmas2):
                     var q_mma_tile = self.q_buffer.get_mma_tile[
                         Int(i), Int(k_mma)
                     ]()
 
                     var k_mma_tile = k_buffer.get_mma_tile[Int(k_mma), Int(i)]()
-                    tensor_core_mma.mma[swap_a_b = Self.swap_a_b](
+                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
                         q_mma_tile,
                         k_mma_tile,
                         self.p_reg_buffer.get_reg_tile[stage](),
@@ -606,16 +587,13 @@ __extension Attention:
                 accum_type,
                 q_type,
                 Self.mma_shape,
-                group_size = Self.k_group_size,
+                group_size=Self.k_group_size,
                 transpose_b=True,
             ]()
 
-            @parameter
-            for i in range(Self.BN // Self.BK):
-
-                @parameter
-                for k_mma in range(v_buffer.num_k_mmas2):
-                    tensor_core_mma.mma[swap_a_b = Self.swap_a_b](
+            comptime for i in range(Self.BN // Self.BK):
+                comptime for k_mma in range(v_buffer.num_k_mmas2):
+                    tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
                         self.p_reg_buffer.get_mma_tile[Int(i), k_mma, stage](),
                         v_buffer.get_mma_tile[k_mma, Int(i)](),
                         self.out_reg_buffer.reg_tile,
@@ -679,11 +657,10 @@ __extension Attention:
 
             set_priority[1]()
 
-            @parameter
-            if break_mask:
+            comptime if break_mask:
                 self.apply_mask[1]()
             mma_pv[0]()
-            self.online_softmax_step_0[1, mask = not break_mask]()
+            self.online_softmax_step_0[1, mask=not break_mask]()
             scheduling_hints_pv[2]()
             set_priority[0]()
             barrier()
@@ -709,11 +686,10 @@ __extension Attention:
 
             set_priority[1]()
 
-            @parameter
-            if break_mask:
+            comptime if break_mask:
                 self.apply_mask[0]()
             mma_pv[1]()
-            self.online_softmax_step_0[0, mask = not break_mask]()
+            self.online_softmax_step_0[0, mask=not break_mask]()
 
             scheduling_hints_pv[4]()
             set_priority[0]()
@@ -729,8 +705,7 @@ __extension Attention:
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
-        @parameter
-        if is_causal_mask:
+        comptime if is_causal_mask:
             # for causal mask we can exit early depending on the q_tile_idx
             var num_tiles_causal = ceildiv(
                 Int((self.q_tile_idx() + 1) * Self.BM) + self.start_pos,

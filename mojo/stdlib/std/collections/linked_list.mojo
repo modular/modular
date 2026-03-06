@@ -19,11 +19,11 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
-from collections._index_normalization import normalize_index
-import format._utils as fmt
-from os import abort
+from std.collections._index_normalization import normalize_index
+import std.format._utils as fmt
+from std.os import abort
 
-from builtin.constrained import _constrained_conforms_to
+from std.builtin.constrained import _constrained_conforms_to
 
 
 struct Node[
@@ -115,8 +115,7 @@ struct _LinkedListIter[
     fn __init__(out self, src: Pointer[LinkedList[Self.Element], Self.origin]):
         self.src = src
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             self.curr = self.src[]._head
         else:
             self.curr = self.src[]._tail
@@ -131,8 +130,7 @@ struct _LinkedListIter[
             raise StopIteration()
         var old = self.curr
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             self.curr = self.curr[].next
         else:
             self.curr = self.curr[].prev
@@ -145,9 +143,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Copyable,
     Defaultable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A doubly-linked list implementation.
@@ -206,10 +202,8 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         self = Self(elements=elements^)
 
-    fn __init__(
-        out self, *, var elements: VariadicListMem[Self.ElementType, _]
-    ):
-        """Construct a list from a `VariadicListMem`.
+    fn __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
+        """Construct a list from a `VariadicList`.
 
         Args:
             elements: The elements to add to the list.
@@ -226,7 +220,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         elements^.consume_elements[init_elt]()
 
-    fn __copyinit__(out self, read copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize this list as a copy of another list.
 
         Args:
@@ -309,6 +303,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         while curr:
             var next = curr[].next
             curr[].next = prev
+            curr[].prev = next
             prev = curr
             curr = next
         self._tail = self._head
@@ -777,6 +772,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the list to its string representation.
 
@@ -790,6 +786,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self.write_to(writer)
         return writer
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Convert the list to its string representation.
 
@@ -812,7 +809,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             writer: The writer to write the list to.
         """
-        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr representation of this LinkedList to a Writer.
@@ -826,7 +823,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "LinkedList").params(
             fmt.TypeNames[Self.ElementType](),

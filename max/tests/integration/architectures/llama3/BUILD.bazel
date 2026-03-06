@@ -43,11 +43,15 @@ modular_py_test(
     ],
     tags = [
         "gpu",
-        "no-pydeps",  # vllm is conditionally included via select()
         "no-sandbox",
         "requires-network",
     ],
     deps = [
+        # HACK:
+        "//max/tests/integration/test_common:transformers_v4",
+        # Don't sort the above dep ^^^, we're forcing a specific version of transformers.
+        # We rely on Python import order to make sure this one gets picked up instead of
+        # the normal one pulled from rules_pycross transitively.
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -65,10 +69,5 @@ modular_py_test(
         requirement("torch"),
         requirement("numpy"),
         requirement("transformers"),
-    ] + select({
-        "//:nvidia_gpu": [
-            requirement("vllm"),
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )

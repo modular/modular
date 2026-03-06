@@ -23,7 +23,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 from max._core.engine import InferenceSession as _InferenceSession
@@ -31,7 +31,7 @@ from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import CPU, Buffer, Device, DLPackArray
 from max.graph import Graph
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
@@ -50,28 +50,25 @@ ScalarType = (int, float, bool, np.generic)
 InputType = DLPackArray | Buffer | int | float | bool | np.generic
 
 
-class GPUProfilingMode(str, Enum):
-    """The supported modes for GPU profiling.
+GPUProfilingMode = Literal["off", "on", "detailed"]
+"""The supported modes for GPU profiling.
 
-    GPU profiling modes control the level of instrumentation when profiling
-    MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
-    levels provide more detail but may introduce additional overhead.
+GPU profiling modes control the level of instrumentation when profiling
+MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
+levels provide more detail but may introduce additional overhead.
 
-    See Also:
-        :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
-    """
+- ``"off"``: Disable GPU profiling instrumentation. This is the default
+  mode and incurs no profiling overhead.
+- ``"on"``: Enable basic GPU profiling. Adds CUDA driver calls and NVTX
+  markers for correlating kernel executions with host-side code.
+- ``"detailed"``: Enable detailed GPU profiling with additional NVTX
+  markers from Python code. This mode provides the most visibility into
+  which Python operations correspond to which GPU kernels, but has the
+  highest overhead.
 
-    OFF = "off"
-    """Disable GPU profiling instrumentation. This is the default mode
-            and incurs no profiling overhead."""
-    ON = "on"
-    """Enable basic GPU profiling. Adds CUDA driver calls and NVTX
-            markers for correlating kernel executions with host-side code."""
-    DETAILED = "detailed"
-    """Enable detailed GPU profiling with additional NVTX markers
-            from Python code. This mode provides the most visibility into
-            which Python operations correspond to which GPU kernels, but
-            has the highest overhead."""
+See Also:
+    :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
+"""
 
 
 def _raise_if_not_contiguous(x: InputType) -> None:
@@ -145,8 +142,33 @@ def _Model_signature(self: Model) -> Signature:
     return Signature(parameters=parameters)
 
 
-def _Model_capture(self: Model, *inputs: Buffer) -> list[Buffer]:
-    """Capture execution into a device graph keyed by input shapes/dtypes.
+def _normalize_graph_key(graph_key: int) -> int:
+    if isinstance(graph_key, bool) or not isinstance(graph_key, int):
+        raise TypeError("graph_key must be an int.")
+    if graph_key < 0 or graph_key > 2**64 - 1:
+        raise ValueError("graph_key must be in range [0, 2^64 - 1].")
+    return graph_key
+
+
+def _normalize_graph_keys(graph_keys: int | Sequence[int]) -> list[int]:
+    if isinstance(graph_keys, bool):
+        raise TypeError("graph_keys must be an int or sequence of ints.")
+    if isinstance(graph_keys, int):
+        return [_normalize_graph_key(graph_keys)]
+    if isinstance(graph_keys, (str, bytes)):
+        raise TypeError("graph_keys must be a sequence of ints.")
+    normalized: list[int] = []
+    for graph_key in graph_keys:
+        normalized.append(_normalize_graph_key(graph_key))
+    if not normalized:
+        raise ValueError("graph_keys must not be empty.")
+    return normalized
+
+
+def _Model_capture(
+    self: Model, graph_keys: int | Sequence[int], *inputs: Buffer
+) -> list[Buffer]:
+    """Capture execution into a device graph for caller-provided key.
 
     Capture is best-effort and model-dependent. If the model issues
     capture-unsafe operations (for example, host-device synchronization),
@@ -154,12 +176,52 @@ def _Model_capture(self: Model, *inputs: Buffer) -> list[Buffer]:
     """
     if not inputs:
         raise ValueError("Model.capture requires input buffers.")
-    return self._capture(list(inputs))
+    normalized_keys = _normalize_graph_keys(graph_keys)
+    return self._capture(normalized_keys, list(inputs))
 
 
-def _Model_replay(self: Model, *inputs: Buffer) -> None:
-    """Replay the captured device graph for these inputs."""
-    self._replay(list(inputs))
+def _Model_replay(
+    self: Model, graph_keys: int | Sequence[int], *inputs: Buffer
+) -> None:
+    """Replay the captured device graph for a caller-provided key."""
+    if not inputs:
+        raise ValueError("Model.replay requires input buffers.")
+    normalized_keys = _normalize_graph_keys(graph_keys)
+    self._replay(normalized_keys, list(inputs))
+
+
+def _Model_debug_verify_replay(
+    self: Model, graph_keys: int | Sequence[int], *inputs: Buffer
+) -> None:
+    """Execute eagerly and verify the launch trace matches the captured graph.
+
+    This method validates that graph capture correctly represents eager
+    execution by running the model and comparing kernel launch sequences
+    against a previously captured device graph.
+
+    Args:
+        self: The model to debug/verify
+        graph_keys: Caller-provided graph key or per-device keys identifying
+            captured graphs.
+        inputs: Input buffers matching the captured input signature (same
+            shapes and dtypes used during capture).
+
+    Raises:
+        TypeError: If ``graph_keys`` is neither an int nor a sequence of ints.
+        ValueError: If any key in ``graph_keys`` is out of uint64 range.
+        ValueError: If no input buffers are provided.
+        RuntimeError: If no graph has been captured for ``graph_keys``.
+        RuntimeError: If the eager execution trace doesn't match the captured graph.
+
+    Example:
+        >>> model.capture([1, 1], input_tensor)
+        >>> model.debug_verify_replay([1, 1], input_tensor)  # Validates capture
+        >>> model.replay([1, 1], input_tensor)  # Safe to use optimized replay
+    """
+    if not inputs:
+        raise ValueError("Model.debug_verify_replay requires input buffers.")
+    normalized_keys = _normalize_graph_keys(graph_keys)
+    self._debug_verify_replay(normalized_keys, list(inputs))
 
 
 Model.execute = _Model_execute  # type: ignore[method-assign]
@@ -168,6 +230,7 @@ Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
 Model.replay = _Model_replay  # type: ignore[method-assign]
+Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[method-assign]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:
@@ -298,8 +361,8 @@ class InferenceSession:
         Args:
             num_threads: Number of threads to use for the inference session.
               This defaults to the number of physical cores on your machine.
-            devices: A list of devices on which to run inference. Default is
-              the host CPU only.
+            devices: A list of devices on which to run inference. The host CPU
+              is always included automatically.
             custom_extensions: The extensions to load for the model.
               Supports paths to a `.mojopkg` custom ops library or a `.mojo`
               source file.
@@ -313,7 +376,10 @@ class InferenceSession:
             if device not in seen_devices:
                 final_devices.append(device)
                 seen_devices.add(device)
-        # If the user provided an empty iterable, final_devices remains empty.
+        host_cpu = CPU()
+        if host_cpu not in seen_devices:
+            final_devices.append(host_cpu)
+            seen_devices.add(host_cpu)
 
         custom_extensions_final = []
 
@@ -341,9 +407,21 @@ class InferenceSession:
         if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
             self.set_mojo_log_level(env_val)
 
+        if env_val := os.getenv("MOJO_ASSERT_LEVEL"):
+            try:
+                assert_level = AssertLevel[env_val.upper()]
+            except KeyError as e:
+                raise TypeError(
+                    f"Invalid assert level ({env_val}). Please use one of: {[x.name for x in AssertLevel]}"
+                ) from e
+            self.set_mojo_assert_level(assert_level)
+
         # TODO: Remove this once the new topk kernel is stable.
         if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
             self.use_old_top_k_kernel(use_old_top_k_kernel)
+
+        if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
+            self.use_fi_topk_kernel(use_fi_topk)
 
     def __repr__(self) -> str:
         if self.num_threads:
@@ -546,7 +624,13 @@ class InferenceSession:
         self._set_mojo_define("LOGGING_LEVEL", level)
 
     def set_mojo_assert_level(self, level: AssertLevel) -> None:
-        """Sets which mojo asserts are kept in the compiled model."""
+        """Sets which mojo asserts are kept in the compiled model.
+
+        Note:
+            Not all kernels are runnable with asserts enabled. If model
+            compilation or execution fails at higher assert levels, retry with
+            ``AssertLevel.NONE``.
+        """
         self._set_mojo_define("ASSERT", level)
 
     def gpu_profiling(self, mode: GPUProfilingMode) -> None:
@@ -562,11 +646,11 @@ class InferenceSession:
 
         .. code-block:: python
 
-            from max.engine import InferenceSession, GPUProfilingMode
+            from max.engine import InferenceSession
             from max.driver import Accelerator
 
             session = InferenceSession(devices=[Accelerator()])
-            session.gpu_profiling(GPUProfilingMode.DETAILED)
+            session.gpu_profiling("detailed")
             model = session.load(my_graph)
 
         Then run it with ``nsys``:
@@ -593,24 +677,24 @@ class InferenceSession:
         Args:
             mode: The profiling mode to set. One of:
 
-                - :attr:`GPUProfilingMode.OFF`: Disable profiling (default).
-                - :attr:`GPUProfilingMode.ON`: Enable basic profiling with
+                - ``"off"``: Disable profiling (default).
+                - ``"on"``: Enable basic profiling with
                   NVTX markers for kernel correlation.
-                - :attr:`GPUProfilingMode.DETAILED`: Enable detailed profiling
+                - ``"detailed"``: Enable detailed profiling
                   with additional Python-level NVTX markers.
 
         See Also:
             - `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_
         """
-        if mode == GPUProfilingMode.OFF:
+        if mode == "off":
             return
 
         self._set_mojo_define("MODULAR_ENABLE_PROFILING", 1)
         self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", 1)
-        if mode == GPUProfilingMode.DETAILED:
+        if mode == "detailed":
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
-        set_gpu_profiling_state(mode.value)
+        set_gpu_profiling_state(mode)
 
     def use_old_top_k_kernel(self, mode: str) -> None:
         """Enables the old top-k kernel.
@@ -626,6 +710,18 @@ class InferenceSession:
             return
 
         self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
+
+    def use_fi_topk_kernel(self, mode: str) -> None:
+        """Enables the fused-inference top-k kernel.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("USE_FI_TOPK_KERNEL", 1)
 
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""

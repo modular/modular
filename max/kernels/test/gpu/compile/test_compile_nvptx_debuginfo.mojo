@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
 
 
 fn outer[y: Int]():
@@ -23,7 +23,7 @@ fn outer[y: Int]():
     print(
         _compile_code[
             param[y],
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 

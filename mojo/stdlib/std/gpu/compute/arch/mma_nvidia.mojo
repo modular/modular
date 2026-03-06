@@ -24,9 +24,9 @@ Supported operations:
 Reference: https://docs.nvidia.com/cuda/parallel-thread-execution/
 """
 
-from sys import _RegisterPackType, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from memory import bitcast
+from std.sys import _RegisterPackType, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.memory import bitcast
 
 # Import helper functions from parent module
 from ..mma import _has_type, _has_shape, _unsupported_mma_op
@@ -37,8 +37,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
-    @parameter
-    if _has_type[DType.float16](
+    comptime if _has_type[DType.float16](
         a.dtype, b.dtype, c.dtype, d.dtype
     ) and _has_shape[(4, 2, 4, 4)](a.size, b.size, c.size, d.size):
         var sa = a.split()

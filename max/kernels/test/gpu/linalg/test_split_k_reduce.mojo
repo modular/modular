@@ -11,28 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
 from buffer import DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn _size[rank: Int](dims: IndexList[rank]) -> Int:
     var size = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         size *= dims[i]
     return size
 
@@ -57,7 +56,7 @@ fn _create_host_buffer[
     dtype, rank, MutAnyOrigin, shape
 ]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
-    return NDBuffer[dtype, rank, _, shape](
+    return NDBuffer[dtype, rank, MutAnyOrigin, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )
 
@@ -65,9 +64,7 @@ fn _create_host_buffer[
 fn _get_test_name[
     dtype: DType, shape_a: DimList, shape_b: DimList
 ](shape_a_dim: IndexList[2], shape_b_dim: IndexList[2],) -> String:
-    return String(
-        "test-case(", dtype, ") : a -> ", shape_a_dim, " and b ->", shape_b_dim
-    )
+    return t"test-case({dtype}) : a -> {shape_a_dim} and b ->{shape_b_dim}"
 
 
 fn _split_k_reduce_verify[
@@ -92,7 +89,7 @@ fn _split_k_reduce_verify[
 def test_split_k_reduce_rank3[
     c_type: DType,
     work_space_type: DType,
-](M: Int, N: Int, num_partitions: Int, ctx: DeviceContext):
+](M: Int, N: Int, num_partitions: Int, ctx: DeviceContext) raises:
     print(
         "test_split_k_reduce_rank3",
         work_space_type,
@@ -192,7 +189,7 @@ def test_split_k_reduce_rank3[
     work_space_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Rank-3 work space.
         test_split_k_reduce_rank3[DType.bfloat16, DType.bfloat16](

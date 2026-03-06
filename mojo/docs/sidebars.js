@@ -5,12 +5,13 @@ const mojoSidebars = {
     "mojo/manual/quickstart",
     "mojo/changelog",
     {
-      label : "Tutorials",
+      label : "Get started",
       type : "category",
       className : "sidebar-heading",
       collapsed : false,
       items : [
         "mojo/manual/get-started",
+        "mojo/manual/python-to-mojo",
         "mojo/manual/gpu/intro-tutorial",
       ],
     },
@@ -70,6 +71,7 @@ const mojoSidebars = {
       collapsed : false,
       items : [
         "mojo/manual/traits",
+        "mojo/manual/metaprogramming/comptime-evaluation",
         "mojo/manual/parameters/index",
         "mojo/manual/generics/generics",
         "mojo/manual/metaprogramming/materialization",

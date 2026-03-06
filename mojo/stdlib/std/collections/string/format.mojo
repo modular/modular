@@ -70,11 +70,11 @@ methods.
 """
 
 
-from builtin.globals import global_constant
-from builtin.variadics import Variadic
-from collections.string.string_slice import get_static_string
-from compile import get_type_name
-from utils import Variant
+from std.builtin.globals import global_constant
+from std.builtin.variadics import Variadic
+from std.collections.string.string_slice import get_static_string
+from std.compile import get_type_name
+from std.utils import Variant
 
 # ===-----------------------------------------------------------------------===#
 # Formatter
@@ -139,8 +139,7 @@ fn _comptime_list_to_span[
     fn list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 
-        @parameter
-        for i in range(len(list)):
+        comptime for i in range(len(list)):
             UnsafePointer(to=array[i]).init_pointee_copy(materialize[list]()[i])
         return array^
 
@@ -171,7 +170,7 @@ struct _FormatUtils:
 
         @always_inline
         fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
@@ -259,8 +258,7 @@ struct _FormatUtils:
             format
         )
 
-        @parameter
-        if result.isa[Error]():
+        comptime if result.isa[Error]():
             comptime assert not result.isa[Error](), String(result[Error])
         else:
             comptime entries = result[type_of(result).Ts[0]]
@@ -281,7 +279,7 @@ struct _FormatUtils:
         format: StringSlice,
     ) -> Variant[
         _PrecompiledEntriesRuntime[
-            format_origin = ImmutOrigin(format.origin), *Ts
+            format_origin=ImmutOrigin(format.origin), *Ts
         ],
         Error,
     ]:
@@ -302,7 +300,7 @@ struct _FormatUtils:
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntriesRuntime[
-        format_origin = ImmutOrigin(format.origin), *Ts
+        format_origin=ImmutOrigin(format.origin), *Ts
     ]:
         """Parses and compiles a format string at runtime.
 
@@ -524,7 +522,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
@@ -601,8 +599,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         # alias a_value = UInt8(ord("a")) # TODO
 
         fn _format(idx: Int) unified {read self, read args, mut writer}:
-            @parameter
-            for i in range(len_pos_args):
+            comptime for i in range(len_pos_args):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

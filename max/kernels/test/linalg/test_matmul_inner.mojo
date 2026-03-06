@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import align_of
-from sys.info import CompilationTarget
+from std.math import align_up
+from std.sys import align_of
+from std.sys.info import CompilationTarget
 
 from buffer.dimlist import DimList
 from layout import Layout, LayoutTensor, RuntimeLayout
@@ -31,13 +31,13 @@ from linalg.utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 comptime M: Int = 64
 comptime N: Int = 64
@@ -60,8 +60,7 @@ fn _matmul_inner_loop[
 ):
     comptime kernel_id = select_inner_kernel[a.dtype, b_packed.dtype, c.dtype]()
 
-    @parameter
-    if kernel_id == InnerKernelID.DEFAULT:
+    comptime if kernel_id == InnerKernelID.DEFAULT:
         Inner_matmul_default().__inner_matmul__[
             kernel_rows, kernel_cols, simd_size
         ](
@@ -110,7 +109,7 @@ fn _matmul_inner_loop[
             skip_boundary_check,
         )
     else:
-        constrained[False, "no _run_inner_loop implementation"]()
+        comptime assert False, "no _run_inner_loop implementation"
 
 
 fn matmul_inner_loop[
@@ -204,7 +203,7 @@ fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-def main():
+def main() raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
     test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
     test_micro_kernel[

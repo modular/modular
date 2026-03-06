@@ -29,26 +29,27 @@ Usage:
     # TileTensor tiles are passed directly to TMA ops
 """
 
-from gpu.memory import AddressSpace
-from layout import Layout as LegacyLayout, LayoutTensor
+from std.gpu.memory import AddressSpace
+from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 from linalg.structuring import SMemTile as LTSMemTile
 
 # Import TileTensor types for overloaded load methods
-from .tile_types import SMemTile2D, TMATile
+from structured_kernels.tile_types import SMemTile2D, TMATile
 
 # Import variadic types for TileTensor load overload
-from builtin.variadics import Variadic
-from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
+from std.builtin.variadics import Variadic
+from layout.tile_layout import TensorLayout
+from std.utils.index import IndexList
 
 
 struct TileLoaderTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
-    gmem_layout: Layout,
-    desc_layout: Layout,
+    tma_rank: Int,
+    tile_shape: IndexList[tma_rank],
+    desc_shape: IndexList[tma_rank],
     /,
     *,
     cta_group: Int,
@@ -61,13 +62,14 @@ struct TileLoaderTMA[
     Parameters:
         tma_origin: Origin of the TMA descriptor pointer.
         dtype: Element data type.
-        gmem_layout: Global memory tensor layout.
-        desc_layout: TMA descriptor layout (tile dimensions).
+        tma_rank: Rank of the TMA tile/descriptor shapes.
+        tile_shape: TMA tile shape as IndexList.
+        desc_shape: TMA descriptor shape as IndexList.
         cta_group: CTA group size (1 or 2 for SM100 2-SM MMA).
     """
 
     comptime TmaOp = TMATensorTile[
-        Self.dtype, Self.gmem_layout, Self.desc_layout
+        Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
@@ -111,7 +113,7 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
     @always_inline
@@ -140,7 +142,7 @@ struct TileLoaderTMA[
         """
         # TileTensor overload of async_multicast_load - no conversion needed
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
     @always_inline
@@ -152,7 +154,7 @@ struct TileLoaderTMA[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: UInt,
@@ -170,7 +172,7 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
 
@@ -223,7 +225,7 @@ struct TileLoader[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: UInt,
@@ -231,7 +233,7 @@ struct TileLoader[
     ):
         """Load a tile using TMA async multicast load."""
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
 
@@ -279,7 +281,7 @@ struct ScalesLoader[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         row_coord: Int,

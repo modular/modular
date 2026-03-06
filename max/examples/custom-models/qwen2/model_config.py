@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.llama3.model_config import Llama3Config
 from transformers import AutoConfig
 
 

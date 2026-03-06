@@ -11,25 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import env_get_shape, parse_shape
-from testing import assert_true
+from internal_utils import get_defined_shape, parse_shape
+from std.testing import assert_true
 
 
 fn print_static_shape[x: List[Int]]():
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         print("dim", i, "=", xi)
 
 
-def main():
+def main() raises:
     comptime shape_mnk = parse_shape["10x20x30"]()
     print_static_shape[shape_mnk]()
     comptime assert shape_mnk[0] == 10
     comptime assert shape_mnk[1] == 20
     comptime assert shape_mnk[2] == 30
 
-    comptime shape = env_get_shape["shape", "1x2x3"]()
+    comptime shape = get_defined_shape["shape", "1x2x3"]()
     print_static_shape[shape]()
 
     comptime assert shape[0] == 1

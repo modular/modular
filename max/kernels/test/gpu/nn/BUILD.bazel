@@ -29,12 +29,28 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mla_decode_blockwise_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    "test_score_mod_mha.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_mla_prefill_blockwise_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_prefill_qkv_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_index_fp8.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_rms_norm_fused_fp8.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -131,6 +147,14 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
+    "test_tpool_patch_merger.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_learnable_2d_interp_pos_emb.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _FILECHECK_TESTS = [
@@ -139,6 +163,38 @@ _FILECHECK_TESTS = [
     "test_gather.mojo",
     "test_gather_nd_oob.mojo",
 ]
+
+# Standalone multi-GPU test: allreduce + RMSNorm + FP8 quantization.
+# Needs multi-GPU constraints, disabled assertions, special env vars,
+# 4GB GPU memory, and extra deps that the standard nn glob doesn't provide.
+mojo_test(
+    name = "test_allreduce_residual_rmsnorm_fp8.mojo.test",
+    size = "large",
+    srcs = ["test_allreduce_residual_rmsnorm_fp8.mojo"],
+    enable_assertions = False,  # MSTDL-2301: register pressure
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+    ],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
 
 [
     mojo_filecheck_test(
@@ -199,6 +255,8 @@ _FILECHECK_TESTS = [
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + [
+            "test_allreduce_residual_rmsnorm_fp8.mojo",  # Has its own standalone rule above
+        ],
     )
 ]

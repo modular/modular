@@ -1,0 +1,148 @@
+---
+title: Model support
+description: Learn about the model formats supported by MAX.
+---
+
+import MDXListing from '@site/src/components/Listing/MDXListing';
+
+MAX allows you to pick the perfect GenAI for your project from Hugging Face.
+You just provide the name of the model you want, and MAX takes care of the
+rest. It builds the model as a high-performance graph and starts a serving
+endpoint that runs the model on either a CPU or GPU.
+
+This page explains how this works out of the box with models from Hugging Face,
+and introduces how you can customize an existing model or create your own.
+
+:::note MAX model repo
+
+If you just want to browse some models, check out the [MAX model
+repository](https://builds.modular.com/?category=models&type=MAX+Model).
+
+:::
+
+## Model configs
+
+To understand how MAX accelerates hundreds of GenAI models from Hugging Face,
+you should first know a little about Hugging Face model configurations.
+
+Nowadays, the definitive place to find AI models is [Hugging Face Model
+Hub](https://huggingface.co/models). Although models on Hugging Face might be
+built and trained with different machine learning frameworks, they all include
+a `config.json` file, which is like a model blueprint. This file contains all
+the information you need to understand the model architecture and its
+configuration, such as the number of layers used, the embedding size, and other
+hyperparameters.
+
+By reading the model configuration, we can reconstruct any model from Hugging
+Face as a MAX model.
+
+
+## MAX models {#max-graph}
+
+A MAX model is a high-performance inferencing model built with our [MAX Python
+API](/max/api/python/). It's a unique model format that allows the MAX graph
+compiler to optimize the model for inference on a wide range of hardware and
+deliver state-of-the-art performance you normally see only from model-specific
+inference libraries written in C or C++.
+
+You can build these models yourself with our Python API, but you don't have to.
+All you have to do is specify the GenAI model you want from Hugging Face (such
+as
+[`meta-llama/Llama-3.2-1B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct)),
+and MAX will programmatically reconstruct it as a MAX model.
+
+This works because we have already built a library of [base model
+architectures](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures)
+with the MAX Python API. When you ask MAX to start an inference server with a
+Hugging Face model, MAX pulls the corresponding pre-built architecture from our
+library and makes the appropriate changes based on the configuration from
+Hugging Face.
+
+This all happens automatically when you start a serving endpoint with the
+[`max`](/max/cli) CLI or with the [MAX
+container](/max/container). For example, here's how to start an endpoint using
+Meta's Llama 3.2 Instruct model as a MAX model:
+
+```sh
+max serve --model meta-llama/Llama-3.2-1B-Instruct
+```
+
+:::caution This model requires a GPU
+
+The command above will fail if your system doesn't have a
+[compatible GPU](/max/packages#gpu-compatibility). However, you can make it work if
+you instead [load quantized weights](#customize-a-model) as shown below.
+
+:::
+
+When you run the `max serve` command, MAX pulls the model
+configuration and weights from Hugging Face and builds it as a MAX model. Then
+it starts up an endpoint to handle inference requests that you send using
+[our REST API](/max/api/serve).
+
+### Customize a model
+
+If you want to load a different set of weights for a given model, you can pass
+them in GGUF or Safetensors format using the `--weight-path` argument. This
+accepts either a local path or a Hugging Face repo with the weights.
+
+For example, here's how to run `Llama-3.2-1B-Instruct` on a CPU with quantized
+weights ([from
+bartowski](https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF)):
+
+```sh
+max serve --model meta-llama/Llama-3.2-1B-Instruct \
+  --weight-path=bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q6_K.gguf
+```
+
+When using GGUF models, quantization encoding formats are automatically detected.
+When using the `max` command with a model from a Hugging Face
+repository, explicitly providing a quantization encoding is optional.
+
+```sh
+max serve --model "modularai/Llama-3.1-8B-Instruct-GGUF" \
+  --quantization-encoding=q4_k
+```
+
+If no quantization encoding is specified, MAX Serve automatically detects and
+uses the first encoding option from the repository. If a quantization encoding is
+provided, it must align with the available encoding options in the repository. If
+the repository contains multiple quantization formats, be sure to specify which
+encoding type you want to use.
+
+For help creating your own weights in GGUF format, see the tutorial to [Bring
+your own fine-tuned model](/max/develop/max-pipeline-bring-your-own-model).
+
+For more information on quantization, see the [Quantization](/max/graph/quantize)
+documentation.
+
+### Build your own model
+
+Although our model-building APIs are still under heavy development while we
+implement the most popular architectures, you can also
+build your own models with the MAX APIs today.
+
+To build your own inferencing model with the MAX, the process generally looks
+like this:
+
+1. Instantiate a [`Graph`](/max/api/python/graph/Graph) by specifying the input
+shape as a
+[`TensorType`](/max/api/python/graph/type#max.graph.type.TensorType).
+
+2. Build the graph by chaining [`ops`](/max/api/python/graph/ops/) functions.
+Each function takes and returns a [`Value`](/max/api/python/graph/Value)
+object.
+
+3. Add the final `Value` to the graph using the
+[`output()`](/max/api/python/graph/Graph#max.graph.Graph.output) method.
+
+For more information, see our tutorial to [get started with MAX Graph in
+Python](/max/develop/get-started-with-max-graph-in-python).
+
+## Get started
+
+export const docs = [
+  '../deploy/local-to-cloud.mdx',
+];
+
+<MDXListing mdxList={docs} />

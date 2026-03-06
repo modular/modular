@@ -16,9 +16,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    MultiKVCacheParams,
+)
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
@@ -30,6 +39,44 @@ class DeepseekV3_2Config(DeepseekV3Config):
     index_head_dim: int = 128
     index_n_heads: int = 64
     index_topk: int = 2048
+
+    @staticmethod
+    def construct_kv_params(
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParamInterface:
+        mla_kv_params = DeepseekV3Config.construct_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+        # Always store the indexer's K cache in float8_e4m3fn.
+        indexer_cache_dtype = DType.float8_e4m3fn
+        indexer_kvcache_quant_config = KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=32
+        )
+        assert isinstance(mla_kv_params, KVCacheParams)
+        indexer_kv_params = kv_cache_config.to_params(
+            dtype=indexer_cache_dtype,
+            # Similar to MLA, the indexer's k-cache uses a single KV head.
+            n_kv_heads=1,
+            head_dim=huggingface_config.index_head_dim,
+            num_layers=mla_kv_params.num_layers,
+            devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # Set to True because there is only a key-cache, and one KV head.
+            is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
+            kvcache_quant_config=indexer_kvcache_quant_config,
+        )
+        assert isinstance(indexer_kv_params, KVCacheParams)
+        return MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
 
     @override
     @classmethod
@@ -58,7 +105,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [

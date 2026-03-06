@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil, iota
+from std.math import ceil, iota
 
 from register import *
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Arange op
@@ -46,8 +46,7 @@ fn arange_shape[
     if step == 0:
         raise Error("[range] step must be non-zero")
 
-    @parameter
-    if start.dtype.is_integral():
+    comptime if start.dtype.is_integral():
         if step > 0 and stop < start:
             raise Error("[range] requires (start <= stop) for positive step")
 

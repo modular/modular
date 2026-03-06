@@ -11,21 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import iota
-from random import random_float64
+from std.math import iota
+from std.random import random_float64
 
-from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.algorithm.functional import parallelize_over_rows
+from std.benchmark import Bench, Bencher, BenchId
+from layout import Coord, Idx, TileTensor, row_major
 from nn.toppminp import min_p_sampling, top_p_sampling
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -197,8 +195,7 @@ fn test_case_sampling[
     for i in range(batch_size):
         p_thresholds.ptr[i] = p_threshold
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
@@ -223,8 +220,7 @@ fn test_case_sampling[
         )
 
     # Run sampling
-    @parameter
-    if is_top_p:
+    comptime if is_top_p:
         top_p_sampling[_test_sort=True](
             p_thresholds,
             in_logits,
@@ -244,12 +240,10 @@ fn test_case_sampling[
     # to the softmax & sort kernels so this is a good check.
     assert_equal(test_is_sorted_descending(in_logits, vocab_size), True)
 
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         print("Sampled token indices:", token_ids)
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m.dump_report()
 
     # free all pointers
@@ -303,7 +297,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.float32, fill_fn]()
 
 
-def main():
+def main() raises:
     print("\n====== Testing Fill Iota ======\n")
     test_all_types[fill_iota]()
     print("\n====== Testing Fill Random ======\n")

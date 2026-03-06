@@ -24,6 +24,7 @@ import msgspec
 import numpy as np
 from max.interfaces.generation import GenerationOutput
 from max.interfaces.request.open_responses import (
+    OpenResponsesRequest,
     OutputImageContent,
     OutputTextContent,
     ReasoningSummaryContent,
@@ -51,6 +52,7 @@ def _build_type_registry() -> dict[str, type]:
 
     # Register each type with its full module path
     for cls in [
+        OpenResponsesRequest,
         OutputImageContent,
         OutputTextContent,
         RefusalContent,

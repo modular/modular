@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import env_get_bool, env_get_int, size_of
+from std.math import ceildiv
+from std.sys import get_defined_bool, get_defined_int, size_of
 
 from buffer.buffer import NDBuffer
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext
-from gpu.host.info import H100
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import H100
 from internal_utils import Table
-from logger import Logger
+from std.logger import Logger
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig, _vendor_blas_fallback_disabled
@@ -97,8 +97,7 @@ fn matmul_dispatch_sm90[
     fn _dispatch() raises -> Int:
         # General constraints for H100 matmul
         # fmt: off
-        @parameter
-        if not (
+        comptime if not (
             input_type_supported and \
             transpose_b and \
             has_static_NK and \
@@ -107,8 +106,7 @@ fn matmul_dispatch_sm90[
             return DISPATCH_MISS
         # fmt: on
 
-        @parameter
-        if is_AB_fp8:
+        comptime if is_AB_fp8:
             logger.info("------ Dispatching to sm90 FP8 ------")
             return matmul_dispatch_sm90_fp8[
                 transpose_b=transpose_b,
@@ -129,8 +127,7 @@ fn matmul_dispatch_sm90[
         logger.info("SM90 dispatch miss - no matching path")
         return DISPATCH_MISS
 
-    @parameter
-    if _vendor_blas_fallback_disabled():
+    comptime if _vendor_blas_fallback_disabled():
         if _dispatch():
             return DISPATCH_HIT
         else:
@@ -517,20 +514,19 @@ fn matmul_dispatch_sm90_fp8[
 
     var m = c.dim[0]()
 
-    @parameter
-    if env_get_bool["AUTOTUNING_MODE", False]():
-        comptime NUM_PIPELINE_STAGES = env_get_int[
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+        comptime NUM_PIPELINE_STAGES = get_defined_int[
             "TUNE_NUM_PIPELINE_STAGES", 4
         ]()
-        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+        comptime NUM_CONSUMER = get_defined_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = get_defined_int["TUNE_WGMMA_N", 128]()
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime GRID_DIM_X = get_defined_int["TUNE_GRID_DIM_X", 1]()
         comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
         comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
 
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            env_get_int["TUNE_SCHEDULE_TYPE", 1]()
+            get_defined_int["TUNE_SCHEDULE_TYPE", 1]()
         )
 
         comptime H100_FP8_TUNING_CONFIG = MatmulConfig[
@@ -552,8 +548,8 @@ fn matmul_dispatch_sm90_fp8[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=H100_FP8_TUNING_CONFIG,
-            grid_shape = Index(128, 1),
-            schedule = MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
         ](
             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
             rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -579,8 +575,8 @@ fn matmul_dispatch_sm90_fp8[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=config,
-            schedule = entry.schedule,
-            grid_shape = entry.grid_shape,
+            schedule=entry.schedule,
+            grid_shape=entry.grid_shape,
         ](
             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
             rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -600,8 +596,7 @@ fn matmul_dispatch_sm90_fp8[
 
         comptime m_values = T.query_values[Int, get_m, domain]()
 
-        @parameter
-        for static_m in m_values:
+        comptime for static_m in m_values:
 
             @parameter
             @always_inline
@@ -611,8 +606,7 @@ fn matmul_dispatch_sm90_fp8[
             if m <= static_m:
                 comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
 
-                @parameter
-                if idx_list:
+                comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
@@ -623,8 +617,7 @@ fn matmul_dispatch_sm90_fp8[
         return DISPATCH_MISS
 
     # llama-405B-FP8 gemm shapes
-    @parameter
-    if (
+    comptime if (
         (static_N == 16384 and static_K == 2048)
         or (static_N == 2304 and static_K == 16384)
         or (static_N == 13312 and static_K == 16384)
@@ -658,8 +651,7 @@ fn matmul_dispatch_sm90_fp8[
         comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
         comptime BK = 128
 
-        @parameter
-        if BN != -1 and static_K % BK == 0:
+        comptime if BN != -1 and static_K % BK == 0:
             # If the number of blocks is less than the number of SMs, it's probably better to not use any persistent kernel
             if ceildiv(m, 64) * ceildiv(static_N, BN) <= H100.sm_count:
                 comptime config = MatmulConfig[
@@ -702,8 +694,8 @@ fn matmul_dispatch_sm90_fp8[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.DS_SCHEDULER,
-                    grid_shape = Index(H100.sm_count, 1),
+                    schedule=MatmulSchedule.DS_SCHEDULER,
+                    grid_shape=Index(H100.sm_count, 1),
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -731,8 +723,8 @@ fn matmul_dispatch_sm90_fp8[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.DS_SCHEDULER,
-                    grid_shape = Index(H100.sm_count, 1),
+                    schedule=MatmulSchedule.DS_SCHEDULER,
+                    grid_shape=Index(H100.sm_count, 1),
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2168,33 +2160,31 @@ fn matmul_dispatch_sm90_bf16_fp32[
     comptime mma_k = 16 // size_factor
     comptime BK = 64 // size_factor
 
-    @parameter
-    if env_get_bool["AUTOTUNING_MODE", False]():
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         comptime static_N = c.shape.get[1]()
         comptime static_K = a.shape.get[1]()
 
-        comptime IS_LARGE_GEMM_SHAPE = env_get_bool[
+        comptime IS_LARGE_GEMM_SHAPE = get_defined_bool[
             "TUNE_LARGE_GEMM_SHAPE", True
         ]()
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime NUM_PIPELINE_STAGES = env_get_int[
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime NUM_PIPELINE_STAGES = get_defined_int[
             "TUNE_NUM_PIPELINE_STAGES", 4
         ]()
-        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
+        comptime NUM_CONSUMER = get_defined_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = get_defined_int["TUNE_WGMMA_N", 128]()
         comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
-        comptime PARTITIONED_MULTICAST = env_get_bool[
+        comptime PARTITIONED_MULTICAST = get_defined_bool[
             "TUNE_PARTITIONED_MULTICAST", False
         ]()
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            Int32(env_get_int["TUNE_SCHEDULE_TYPE", 0]())
+            Int32(get_defined_int["TUNE_SCHEDULE_TYPE", 0]())
         )
 
-        @parameter
-        if IS_LARGE_GEMM_SHAPE:
+        comptime if IS_LARGE_GEMM_SHAPE:
             # GRID_DIM_X = 2^n for n in range[0-7]
-            comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+            comptime GRID_DIM_X = get_defined_int["TUNE_GRID_DIM_X", 1]()
             comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
 
             comptime H100_TUNING_CONFIG = MatmulConfig[
@@ -2218,7 +2208,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=H100_TUNING_CONFIG,
-                grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                 schedule=SCHEDULE_TYPE,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2229,25 +2219,23 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
         else:
-            comptime IS_SPLITK = env_get_bool["TUNE_IS_SPLITK", False]()
+            comptime IS_SPLITK = get_defined_bool["TUNE_IS_SPLITK", False]()
 
-            @parameter
-            if not IS_SPLITK:
-                comptime NUM_PIPELINE_STAGES = env_get_int[
+            comptime if not IS_SPLITK:
+                comptime NUM_PIPELINE_STAGES = get_defined_int[
                     "TUNE_NUM_PIPELINE_STAGES", 4
                 ]()
                 comptime GRID_DIM_X = H100.sm_count
                 comptime GRID_DIM_Y = 1
 
-                constrained[
+                comptime assert (
                     SCHEDULE_TYPE != MatmulSchedule.DS_SCHEDULER
                     or (
                         CLUSTER_DIM_X == 1
                         and CLUSTER_DIM_Y == 1
                         and (not PARTITIONED_MULTICAST)
-                    ),
-                    "Deepseek scheduler dose not support multicasting",
-                ]()
+                    )
+                ), "Deepseek scheduler dose not support multicasting"
 
                 comptime SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK = MatmulConfig[
                     a_type,
@@ -2268,7 +2256,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK,
-                    grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                    grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                     schedule=SCHEDULE_TYPE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2279,7 +2267,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
             else:
-                comptime SPLITS = env_get_int["TUNE_SPLITS", 2]()
+                comptime SPLITS = get_defined_int["TUNE_SPLITS", 2]()
 
                 comptime SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK = MatmulConfig[
                     a_type,
@@ -2301,7 +2289,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK,
                     splits=SPLITS,
-                    raster_order = RasterOrder.AlongM,
+                    raster_order=RasterOrder.AlongM,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2360,15 +2348,14 @@ fn matmul_dispatch_sm90_bf16_fp32[
             pdl_level=pdl_level,
         )
 
-        @parameter
-        if not entry.splits:
+        comptime if not entry.splits:
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = entry.schedule,
-                grid_shape = entry.grid_shape,
+                schedule=entry.schedule,
+                grid_shape=entry.grid_shape,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2381,10 +2368,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = entry.schedule,
-                grid_shape = entry.grid_shape,
-                splits = entry.splits.value(),
-                raster_order = entry.raster_order.value(),
+                schedule=entry.schedule,
+                grid_shape=entry.grid_shape,
+                splits=entry.splits.value(),
+                raster_order=entry.raster_order.value(),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2405,8 +2392,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
         comptime m_values = T.query_values[Int, get_m, domain]()
 
-        @parameter
-        for static_m in m_values:
+        comptime for static_m in m_values:
 
             @parameter
             @always_inline
@@ -2416,8 +2402,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             if m <= static_m:
                 comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
 
-                @parameter
-                if idx_list:
+                comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
@@ -2436,8 +2421,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     comptime tuning_nk_idx_list = tuning_table.query_index[rule_eq_nk]()
 
     # make sure the domain (nk_idx_list) is not empty!
-    @parameter
-    if tuning_nk_idx_list:
+    comptime if tuning_nk_idx_list:
         # TODO(GENAI-326): Skip problematic configs
         # - N=27648, K=5120, M<=8: accuracy bugs
         # - N=5120 with m <=8 : causes hang (unknown root cause in tuning configs)
@@ -2451,8 +2435,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
             ):
                 return DISPATCH_HIT
 
-    @parameter
-    if a_is_bfloat16_or_float32 and (static_N == 4096 and static_K == 1536):
+    comptime if a_is_bfloat16_or_float32 and (
+        static_N == 4096 and static_K == 1536
+    ):
         if m > 256:
             comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
             if (
@@ -2461,15 +2446,13 @@ fn matmul_dispatch_sm90_bf16_fp32[
             ):
                 return DISPATCH_HIT
 
-    @parameter
-    if a_is_bfloat16_or_float32 and (
+    comptime if a_is_bfloat16_or_float32 and (
         (static_N == 1536 and static_K == 4096)
         or (static_N == 1536 and static_K == 4608)
     ):
         comptime cond = (static_N == 1536 and static_K == 4096)
 
-        @parameter
-        if cond:
+        comptime if cond:
             if m < 32:
                 var runtime_config = swapAB_smallM[
                     a_type,
@@ -2515,8 +2498,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
                 comptime configs = build_configs_generic[1, 32, config_fn]()
 
-                @parameter
-                for config in configs:
+                comptime for config in configs:
                     if runtime_config == config:
                         # Only convert to base config after match is found
                         comptime base_config = config.to_base_config()
@@ -2526,7 +2508,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2555,7 +2537,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2585,7 +2567,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2618,7 +2600,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2648,7 +2630,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2678,7 +2660,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     # swapAB = True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2708,7 +2690,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2738,7 +2720,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2767,7 +2749,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2795,7 +2777,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2823,7 +2805,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -2849,7 +2831,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2863,8 +2845,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
     # Internvl 2xH100 shapes
-    @parameter
-    if a_is_bfloat16_or_float32 and (
+    comptime if a_is_bfloat16_or_float32 and (
         (static_N == 2560 and static_K == 5120)
         or (static_N == 5120 and static_K == 3584)
         or (static_N == 5120 and static_K == 27648)
@@ -2885,8 +2866,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
     # matmul configs for llama_3_3_70b
-    @parameter
-    if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
+    comptime if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
         comptime nk_idx_list = llama_3_3_70b_table.query_index[rule_eq_nk]()
 
         # In this case for m>64 the ranges are not supported.
@@ -2899,8 +2879,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
     # matmul configs for gemma_3_27b
-    @parameter
-    if a_is_bfloat16_or_float32 and (
+    comptime if a_is_bfloat16_or_float32 and (
         (static_N == 5376 and static_K == 21504)
         or (static_N == 5376 and static_K == 4096)
         # or (static_N == 262208 and static_K == 5376)
@@ -2909,8 +2888,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
     ):
         comptime nk_idx_list = gemma_3_27b_table.query_index[rule_eq_nk]()
 
-        @parameter
-        if nk_idx_list:
+        comptime if nk_idx_list:
             # TODO: add ranges for <=256, 512, 1024, 2048
             if (
                 m >= 16
@@ -2919,8 +2897,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             ):
                 return DISPATCH_HIT
 
-    @parameter
-    if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 2048:
+    comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 2048:
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
@@ -2936,8 +2913,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2960,8 +2937,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -2986,8 +2963,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M8192_N8192_K2048_config,
-                grid_shape = Index(4, H100.sm_count // 4),
-                schedule = MatmulSchedule.TILE2D,
+                grid_shape=Index(4, H100.sm_count // 4),
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3013,7 +2990,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N8192_K2048_config,
-                schedule = MatmulSchedule.TILE2D,
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3022,8 +2999,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
 
-    @parameter
-    if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
+    comptime if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
         if m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 112 // size_factor, BK),
@@ -3039,8 +3015,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3065,8 +3041,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M8192_N14336_K8192_config,
-                grid_shape = Index(8, H100.sm_count // 8),
-                schedule = MatmulSchedule.TILE2D,
+                grid_shape=Index(8, H100.sm_count // 8),
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3092,7 +3068,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N14336_K8192_config,
-                schedule = MatmulSchedule.TILE2D,
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3101,8 +3077,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
 
-    @parameter
-    if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
+    comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
@@ -3118,8 +3093,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3142,8 +3117,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=config,
-                schedule = MatmulSchedule.DS_SCHEDULER,
-                grid_shape = Index(128, 1),
+                schedule=MatmulSchedule.DS_SCHEDULER,
+                grid_shape=Index(128, 1),
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3168,8 +3143,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M8192_N8192_K7168_config,
-                grid_shape = Index(8, H100.sm_count // 8),
-                schedule = MatmulSchedule.TILE2D,
+                grid_shape=Index(8, H100.sm_count // 8),
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3198,7 +3173,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M4096_N8192_K7168_config,
-                schedule = MatmulSchedule.TILE2D,
+                schedule=MatmulSchedule.TILE2D,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3207,8 +3182,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
 
-    @parameter
-    if (
+    comptime if (
         a_is_bfloat16_or_float32
         and static_N == 3840
         and static_K in (15360, 4096)
@@ -3230,7 +3204,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 config=M512_N3840_K15360_config,
-                schedule = MatmulSchedule.NONE,
+                schedule=MatmulSchedule.NONE,
             ](
                 rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                 rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3248,12 +3222,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # we enable float32 here.
     # Fallback path with vectorized output and cp.async.ca load if K
     # is not multiple of 16B.
-    @parameter
-    if a_type == DType.bfloat16 and BN != -1:
+    comptime if a_type == DType.bfloat16 and BN != -1:
         comptime cond = static_N == 4096 and static_K == 1536
 
-        @parameter
-        if not cond:
+        comptime if not cond:
             if m <= 128:
                 comptime default_bf16_config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
@@ -3271,7 +3243,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=default_bf16_config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3280,8 +3252,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 )
                 return DISPATCH_HIT
 
-        @parameter
-        if cond:
+        comptime if cond:
             # m < 41: BN = ceildiv(m, 8) * 8, stages=12
             if m < 41:
                 var runtime_config = swapAB_smallM_ceildiv[
@@ -3300,8 +3271,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     1, 41, config_fn_small
                 ]()
 
-                @parameter
-                for config in configs_small:
+                comptime for config in configs_small:
                     if runtime_config == config:
                         comptime base_config = config.to_base_config()
                         warp_specialize_gemm_with_multicasting[
@@ -3309,7 +3279,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -3340,8 +3310,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     65, 129, config_fn_mid
                 ]()
 
-                @parameter
-                for config in configs_mid:
+                comptime for config in configs_mid:
                     if runtime_config == config:
                         comptime base_config = config.to_base_config()
                         warp_specialize_gemm_with_multicasting[
@@ -3349,7 +3318,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -3377,8 +3346,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     129, 241, config_fn_large
                 ]()
 
-                @parameter
-                for config in configs_large:
+                comptime for config in configs_large:
                     if runtime_config == config:
                         comptime base_config = config.to_base_config()
                         warp_specialize_gemm_with_multicasting[
@@ -3386,7 +3354,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                             config=base_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
                             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
@@ -3398,16 +3366,14 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
         @parameter
         fn get_k_groups[N: Int]() -> Optional[UInt]:
-            @parameter
-            if N == 1536:
+            comptime if N == 1536:
                 return None
             else:
                 return UInt(1)
 
         @parameter
         fn get_consumer_groups[N: Int]() -> Optional[Int]:
-            @parameter
-            if N == 1536:
+            comptime if N == 1536:
                 return 1
             else:
                 return None
@@ -3443,8 +3409,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             consumer_groups=consumer_groups,
         ]()
 
-        @parameter
-        for config in configs:
+        comptime for config in configs:
             # Compare SM90 configs directly
             if runtime_config == config:
                 # Only convert to base config after match is found
@@ -3455,7 +3420,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=base_config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule=MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3465,8 +3430,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
     # Fallback path, will use scalar 2B output and lots of OOB check.
-    @parameter
-    if a_type == DType.bfloat16:
+    comptime if a_type == DType.bfloat16:
         comptime BN = 256
         comptime default_bf16_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
@@ -3482,7 +3446,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=default_bf16_config,
-            schedule = MatmulSchedule.NONE,
+            schedule=MatmulSchedule.NONE,
         ](
             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
             rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3495,8 +3459,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
 
 fn _find_largest_bn_for_sm90_matmul[dtype: DType, N: Int]() -> Int:
-    @parameter
-    if N % 8 != 0:
+    comptime if N % 8 != 0:
         return -1
 
     fn _get_max_bn() capturing -> Int:

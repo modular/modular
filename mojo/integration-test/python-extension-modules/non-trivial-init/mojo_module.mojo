@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
@@ -42,7 +42,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
+struct MojoPair(Defaultable, ImplicitlyCopyable, Writable):
     """A pair of integers that can be initialized with custom values."""
 
     var first: Int
@@ -145,10 +145,6 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Representable):
     @staticmethod
     fn pyinit(out self: Self, args: PythonObject, kwargs: PythonObject) raises:
         self = Self(args, kwargs)
-
-    fn __repr__(self) -> String:
-        """String representation of the MojoPair."""
-        return String("MojoPair(", self.first, ", ", self.second, ")")
 
     @staticmethod
     fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:

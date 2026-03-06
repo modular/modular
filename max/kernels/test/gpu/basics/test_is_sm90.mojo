@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _is_sm_9x
+from std.sys.info import _is_sm_9x
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import *
 
 
 fn check_sm() -> Bool:
@@ -23,13 +23,13 @@ fn check_sm() -> Bool:
     return v
 
 
-def test_is_sm_9x():
+def test_is_sm_9x() raises:
     assert_true(
         "ret i1 true"
         in _compile_code[
             check_sm,
             emission_kind="llvm",
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
     assert_true(
@@ -37,10 +37,10 @@ def test_is_sm_9x():
         in _compile_code[
             check_sm,
             emission_kind="llvm",
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 
 
-def main():
+def main() raises:
     test_is_sm_9x()

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import Optional
+from std.collections.optional import Optional
 from layout import LayoutTensor, Layout
-from math import fma
-from sys import align_of, prefetch
-from sys.info import CompilationTarget
-from sys.intrinsics import PrefetchOptions
+from std.math import fma
+from std.sys import align_of, prefetch
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm.functional import tile
+from std.algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 
 from memory import UnsafePointer
@@ -73,7 +73,10 @@ struct _Accumulator[
     fn __init__(
         out self,
         other_storage: NDBuffer[
-            Self.dtype, 1, _, Self.num_rows * Self.num_cols * Self.simd_width
+            Self.dtype,
+            1,
+            MutAnyOrigin,
+            Self.num_rows * Self.num_cols * Self.simd_width,
         ],
     ):
         comptime assert (
@@ -85,7 +88,7 @@ struct _Accumulator[
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
@@ -100,7 +103,7 @@ struct _Accumulator[
 
     @always_inline
     fn __getitem__(self, m: Int, n: Int) -> SIMD[Self.dtype, Self.simd_width]:
-        return self._storage.load[width = Self.simd_width](
+        return self._storage.load[width=Self.simd_width](
             self._storage_index(m, n)
         )
 
@@ -146,11 +149,8 @@ struct _Accumulator[
     ](mut self, base_ptr: UnsafePointer[Scalar[Self.dtype]], stride: Int):
         var row_ptr = base_ptr
 
-        @parameter
-        for m in range(Self.num_rows):
-
-            @parameter
-            for n in range(Self.num_cols):
+        comptime for m in range(Self.num_rows):
+            comptime for n in range(Self.num_cols):
                 func(m, n, row_ptr + n * Self.simd_width)
             row_ptr += stride
 
@@ -160,7 +160,7 @@ struct _Accumulator[
         @parameter
         @always_inline
         fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype]]):
-            self[m, n] = ptr.load[width = Self.simd_width]()
+            self[m, n] = ptr.load[width=Self.simd_width]()
 
         self._transfer[do_transfer](base_ptr, stride)
 
@@ -204,9 +204,7 @@ struct _Accumulator[
         var c_ptr_loc = c_ptr + tile_n_idx
 
         if skip_boundary_check:
-
-            @parameter
-            if is_load:
+            comptime if is_load:
                 self.load(c_ptr_loc, c_stride)
             else:
                 self.store(c_ptr_loc, c_stride)
@@ -218,8 +216,7 @@ struct _Accumulator[
                 UnsafePointer[Scalar[Self.dtype]], Self.num_rows
             ](uninitialized=True)
 
-            @parameter
-            for row in range(Self.num_rows):
+            comptime for row in range(Self.num_rows):
                 row_ptrs[row] = c_ptr_loc + row * c_stride
 
             self._transfer_loop[0, is_load](
@@ -243,11 +240,8 @@ struct _Accumulator[
         @parameter
         @always_inline
         fn body(row: Int, col: Int):
-            @parameter
-            if is_load:
-
-                @parameter
-                if CompilationTarget.has_neon():
+            comptime if is_load:
+                comptime if CompilationTarget.has_neon():
                     var data = row_ptrs[row].load[width=column_step](col)
                     self._partial_set(row * Self.tile_columns + col, data)
                 else:
@@ -260,18 +254,15 @@ struct _Accumulator[
                     row * Self.tile_columns + col
                 )
 
-                @parameter
-                if CompilationTarget.has_neon():
+                comptime if CompilationTarget.has_neon():
                     row_ptrs[row].store(col, data)
                 else:
                     row_ptrs[0].store(stride * row + col, data)
 
-        @parameter
-        for row in range(Self.num_rows):
+        comptime for row in range(Self.num_rows):
             # Iterate twice for a pairwise load/store or once for any other access.
 
-            @parameter
-            for col in range(
+            comptime for col in range(
                 base_column, base_column + column_count, column_step
             ):
                 body(row, col)
@@ -292,8 +283,7 @@ struct _Accumulator[
         comptime column_groups = 2 if CompilationTarget.has_neon() else 1
 
         # vector instructions.
-        @parameter
-        if tile_columns_remaining >= column_groups * Self.simd_width:
+        comptime if tile_columns_remaining >= column_groups * Self.simd_width:
             if transfer_count >= base_column + column_groups * Self.simd_width:
                 self._transfer_columns[
                     base_column, column_groups * Self.simd_width, is_load
@@ -303,11 +293,8 @@ struct _Accumulator[
                 ](transfer_count, row_ptrs, stride)
                 return
 
-        @parameter
-        if tile_columns_remaining >= Self.simd_width:
-
-            @parameter
-            if CompilationTarget.has_neon():
+        comptime if tile_columns_remaining >= Self.simd_width:
+            comptime if CompilationTarget.has_neon():
                 self._transfer_tail[base_column, Self.simd_width, is_load](
                     transfer_count, row_ptrs, stride
                 )
@@ -334,15 +321,13 @@ struct _Accumulator[
             )
             comptime tile_columns_remaining = Self.tile_columns - base_column - tail_size
 
-            @parameter
-            if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
+            comptime if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
                 self._transfer_tail[
                     base_column + tail_size, tail_size // 2, is_load
                 ](transfer_count, row_ptrs, stride)
             return
 
-        @parameter
-        if tail_size > 1:
+        comptime if tail_size > 1:
             self._transfer_tail[base_column, tail_size // 2, is_load](
                 transfer_count, row_ptrs, stride
             )
@@ -358,12 +343,10 @@ struct _Accumulator[
     ):
         var tail_size = transfer_count - base_column
 
-        @parameter
-        for row in range(Self.num_rows):
+        comptime for row in range(Self.num_rows):
             comptime col = base_column // Self.simd_width
 
-            @parameter
-            if is_load:
+            comptime if is_load:
                 self[row, col] = partial_simd_load[Self.simd_width](
                     row_ptrs[0] + (stride * row + base_column),
                     0,
@@ -396,8 +379,7 @@ struct _Accumulator[
 
     @always_inline
     fn init(mut self):
-        @parameter
-        if Self.dtype.is_floating_point():
+        comptime if Self.dtype.is_floating_point():
             self.init(0.0)
         else:
             self.init(0)
@@ -405,11 +387,8 @@ struct _Accumulator[
     @always_inline
     fn init(mut self, val: Scalar[Self.dtype]):
         # TODO: refactor with _transfer
-        @parameter
-        for m in range(Self.num_rows):
-
-            @parameter
-            for n in range(Self.num_cols):
+        comptime for m in range(Self.num_rows):
+            comptime for n in range(Self.num_cols):
                 self[m, n] = val
 
     @always_inline
@@ -436,11 +415,8 @@ struct _Accumulator[
         """
 
         # TODO: could we lift partial_load_size out of the loop?
-        @parameter
-        for i in range(Self.num_rows):
-
-            @parameter
-            for j in range(Self.num_cols):
+        comptime for i in range(Self.num_rows):
+            comptime for j in range(Self.num_cols):
                 var input_ptr = input + i * input_stride + j * Self.simd_width
                 comptime partial_load_last_vec = partial_load and (
                     j == Self.num_cols - 1
@@ -475,11 +451,8 @@ struct _Accumulator[
         """
 
         # TODO: could we lift partial_store_size out of the loop?
-        @parameter
-        for i in range(Self.num_rows):
-
-            @parameter
-            for j in range(Self.num_cols):
+        comptime for i in range(Self.num_rows):
+            comptime for j in range(Self.num_cols):
                 comptime partial_store_last_vec = partial_store and (
                     j == Self.num_cols - 1
                 )
@@ -527,8 +500,7 @@ struct _Accumulator[
             partial_load_b_size: The partial load B size.
         """
 
-        @parameter
-        if CompilationTarget.has_neon():
+        comptime if CompilationTarget.has_neon():
             self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
@@ -605,8 +577,7 @@ struct _Accumulator[
                                 a_offset        a_offset + length
         """
 
-        @parameter
-        if CompilationTarget.has_neon():
+        comptime if CompilationTarget.has_neon():
             self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
@@ -646,7 +617,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -687,8 +658,7 @@ struct _Accumulator[
                                 a_offset        a_offset + length
         """
 
-        @parameter
-        if CompilationTarget.has_neon():
+        comptime if CompilationTarget.has_neon():
             self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
@@ -775,11 +745,8 @@ struct _Accumulator[
 
         for l in range(length):
             # prefetch
-            @parameter
-            if prefetch_offset:
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime if prefetch_offset:
+                comptime for j in range(Self.num_cols):
                     prefetch[
                         PrefetchOptions()
                         .for_read()
@@ -791,15 +758,13 @@ struct _Accumulator[
                         + j * Self.simd_width
                     )
 
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 # Broadcast an scalar from A to a simd vector.
                 var a_splat_vec = SIMD[a_type, Self.simd_width](
                     a[l + i * a_stride]
                 )
 
-                @parameter
-                for j in range(Self.num_cols):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
@@ -841,11 +806,8 @@ struct _Accumulator[
 
         for l in range(length):
             # prefetch
-            @parameter
-            if prefetch_offset:
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime if prefetch_offset:
+                comptime for j in range(Self.num_cols):
                     prefetch[
                         PrefetchOptions()
                         .for_read()
@@ -857,14 +819,12 @@ struct _Accumulator[
                         + j * Self.simd_width
                     )
 
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 # Broadcast an scalar from A to a simd vector.
                 var a_idx = Int(a_base_offsets[i]) + a_offset + l
                 var a_splat_vec = SIMD[a_type, Self.simd_width](a[a_idx])
 
-                @parameter
-                for j in range(Self.num_cols):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
@@ -892,7 +852,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -908,11 +868,8 @@ struct _Accumulator[
 
         for l in range(length):
             # prefetch
-            @parameter
-            if prefetch_offset:
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime if prefetch_offset:
+                comptime for j in range(Self.num_cols):
                     prefetch[
                         PrefetchOptions()
                         .for_read()
@@ -924,14 +881,12 @@ struct _Accumulator[
                         + j * Self.simd_width
                     )
 
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 # Broadcast an scalar from A to a simd vector.
                 var a_idx = Int(a_base_offsets[i]) + a_offset + l
                 var a_splat_vec = SIMD[a_type, Self.simd_width](a[a_idx])
 
-                @parameter
-                for j in range(Self.num_cols):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
@@ -1013,28 +968,23 @@ struct _Accumulator[
             )
 
             # Load vectors of size num_lanes from input.
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 a_vecs[i] = a.load[width=num_lanes](offset + i * a_stride)
 
             var b_ptr = b + offset * b_stride
 
-            @parameter
-            for lane in range(num_lanes):
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime for lane in range(num_lanes):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
                     ](b_ptr, j * Self.simd_width, partial_load_b_size)
 
-                    @parameter
-                    for i in range(Self.row_start, Self.row_stop):
+                    comptime for i in range(Self.row_start, Self.row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),
@@ -1044,7 +994,7 @@ struct _Accumulator[
                 b_ptr = b_ptr + b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1074,29 +1024,24 @@ struct _Accumulator[
             )
 
             # Load vectors of size num_lanes from input.
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 var a_idx = Int(a_base_offsets[i]) + a_offset + offset
                 a_vecs[i] = a.load[width=num_lanes](a_idx)
 
             var b_ptr = b + offset * b_stride
 
-            @parameter
-            for lane in range(num_lanes):
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime for lane in range(num_lanes):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
                     ](b_ptr, j * Self.simd_width, partial_load_b_size)
 
-                    @parameter
-                    for i in range(Self.row_start, Self.row_stop):
+                    comptime for i in range(Self.row_start, Self.row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),
@@ -1106,7 +1051,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1120,7 +1065,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -1138,29 +1083,24 @@ struct _Accumulator[
             )
 
             # Load vectors of size num_lanes from input.
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 var a_idx = Int(a_base_offsets[i]) + a_offset + offset
                 a_vecs[i] = a.load[width=num_lanes](a_idx)
 
             var b_ptr = b + offset * b_stride
 
-            @parameter
-            for lane in range(num_lanes):
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime for lane in range(num_lanes):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
                     ](b_ptr, j * Self.simd_width, partial_load_b_size)
 
-                    @parameter
-                    for i in range(Self.row_start, Self.row_stop):
+                    comptime for i in range(Self.row_start, Self.row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),
@@ -1170,7 +1110,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
 
 @always_inline
@@ -1191,8 +1131,7 @@ fn _simd_load_maybe_partial[
     the filter near the end.
     """
 
-    @parameter
-    if partial_load:
+    comptime if partial_load:
         return partial_simd_load[simd_width](
             ptr + offset, 0, partial_load_size.value(), 0
         )
@@ -1214,8 +1153,7 @@ fn _simd_store_maybe_partial[
     will store `partial_store_size` lanes of input vector.
     """
 
-    @parameter
-    if partial_store:
+    comptime if partial_store:
         # TODO: check if partial_store_size is present.
         return partial_simd_store[simd_width](
             ptr + offset, 0, partial_store_size.value(), vec

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-import time
+import std.time
 
 
 @fieldwise_init
@@ -42,7 +42,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
             return False
 
 
-def flaky_identity(n: Int) -> Int:
+def flaky_identity(n: Int) raises -> Int:
     if (n % 4) == 0:
         raise "really bad"
     elif (n % 2) == 0:
@@ -51,7 +51,7 @@ def flaky_identity(n: Int) -> Int:
         return n
 
 
-def main():
+def main() raises:
     for i in range(1, 9):
         with ConditionalTimer():
             print("\nBeginning execution")

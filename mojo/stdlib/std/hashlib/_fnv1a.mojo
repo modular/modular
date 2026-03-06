@@ -13,8 +13,8 @@
 
 """Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a Hasher type."""
 
-from memory import Span
-from sys import size_of
+from std.memory import Span
+from std.sys import size_of
 
 from .hasher import Hasher
 
@@ -58,12 +58,10 @@ struct Fnv1a(Defaultable, Hasher):
         comptime rounds = max(1, size_of[value.dtype]() // 8)
         var bits = value.to_bits()
 
-        @parameter
-        for i in range(value.size):
+        comptime for i in range(value.size):
             var v = bits[i]
 
-            @parameter
-            for r in range(rounds):
+            comptime for r in range(rounds):
                 self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 

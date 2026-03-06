@@ -20,8 +20,8 @@ from unittest.mock import NonCallableMock, patch
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
+from max.pipelines.lib.config.lora_config import LoRAConfig
 from max.pipelines.lib.lora import LoRAManager, LoRARequestProcessor
-from max.pipelines.lib.lora_config import LoRAConfig
 
 
 class MockTextContext:

@@ -15,9 +15,9 @@
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import grid_dim
-from gpu.host import DeviceContext, FuncAttribute
-from memory import LegacyUnsafePointer
+from std.gpu import grid_dim
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -61,18 +61,12 @@ fn test_fp8_multistage_gemm[
         c_host_ref_ptr
     )
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(K):
+    comptime for i in range(M):
+        comptime for j in range(K):
             a_host[i, j] = i + j
 
-    @parameter
-    for i in range(static_b_shape.get[0]()):
-
-        @parameter
-        for j in range(static_b_shape.get[1]()):
+    comptime for i in range(static_b_shape.get[0]()):
+        comptime for j in range(static_b_shape.get[1]()):
             b_host[i, j] = i + j
 
     c_host.zero()
@@ -114,12 +108,12 @@ fn test_fp8_multistage_gemm[
         dtype,  # b_type
         b_tensor.layout,
         transpose_b,
-        c_layout_int_type = c_tensor.layout_int_type,
-        c_linear_idx_type = c_tensor.linear_idx_type,
-        a_layout_int_type = a_tensor.layout_int_type,
-        a_linear_idx_type = a_tensor.linear_idx_type,
-        b_layout_int_type = b_tensor.layout_int_type,
-        b_linear_idx_type = b_tensor.linear_idx_type,
+        c_layout_int_type=c_tensor.layout_int_type,
+        c_linear_idx_type=c_tensor.linear_idx_type,
+        a_layout_int_type=a_tensor.layout_int_type,
+        a_linear_idx_type=a_tensor.linear_idx_type,
+        b_layout_int_type=b_tensor.layout_int_type,
+        b_linear_idx_type=b_tensor.linear_idx_type,
         config=config,
     ]
 
@@ -140,8 +134,7 @@ fn test_fp8_multistage_gemm[
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         vendor_blas.matmul(
             ctx,
             c_device_ref_nd,
@@ -211,7 +204,7 @@ fn test_fp8_multistage_gemm[
     _ = c_tensor
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_fp8_multistage_gemm[
             DType.float8_e4m3fn, 128, 128, 64, transpose_b=True

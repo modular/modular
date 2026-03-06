@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from layout import TileTensor
+from std.memory import memcpy
 
 
 # ===-----------------------------------------------------------------------===#
@@ -54,9 +54,9 @@ fn broadcast[
     dtype: DType,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -104,11 +104,11 @@ fn broadcast_impl[
 ](
     axis: Int,
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
-    # dim[axis+1](), which requires more `constrained` to keep in bound
+    # dim[axis+1](), which requires more `comptime assert` to keep in bound
     input_prev_axis_stride: Int,
     output_prev_axis_stride: Int,
     input_offset: Int,
@@ -182,11 +182,11 @@ fn _tile_1d[
         mut=True,
         Scalar[dtype],
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ],
     src_ptr: ImmutUnsafePointer[
         Scalar[dtype],
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     tile_num_elems: Int,

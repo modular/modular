@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
+from std.collections import Set
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -193,12 +193,11 @@ fn bench_set_difference[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=10))
     comptime sizes = (10, 100, 1000, 10_000)
 
-    @parameter
-    for i in range(len(sizes)):
+    comptime for i in range(len(sizes)):
         comptime size = sizes[i]
 
         # Equality benchmarks

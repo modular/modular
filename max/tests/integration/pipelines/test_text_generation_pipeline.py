@@ -96,6 +96,7 @@ def test_text_generation_pipeline(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         text_generation, "weights_format", MagicMock(return_value=None)
     )
+    monkeypatch.setattr(text_generation, "load_kv_manager", MagicMock())
 
     max_length = 512
     eos_token = 998

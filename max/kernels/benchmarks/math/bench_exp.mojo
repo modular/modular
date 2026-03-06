@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
-from math.math import _exp_taylor, _ldexp_impl
-from math.polynomial import polynomial_evaluate
-from ffi import external_call
-from sys import llvm_intrinsic, simd_width_of, size_of
-from sys.arg import argv
+from std.math import *
+from std.math.math import _exp_taylor, _ldexp_impl
+from std.math.polynomial import polynomial_evaluate
+from std.ffi import external_call
+from std.sys import llvm_intrinsic, simd_width_of, size_of
+from std.sys.arg import argv
+from std.utils import IndexList
 
-from algorithm.functional import vectorize
-from benchmark import (
+from std.algorithm.functional import vectorize
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -28,9 +29,9 @@ from benchmark import (
     keep,
 )
 from buffer import NDBuffer
-from builtin.range import _StridedRange
-from compile import compile_info
-from memory import LegacyUnsafePointer, bitcast
+from std.builtin.range import _StridedRange
+from std.compile import compile_info
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -40,7 +41,7 @@ fn apply[
         dtype, width
     ],
     dtype: DType,
-](input: NDBuffer[dtype, 1], output: NDBuffer[mut=True, dtype, 1]):
+](input: NDBuffer[dtype, 1, ...], output: NDBuffer[mut=True, dtype, 1, ...]):
     fn _func[width: Int](idx: Int) unified {mut}:
         output.store((idx,), func(input.load[width=width](idx)))
 
@@ -81,8 +82,8 @@ def bench_unary[
         @parameter
         fn iter_fn():
             apply[func](
-                NDBuffer[dtype, 1](input_ptr, size),
-                NDBuffer[dtype, 1](output_ptr, size),
+                NDBuffer[dtype, 1](input_ptr, IndexList[1](size)),
+                NDBuffer[dtype, 1](output_ptr, IndexList[1](size)),
             )
             keep(output_ptr)
 
@@ -167,8 +168,7 @@ fn exp_libm[
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     var res = SIMD[dtype, simd_width]()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         res[i] = external_call["expf", Scalar[dtype]](arg[i])
     return res
 
@@ -181,8 +181,7 @@ fn ldexp_libm[
 ]:
     var res = SIMD[dtype, simd_width]()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         res[i] = external_call["ldexpf", Scalar[dtype]](arg)
     return res
 
@@ -390,7 +389,7 @@ fn mlas_llvm_ldexp[
     return max(llvm_ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
 
 
-def accuracy_test():
+def accuracy_test() raises:
     comptime delta_min = -16
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
@@ -420,7 +419,7 @@ def accuracy_test():
         print("deltas", i + delta_min, deltas[i])
 
 
-def main():
+def main() raises:
     var args = argv()
     for arg in args:
         if arg == "-c":

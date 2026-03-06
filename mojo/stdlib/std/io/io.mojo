@@ -15,11 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.string_slice import get_static_string
-from format._utils import _WriteBufferHeap, _WriteBufferStack
-from sys import _libc as libc
-from ffi import c_char, external_call
-from sys import (
+from std.collections.string.string_slice import get_static_string
+from std.format._utils import _WriteBufferHeap, _WriteBufferStack
+from std.sys import _libc as libc
+from std.ffi import c_char, external_call
+from std.sys import (
     is_amd_gpu,
     is_compile_time,
     is_gpu,
@@ -27,12 +27,16 @@ from sys import (
     stdin,
     stdout,
 )
-from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
-from sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
-from sys.info import CompilationTarget
-from sys.intrinsics import _type_is_eq
+from std.sys._amdgpu import (
+    printf_append_args,
+    printf_append_string_n,
+    printf_begin,
+)
+from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import _type_is_eq
 
-from memory import bitcast
+from std.memory import bitcast
 
 from .file_descriptor import FileDescriptor
 
@@ -75,8 +79,8 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
         Examples:
 
         ```mojo
-        from io.io import _fdopen
-        from sys import stdin
+        from std.io.io import _fdopen
+        from std.sys import stdin
 
         var line = _fdopen["r"](stdin).readline()
         print(line)
@@ -106,8 +110,8 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
         Examples:
 
         ```mojo
-        from io.io import _fdopen
-        from sys import stdin
+        from std.io.io import _fdopen
+        from std.sys import stdin
 
         var line = _fdopen["r"](stdin).read_until_delimiter(",")
         print(line)
@@ -177,8 +181,8 @@ fn _printf_cpu[
     with _fdopen(file) as fd:
         # FIXME: external_call should handle this
         _ = __mlir_op.`pop.external_call`[
-            func = "KGEN_CompilerRT_fprintf".value,
-            variadicType = __mlir_attr[
+            func="KGEN_CompilerRT_fprintf".value,
+            variadicType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<none>,`,
                 `!kgen.pointer<scalar<si8>>`,
@@ -200,9 +204,7 @@ fn _printf[
     if is_compile_time():
         _printf_cpu[fmt](args, file)
     else:
-
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             # The argument pack will contain references for each value in the pack,
             # but we want to pass their values directly into the C printf call. Load
             # all the members of the pack.
@@ -218,8 +220,7 @@ fn _printf[
             # AMD printf calls:
             # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
             fn _to_uint64[T: AnyType, //](value: T) -> UInt64:
-                @parameter
-                if _type_is_eq[T, UInt64]():
+                comptime if _type_is_eq[T, UInt64]():
                     return rebind[UInt64](value)
                 elif _type_is_eq[T, UInt32]():
                     return UInt64(rebind[UInt32](value))
@@ -259,15 +260,13 @@ fn _printf[
             )
             comptime k_args_per_group = 7
 
-            @parameter
-            for group in range(0, args_len, k_args_per_group):
+            comptime for group in range(0, args_len, k_args_per_group):
                 comptime bound = min(group + k_args_per_group, args_len)
                 comptime num_args = bound - group
 
                 var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
 
-                @parameter
-                for i in range(num_args):
+                comptime for i in range(num_args):
                     arguments[i] = _to_uint64(args[group + i])
                 message = printf_append_args(
                     message,
@@ -288,7 +287,7 @@ fn _printf[
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.
             return CompilationTarget.unsupported_target_error[
-                operation = __get_current_function_name()
+                operation=__get_current_function_name()
             ]()
 
 
@@ -300,7 +299,7 @@ fn _printf[
 @no_inline
 fn _snprintf[
     fmt: StaticString, *types: AnyType
-](str: UnsafePointer[mut=True, UInt8], size: Int, *args: *types) -> Int:
+](str: UnsafePointer[mut=True, UInt8, _], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:
@@ -324,8 +323,8 @@ fn _snprintf[
     # FIXME: external_call should handle this
     return Int(
         __mlir_op.`pop.external_call`[
-            func = "snprintf".value,
-            variadicType = __mlir_attr[
+            func="snprintf".value,
+            variadicType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<scalar<si8>>,`,
                 `!pop.scalar<index>, `,
@@ -397,8 +396,7 @@ fn print[
         var buffer = _WriteBufferStack(file)
         comptime length = values.__len__()
 
-        @parameter
-        for i in range(length):
+        comptime for i in range(length):
             values[i].write_to(buffer)
             if i < length - 1:
                 sep.write_to(buffer)
@@ -408,14 +406,11 @@ fn print[
         if flush:
             _flush(file=file)
     else:
-
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             var buffer = _WriteBufferHeap()
             comptime length = values.__len__()
 
-            @parameter
-            for i in range(length):
+            comptime for i in range(length):
                 values[i].write_to(buffer)
                 if i < length - 1:
                     sep.write_to(buffer)
@@ -425,26 +420,23 @@ fn print[
 
             var slice = buffer.as_string_slice()
 
-            @parameter
-            if is_nvidia_gpu():
+            comptime if is_nvidia_gpu():
                 _printf["%s"](slice.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
                 _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
             else:
                 return CompilationTarget.unsupported_target_error[
-                    operation = __get_current_function_name()
+                    operation=__get_current_function_name()
                 ]()
         else:
             var buffer = _WriteBufferStack(file)
             comptime length = values.__len__()
 
-            @parameter
-            for i in range(length):
+            comptime for i in range(length):
                 values[i].write_to(buffer)
 
-                @parameter
-                if i < length - 1:
+                comptime if i < length - 1:
                     sep.write_to(buffer)
 
             end.write_to(buffer)

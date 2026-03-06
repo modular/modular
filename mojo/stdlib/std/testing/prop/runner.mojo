@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .strategy import Strategy
-from time import perf_counter_ns
+from std.time import perf_counter_ns
 
 
 struct PropTestConfig(Copyable):

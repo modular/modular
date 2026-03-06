@@ -30,6 +30,7 @@ from typing import Any
 
 import aiohttp
 from tqdm.asyncio import tqdm
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .datasets.types import OpenAIImage
 from .tts_workloads_utils import SampleTTSRequest
@@ -63,6 +64,7 @@ class RequestFuncInput(BaseRequestFuncInput):
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
+    extra_body: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -85,6 +87,8 @@ class BaseRequestFuncOutput:
     latency: float = 0.0
     # List of inter-token latencies
     itl: list[float] = field(default_factory=list)
+    # List of per-chunk time-per-output-token values
+    tpot: list[float] = field(default_factory=list)
     error: str = ""
 
 
@@ -98,6 +102,7 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     generated_text: str = ""
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
+    num_generated_outputs: int = 0
 
 
 @dataclass
@@ -198,6 +203,16 @@ def samples_to_tokens(tts_config: Any, num_samples: int) -> int:
 class RequestDriver(ABC):
     """Abstract base class for a driver that handles API requests to different backends."""
 
+    def __init__(
+        self, tokenizer: PreTrainedTokenizerBase | None = None
+    ) -> None:
+        """Initialize the request driver.
+
+        Args:
+            tokenizer: Optional tokenizer for per-chunk TPOT computation.
+        """
+        self.tokenizer = tokenizer
+
     @abstractmethod
     async def request(
         self, request_func_input: RequestFuncInput
@@ -223,6 +238,7 @@ class ProgressBarRequestDriver(RequestDriver):
             request_driver: The underlying request driver to wrap.
             pbar: Progress bar to update after each request completes.
         """
+        super().__init__(tokenizer=request_driver.tokenizer)
         self.request_driver = request_driver
         self.pbar = pbar
 
@@ -256,7 +272,6 @@ class TRTLLMRequestDriver(RequestDriver):
             payload: dict[
                 str, bool | str | int | float | list[dict[str, Any]]
             ] = {
-                "accumulate_tokens": True,
                 "text_input": request_func_input.prompt,
                 "ignore_eos": request_func_input.ignore_eos,
                 "stream": True,
@@ -264,10 +279,10 @@ class TRTLLMRequestDriver(RequestDriver):
 
             if request_func_input.max_tokens is not None:
                 payload["max_tokens"] = request_func_input.max_tokens
-            if request_func_input.top_k is not None:
-                payload["top_k"] = request_func_input.top_k
             if request_func_input.temperature is not None:
                 payload["temperature"] = request_func_input.temperature
+            if request_func_input.top_k is not None:
+                payload["top_k"] = request_func_input.top_k
             if request_func_input.top_p is not None:
                 payload["top_p"] = request_func_input.top_p
 
@@ -290,7 +305,8 @@ class TRTLLMRequestDriver(RequestDriver):
                             )
 
                             data = json.loads(chunk)
-                            output.generated_text += data["text_output"]
+                            chunk_text = data["text_output"]
+                            output.generated_text += chunk_text
                             timestamp = time.perf_counter()
                             # First token
                             if ttft == 0.0:
@@ -299,9 +315,13 @@ class TRTLLMRequestDriver(RequestDriver):
 
                             # Decoding phase
                             else:
-                                output.itl.append(
-                                    timestamp - most_recent_timestamp
+                                itl_value = timestamp - most_recent_timestamp
+                                output.itl.append(itl_value)
+                                tpot = _compute_chunk_tpot(
+                                    self.tokenizer, chunk_text, itl_value
                                 )
+                                if tpot is not None:
+                                    output.tpot.append(tpot)
 
                             most_recent_timestamp = timestamp
 
@@ -319,6 +339,26 @@ class TRTLLMRequestDriver(RequestDriver):
             return output
 
 
+def _compute_chunk_tpot(
+    tokenizer: PreTrainedTokenizerBase | None,
+    chunk_text: str,
+    itl_value: float,
+) -> float | None:
+    """Compute per-chunk time-per-output-token.
+
+    Note: This is approximate. Re-tokenizing the chunk text may not exactly
+    match the server's tokenization of the generated output.
+    """
+    if tokenizer is None or not chunk_text:
+        return None
+    chunk_tokens = len(
+        tokenizer(chunk_text, add_special_tokens=False).input_ids
+    )
+    if chunk_tokens > 0:
+        return itl_value / chunk_tokens
+    return None
+
+
 async def _run_openai_stream_request(
     *,
     api_url: str,
@@ -326,6 +366,7 @@ async def _run_openai_stream_request(
     headers: dict[str, str],
     prompt_len: int,
     content_extractor: Callable[[dict[str, Any]], str],
+    tokenizer: PreTrainedTokenizerBase | None = None,
 ) -> RequestFuncOutput:
     output = RequestFuncOutput()
     output.prompt_len = prompt_len
@@ -371,9 +412,13 @@ async def _run_openai_stream_request(
 
                             # Decoding phase
                             else:
-                                output.itl.append(
-                                    timestamp - most_recent_timestamp
+                                itl_value = timestamp - most_recent_timestamp
+                                output.itl.append(itl_value)
+                                tpot = _compute_chunk_tpot(
+                                    tokenizer, text_content, itl_value
                                 )
+                                if tpot is not None:
+                                    output.tpot.append(tpot)
 
                             most_recent_timestamp = timestamp
                             generated_text += text_content
@@ -410,11 +455,9 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        payload = {
+        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
-            "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
             "best_of": 1,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
@@ -422,9 +465,12 @@ class OpenAICompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-
+        if request_func_input.temperature is not None:
+            payload["temperature"] = request_func_input.temperature
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
+        if request_func_input.top_p is not None:
+            payload["top_p"] = request_func_input.top_p
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -436,6 +482,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             headers=headers,
             prompt_len=request_func_input.prompt_len,
             content_extractor=lambda data: data["choices"][0]["text"],
+            tokenizer=self.tokenizer,
         )
 
 
@@ -459,20 +506,19 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         else:  # conversation
             messages_data = request_func_input.prompt
 
-        payload = {
+        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
             "model": request_func_input.model,
             "messages": messages_data,
-            "temperature": request_func_input.temperature,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
         }
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-
+        if request_func_input.temperature is not None:
+            payload["temperature"] = request_func_input.temperature
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
-
         if request_func_input.top_p is not None:
             payload["top_p"] = request_func_input.top_p
 
@@ -496,7 +542,106 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             content_extractor=lambda data: data["choices"][0]["delta"].get(
                 "content", ""
             ),
+            tokenizer=self.tokenizer,
         )
+
+
+def _count_output_images(data: dict[str, Any]) -> int:
+    output = data.get("output")
+    if not isinstance(output, list):
+        logger.warning(
+            f"OpenResponses response has unexpected 'output' type: "
+            f"{type(output).__name__}"
+        )
+        return 0
+
+    count = 0
+
+    for message_idx, message in enumerate(output):
+        if not isinstance(message, dict):
+            logger.warning(
+                f"Skipping output[{message_idx}]: expected dict, got {type(message)}."
+            )
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            logger.warning(
+                f"Skipping output[{message_idx}].content: expected list, got {type(content)}."
+            )
+            continue
+        for item_idx, item in enumerate(content):
+            if not isinstance(item, dict):
+                logger.warning(
+                    f"Skipping output[{message_idx}].content[{item_idx}]: expected dict, got {type(item)}."
+                )
+                continue
+            if item.get("type") == "output_image":
+                count += 1
+
+    return count
+
+
+class OpenResponsesRequestDriver(RequestDriver):
+    """Request driver for OpenResponses API."""
+
+    async def request(
+        self, request_func_input: RequestFuncInput
+    ) -> RequestFuncOutput:
+        """Execute a request to the OpenResponses API."""
+        api_url = request_func_input.api_url
+        assert api_url.endswith("responses"), (
+            "OpenResponses API URL must end with 'responses'."
+        )
+
+        payload: dict[str, Any] = {
+            "model": request_func_input.model,
+            "input": request_func_input.prompt,
+        }
+        payload.update(request_func_input.extra_body)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = RequestFuncOutput()
+        output.prompt_len = request_func_input.prompt_len
+        start = time.perf_counter()
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=api_url, json=payload, headers=headers
+                ) as response:
+                    output.latency = time.perf_counter() - start
+                    if response.status != 200:
+                        body = await response.text()
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    body = await response.json()
+                    output.num_generated_outputs = _count_output_images(body)
+                    if output.num_generated_outputs <= 0:
+                        output.error = (
+                            "No output_image content found in OpenResponses "
+                            "response body."
+                        )
+                        output.success = False
+                        return output
+
+                    output.success = True
+                    return output
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
 
 
 class RequestCounter:
@@ -631,6 +776,8 @@ def get_request_driver_class(api_url: str) -> type[RequestDriver]:
     """Return the request driver based on the API URL."""
     if api_url.endswith("chat/completions"):
         return OpenAIChatCompletionsRequestDriver
+    if api_url.endswith("responses"):
+        return OpenResponsesRequestDriver
     if api_url.endswith(("completions", "profile")):
         return OpenAICompletionsRequestDriver
     if api_url.endswith("generate_stream"):
@@ -638,5 +785,5 @@ def get_request_driver_class(api_url: str) -> type[RequestDriver]:
     raise ValueError(
         "Unsupported API URL for request driver selection: "
         f"'{api_url}'. Expected an OpenAI completions/chat endpoint or "
-        "TensorRT-LLM generate_stream endpoint."
+        "OpenResponses endpoint or TensorRT-LLM generate_stream endpoint."
     )

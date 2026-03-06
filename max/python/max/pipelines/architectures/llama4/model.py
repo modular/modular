@@ -23,28 +23,20 @@ import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-    PagedCacheValues,
-    RaggedKVCacheInputs,
-)
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -77,7 +69,7 @@ class Llama4Inputs(ModelInputs):
 
 
 class Llama4Model(
-    AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
 ):
     """A Llama 4 pipeline model for text generation.
 
@@ -93,8 +85,6 @@ class Llama4Model(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -105,10 +95,6 @@ class Llama4Model(
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -122,8 +108,6 @@ class Llama4Model(
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -151,7 +135,7 @@ class Llama4Model(
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
 
@@ -206,11 +190,14 @@ class Llama4Model(
         Returns:
             The loaded MAX Engine model object.
         """
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices[0])
 
         timer = CompilationTimer("model")
@@ -264,9 +251,7 @@ class Llama4Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
         kv_cache_args = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_cache_args for kv_type in sublist
-        ]
+        flattened_kv_types = kv_cache_args.flatten()
         with Graph(
             getattr(self.huggingface_config, "model_type", "Llama4"),
             input_types=[
@@ -300,25 +285,6 @@ class Llama4Model(
             )
             graph.output(*outputs)
         return graph
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        n_devices = self.kv_params.n_devices
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Llama 4 model with the prepared inputs.
@@ -386,7 +352,6 @@ class Llama4Model(
         context_batch = replica_batches[0]
 
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
 
         # This needs to be replaced with actual input preparation
         # Get input_row_offsets: start and end position of each batch in the
@@ -401,11 +366,9 @@ class Llama4Model(
 
         # Create cache positions for each token.
         cache_positions = []
-        ragged_kv_cache_inputs = cast(
-            RaggedKVCacheInputs, kv_cache_inputs.kv_cache_inputs[0]
-        )
+        device_kv_cache_inputs = kv_cache_inputs.inputs[0]
         for n, ctx in enumerate(context_batch):
-            cache_length = ragged_kv_cache_inputs.cache_lengths.to_numpy()[n]
+            cache_length = device_kv_cache_inputs.cache_lengths.to_numpy()[n]
             cache_positions.append(
                 np.arange(
                     cache_length,
@@ -448,16 +411,13 @@ class Llama4Model(
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
         # Create cache positions for each token.
-        kv_cache_inputs = cast(
-            KVCacheInputsSequence, prev_model_inputs.kv_cache_inputs
-        )
-        ragged_kv_cache_inputs = cast(
-            RaggedKVCacheInputs, kv_cache_inputs.kv_cache_inputs[0]
-        )
+        kv_cache_inputs = prev_model_inputs.kv_cache_inputs
+        assert kv_cache_inputs is not None
+        device_kv_cache_inputs = kv_cache_inputs.inputs[0]
         return Llama4Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
-            cache_positions=ragged_kv_cache_inputs.cache_lengths,
+            cache_positions=device_kv_cache_inputs.cache_lengths,
             signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+            kv_cache_inputs=kv_cache_inputs,
         )

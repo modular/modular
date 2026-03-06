@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp4_quantization import (
     quantize_dynamic_scaled_fp4fp8,
 )
-from testing import assert_equal, assert_almost_equal
-from math import ceildiv, recip
-from utils.numerics import max_finite, min_finite
+from std.testing import assert_equal, assert_almost_equal
+from std.math import ceildiv, recip
+from std.utils.numerics import max_finite, min_finite
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -28,8 +28,8 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     get_scale_factor,
 )
-from utils import IndexList
-from math import isnan
+from std.utils import IndexList
+from std.math import isnan
 
 
 fn test_dynamic_mxfp8_quant[
@@ -230,25 +230,24 @@ fn test_dynamic_mxfp8_quant[
                 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_dynamic_mxfp8_quant[
             DType.bfloat16,
             MXFP8_SF_DTYPE,
             MXFP8_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 1, 128)
         test_dynamic_mxfp8_quant[
             DType.bfloat16,
             MXFP8_SF_DTYPE,
             MXFP8_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 258, 128)
 
-        @parameter
-        for N in range(576, 16384, 1024):
+        comptime for N in range(576, 16384, 1024):
             test_dynamic_mxfp8_quant[
                 DType.bfloat16,
                 MXFP8_SF_DTYPE,

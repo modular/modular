@@ -16,10 +16,9 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.gather_scatter import gather
 
 
@@ -207,7 +206,7 @@ fn test_gather_empty_indices() raises:
     _test_gather[DType.int64]()
 
 
-def main():
+def main() raises:
     test_gather()
     test_gather_3d()
     test_gather_empty_indices()

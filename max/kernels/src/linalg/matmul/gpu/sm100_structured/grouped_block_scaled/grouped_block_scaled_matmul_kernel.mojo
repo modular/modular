@@ -33,30 +33,26 @@ Key differences from block_scaled_matmul_kernel.mojo:
 5. K-loop uses per-group k_tile_count instead of global K dimension
 """
 
-from collections import Optional
-from math import ceildiv
-from memory import stack_allocation, UnsafePointer, Pointer
-from sys import size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.memory import UnsafePointer, Pointer
+from std.sys import size_of
 
-from gpu import WARP_SIZE, block_idx, grid_dim, lane_id, thread_idx, warp_id
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.primitives.cluster import cluster_sync, elect_one_sync
-from gpu.sync import named_barrier, named_barrier_arrive, syncwarp
-from gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
-from sys import inlined_assembly
-from layout import Layout as LegacyLayout, LayoutTensor
-from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
-from layout._layout import RowMajorLayout, _IntToComptimeInt
-from layout._coord import ComptimeInt
-from ..structured_kernels.tile_types import (
+from std.gpu import WARP_SIZE, block_idx, lane_id
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
+from std.gpu.sync import syncwarp
+from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
+from std.sys import inlined_assembly
+from layout import ComptimeInt, TileTensor
+from layout.tile_layout import TensorLayout
+from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
+from structured_kernels.tile_types import (
     TMATile,
-    TmaOpType,
     tma_desc_layout_3d,
     tma_desc_layout_5d,
 )
 from layout.tma_async import (
-    SharedMemBarrier,
     TMATensorTile,
     TMATensorTileArray,
 )
@@ -66,25 +62,40 @@ from layout.tensor_core_async import (
     tile_sf_layout_k_major,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
 from linalg.structuring import SMemPtr
-from ..structured_kernels.config import BlockScaledMatmulConfig
-from ..structured_kernels.tile_types import internal_k_major_128B
-from ..structured_kernels.kernel_common import WarpRole, KernelContext
+from ..structured_kernels.config import (
+    BlockScaledMatmulConfig,
+    OutputPipelineConfig,
+)
+from structured_kernels.tile_types import internal_k_major_128B
+from structured_kernels.kernel_common import (
+    WarpRole,
+    KernelContext,
+    compute_tma_tile_dims,
+    compute_accum_barrier_counts,
+    compute_input_consumer_count,
+    init_core_barriers,
+    init_clc_barriers,
+)
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
-    InputProducerStage,
-    InputConsumerStage,
+    ProducerTiles,
+    ConsumerTiles,
     OutputTilePipeline,
     BlockScaledTilePayload,
 )
-from ..structured_kernels.tmem import BlockScaledTmem, TmemAllocation
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.tmem import (
+    BlockScaledTmem,
+    TmemAllocation,
+    TmemDeallocBarrier,
+)
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
@@ -93,7 +104,6 @@ from ..structured_kernels.output_writer import TileWriter
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as WorkingTileScheduler,
 )
-from ..block_scaled.block_scaled_smem import BlockScaledSmem
 from .grouped_block_scaled_smem import GroupedBlockScaledSmem
 from .grouped_tile_scheduler import (
     GroupedTileScheduler,
@@ -147,38 +157,38 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
     """
 
     var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
 
     @staticmethod
     @always_inline
     fn from_smem(
         ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space = AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
@@ -226,23 +236,31 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn init_ab_tensormaps[
         a_dtype: DType,
-        a_layout: Layout,
-        a_desc: Layout,
+        a_rank: Int,
+        a_tile_shape: IndexList[a_rank],
+        a_desc_shape: IndexList[a_rank],
         b_dtype: DType,
-        b_layout: Layout,
-        b_desc: Layout,
+        b_rank: Int,
+        b_tile_shape: IndexList[b_rank],
+        b_desc_shape: IndexList[b_rank],
         sfa_dtype: DType,
-        sfa_layout: Layout,
-        sfa_desc: Layout,
+        sfa_rank: Int,
+        sfa_tile_shape: IndexList[sfa_rank],
+        sfa_desc_shape: IndexList[sfa_rank],
         sfb_dtype: DType,
-        sfb_layout: Layout,
-        sfb_desc: Layout,
+        sfb_rank: Int,
+        sfb_tile_shape: IndexList[sfb_rank],
+        sfb_desc_shape: IndexList[sfb_rank],
     ](
         self,
-        template_a: TMATensorTile[a_dtype, a_layout, a_desc],
-        template_b: TMATensorTile[b_dtype, b_layout, b_desc],
-        template_sfa: TMATensorTile[sfa_dtype, sfa_layout, sfa_desc],
-        template_sfb: TMATensorTile[sfb_dtype, sfb_layout, sfb_desc],
+        template_a: TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
+        template_b: TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
+        template_sfa: TMATensorTile[
+            sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
+        ],
+        template_sfb: TMATensorTile[
+            sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape
+        ],
     ):
         """Initialize A/B/SFA/SFB tensormaps in SMEM from grid-constant templates.
 
@@ -258,9 +276,13 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn init_c_tensormap[
         c_dtype: DType,
-        c_layout: Layout,
-        c_desc: Layout,
-    ](self, template_c: TMATensorTile[c_dtype, c_layout, c_desc],):
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
+    ](
+        self,
+        template_c: TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
+    ):
         """Initialize C tensormap in SMEM from grid-constant template.
 
         Called by epilogue warp (lane 0). Copies template descriptor to SMEM.
@@ -271,17 +293,21 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn update_ab_for_group[
         a_dtype: DType,
-        a_layout: Layout,
-        a_desc: Layout,
+        a_rank: Int,
+        a_tile_shape: IndexList[a_rank],
+        a_desc_shape: IndexList[a_rank],
         b_dtype: DType,
-        b_layout: Layout,
-        b_desc: Layout,
+        b_rank: Int,
+        b_tile_shape: IndexList[b_rank],
+        b_desc_shape: IndexList[b_rank],
         sfa_dtype: DType,
-        sfa_layout: Layout,
-        sfa_desc: Layout,
+        sfa_rank: Int,
+        sfa_tile_shape: IndexList[sfa_rank],
+        sfa_desc_shape: IndexList[sfa_rank],
         sfb_dtype: DType,
-        sfb_layout: Layout,
-        sfb_desc: Layout,
+        sfb_rank: Int,
+        sfb_tile_shape: IndexList[sfb_rank],
+        sfb_desc_shape: IndexList[sfb_rank],
         max_groups: Int,
     ](
         self,
@@ -291,16 +317,20 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_sfa_ptrs: _GroupPtrTile[max_groups],
         group_sfb_ptrs: _GroupPtrTile[max_groups],
         tma_a: UnsafePointer[
-            TMATensorTile[a_dtype, a_layout, a_desc], MutAnyOrigin
+            TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
+            MutAnyOrigin,
         ],
         tma_b: UnsafePointer[
-            TMATensorTile[b_dtype, b_layout, b_desc], MutAnyOrigin
+            TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
+            MutAnyOrigin,
         ],
         tma_sfa: UnsafePointer[
-            TMATensorTile[sfa_dtype, sfa_layout, sfa_desc], MutAnyOrigin
+            TMATensorTile[sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape],
+            MutAnyOrigin,
         ],
         tma_sfb: UnsafePointer[
-            TMATensorTile[sfb_dtype, sfb_layout, sfb_desc], MutAnyOrigin
+            TMATensorTile[sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape],
+            MutAnyOrigin,
         ],
     ):
         """Update A/B/SFA/SFB tensormaps for the specified group.
@@ -358,15 +388,17 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @always_inline
     fn update_c_for_group[
         c_dtype: DType,
-        c_layout: Layout,
-        c_desc: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         max_groups: Int,
     ](
         self,
         group_idx: UInt32,
         group_c_ptrs: _GroupPtrTile[max_groups],
         tma_c: UnsafePointer[
-            TMATensorTile[c_dtype, c_layout, c_desc], MutAnyOrigin
+            TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
+            MutAnyOrigin,
         ],
     ):
         """Update C tensormap for the specified group.
@@ -601,16 +633,26 @@ struct GroupedBlockScaledMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
-    # TMEM configuration
+    # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
     comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
     comptime stage_stride_cols = Self.MMA_N
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = Self.cta_group * Self.EPILOGUE_THREADS
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        Self.EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== CLC Configuration for 2SM ==========
     # These are used by run_2sm() for CLC-based work distribution
@@ -632,10 +674,10 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Grouped Tile Scheduler Type ==========
 
     comptime SchedulerType = GroupedTileScheduler[
-        tile_m = Self.BM,
-        tile_n = Self.BN,
-        tile_k = Self.BK,
-        max_groups = Self.max_groups,
+        tile_m=Self.BM,
+        tile_n=Self.BN,
+        tile_k=Self.BK,
+        max_groups=Self.max_groups,
     ]
 
     # ========== TMA Descriptor Array Types ==========
@@ -644,32 +686,37 @@ struct GroupedBlockScaledMatmulKernel[
     comptime TMATensorTileArrayA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.a_type,
-        Self.ATmaOp.layout,
-        Self.ATmaOp.desc_layout,
+        Self.ATmaOp.rank,
+        Self.ATmaOp.tile_shape,
+        Self.ATmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.b_type,
-        Self.BTmaOp.layout,
-        Self.BTmaOp.desc_layout,
+        Self.BTmaOp.rank,
+        Self.BTmaOp.tile_shape,
+        Self.BTmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfa_dtype,
-        Self.SFATmaOp.layout,
-        Self.SFATmaOp.desc_layout,
+        Self.SFATmaOp.rank,
+        Self.SFATmaOp.tile_shape,
+        Self.SFATmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfb_dtype,
-        Self.SFBTmaOp.layout,
-        Self.SFBTmaOp.desc_layout,
+        Self.SFBTmaOp.rank,
+        Self.SFBTmaOp.tile_shape,
+        Self.SFBTmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayC = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.c_type,
-        Self.CTmaOp.layout,
-        Self.CTmaOp.desc_layout,
+        Self.CTmaOp.rank,
+        Self.CTmaOp.tile_shape,
+        Self.CTmaOp.desc_shape,
     ]
 
     # ========== Per-Group Pointer Layout ==========
@@ -681,13 +728,13 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Shared Memory Layout Types ==========
 
     comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, swizzle_mode = Self.config.a_swizzle
+        Self.a_type, Self.BM, Self.BK, swizzle_mode=Self.config.a_swizzle
     ]()
 
     comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]() if Self.transpose_b else tile_layout_mn_major[
-        Self.b_type, Self.BN, Self.BK, swizzle_mode = Self.config.b_swizzle
+        Self.b_type, Self.BN, Self.BK, swizzle_mode=Self.config.b_swizzle
     ]()
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
@@ -718,7 +765,7 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfa_dtype,
         Self.sfb_dtype,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -732,12 +779,12 @@ struct GroupedBlockScaledMatmulKernel[
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Kernel Context Type ==========
@@ -757,30 +804,30 @@ struct GroupedBlockScaledMatmulKernel[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # SFA tile dimensions
-        Self.SmemType.SFA_DIM0,
-        Self.SmemType.SFA_DIM1,
-        # SFB tile dimensions
-        Self.SmemType.SFB_DIM0,
-        Self.SmemType.SFB_DIM1,
-        Self.SmemType.num_pipeline_stages,
+        IndexList[2](
+            Self.SmemType.Core.BM, Self.SmemType.Core.BK
+        ),  # A tile shape
+        IndexList[2](
+            Self.SmemType.Core.BN, Self.SmemType.Core.BK
+        ),  # B tile shape
+        IndexList[2](
+            Self.SmemType.Core.SFA_DIM0, Self.SmemType.Core.SFA_DIM1
+        ),  # SFA shape
+        IndexList[2](
+            Self.SmemType.Core.SFB_DIM0, Self.SmemType.Core.SFB_DIM1
+        ),  # SFB shape
+        Self.SmemType.Core.num_pipeline_stages,
     ]
 
     comptime InputTilePipelineType = InputTilePipeline[
         Self.TilePayload,
-        Self.SmemType.num_group_pipeline_stages,
+        Self.SmemType.Core.num_group_pipeline_stages,
         Self.config.k_group_size,
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
 
-    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
 
     comptime TmemRegion = BlockScaledTmem[
         Self.accum_type,
@@ -790,17 +837,13 @@ struct GroupedBlockScaledMatmulKernel[
         Self.sfa_dtype,
         Self.BM,
         Self.num_pipeline_stages,
-        cta_group = Self.cta_group,
-        num_sf_k_tiles = Self.config.num_sf_k_tiles,
+        cta_group=Self.cta_group,
+        num_sf_k_tiles=Self.config.num_sf_k_tiles,
     ]
 
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # ========== Warp Context Types ==========
 
@@ -816,17 +859,13 @@ struct GroupedBlockScaledMatmulKernel[
     ]
 
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
@@ -834,21 +873,19 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== Tile Writer Type ==========
 
     comptime TileWriterType = TileWriter[
-        a_type = Self.a_type,
-        accum_type = Self.accum_type,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
-        c_swizzle = Self.config.c_swizzle,
-        transpose_c = Self.config.AB_swapped,
-        c_smem_dim0 = Self.SmemType.OutputM,
-        c_smem_dim1 = Self.SmemType.OutputN,
-        num_output_stages = Self.config.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
-        num_output_warps = Self.num_output_warps,
-        elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
-        register_based_epilogue = Self.register_based_epilogue,
+        a_type=Self.a_type,
+        accum_type=Self.accum_type,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        opc=Self.opc,
+        c_swizzle=Self.config.c_swizzle,
+        transpose_c=Self.config.AB_swapped,
+        c_smem_dim0=Self.SmemType.Core.OutputM,
+        c_smem_dim1=Self.SmemType.Core.OutputN,
+        num_output_stages=Self.config.num_output_stages,
+        num_output_warps=Self.num_output_warps,
+        elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
+        register_based_epilogue=Self.register_based_epilogue,
         batched=True,
     ]
 
@@ -877,8 +914,18 @@ struct GroupedBlockScaledMatmulKernel[
     # ========== TMA Layouts (computed from config, new Layout types) ==========
     # 3D batched layouts for A, B, C (batch dim = 1 for per-group updates)
 
-    comptime a_tile_dim1 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim1 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+        AB_swapped=Self.config.AB_swapped,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -890,31 +937,29 @@ struct GroupedBlockScaledMatmulKernel[
     ]()
 
     # C tile dims -- same AB_swapped-aware logic as other kernels
-    comptime c_tile_dim1 = Self.OutputM if (
-        Self.MMA_M == 256 or Self.cta_group == 1 or Self.config.AB_swapped
-    ) else 64
-    comptime c_tile_dim2 = Self.c_swizzle_elems if (
+    comptime c_tile_dim0 = Self._tma_tile_dims[2]
+    comptime c_tile_dim1 = Self.c_swizzle_elems if (
         Self.config.AB_swapped
     ) else Self.OutputN
 
     # A, B, C: 3D TMA layouts (batch=1, rows, cols)
     comptime ATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.a_tile_dim1, Self.BK]
+        *_IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
     ]
     comptime ADescLayout = tma_desc_layout_3d[
-        Self.a_type, 1, Self.a_tile_dim1, Self.config.a_swizzle
+        Self.a_type, 1, Self.a_tile_dim0, Self.config.a_swizzle
     ]
     comptime BTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.b_tile_dim1, Self.BK]
+        *_IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
     ]
     comptime BDescLayout = tma_desc_layout_3d[
-        Self.b_type, 1, Self.b_tile_dim1, Self.config.b_swizzle
+        Self.b_type, 1, Self.b_tile_dim0, Self.config.b_swizzle
     ]
     comptime CTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.c_tile_dim1, Self.c_tile_dim2]
+        *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
     comptime CDescLayout = tma_desc_layout_3d[
-        Self.c_type, 1, Self.c_tile_dim1, Self.config.c_swizzle
+        Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
     ]
 
     # SFA, SFB: 5D TMA layouts (batch=1, then 4D scale factor dims)
@@ -970,33 +1015,28 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFBTmaOp = Self.SFBTmaTile.InnerType
 
     # TMA load size constants
-    comptime a_tma_load_size = Self.a_tile_dim1 * Self.a_swizzle_elems
-    comptime b_tma_load_size = Self.b_tile_dim1 * Self.b_swizzle_elems
-    comptime a_tma_rows = Self.a_tile_dim1
-    comptime b_tma_rows = Self.b_tile_dim1
+    comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
+    comptime b_tma_load_size = Self.b_tile_dim0 * Self.b_swizzle_elems
+    comptime a_tma_rows = Self.a_tile_dim0
+    comptime b_tma_rows = Self.b_tile_dim0
 
     # ========== Validation ==========
 
     @staticmethod
     fn validate_config():
         """Compile-time validation of kernel configuration."""
-        constrained[
-            Self.a_type == Self.b_type,
-            "A and B types must match for block-scaled GEMM",
-        ]()
-        constrained[
-            Self.sfa_dtype == Self.sfb_dtype,
-            "SFA and SFB types must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[
-            Self.max_groups >= 1,
-            "max_groups must be at least 1",
-        ]()
-        constrained[Self.transpose_b, "Only support transposed B"]()
+        comptime assert (
+            Self.a_type == Self.b_type
+        ), "A and B types must match for block-scaled GEMM"
+        comptime assert (
+            Self.sfa_dtype == Self.sfb_dtype
+        ), "SFA and SFB types must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert Self.max_groups >= 1, "max_groups must be at least 1"
+        comptime assert Self.transpose_b, "Only support transposed B"
 
     # ========== TMA Update Helper ==========
 
@@ -1004,11 +1044,13 @@ struct GroupedBlockScaledMatmulKernel[
     @always_inline
     fn _update_tensormap_address[
         dtype: DType,
-        cta_tile_layout: Layout,
-        desc_layout: Layout,
+        tma_rank: Int,
+        cta_tile_shape: IndexList[tma_rank],
+        desc_shape: IndexList[tma_rank],
     ](
         tma_desc_ptr: UnsafePointer[
-            TMATensorTile[dtype, cta_tile_layout, desc_layout], MutAnyOrigin
+            TMATensorTile[dtype, tma_rank, cta_tile_shape, desc_shape],
+            MutAnyOrigin,
         ],
         new_addr: Int,
     ):
@@ -1035,6 +1077,114 @@ struct GroupedBlockScaledMatmulKernel[
     # Layout for problem_sizes tensor: (max_groups, 4) with [M, N, K, L] per group
     comptime ProblemSizesLayout = _ProblemSizesLayout[Self.max_groups]
     comptime ProblemSizesTile = _ProblemSizesTile[Self.max_groups]
+
+    # ========== Static Helper Methods ==========
+
+    @staticmethod
+    @always_inline
+    fn init_barriers(
+        ctx: Self.Context,
+        a_tma_template: Self.ATmaOp,
+        b_tma_template: Self.BTmaOp,
+        c_tma_template: Self.CTmaOp,
+        sfa_tma_template: Self.SFATmaOp,
+        sfb_tma_template: Self.SFBTmaOp,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
+    ):
+        """Initialize barriers and prefetch TMA descriptors (1SM path, no CLC).
+        """
+        if ctx.elect_one_warp and ctx.elect_one_thread:
+            a_tma_template.prefetch_descriptor()
+            b_tma_template.prefetch_descriptor()
+            c_tma_template.prefetch_descriptor()
+            sfa_tma_template.prefetch_descriptor()
+            sfb_tma_template.prefetch_descriptor()
+
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
+                input_barriers.ptr,
+                Int32(
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M, Self.CLUSTER_N, Self.cta_group
+                    ]()
+                ),
+                accum_barriers.ptr,
+                Int32(Self.accum_pipeline_producer_arv_count),
+                Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group),
+            )
+
+        fence_mbarrier_init()
+        cluster_sync()
+
+    @staticmethod
+    @always_inline
+    fn init_barriers_2sm(
+        ctx: Self.Context,
+        a_tma_template: Self.ATmaOp,
+        b_tma_template: Self.BTmaOp,
+        c_tma_template: Self.CTmaOp,
+        sfa_tma_template: Self.SFATmaOp,
+        sfb_tma_template: Self.SFBTmaOp,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        clc_throttle: Self.SmemType.Pipelines.ClcThrottleBarriers,
+        clc_full: Self.SmemType.Pipelines.ClcBarriers,
+        clc_empty: Self.SmemType.Pipelines.ClcBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
+    ):
+        """Initialize barriers and prefetch TMA descriptors (2SM path, with CLC).
+        """
+        if ctx.elect_one_warp and ctx.elect_one_thread:
+            a_tma_template.prefetch_descriptor()
+            b_tma_template.prefetch_descriptor()
+            c_tma_template.prefetch_descriptor()
+            sfa_tma_template.prefetch_descriptor()
+            sfb_tma_template.prefetch_descriptor()
+
+            # cta_group=2 for 2SM path
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
+                input_barriers.ptr,
+                Int32(
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M, Self.CLUSTER_N, 2
+                    ]()
+                ),
+                accum_barriers.ptr,
+                Int32(Self.accum_pipeline_producer_arv_count),
+                Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(Self.EPILOGUE_THREADS * 2),
+            )
+
+            init_clc_barriers[Self.num_clc_pipeline_stages_2sm](
+                clc_full.ptr,
+                clc_empty.ptr,
+                Self.clc_producer_arv_count,
+                Int32(Self.clc_consumer_arv_count),
+            )
+
+            # Custom throttle pattern for 2SM grouped kernel
+            comptime for i in range(Self.num_clc_pipeline_stages_2sm * 2):
+                clc_throttle.ptr[i].init(
+                    Int32(
+                        Self.clc_throttle_producer_arv_count if i
+                        < Self.num_clc_pipeline_stages_2sm else Self.clc_throttle_consumer_arv_count
+                    )
+                )
+
+        fence_mbarrier_init()
+        cluster_sync()
+
+    # ========== 1SM Kernel Entry Point ==========
 
     @staticmethod
     @always_inline
@@ -1086,7 +1236,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -1120,38 +1270,17 @@ struct GroupedBlockScaledMatmulKernel[
         var work_iter = scheduler.work_iterator()
 
         # ===== Barrier Initialization =====
-        if ctx.elect_one_warp and ctx.elect_one_thread:
-            a_tma_template.prefetch_descriptor()
-            b_tma_template.prefetch_descriptor()
-            c_tma_template.prefetch_descriptor()
-            sfa_tma_template.prefetch_descriptor()
-            sfb_tma_template.prefetch_descriptor()
-
-            # Initialize input pipeline barriers
-            Self.InputTilePipelineType.init_barriers(
-                input_barriers.ptr,
-                Int32(1),
-                Int32(
-                    Self.config.cluster_shape[0] // Self.cta_group
-                    + Self.config.cluster_shape[1]
-                    - 1
-                ),
-            )
-
-            # Initialize output pipeline barriers
-            Self.OutputPipeline.init_barriers(
-                accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
-                Int32(Self.accum_pipeline_consumer_arv_count),
-            )
-
-            # Initialize TMEM deallocation barrier
-            smem.pipelines.tmem_dealloc().ptr[].init(
-                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
-            )
-
-        fence_mbarrier_init()
-        cluster_sync()
+        Self.init_barriers(
+            ctx,
+            a_tma_template,
+            b_tma_template,
+            c_tma_template,
+            sfa_tma_template,
+            sfb_tma_template,
+            input_barriers,
+            accum_barriers,
+            smem.pipelines.tmem_dealloc(),
+        )
 
         var mma_op = Self.MmaOp()
 
@@ -1266,7 +1395,7 @@ struct GroupedBlockScaledMatmulKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
@@ -1335,7 +1464,7 @@ struct GroupedBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
@@ -1379,10 +1508,10 @@ struct GroupedBlockScaledMatmulKernel[
         b_tma_op: Self.BTmaOp,
         sfa_tma_op: Self.SFATmaOp,
         sfb_tma_op: Self.SFBTmaOp,
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -1393,19 +1522,19 @@ struct GroupedBlockScaledMatmulKernel[
         elect_one_cta: Bool,
     ):
         """Load A, B, SFA, SFB tiles using TMA with InputProducerStage."""
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
-        var a_gmem_m_coord = peer_m_rank * UInt(
-            Self.a_tma_rows
-        ) + work_tile_coord[0] * UInt(Self.BM)
-        var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_tile_coord[1] * UInt(Self.MMA_N)
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
         )
-        var batch_coord = work_tile_coord[2]
+        var b_gmem_n_coord = (
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + Int(work_tile_coord[1]) * Self.MMA_N
+        )
+        var batch_coord = Int(work_tile_coord[2])
 
         if elect_one_sync():
             if elect_one_cta:
@@ -1413,8 +1542,7 @@ struct GroupedBlockScaledMatmulKernel[
 
             var barrier = tiles.barrier()
 
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor (native SMEM storage)
@@ -1426,15 +1554,15 @@ struct GroupedBlockScaledMatmulKernel[
 
                 # Peer CTA slicing using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
-                var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + j) * Self.BK
 
                 # TileTensor directly to TMA (uses TileTensor overload)
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
@@ -1461,7 +1589,7 @@ struct GroupedBlockScaledMatmulKernel[
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
                         Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
-                        Int(batch_coord),
+                        batch_coord,
                     ),
                 )
                 sfb_tma_op.async_copy_5d[Self.cta_group](
@@ -1475,7 +1603,7 @@ struct GroupedBlockScaledMatmulKernel[
                         ),
                         Int(work_tile_coord[1])
                         * (Self.MMA_N // SF_MN_GROUP_SIZE),
-                        Int(batch_coord),
+                        batch_coord,
                     ),
                 )
 
@@ -1487,10 +1615,10 @@ struct GroupedBlockScaledMatmulKernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        tiles: InputConsumerStage[
+        tiles: ConsumerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,
@@ -1499,11 +1627,9 @@ struct GroupedBlockScaledMatmulKernel[
         iter_idx: UInt32,
         k_start: UInt32,
     ):
-        """Execute MMA operations using InputConsumerStage."""
+        """Execute MMA operations using ConsumerTiles."""
         if elect_one_sync():
-
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor (native SMEM storage)
@@ -1542,7 +1668,7 @@ struct GroupedBlockScaledMatmulKernel[
     @staticmethod
     @always_inline
     fn epilogue(
-        c_tiles: Self.SmemType.CTileArray,
+        c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
         stage: Self.TileWriterType.Stage,
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
@@ -1619,7 +1745,7 @@ struct GroupedBlockScaledMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -1658,54 +1784,20 @@ struct GroupedBlockScaledMatmulKernel[
         )
 
         # ===== Barrier Initialization =====
-        if ctx.elect_one_warp and ctx.elect_one_thread:
-            a_tma_template.prefetch_descriptor()
-            b_tma_template.prefetch_descriptor()
-            c_tma_template.prefetch_descriptor()
-            sfa_tma_template.prefetch_descriptor()
-            sfb_tma_template.prefetch_descriptor()
-
-            # Initialize input pipeline barriers (for 2SM cluster)
-            Self.InputTilePipelineType.init_barriers(
-                input_barriers.ptr,
-                Int32(1),
-                Int32(
-                    Self.config.cluster_shape[0] // 2  # cta_group=2
-                    + Self.config.cluster_shape[1]
-                    - 1
-                ),
-            )
-
-            # Initialize output pipeline barriers
-            Self.OutputPipeline.init_barriers(
-                accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
-                Int32(Self.accum_pipeline_consumer_arv_count),
-            )
-
-            # Initialize CLC barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm):
-                clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
-
-            # Initialize throttle barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm * 2):
-                clc_throttle.ptr[i].init(
-                    Int32(
-                        Self.clc_throttle_producer_arv_count if i
-                        < Self.num_clc_pipeline_stages_2sm else Self.clc_throttle_consumer_arv_count
-                    )
-                )
-
-            # Initialize TMEM deallocation barrier (for cta_group=2)
-            smem.pipelines.tmem_dealloc().ptr[].init(
-                Int32(Self.EPILOGUE_THREADS * 2)
-            )
-
-        fence_mbarrier_init()
-        cluster_sync()
+        Self.init_barriers_2sm(
+            ctx,
+            a_tma_template,
+            b_tma_template,
+            c_tma_template,
+            sfa_tma_template,
+            sfb_tma_template,
+            input_barriers,
+            accum_barriers,
+            clc_throttle,
+            clc_full,
+            clc_empty,
+            smem.pipelines.tmem_dealloc(),
+        )
 
         var mma_op = Self.MmaOp()
 
@@ -1858,7 +1950,7 @@ struct GroupedBlockScaledMatmulKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
@@ -1945,7 +2037,7 @@ struct GroupedBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
@@ -2005,8 +2097,7 @@ struct GroupedBlockScaledMatmulKernel[
         # Build cumulative tiles
         var cumulative = StaticTuple[UInt32, Self.max_groups + 1]()
 
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             cumulative[i] = 0
 
         var cumsum: UInt32 = 0

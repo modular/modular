@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
-from collections.string.string_slice import _to_string_list
-from os import abort
-from pathlib import Path
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
+from std.collections.string.string_slice import _to_string_list
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import stack_allocation, LegacyUnsafePointer
+from std.memory import stack_allocation, LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
@@ -64,7 +64,7 @@ fn _init_dylib() -> OwnedDLHandle:
         )
         return dylib^
     except e:
-        abort(String("CUDA NVML library initialization failed: ", e))
+        abort(t"CUDA NVML library initialization failed: {e}")
 
 
 @always_inline
@@ -83,13 +83,13 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(ImplicitlyCopyable, Stringable):
+struct DriverVersion(ImplicitlyCopyable, Writable):
     var _value: List[String]
 
     fn __init__(out self, var value: List[String]):
         self._value = value^
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self._value = copy._value.copy()
 
     fn major(self) raises -> Int:
@@ -101,9 +101,21 @@ struct DriverVersion(ImplicitlyCopyable, Stringable):
     fn patch(self) raises -> Int:
         return Int(self._value[2]) if len(self._value) > 2 else 0
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         var patch = self._value[2] if len(self._value) > 2 else ""
-        return String(self._value[0], ".", self._value[1], ".", patch)
+        return t"{self._value[0]}.{self._value[1]}.{patch}"
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the driver version string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        ref major = self._value[0]
+        ref minor = self._value[1]
+        var patch = self._value[2] if len(self._value) > 2 else ""
+        t"{major}.{minor}.{patch}".write_to(writer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -112,7 +124,7 @@ struct DriverVersion(ImplicitlyCopyable, Stringable):
 
 
 @fieldwise_init
-struct Result(Equatable, Stringable, TrivialRegisterPassable, Writable):
+struct Result(Equatable, TrivialRegisterPassable, Writable):
     var code: Int32
 
     comptime SUCCESS = Self(0)
@@ -275,6 +287,7 @@ struct Result(Equatable, Stringable, TrivialRegisterPassable, Writable):
         else:
             writer.write("NVML_UNKNOWN")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String(self)
 

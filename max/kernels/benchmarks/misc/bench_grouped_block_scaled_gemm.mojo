@@ -24,24 +24,30 @@ Usage:
         max/kernels/benchmarks/autotune/bench_grouped_block_scaled_gemm.yaml
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
-from sys import env_get_int, size_of
-from time import perf_counter_ns
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
+from std.sys import get_defined_int, size_of
+from std.time import perf_counter_ns
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from random import rand, seed
+from std.gpu.host import DeviceContext
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.random import rand, seed
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -171,31 +177,31 @@ fn bench_grouped_block_scaled_gemm[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_shape = DimList(M, k_array_val)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[2](M, k_array_val)
+    var dynamic_b_shape = IndexList[2](
         n.value, k_array_val
-    ) if transpose_b else DimList(k_array_val, n.value)
-    var dynamic_c_shape = DimList(M, n.value)
-    var dynamic_a_scales_shape = DimList(
+    ) if transpose_b else IndexList[2](k_array_val, n.value)
+    var dynamic_c_shape = IndexList[2](M, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(M, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -421,14 +427,14 @@ fn bench_grouped_block_scaled_gemm[
 # =============================================================================
 
 
-def main():
+def main() raises:
     # Compile-time parameters (from kbench YAML or defaults)
-    comptime N = env_get_int["N", 0]()
-    comptime K = env_get_int["K", 0]()
-    comptime num_groups = env_get_int["num_groups", 0]()
-    comptime cta_group = env_get_int["cta_group", 1]()
-    comptime k_group_size = env_get_int["k_group_size", 1]()
-    comptime block_swizzle_size = env_get_int["block_swizzle_size", 8]()
+    comptime N = get_defined_int["N", 0]()
+    comptime K = get_defined_int["K", 0]()
+    comptime num_groups = get_defined_int["num_groups", 0]()
+    comptime cta_group = get_defined_int["cta_group", 1]()
+    comptime k_group_size = get_defined_int["k_group_size", 1]()
+    comptime block_swizzle_size = get_defined_int["block_swizzle_size", 8]()
 
     # Runtime parameters (from kbench YAML $-prefixed or defaults)
     var M = Int(arg_parse("M", 0))
@@ -442,18 +448,16 @@ def main():
     var b = Bench()
 
     with DeviceContext() as ctx:
-
-        @parameter
-        if N > 0 and K > 0 and num_groups > 0:
+        comptime if N > 0 and K > 0 and num_groups > 0:
             # kbench mode: use env parameters
             bench_grouped_block_scaled_gemm[
                 a_type,
                 b_type,
                 c_type,
                 scales_dtype,
-                m = dynamic(0),
-                n = static[N](),
-                k = static[K](),
+                m=dynamic(0),
+                n=static[N](),
+                k=static[K](),
                 num_groups=num_groups,
                 transpose_b=transpose_b,
                 cta_group=cta_group,
@@ -473,9 +477,9 @@ def main():
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[128](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -488,9 +492,9 @@ def main():
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[128](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -505,9 +509,9 @@ def main():
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[4096](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -520,9 +524,9 @@ def main():
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[4096](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -543,15 +547,15 @@ def main():
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[128](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -560,15 +564,15 @@ def main():
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[128](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -579,15 +583,15 @@ def main():
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[4096](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -596,15 +600,15 @@ def main():
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[4096](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 

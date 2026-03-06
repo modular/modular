@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from bit import rotate_bits_left
-from memory import Span, bitcast
+from std.sys import size_of
+from std.bit import rotate_bits_left
+from std.memory import Span, bitcast
 
 from .hasher import Hasher
 
@@ -42,7 +42,7 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-fn _read_small(data: UnsafePointer[mut=False, UInt8], length: Int) -> U128:
+fn _read_small(data: UnsafePointer[mut=False, UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -161,28 +161,22 @@ struct AHasher[key: U256](Defaultable, Hasher):
         # e.g. int128 is 16 bytes long and evaluates to 2 rounds
         comptime rounds = max(1, size_of[new_data.dtype]() // 8)
 
-        @parameter
-        if rounds == 1:
+        comptime if rounds == 1:
             # vector values are not bigger than 8 bytes each
             var u64 = new_data.to_bits[DType.uint64]()
 
-            @parameter
-            if u64.size == 1:
+            comptime if u64.size == 1:
                 self._update(u64[0])
             else:
-
-                @parameter
-                for i in range(0, u64.size, 2):
+                comptime for i in range(0, u64.size, 2):
                     self._large_update(U128(u64[i], u64[i + 1]))
         else:
             # vector values will contribute to hash in multiple rounds
-            @parameter
-            for i in range(new_data.size):
+            comptime for i in range(new_data.size):
                 var v = new_data[i]
                 comptime assert size_of[v.dtype]() > 8 and v.dtype.is_integral()
 
-                @parameter
-                for r in range(0, rounds, 2):
+                comptime for r in range(0, rounds, 2):
                     var u64_1 = (v >> Scalar[new_data.dtype](r * 64)).cast[
                         DType.uint64
                     ]()

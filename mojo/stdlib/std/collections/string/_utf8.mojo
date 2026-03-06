@@ -13,12 +13,12 @@
 
 """Implement UTF-8 utils."""
 
-from base64._b64encode import _sub_with_saturation
-from sys import is_compile_time, simd_width_of
-from sys.intrinsics import likely
+from std.base64._b64encode import _sub_with_saturation
+from std.sys import is_compile_time, simd_width_of
+from std.sys.intrinsics import likely
 
-from bit import count_leading_zeros
-from memory import Span
+from std.bit import count_leading_zeros
+from std.memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8
@@ -286,8 +286,10 @@ fn _is_utf8_start_byte(w: Byte) -> Bool:
 
 
 @always_inline
-fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
-    return Int(span.count[func=_is_utf8_continuation_byte]())
+fn _count_utf8_continuation_bytes(span: Span[Byte, _]) -> Int:
+    return Int(
+        span.count[_is_utf8_continuation_byte](_is_utf8_continuation_byte)
+    )
 
 
 @always_inline
@@ -361,8 +363,7 @@ fn _is_newline_char_utf8[
     if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
-        @parameter
-        if include_r_n:
+        comptime if include_r_n:
             return is_next_line or (b0 == `\r` and b1 == `\n`)
         else:
             return is_next_line

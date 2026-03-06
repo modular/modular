@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
-from memory import LegacyUnsafePointer
+from std.math import exp
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from gpu import (
+from std.gpu import (
     AMDScheduleBarrierMask,
     barrier,
     block_dim,
@@ -28,23 +28,23 @@ from gpu import (
     s_waitcnt,
     s_waitcnt_barrier,
 )
-from gpu.globals import WARP_SIZE
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import (
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import (
     ds_read_tr16_b64,
     load_acquire,
     store_release,
     permlane_shuffle,
     permlane_swap,
 )
-from gpu.primitives.warp import (
+from std.gpu.primitives.warp import (
     shuffle_down,
     shuffle_idx,
     shuffle_up,
     shuffle_xor,
 )
-from benchmark import keep
+from std.benchmark import keep
 
 comptime MI300X_TARGET = get_gpu_target["mi300x"]()
 comptime MI355X_TARGET = get_gpu_target["mi355x"]()
@@ -125,7 +125,7 @@ fn load_store(
 
 
 # CHECK-LABEL: test_shuffle_compile
-def test_shuffle_compile():
+def test_shuffle_compile() raises:
     print("== test_shuffle_compile")
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
@@ -188,7 +188,7 @@ def test_shuffle_compile():
 
 
 # CHECK-LABEL: test_cast_fp32_bf16_compile
-def test_cast_fp32_bf16_compile():
+def test_cast_fp32_bf16_compile() raises:
     print("== test_cast_fp32_bf16_compile")
 
     # CHECK: tail call i64 asm "v_cmp_u_f32 $0, $1, $1"
@@ -205,7 +205,7 @@ def test_cast_fp32_bf16_compile():
 
 
 # CHECK-LABEL: test_exp_f32_compile
-def test_exp_f32_compile():
+def test_exp_f32_compile() raises:
     print("== test_exp_f32_compile")
 
     # CHECK: tail call float @llvm.amdgcn.exp2.f32(float %4)
@@ -219,7 +219,7 @@ def test_exp_f32_compile():
 
 
 # CHECK-LABEL: test_exp_f16_compile
-def test_exp_f16_compile():
+def test_exp_f16_compile() raises:
     print("== test_exp_f16_compile")
 
     # CHECK: tail call half @llvm.amdgcn.exp2.f16(half %4)
@@ -233,7 +233,7 @@ def test_exp_f16_compile():
 
 
 # CHECK-LABEL: test_laneid_compile
-def test_laneid_compile():
+def test_laneid_compile() raises:
     print("== test_laneid_compile")
 
     # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
@@ -246,7 +246,7 @@ def test_laneid_compile():
 
 
 # CHECK-LABEL: test_barrier_compile
-def test_barrier_compile():
+def test_barrier_compile() raises:
     print("== test_barrier_compile")
 
     # CHECK: fence syncscope("workgroup") release
@@ -258,7 +258,7 @@ def test_barrier_compile():
 
 
 # CHECK-LABEL: test_threadid_compile
-def test_threadid_compile():
+def test_threadid_compile() raises:
     print("== test_threadid_compile")
 
     # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
@@ -291,7 +291,7 @@ def test_threadid_compile():
 
 
 # CHECK-LABEL: test_schedule_barrier_compile
-def test_schedule_barrier_compile():
+def test_schedule_barrier_compile() raises:
     print("== test_schedule_barrier_compile")
 
     fn schedule_kernel():
@@ -328,7 +328,7 @@ def test_schedule_barrier_compile():
 
 
 # CHECK-LABEL: test_schedule_group_barrier_compile
-def test_schedule_group_barrier_compile():
+def test_schedule_group_barrier_compile() raises:
     print("== test_schedule_group_barrier_compile")
 
     fn schedule_kernel():
@@ -348,7 +348,7 @@ def test_schedule_group_barrier_compile():
     )
 
 
-def test_atomic_compile():
+def test_atomic_compile() raises:
     print("== test_atomic_compile")
 
     # Memory model reference: https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
@@ -377,12 +377,12 @@ def test_atomic_compile():
 
 
 # CHECK-LABEL: test_ds_read_tr16_b64_compile
-def test_ds_read_tr16_b64_compile():
+def test_ds_read_tr16_b64_compile() raises:
     print("== test_ds_read_tr16_b64_compile")
 
     fn test_kernel[dtype: DType]():
         var x = UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED
+            Scalar[dtype], address_space=AddressSpace.SHARED
         ]()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1
@@ -419,7 +419,7 @@ def test_ds_read_tr16_b64_compile():
 
 
 # CHECK-LABEL: test_permlane_compile
-def test_permlane_compile():
+def test_permlane_compile() raises:
     print("== test_permlane_compile")
 
     fn test_kernel[dtype: DType]():
@@ -446,7 +446,7 @@ def test_permlane_compile():
 
 
 # CHECK-LABEL: test_waitcnt_compile
-def test_waitcnt_compile():
+def test_waitcnt_compile() raises:
     print("== test_waitcnt_compile")
 
     fn test_kernel_1():
@@ -503,7 +503,7 @@ def test_waitcnt_compile():
     )
 
 
-def main():
+def main() raises:
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
     test_exp_f32_compile()

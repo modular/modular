@@ -16,16 +16,22 @@ Bicubic interpolation is a 2D extension of cubic interpolation for resampling
 digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
-from math import clamp, floor
+from std.math import clamp, floor
 
-from gpu.host.info import is_gpu
-from gpu import block_dim, block_idx, thread_idx
-from layout._coord import Coord, Idx, coord, coord_to_index_list
-from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
-from runtime.asyncrt import DeviceContextPtr
-from utils import Index
-from itertools import product
+from std.gpu.host.info import is_gpu
+from std.gpu import block_dim, block_idx, thread_idx
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
+from std.runtime.asyncrt import DeviceContextPtr
+from std.utils import Index
+from std.itertools import product
 
 
 @always_inline
@@ -155,8 +161,7 @@ fn cpu_bicubic_kernel(
         var sum_weights: Float32 = 0.0
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -246,8 +251,7 @@ fn gpu_bicubic_kernel[
         var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -274,9 +278,9 @@ fn resize_bicubic[
     target: StaticString,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -290,8 +294,7 @@ fn resize_bicubic[
         output.flat_rank == 4 and input.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         var input_shape = coord_to_index_list(input.layout.shape_coord())
         var N = input_shape[0]
         var C = input_shape[1]
@@ -300,10 +303,10 @@ fn resize_bicubic[
         var block_size = 256
         comptime kernel = gpu_bicubic_kernel[
             output.dtype,
-            output_origin = output.origin,
-            OutputLayoutType = output.LayoutType,
-            input_origin = ImmutOrigin(input.origin),
-            InputLayoutType = input.LayoutType,
+            output_origin=output.origin,
+            OutputLayoutType=output.LayoutType,
+            input_origin=ImmutOrigin(input.origin),
+            InputLayoutType=input.LayoutType,
         ]
         ctx.get_device_context().enqueue_function_experimental[kernel](
             output,

@@ -47,6 +47,12 @@ class Endpoint(str, enum.Enum):
     completions = "/v1/completions"
     chat_completions = "/v1/chat/completions"
     ensemble_generate_stream = "/v2/models/ensemble/generate_stream"
+    responses = "/v1/responses"
+
+
+class BenchmarkTask(str, enum.Enum):
+    text_generation = "text-generation"
+    text_to_image = "text-to-image"
 
 
 def _add_config_file_arg_to_parser(
@@ -237,6 +243,7 @@ class BaseBenchmarkConfig(MAXConfig):
             # TODO: Propagate proper enum choices here than just the string values
             "backend": [backend.value for backend in Backend],
             "endpoint": [endpoint.value for endpoint in Endpoint],
+            "benchmark_task": [task.value for task in BenchmarkTask],
             "dataset_name": list(DATASET_REGISTRY.keys()),
             "dataset_mode": [mode.value for mode in DatasetMode],
             "random_distribution_type": ["uniform", "normal", "gamma"],
@@ -291,7 +298,13 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=Endpoint.chat_completions.value,
         metadata={"group": "Backend and API Configuration"},
     )
-    """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
+    """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream"""
+
+    benchmark_task: str = field(
+        default=BenchmarkTask.text_generation.value,
+        metadata={"group": "Backend and API Configuration"},
+    )
+    """Benchmark task type. Choices: text-generation, text-to-image"""
 
     # Request configuration (serving-specific)
     max_concurrency: str | None = field(
@@ -325,10 +338,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Number of multiturn chat sessions."""
 
-    delay_between_chat_turns: int | None = field(
+    delay_between_chat_turns: float | str | None = field(
         default=None, metadata={"group": "Workload Configuration"}
     )
-    """Delay between chat turns in ms."""
+    """Delay between chat turns in ms. Accepts a float for a constant delay,
+    or a distribution string: 'N(mean,std)' for normal, 'U(lower,upper)' for uniform or 'G(shape,scale)' for gamma."""
 
     # Output control (serving-specific extensions)
     output_lengths: str | None = field(
@@ -345,18 +359,47 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Maximum output length per request."""
 
-    temperature: float = field(
-        default=0.0, metadata={"group": "Output Control"}
+    temperature: float | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
     """Temperature for sampling."""
 
-    top_p: float = field(default=1.0, metadata={"group": "Output Control"})
+    top_p: float | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
     """Top-p for sampling."""
 
     top_k: int | None = field(
         default=None, metadata={"group": "Output Control"}
     )
     """Top-k for sampling."""
+
+    # Image generation options (serving-specific)
+    image_width: int = field(default=1024, metadata={"group": "Output Control"})
+    """Output image width in output pixels."""
+
+    image_height: int = field(
+        default=1024, metadata={"group": "Output Control"}
+    )
+    """Output image height in output pixels."""
+
+    image_steps: int = field(default=24, metadata={"group": "Output Control"})
+    """Number of denoising steps for pixel generation."""
+
+    image_guidance_scale: float = field(
+        default=3.5, metadata={"group": "Output Control"}
+    )
+    """Guidance scale for pixel generation."""
+
+    image_negative_prompt: str | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Optional negative prompt for pixel generation."""
+
+    image_seed: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Optional deterministic seed for pixel generation."""
 
     # Traffic control (serving-specific)
     request_rate: str = field(
@@ -379,6 +422,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=0, metadata={"group": "Traffic Control"}
     )
     """Skip first N requests for measurements."""
+
+    skip_last_n_requests: int = field(
+        default=0, metadata={"group": "Traffic Control"}
+    )
+    """Skip last N requests for measurements."""
 
     chat_warmup_delay_ms: float = field(
         default=0.0, metadata={"group": "Traffic Control"}
@@ -471,6 +519,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Enable server stats collection for serving benchmarks."""
 
+    print_workload_stats: bool = field(
+        default=False, metadata={"group": "Control Flags"}
+    )
+    """Print workload distribution statistics (input/output lengths, num turns, delays)."""
+
     trace: bool = field(default=False, metadata={"group": "Control Flags"})
     """Enable nsys tracing of the benchmark run. Requires the server to be run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs."""
 
@@ -538,7 +591,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "base_url": "Server or API base url if not using http host and port.",
             "host": "Server host.",
             "port": "Server port.",
-            "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream",
+            "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream",
+            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image",
             "max_concurrency": "Maximum concurrent requests (optimized for serving benchmarks).",
             "lora": "Optional LoRA name.",
             "max_benchmark_duration_s": "Maximum benchmark duration in seconds.",
@@ -548,9 +602,16 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "max_output_len": "Maximum output length per request.",
             "temperature": "Temperature for sampling.",
             "top_p": "Top-p for sampling.",
+            "image_width": "Output width for pixel generation.",
+            "image_height": "Output height for pixel generation.",
+            "image_steps": "Number of denoising steps for pixel generation.",
+            "image_guidance_scale": "Guidance scale for pixel generation.",
+            "image_negative_prompt": "Optional negative prompt for pixel generation.",
+            "image_seed": "Optional deterministic seed for pixel generation.",
             "request_rate": "Requests per second (finite rate for realistic benchmarking).",
             "burstiness": "Burstiness factor (1.0 = Poisson process).",
             "skip_first_n_requests": "Skip first N requests for measurements.",
+            "skip_last_n_requests": "Skip last N requests for measurements.",
             "chat_warmup_delay_ms": "Delay between starting chat sessions.",
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
@@ -572,6 +633,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
             "collect_server_stats": "Enable server stats collection for serving benchmarks.",
+            "print_workload_stats": "Print workload distribution statistics (input/output lengths, num turns, delays).",
             "trace": "Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",
             "trace_file": "Path to save nsys trace. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep.",
             "trace_session": "Optional session name to trace. If not specified, nsys traces the default session.",
@@ -682,6 +744,15 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         },
     )
     """Number of iterations to run per configuration."""
+
+    # Whether or not to flush prefix cache between iterations
+    flush_prefix_cache: bool = field(
+        default=True,
+        metadata={
+            "group": "Sweep Configuration",
+        },
+    )
+    """Flush the prefix cache between iterations"""
 
     @classmethod
     def get_default_required_fields(cls) -> set[str]:

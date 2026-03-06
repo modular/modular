@@ -1,13 +1,16 @@
+:description: Sequential container that applies sub-layers in order.
 :title: sequential
 :type: module
 :lang: python
+:source: max/nn/sequential.py
 
-.. py:currentmodule:: max.nn
-
-.. note::
-   This module contains both ``Sequential`` and ``ModuleList`` containers.
-   For the legacy graph-based sequential container, see [legacy/sequential](/max/api/python/nn/legacy/sequential).
+Container that applies a sequence of sub-layers in order, passing each
+layer's output to the next.
 
 .. automodule:: max.nn.sequential
    :members:
    :undoc-members:
+
+.. note::
+   ``ModuleList`` is re-exported here for backward compatibility.
+   Its canonical location is :py:class:`max.experimental.nn.sequential.ModuleList`.

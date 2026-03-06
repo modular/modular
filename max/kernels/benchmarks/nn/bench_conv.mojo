@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import align_up, ceildiv
-from random import rand
-from sys import simd_width_of, size_of
-from sys.param_env import env_get_int, env_get_string
+from std.math import align_up, ceildiv
+from std.random import rand
+from std.sys import simd_width_of, size_of
+from std.sys.defines import get_defined_int, get_defined_string
 
-from benchmark import *
-from benchmark import keep
+from std.benchmark import *
+from std.benchmark import keep
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
@@ -29,8 +29,8 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
@@ -52,8 +52,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     var output_dims = IndexList[spec.static_info.rank](1)
 
-    @parameter
-    for i in range(spec.static_info.rank):
+    comptime for i in range(spec.static_info.rank):
         output_dims[i] = (
             spec.input_dims[i]
             + spec.pad[2 * i]
@@ -64,8 +63,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     var packed_filter_shape = IndexList[spec.static_info.rank + 3](1)
 
-    @parameter
-    for i in range(spec.static_info.rank):
+    comptime for i in range(spec.static_info.rank):
         packed_filter_shape[i + 1] = output_dims[i]
     packed_filter_shape[0] = spec.num_groups * ceildiv(
         f_per_group, micro_kernel_f_size
@@ -86,7 +84,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     # Set the total buffer allocation to be 4x L3 cache.
     comptime MB = 1024 * 1024
-    comptime L3_cache = env_get_int["L3SIZE", 24]() * MB
+    comptime L3_cache = get_defined_int["L3SIZE", 24]() * MB
     var size_per_copy = (
         input_alloc_size * size_of[input_type]()
         + filter_alloc_size * size_of[filter_type]()
@@ -111,8 +109,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if spec.static_info.rank == 1:
+    comptime if spec.static_info.rank == 1:
         pad_w = Index(spec.pad[0], spec.pad[1])
     elif spec.static_info.rank == 2:
         pad_h = Index(spec.pad[0], spec.pad[1])
@@ -193,7 +190,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         b.iter[bench_fn]()
 
     m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", String(spec)),
+        BenchId("Conv", String.write(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
         [ThroughputMeasure(BenchMetric.elements, spec.flops())],
@@ -214,7 +211,7 @@ struct ConvSpecStatic(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
+struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
     var n: Int
     var input_dims: IndexList[Self.static_info.rank]
     var c: Int
@@ -225,10 +222,14 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
     var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        # fmt: off
-        return String(
+        return String.write(self)
+
+    # fmt: off
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write(
             "n=", self.n,
             ";input=", self.input_dims,
             ";c=", self.c,
@@ -237,13 +238,12 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
             ";stride=", self.stride,
             ";padding=", self.pad,
         )
-        # fmt: on
+    # fmt: on
 
     fn flops(self) -> Int:
         var output_dims = IndexList[Self.static_info.rank](1)
 
-        @parameter
-        for i in range(Self.static_info.rank):
+        comptime for i in range(Self.static_info.rank):
             output_dims[i] = (
                 self.input_dims[i]
                 + self.pad[2 * i]
@@ -262,7 +262,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
         )
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig())
 
     comptime fp32_1d = ConvSpecStatic(
@@ -357,8 +357,7 @@ def main():
         return rebind[IndexList[3 * fp32_3d.rank]](idx)
 
     # 1D benchmarks for wavlm
-    @parameter
-    if env_get_string["model", "walvm"]() == "wavlm":
+    comptime if get_defined_string["model", "walvm"]() == "wavlm":
         bench_conv(m, spec1d(2, 16000, 1, 10, 512, 5, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 3199, 512, 3, 512, 2, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 1599, 512, 3, 512, 2, 1, Index(0, 0), 1))
@@ -369,7 +368,7 @@ def main():
         bench_conv(m, spec1d(2, 49, 1024, 128, 1024, 1, 1, Index(64, 64), 16))
     # fmt: off
     # 2D benchmarks for resnet
-    elif env_get_string["model", "wavlm"]() == "resnet50":
+    elif get_defined_string["model", "wavlm"]() == "resnet50":
         bench_conv(m, spec2d(1, 14, 14, 256, 3, 3, 256, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))
         bench_conv(m, spec2d(1, 56, 56,  64, 3, 3,  64, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))
         bench_conv(m, spec2d(1, 28, 28, 128, 3, 3, 128, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject, Python
-from python.bindings import PythonModuleBuilder
-from python._cpython import GILAcquired, GILReleased
-from os import abort
-import math
-from algorithm.functional import parallelize
-from sys.info import num_physical_cores
+from std.python import PythonObject, Python
+from std.python.bindings import PythonModuleBuilder
+from std.python._cpython import GILAcquired, GILReleased
+from std.os import abort
+import std.math
+from std.algorithm.functional import parallelize
+from std.sys.info import num_physical_cores
 
 
 @export
@@ -30,7 +30,7 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return m.finalize()
     except e:
-        abort(String("failed to create Python module: ", e))
+        abort(t"failed to create Python module: {e}")
 
 
 fn plus_one(arg: PythonObject) raises -> PythonObject:
@@ -70,8 +70,7 @@ fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
 
     ref cpython = Python().cpython()
 
-    @parameter
-    if do_parallelize:
+    comptime if do_parallelize:
         # Save the current thread state to avoid holding the GIL for the parallel loop.
         with GILReleased(Python(cpython)):
             parallelize[calc_max](num_cores)

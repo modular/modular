@@ -156,7 +156,7 @@ async def lifespan(
 
         lora_queue: LoRAQueue | None = (
             LoRAQueue(
-                serving_settings.pipeline_config.zmq_endpoint_base,
+                serving_settings.pipeline_config.runtime.zmq_endpoint_base,
                 serving_settings.pipeline_config.lora.lora_paths,
             )
             if serving_settings.pipeline_config.lora
@@ -253,8 +253,10 @@ def fastapi_app(
         try:
             async with lifespan(app, settings, serving_settings):
                 yield
-        except:
-            logger.exception("Worker exception, Shutting down...")
+        except BaseException as e:
+            # Worker already logs the detailed traceback, so we use
+            # error (not exception) here to avoid duplicating it.
+            logger.error("Worker exception, shutting down: %s", e)
             # Caught by uvicorn to shutdown the server
             os.kill(os.getpid(), signal.SIGINT)
             # After first SIGINT uvicorn waits for pending requests to complete
@@ -291,7 +293,7 @@ def fastapi_app(
     app.add_api_route("/health", health)
 
     reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
-        serving_settings.pipeline_config.zmq_endpoint_base
+        serving_settings.pipeline_config.runtime.zmq_endpoint_base
     )
 
     async def reset_prefix_cache() -> Response:

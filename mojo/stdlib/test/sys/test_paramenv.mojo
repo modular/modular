@@ -11,36 +11,41 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_bool, env_get_int, env_get_string, is_defined
+from std.sys import (
+    get_defined_bool,
+    get_defined_int,
+    get_defined_string,
+    is_defined,
+)
 
-from testing import assert_equal, assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_true
+from std.testing import TestSuite
 
 
-def test_is_defined():
+def test_is_defined() raises:
     assert_true(is_defined["bar"]())
     assert_true(is_defined["foo"]())
     assert_true(is_defined["baz"]())
     assert_false(is_defined["boo"]())
 
 
-def test_get_string():
-    assert_equal(env_get_string["baz"](), "hello")
+def test_get_defined_string() raises:
+    assert_equal(get_defined_string["baz"](), "hello")
 
 
-def test_env_get_int():
-    assert_equal(env_get_int["bar"](), 99)
-    assert_equal(env_get_int["foo", 42](), 11)
-    assert_equal(env_get_int["bar", 42](), 99)
-    assert_equal(env_get_int["boo", 42](), 42)
+def test_get_defined_int() raises:
+    assert_equal(get_defined_int["bar"](), 99)
+    assert_equal(get_defined_int["foo", 42](), 11)
+    assert_equal(get_defined_int["bar", 42](), 99)
+    assert_equal(get_defined_int["boo", 42](), 42)
 
 
-def test_env_get_bool():
-    assert_equal(env_get_bool["my_true"](), True)
-    assert_equal(env_get_bool["my_on"](), True)
-    assert_equal(env_get_bool["my_false"](), False)
-    assert_equal(env_get_bool["my_off"](), False)
+def test_get_defined_bool() raises:
+    assert_equal(get_defined_bool["my_true"](), True)
+    assert_equal(get_defined_bool["my_on"](), True)
+    assert_equal(get_defined_bool["my_false"](), False)
+    assert_equal(get_defined_bool["my_off"](), False)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MAX Graph Python bindings."""
+
 import os
 import pathlib
 from collections.abc import Sequence

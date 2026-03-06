@@ -25,7 +25,7 @@ The main components are:
 Example:
 
 ```mojo
-from logger import Logger
+from std.logger import Logger
 
 var logger = Logger()  # Uses default level from LOGGING_LEVEL env var
 logger.info("Starting process")
@@ -37,20 +37,20 @@ The logger can be configured to write to different file descriptors (default
 stdout). Messages below the configured level will be silently ignored.
 """
 
-import sys
-from format._utils import _WriteBufferStack
-from os import abort
-from sys.param_env import env_get_string
-from utils._ansi import Text, Color
+import std.sys
+from std.format._utils import _WriteBufferStack
+from std.os import abort
+from std.sys.defines import get_defined_string
+from std.utils._ansi import Text, Color
 
-from reflection import call_location, SourceLocation
+from std.reflection import call_location, SourceLocation
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
 # ===-----------------------------------------------------------------------===#
 
 comptime DEFAULT_LEVEL = Level._from_str(
-    env_get_string["LOGGING_LEVEL", "NOTSET"]()
+    get_defined_string["LOGGING_LEVEL", "NOTSET"]()
 )
 """The default logging level, determined by the LOGGING_LEVEL environment variable."""
 
@@ -63,7 +63,6 @@ comptime DEFAULT_LEVEL = Level._from_str(
 struct Level(
     Comparable,
     ImplicitlyCopyable,
-    Stringable,
     Writable,
 ):
     """Represents logging severity levels.
@@ -188,6 +187,7 @@ struct Level(
         elif self == Self.CRITICAL:
             writer.write("CRITICAL")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of this level.
@@ -198,6 +198,7 @@ struct Level(
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the detailed string representation of this level.
@@ -206,7 +207,7 @@ struct Level(
             String: A string representation including the type name and level
                 value (e.g., "Level.DEBUG").
         """
-        return String("Level.", self)
+        return t"Level.{self}"
 
 
 # ===-----------------------------------------------------------------------===#
@@ -257,8 +258,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             True if logging at the target level is disabled, False otherwise.
         """
 
-        @parameter
-        if Self.level == Level.NOTSET:
+        comptime if Self.level == Level.NOTSET:
             return True
         return Self.level > target_level
 
@@ -286,8 +286,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.TRACE
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -319,8 +318,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.DEBUG
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -352,8 +350,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.INFO
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -385,8 +382,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.WARNING
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -418,8 +414,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.ERROR
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -452,8 +447,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.CRITICAL
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -467,7 +461,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         _level: Level
     ](
         self,
-        values: VariadicPack[element_trait=Writable],
+        values: VariadicPack[element_trait=Writable, ...],
         *,
         location: SourceLocation,
         sep: StaticString = " ",
@@ -488,12 +482,10 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime length = values.__len__()
 
-        @parameter
-        for i in range(length):
+        comptime for i in range(length):
             values[i].write_to(buffer)
 
-            @parameter
-            if i < length - 1:
+            comptime if i < length - 1:
                 buffer.write(sep)
 
         buffer.write(end)

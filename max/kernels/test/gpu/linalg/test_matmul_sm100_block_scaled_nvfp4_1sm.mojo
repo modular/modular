@@ -10,33 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from hashlib import default_comp_time_hasher
-from math import align_up
-from sys import argv, size_of
-import itertools
+from std.hashlib import default_comp_time_hasher
+from std.math import align_up
+from std.sys import argv, size_of
+import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
-from random import rand
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
+from std.random import rand
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
-from math import ceildiv, align_up
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.math import ceildiv, align_up
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
@@ -45,10 +43,10 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     set_scale_factor,
 )
-from random import random_ui64
-from builtin.simd import _convert_f32_to_float8_ue8m0
+from std.random import random_ui64
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn simple_init() -> Bool:
@@ -82,59 +80,25 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     n: ValOrDim,
     k: ValOrDim,
     alpha: Float32 = 1.0,
-):
+) raises:
     var M = m.value
     var N = n.value
     var K = k.value
 
     print(
-        String(
-            "in/out dtypes=(",
-            a_type,
-            ", ",
-            b_type,
-            ", ",
-            c_type,
-            ", ",
-            scales_dtype,
-            ") ",
-            " problem shape=(",
-            M,
-            ", ",
-            N,
-            ", ",
-            K,
-            ") ",
-            "mma_shape=",
-            mma_shape,
-            " block_tile_shape=",
-            block_tile_shape,
-            " cta_group=",
-            cta_group,
-            " cluster_shape=(",
-            cluster_shape[0],
-            ", ",
-            cluster_shape[1],
-            ", ",
-            cluster_shape[2],
-            ")",
-            " swapAB=",
-            swapAB,
-            " k_group_size=",
-            k_group_size,
-            " SF_VECTOR_SIZE=",
-            SF_VECTOR_SIZE,
-            " alpha=",
-            alpha,
-        )
+        t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})  problem"
+        t" shape=({M}, {N}, {K})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
+        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
     )
 
     comptime static_a_shape = DimList(m.dim, k.dim // 2)
     comptime static_b_shape = DimList(n.dim, k.dim // 2)
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value // 2)
-    var dynamic_b_shape = DimList(n.value, k.value // 2)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value // 2)
+    var dynamic_b_shape = IndexList[2](n.value, k.value // 2)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     var a_size = m.value * (k.value // 2)
     var b_size = n.value * (k.value // 2)
@@ -177,31 +141,31 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_scales_total = (
@@ -245,20 +209,19 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         scales_dtype, 5, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    # LayoutTensors for reference matmul and scale factor reshaping
+    # LayoutTensors for reference matmul (vendor_blas) and scale factor reshaping
     var a_lt = from_ndbuffer_row_major(a_device_nd)
     var b_lt = from_ndbuffer_row_major(b_device_nd)
-    var c_lt = from_ndbuffer_row_major(c_device_nd)
     var a_scales_lt = from_ndbuffer_row_major(a_scales_device_nd)
     var b_scales_lt = from_ndbuffer_row_major(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
 
     # TileTensors for the kernel under test
-    var a_tensor = lt_to_tt(a_lt)
-    var b_tensor = lt_to_tt(b_lt)
-    var c_tensor = lt_to_tt(c_lt)
-    var a_scales_tensor = lt_to_tt(a_scales_lt)
-    var b_scales_tensor = lt_to_tt(b_scales_lt)
+    var a_tensor = TileTensor(a_device_nd)
+    var b_tensor = TileTensor(b_device_nd)
+    var c_tensor = TileTensor(c_device_nd)
+    var a_scales_tensor = TileTensor(a_scales_device_nd)
+    var b_scales_tensor = TileTensor(b_scales_device_nd)
 
     # Initialize matmul operands
     if simple_init():
@@ -409,7 +372,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16
@@ -419,11 +382,8 @@ def main():
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
-        for bm in [128]:
-
-            @parameter
-            for bn in [128, 256]:
+        comptime for bm in [128]:
+            comptime for bn in [128, 256]:
                 comptime block_tile_shape = Index(bm, bn, BK)
                 comptime umma_shape = Index(bm, bn, MMA_K)
 
@@ -434,7 +394,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -454,7 +414,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -474,7 +434,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -495,7 +455,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                    cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -515,7 +475,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -536,7 +496,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -558,7 +518,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -578,7 +538,7 @@ def main():
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,

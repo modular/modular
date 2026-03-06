@@ -15,15 +15,15 @@
 Example:
 
 ```mojo
-from os import Process
-from collections import List
+from std.os import Process
+from std.collections import List
 _ = Process.run("echo", ["== TEST_ECHO"])
 ```
 """
-from collections import List, Optional
-from collections.string import StringSlice
-from sys import CompilationTarget
-from sys._libc import (
+from std.collections import List, Optional
+from std.collections.string import StringSlice
+from std.sys import CompilationTarget
+from std.sys._libc import (
     waitpid,
     posix_spawnp,
     kill,
@@ -35,8 +35,8 @@ from sys._libc import (
     close,
     WaitFlags,
 )
-from ffi import c_char, c_int, c_pid_t, get_errno
-from sys.os import abort, sep
+from std.ffi import c_char, c_int, c_pid_t, get_errno
+from .os import abort, sep
 
 
 # ===----------------------------------------------------------------------=== #
@@ -180,7 +180,7 @@ struct Pipe:
             raise Error("Can not write from read only side of pipe")
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from this pipe.
 
         Args:
@@ -375,8 +375,7 @@ struct Process:
             Error: If the process fails to spawn.
         """
 
-        @parameter
-        if CompilationTarget.is_linux() or CompilationTarget.is_macos():
+        comptime if CompilationTarget.is_linux() or CompilationTarget.is_macos():
             var file_name = String(path.split(sep)[-1])
 
             var arg_count = len(argv)
@@ -428,9 +427,6 @@ struct Process:
 
             return Process(child_pid=pid)
         else:
-            constrained[
-                False, "Unknown platform process execution not implemented"
-            ]()
-            abort[prefix="ERROR:"](
-                "Unknown platform process execution not implemented"
-            )
+            comptime assert (
+                False
+            ), "Unknown platform process execution not implemented"

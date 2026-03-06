@@ -149,7 +149,7 @@ def test_provider_options_json_deserialization() -> None:
         "image": {"width": 512, "height": 512},
     }
 
-    opts = ProviderOptions(**json_data)
+    opts = ProviderOptions.model_validate(json_data)
 
     assert opts.max is not None
     assert opts.max.target_endpoint == "instance-123"
@@ -162,7 +162,7 @@ def test_provider_options_json_deserialization_partial() -> None:
     """Test deserializing ProviderOptions with only some fields."""
     # Only MAX options
     max_json_data = {"max": {"target_endpoint": "instance-123"}}
-    opts = ProviderOptions(**max_json_data)
+    opts = ProviderOptions.model_validate(max_json_data)
     assert opts.max is not None
     assert opts.max.target_endpoint == "instance-123"
     assert opts.image is None
@@ -170,7 +170,7 @@ def test_provider_options_json_deserialization_partial() -> None:
 
     # Only image options
     image_json_data = {"image": {"width": 512, "height": 512}}
-    opts = ProviderOptions(**image_json_data)
+    opts = ProviderOptions.model_validate(image_json_data)
     assert opts.max is None
     assert opts.image is not None
     assert opts.image.width == 512
@@ -188,10 +188,12 @@ def test_provider_options_nested_validation() -> None:
     assert opts.max.target_endpoint == "instance-123"
 
     # Valid nested structure from dict (Pydantic auto-converts)
-    opts = ProviderOptions(max={"target_endpoint": "instance-456"})
+    opts = ProviderOptions.model_validate(
+        {"max": {"target_endpoint": "instance-456"}}
+    )
     assert opts.max is not None
     assert opts.max.target_endpoint == "instance-456"
 
     # Invalid nested structure should fail at creation
     with pytest.raises(ValidationError):
-        ProviderOptions(max={"invalid_field": "value"})
+        ProviderOptions.model_validate({"max": {"invalid_field": "value"}})

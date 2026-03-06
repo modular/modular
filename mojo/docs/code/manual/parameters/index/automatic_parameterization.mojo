@@ -25,8 +25,7 @@ fn print_params2[t: DType, s: Int, //](vec: SIMD[t, s]):
 fn interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
     var result = SIMD[v1.dtype, v1.size * 2]()
 
-    @parameter
-    for i in range(v1.size):
+    comptime for i in range(v1.size):
         result[i * 2] = v1[i]
         result[i * 2 + 1] = v2[i]
     return result
@@ -36,7 +35,7 @@ fn foo[value: SIMD]():
     pass
 
 
-def main():
+def main() raises:
     var v = SIMD[DType.float64, 4](1.0, 2.0, 3.0, 4.0)
     print_params(v)
 

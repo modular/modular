@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import DimList, NDBuffer
-from gpu import (
+from std.gpu import (
     AddressSpace,
     barrier,
     block_dim,
@@ -22,13 +22,13 @@ from gpu import (
     global_idx,
     thread_idx,
 )
-from gpu.host import DeviceContext
-from memory import (
+from std.gpu.host import DeviceContext
+from std.memory import (
     memset_zero,
     stack_allocation,
 )
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime TILE_SZ_A = 128
 comptime TILE_SZ_B = 16
@@ -60,7 +60,7 @@ fn matmul(
     var b_shared = stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.int,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.
@@ -167,6 +167,6 @@ fn run_matmul(ctx: DeviceContext) raises:
     _ = c_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matmul(ctx)

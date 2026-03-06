@@ -11,16 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 # AMD Helper functions and structs for Tensor Core MMA operations
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
-from gpu import barrier, block_dim, block_idx, global_idx, lane_id, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import AddressSpace
-from gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+from std.gpu import (
+    barrier,
+    block_dim,
+    block_idx,
+    global_idx,
+    lane_id,
+    thread_idx,
+)
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.memory import AddressSpace
+from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import Layout
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element
@@ -32,9 +39,9 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import Pointer, LegacyUnsafePointer
+from std.memory import Pointer, LegacyUnsafePointer
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # Function to handle AMD-specific scheduling
@@ -91,8 +98,7 @@ fn amd_scheduling_hints[
     # scheduler_hint[2] For MFMA after DS_READ
 
     # Schedule barriers for DS_READ operations
-    @parameter
-    for i in range(
+    comptime for i in range(
         (mmas_per_warp_m * k_tiles_count + mmas_per_warp_n * k_tiles_count)
         // k_tiles_count
     ):
@@ -102,8 +108,7 @@ fn amd_scheduling_hints[
         )
 
     # Schedule barriers for memory load operations
-    @parameter
-    for i in range(a_loads_per_thread + b_loads_per_thread):
+    comptime for i in range(a_loads_per_thread + b_loads_per_thread):
         schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
         schedule_group_barrier(
             AMDScheduleBarrierMask.MFMA, Int32(scheduler_hint[0]), 0
@@ -114,8 +119,7 @@ fn amd_scheduling_hints[
         )
 
     # Additional DS_READ scheduling for remaining k_tiles
-    @parameter
-    for i in range(
+    comptime for i in range(
         (mmas_per_warp_m * k_tiles_count + mmas_per_warp_n * k_tiles_count)
         // k_tiles_count
         * (k_tiles_count - 1)
@@ -148,24 +152,20 @@ fn copy_local_to_dram_32_32_8[
     comptime M = src.layout.shape[0].value()
     comptime N = src.layout.shape[1].value()
 
-    @parameter
-    for n in range(N):
-
-        @parameter
-        for m in range(M):
+    comptime for n in range(N):
+        comptime for m in range(M):
             comptime src_idx = 4 * n + 16 * m
             comptime i = 4 * n + m + ((m // 4) * 12)
 
             comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
-            @parameter
-            if dst_fragments.layout.all_dims_known():
+            comptime if dst_fragments.layout.all_dims_known():
                 dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
 
-            var src_element = Element[index_type = src.linear_idx_type].load(
+            var src_element = Element[index_type=src.linear_idx_type].load(
                 src.ptr + src_idx,
                 src.runtime_element_layout,
             )
@@ -174,16 +174,13 @@ fn copy_local_to_dram_32_32_8[
                 1
             ].value()
 
-            @parameter
-            if element_stride == 1:
+            comptime if element_stride == 1:
                 buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
             else:
-
-                @parameter
-                for i in range(dst_fragments.element_layout.size()):
+                comptime for i in range(dst_fragments.element_layout.size()):
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
@@ -222,16 +219,16 @@ struct AMD_MMA[
         Self.in_type,
         smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment = Self.type_alignment,
+        address_space=AddressSpace.SHARED,
+        alignment=Self.type_alignment,
     ]
 
     comptime MMARegTileType[num_mmas: Int] = LayoutTensor[
         Self.in_type,
         Layout.row_major(num_mmas * Self.num_k_tiles, Self.simd_width),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-        alignment = Self.type_alignment,
+        address_space=AddressSpace.LOCAL,
+        alignment=Self.type_alignment,
     ]
 
     comptime SharedMemWarpTileType[
@@ -245,8 +242,8 @@ fn mma[
     swap_a_b: Bool,
     MMAType: type_of(AMD_MMA),
 ](
-    a_tiles: MMATileBuffers[mma_type=MMAType],
-    b_tiles: MMATileBuffers[mma_type=MMAType],
+    a_tiles: MMATileBuffers[mma_type=MMAType, ...],
+    b_tiles: MMATileBuffers[mma_type=MMAType, ...],
     c_reg_tile: LayoutTensor[mut=True, ...],
 ):
     """
@@ -367,9 +364,9 @@ struct MMATileBuffers[
         Uses structured thread cooperation to efficiently transfer data.
         """
         copy_local_to_shared[
-            thread_layout = Self.thread_layout,
-            swizzle = Self.mma_type.swizzle,
-            thread_scope = ThreadScope.BLOCK,
+            thread_layout=Self.thread_layout,
+            swizzle=Self.mma_type.swizzle,
+            thread_scope=ThreadScope.BLOCK,
             row_major=True,
         ](
             self.shared_mem_tile.vectorize[1, Self.mma_type.simd_width](),
@@ -380,8 +377,8 @@ struct MMATileBuffers[
     fn load_from_dram(mut self) -> None:
         """Load data from global memory (DRAM) to thread-local memory."""
         copy_dram_to_local[
-            src_thread_layout = Self.thread_layout,
-            thread_scope = ThreadScope.BLOCK,
+            src_thread_layout=Self.thread_layout,
+            thread_scope=ThreadScope.BLOCK,
         ](
             self.load_reg_tile.vectorize[1, Self.mma_type.simd_width](),
             self.gmem_iter[].vectorize[1, Self.mma_type.simd_width](),
@@ -408,10 +405,9 @@ struct MMATileBuffers[
 
     @always_inline
     fn load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
-        @parameter
-        if is_a:
+        comptime if is_a:
             Self.mma_type.tensor_core_mma.mma_op.load_a[
-                swizzle = Self.mma_type.swizzle
+                swizzle=Self.mma_type.swizzle
             ](
                 self.shared_mem_warp_tile,
                 self.mma_reg_tile[k_tile_idx]
@@ -421,7 +417,7 @@ struct MMATileBuffers[
             )
         else:
             Self.mma_type.tensor_core_mma.mma_op.load_b[
-                swizzle = Self.mma_type.swizzle
+                swizzle=Self.mma_type.swizzle
             ](
                 self.shared_mem_warp_tile,
                 self.mma_reg_tile[k_tile_idx]

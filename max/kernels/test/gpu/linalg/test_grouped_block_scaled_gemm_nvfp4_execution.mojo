@@ -22,28 +22,28 @@ Key differences from MXFP8:
 - scaling_kind: KIND_MXF4NVF4
 """
 
-from math import align_up, ceildiv
-from sys import argv, size_of
+from std.math import align_up, ceildiv
+from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer, bitcast
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import assert_almost_equal
-from random import rand, random_ui64, seed
+from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
@@ -105,11 +105,11 @@ fn test_grouped_kernel_nvfp4_single_group[
     ) if transpose_b else DimList(k.dim // 2, n.dim)
     comptime static_c_shape = DimList(m.dim, n.dim)
 
-    var dynamic_a_shape = DimList(m.value, k_packed)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k_packed)
+    var dynamic_b_shape = IndexList[2](
         n.value, k_packed
-    ) if transpose_b else DimList(k_packed, n.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    ) if transpose_b else IndexList[2](k_packed, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     var a_size = m.value * k_packed
     var b_size = n.value * k_packed
@@ -118,8 +118,16 @@ fn test_grouped_kernel_nvfp4_single_group[
     # Host allocations
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c_host_ptr = c_host_managed.tensor[update=False]().ptr
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c_host_ref_ptr = c_host_ref_managed.tensor[update=False]().ptr
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -142,27 +150,27 @@ fn test_grouped_kernel_nvfp4_single_group[
     # Scale factor shapes (5D) - using logical K for scale factor calculations
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -428,8 +436,6 @@ fn test_grouped_kernel_nvfp4_single_group[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
     problem_sizes_host.free()
@@ -501,32 +507,32 @@ fn test_grouped_kernel_nvfp4_multi_group[
     comptime static_c_shape = DimList(m.dim, n.dim)
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_shape = DimList(m.value, k_packed)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k_packed)
+    var dynamic_b_shape = IndexList[2](
         n.value, k_packed
-    ) if transpose_b else DimList(k_packed, n.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(
+    ) if transpose_b else IndexList[2](k_packed, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -537,8 +543,18 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # ========== Group 0 allocations ==========
     var a0_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
     var b0_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c0_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c0_ref_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c0_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c0_host = c0_host_managed.tensor[update=False]().ptr
+    var c0_ref_host_managed = ManagedLayoutTensor[
+        c_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c0_ref_host = c0_ref_host_managed.tensor[update=False]().ptr
     var sfa0_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
     var sfb0_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
 
@@ -552,8 +568,18 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # ========== Group 1 allocations ==========
     var a1_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
     var b1_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c1_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c1_ref_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c1_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c1_host = c1_host_managed.tensor[update=False]().ptr
+    var c1_ref_host_managed = ManagedLayoutTensor[
+        c_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c1_ref_host = c1_ref_host_managed.tensor[update=False]().ptr
     var sfa1_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
     var sfb1_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
 
@@ -853,14 +879,10 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # Cleanup
     a0_host.free()
     b0_host.free()
-    c0_host.free()
-    c0_ref_host.free()
     sfa0_host.free()
     sfb0_host.free()
     a1_host.free()
     b1_host.free()
-    c1_host.free()
-    c1_ref_host.free()
     sfa1_host.free()
     sfb1_host.free()
     problem_sizes_host.free()
@@ -871,7 +893,7 @@ fn test_grouped_kernel_nvfp4_multi_group[
     sfb_ptrs_host.free()
 
 
-def main():
+def main() raises:
     print("\n" + "=" * 60)
     print("Test: Grouped Block-Scaled GEMM with NVFP4 Execution")
     print("=" * 60)
@@ -893,13 +915,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),  # Logical K (actual data is K/2 bytes)
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),  # Logical K (actual data is K/2 bytes)
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 2: Larger dimensions (1SM mode)
@@ -908,13 +930,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[512](),
+        m=static[512](),
+        n=static[512](),
+        k=static[512](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 3: Multi-group with different pointers (1SM mode)
@@ -923,13 +945,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # 2SM tests
@@ -941,13 +963,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 5: 2SM larger dimensions
@@ -956,13 +978,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[512](),
+        m=static[512](),
+        n=static[512](),
+        k=static[512](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 6: 2SM multi-group with different pointers
@@ -971,15 +993,16 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     print("\n" + "=" * 60)
     print("All NVFP4 tests passed!")
     print("=" * 60)
+    _ = ctx^

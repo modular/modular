@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedLayout GPU memory codegen with runtime indices."""
 
-import sys
+import std.sys
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from gpu.host.compile import _compile_code, get_gpu_target
-from layout._layout import Layout
-from layout._coord import Idx, Coord
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.host.compile import _compile_code, get_gpu_target
+from layout.tile_layout import Layout
+from layout import Idx, Coord
 from layout.int_tuple import IntTuple
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 
 fn test_codegen_memory[
@@ -41,16 +41,14 @@ fn test_codegen_memory[
 
     # Test AMD GPU codegen
     var amd_asm = _compile_code[
-        func, target = get_gpu_target["amdgpu:gfx942"]()
+        func, target=get_gpu_target["amdgpu:gfx942"]()
     ]().asm
 
     # Should not load from buffer for compile-time known values
     assert_true("ds_read" not in amd_asm and "ds_write" not in amd_asm)
 
     # Test NVIDIA GPU codegen
-    var nvidia_asm = _compile_code[
-        func, target = get_gpu_target["sm_80"]()
-    ]().asm
+    var nvidia_asm = _compile_code[func, target=get_gpu_target["sm_80"]()]().asm
 
     # Should not use local memory for compile-time known values
     assert_true("ld.local" not in nvidia_asm and "st.local" not in nvidia_asm)
@@ -71,6 +69,6 @@ fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
     )
 
 
-def main():
+def main() raises:
     test_codegen_memory[kernel_mixed_dimensions]()
     test_codegen_memory[kernel_thread_idx]()

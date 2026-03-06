@@ -13,11 +13,11 @@
 """This module includes utilities for working with the
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
-from collections import InlineArray
-from collections.string.string_slice import _get_kgen_string
-from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.collections import InlineArray
+from std.collections.string.string_slice import _get_kgen_string
+from std.sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     CompilationTarget,
     _cdna_4_or_newer,
     _is_amd_rdna,
@@ -26,19 +26,19 @@ from sys.info import (
     is_amd_gpu,
 )
 
-from gpu._utils import (
+from std.gpu._utils import (
     array_to_llvm_struct,
     dtype_to_llvm_type,
     llvm_struct_to_array,
     llvm_struct_to_simd,
     simd_to_llvm_struct,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
-from memory import bitcast
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
+from std.memory import bitcast
 
-from utils import StaticTuple
-from utils.index import Index
+from std.utils import StaticTuple
+from std.utils.index import Index
 
 # Import architecture-specific MMA implementations
 from .arch.mma_nvidia import _mma_nvidia
@@ -54,8 +54,7 @@ fn get_amd_fp8_dtype() -> DType:
         - `DType.invalid` for RDNA3 (no native FP8 support).
     """
 
-    @parameter
-    if _is_amd_rdna3():
+    comptime if _is_amd_rdna3():
         return DType.invalid
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e4m3fn
@@ -72,8 +71,7 @@ fn get_amd_bf8_dtype() -> DType:
         - `DType.invalid` for RDNA3 (no native BF8 support).
     """
 
-    @parameter
-    if _is_amd_rdna3():
+    comptime if _is_amd_rdna3():
         return DType.invalid
     elif _is_amd_rdna4() or _cdna_4_or_newer():
         return DType.float8_e5m2
@@ -83,18 +81,15 @@ fn get_amd_bf8_dtype() -> DType:
 
 @always_inline
 fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    constrained[
-        False,
-        # fmt: off
-        String(
-        "no valid implementation of mma for for a=",
+    # fmt: off
+    comptime assert False, String(
+        "no valid implementation of mma for a=",
         a.size, "x",  a.dtype,
         ", b=",  b.size, "x",  b.dtype,
         ", c=",  c.size, "x",  c.dtype,
         ", and d=", d.size, "x", d.dtype,
-        ),
-        # fmt: on
-    ]()
+    )
+    # fmt: on
 
 
 @always_inline
@@ -129,8 +124,7 @@ fn _has_shape[
 fn _dtype_to_nvvm_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if out_type == DType.float16 or out_type == DType.uint32:
+    comptime if out_type == DType.float16 or out_type == DType.uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr.`si32`
@@ -142,8 +136,7 @@ fn _dtype_to_nvvm_type[
 fn _dtype_to_nvvm_wgmma_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if out_type == DType.float8_e4m3fn:
+    comptime if out_type == DType.float8_e4m3fn:
         return __mlir_attr[`#nvvm.wgmma_type<e4m3>`]
     elif out_type == DType.float8_e5m2:
         return __mlir_attr[`#nvvm.wgmma_type<e5m2>`]
@@ -177,16 +170,14 @@ fn _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
 
 
 fn _to_nvvm_scale_out[s: Int]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if s == 0:
+    comptime if s == 0:
         return __mlir_attr.`#nvvm.wgmma_scale_out<zero>`
     else:
         return __mlir_attr.`#nvvm.wgmma_scale_out<one>`
 
 
 fn _to_nvvm_scale_in[s: Int]() -> __mlir_type.`!kgen.deferred`:
-    @parameter
-    if s == -1:
+    comptime if s == -1:
         return __mlir_attr.`#nvvm.wgmma_scale_in<neg>`
     else:
         return __mlir_attr.`#nvvm.wgmma_scale_in<one>`
@@ -227,14 +218,13 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         - Matrix dimensions and data types must match hardware requirements
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _mma_nvidia(d, a, b, c)
     elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -275,7 +265,7 @@ fn ld_matrix[
     Example:
 
         ```mojo
-        from gpu.compute.mma import ld_matrix
+        from std.gpu.compute.mma import ld_matrix
 
         # Load 8x8 matrix of float16 values
         var data = ld_matrix[DType.float16, 8](ptr)
@@ -309,8 +299,7 @@ fn ld_matrix[
     # Here .x1 means every thread would use a single register, x2 is 2 while x4 is 4 registers
     # An mma of shape m16n8k8 of type TF32 means for Matrix A every thread would have 4 registers hence .x4
     # and input simd_width being equal to 4
-    @parameter
-    if num_registers == 1:
+    comptime if num_registers == 1:
         comptime ins = base + ".x1" + get_suffix()
         var r = llvm_intrinsic[ins, UInt32](ptr)
         var r0 = bitcast[dtype, register_width](r[0])
@@ -365,7 +354,7 @@ fn st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
     ptr: UnsafePointer[
-        mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
     d: SIMD[DType.float32, simd_width],
 ):
@@ -409,8 +398,7 @@ fn st_matrix[
             return ".trans" + sfx
         return sfx
 
-    @parameter
-    if num_matrices == 1:
+    comptime if num_matrices == 1:
         comptime ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
         inlined_assembly[ins, NoneType, constraints="r,r"](
             Int32(Int(ptr)), d[0]
@@ -518,7 +506,7 @@ struct WGMMADescriptor[dtype: DType](
     ](
         smem_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
     ) -> Self:
@@ -540,8 +528,7 @@ struct WGMMADescriptor[dtype: DType](
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
         fn _convert_swizzle_enum[mode: Int32]() -> Int64:
-            @parameter
-            if mode == 0:
+            comptime if mode == 0:
                 return mode.cast[DType.int64]()
             else:
                 return (4 - mode).cast[DType.int64]()
@@ -717,10 +704,10 @@ fn wgmma_async[
         " scale in values."
     )
 
-    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_a_desc.desc._mlir_value
     )
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
 
@@ -734,16 +721,16 @@ fn wgmma_async[
     var llvmst = array_to_llvm_struct[c_dtype, width](c_reg)
     # TODO: Simplify with parametric alias
     var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
-        shape = _get_shape[m, n, k](),
-        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
-        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        shape=_get_shape[m, n, k](),
+        typeA=_dtype_to_nvvm_wgmma_type[a_type](),
+        typeB=_dtype_to_nvvm_wgmma_type[b_type](),
         typeD=type_d_value,
-        scaleD = _to_nvvm_scale_out[scale_d](),
-        scaleA = _to_nvvm_scale_in[scale_a](),
-        scaleB = _to_nvvm_scale_in[scale_b](),
-        layoutA = _to_nvvm_layout[layout_a](),
-        layoutB = _to_nvvm_layout[layout_b](),
-        _type = __mlir_type[
+        scaleD=_to_nvvm_scale_out[scale_d](),
+        scaleA=_to_nvvm_scale_in[scale_a](),
+        scaleB=_to_nvvm_scale_in[scale_b](),
+        layoutA=_to_nvvm_layout[layout_a](),
+        layoutB=_to_nvvm_layout[layout_b](),
+        _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -845,10 +832,10 @@ fn wgmma_async[
         " scale in values."
     )
 
-    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_a_desc.desc._mlir_value
     )
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
 
@@ -861,16 +848,16 @@ fn wgmma_async[
     var llvmst = simd_to_llvm_struct[c_dtype, width](c_reg)
     # TODO: Simplify with parametric alias
     var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
-        shape = _get_shape[m, n, k](),
-        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
-        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        shape=_get_shape[m, n, k](),
+        typeA=_dtype_to_nvvm_wgmma_type[a_type](),
+        typeB=_dtype_to_nvvm_wgmma_type[b_type](),
         typeD=type_d_value,
-        scaleD = _to_nvvm_scale_out[scale_d](),
-        scaleA = _to_nvvm_scale_in[scale_a](),
-        scaleB = _to_nvvm_scale_in[scale_b](),
-        layoutA = _to_nvvm_layout[layout_a](),
-        layoutB = _to_nvvm_layout[layout_b](),
-        _type = __mlir_type[
+        scaleD=_to_nvvm_scale_out[scale_d](),
+        scaleA=_to_nvvm_scale_in[scale_a](),
+        scaleB=_to_nvvm_scale_in[scale_b](),
+        layoutA=_to_nvvm_layout[layout_a](),
+        layoutB=_to_nvvm_layout[layout_b](),
+        _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -973,13 +960,12 @@ fn wgmma_async[
         layout_b == "row" and b_type == DType.bfloat16
     )
 
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
     comptime trans_b = 1 if layout_b == "row" else 0
 
-    @parameter
-    if (
+    comptime if (
         m == 64
         and k == 16
         and a_type == b_type == DType.bfloat16
@@ -1016,8 +1002,7 @@ fn wgmma_async[
         comptime constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
 
         # fmt: off
-        @parameter
-        if n == 8:
+        comptime if n == 8:
             var r = inlined_assembly[
                 """{
                     .reg .pred p;
@@ -1277,13 +1262,11 @@ fn wgmma_async[
                 )
             )
         else:
-            constrained[False, "the n value '", String(n), "' is not valid"]()
-            return c
+            comptime assert False, String("the n value '", n, "' is not valid")
         # fmt: on
 
     else:
-        constrained[False, "unsupported config"]()
-        return c
+        comptime assert False, "unsupported config"
 
 
 @always_inline("nodebug")

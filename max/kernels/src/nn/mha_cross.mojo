@@ -11,22 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of, simd_width_of
+from std.math import ceildiv
+from std.sys import align_of, simd_width_of
 
-from algorithm.functional import vectorize
-from gpu import block_idx, global_idx
-from gpu.host import DeviceContext, DeviceBuffer
+from std.algorithm.functional import vectorize
+from std.gpu import block_idx, global_idx
+from std.gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
-from layout._coord import Coord, Idx
-from layout._layout import Layout, TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import Layout, TensorLayout
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 @always_inline
@@ -116,8 +115,7 @@ fn _bmm0_bs[
             var k_val = k_ptr.load[width=width, alignment=alignment](offset)
             var qk_val = (q_val * k_val).cast[p_type]()
 
-            @parameter
-            if width == 1:
+            comptime if width == 1:
                 accum += rebind[type_of(accum)](qk_val)
             else:
                 accum_vec += rebind[type_of(accum_vec)](qk_val)
@@ -226,8 +224,8 @@ fn mha_cross_gpu_naive[
     //,
     rank: Int,
 ](
-    output: TileTensor[address_space = AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    output: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     q_input_row_offsets: TileTensor[DType.uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,
@@ -303,8 +301,8 @@ fn mha_cross_gpu_naive[
     var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.numel(), owning=False)
 
     comptime kernel_0 = _bmm0_bs[
-        QLayoutType = q.LayoutType,
-        KVLayoutType = kv_input_row_offsets.LayoutType,
+        QLayoutType=q.LayoutType,
+        KVLayoutType=kv_input_row_offsets.LayoutType,
         type_of(k),
         mask_t,
         q_type,
@@ -353,8 +351,8 @@ fn mha_cross_gpu_naive[
     )
 
     comptime kernel_1 = _bmm1_bs[
-        QLayoutType = q.LayoutType,
-        KVLayoutType = kv_input_row_offsets.LayoutType,
+        QLayoutType=q.LayoutType,
+        KVLayoutType=kv_input_row_offsets.LayoutType,
         type_of(v),
         p_type,
         output.dtype,

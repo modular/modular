@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max import functional as F
-from max.nn import Linear, Module
-from max.nn.norm import LayerNorm, RMSNorm
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import LayerNorm, RMSNorm
+from max.experimental.tensor import Tensor
 
 
 class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):

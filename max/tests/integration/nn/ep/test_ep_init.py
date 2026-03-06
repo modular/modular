@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
 
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.comm.ep import EPCommInitializer, EPConfig
 from test_common.graph_utils import gpu_warp_size
 
 
@@ -41,7 +42,7 @@ def test_init_ep(n_devices: int) -> None:
         n_experts=min(256, n_devices * (1024 // gpu_warp_size())),
         max_tokens_per_rank=128,
         n_gpus_per_node=n_devices,
-        n_nodes=1,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
     )
     ep_initializer = EPCommInitializer(config)
     ep_initializer.ep_init(session)

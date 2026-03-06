@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
-from sys import size_of
-from gpu.host import DeviceBuffer
-from gpu.host.device_context import _checked, _ConstCharPtr, _DeviceBufferPtr
-from utils import IndexList, StaticTuple
+from std.ffi import external_call
+from std.sys import size_of
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.device_context import (
+    _checked,
+    _ConstCharPtr,
+    _DeviceBufferPtr,
+)
+from std.utils import IndexList, StaticTuple
 
 
 @fieldwise_init("implicit")
@@ -60,8 +64,7 @@ struct DataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        @parameter
-        if dtype == DType.float32:
+        comptime if dtype == DType.float32:
             return Self.FLOAT32
         elif dtype == DType.float16:
             return Self.FLOAT16
@@ -91,7 +94,6 @@ struct SwizzleMode(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -155,6 +157,7 @@ struct SwizzleMode(
         """
         return Int((2**self._value) * 16)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert SwizzleMode to string representation.
@@ -242,7 +245,7 @@ struct TensorMap(ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructor for TensorMap.
 
         Args:
@@ -307,8 +310,7 @@ fn create_tensormap[
     # goes from the least rapidly varying dim to the highest. Here we inverse the
     # inputs for the tensormap constructor arguments.
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         global_dim_arg[i] = Int64(global_shape[rank - i - 1])
         global_strides_arg[i] = Int64(
             global_strides[rank - i - 1] * size_of[dtype]()
@@ -438,16 +440,14 @@ fn create_tensormap_im2col[
     var element_stride_arg = InlineArray[Int32, rank](fill=1)
 
     # Reverse dimension order for TMA API (CWHDN from NHWC)
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         global_dim_arg[i] = Int64(global_shape[rank - i - 1])
         global_strides_arg[i] = Int64(
             global_strides[rank - i - 1] * size_of[dtype]()
         )
 
     # Reverse spatial corners (W, H, D from D, H, W or H, W)
-    @parameter
-    for i in range(spatial_rank):
+    comptime for i in range(spatial_rank):
         lower_corner_arg[i] = Int32(lower_corner[spatial_rank - i - 1])
         upper_corner_arg[i] = Int32(upper_corner[spatial_rank - i - 1])
 

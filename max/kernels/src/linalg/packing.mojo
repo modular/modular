@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up
-from sys import align_of, simd_width_of
-from sys.info import CompilationTarget
-from sys.intrinsics import PrefetchOptions
+from std.math import align_down, align_up
+from std.sys import align_of, simd_width_of
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm import unswitch
+from std.algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
 from memory import (
@@ -26,7 +26,7 @@ from memory import (
 
 from register import register_internal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .matmul.cpu.apple_accelerate import use_apple_accelerate_lib
 from .transpose import transpose, transpose_inplace
@@ -175,8 +175,7 @@ struct PackMatrixRows[
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
-        @parameter
-        for idx in range(Self.simd_size):
+        comptime for idx in range(Self.simd_size):
             comptime inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
@@ -186,16 +185,15 @@ struct PackMatrixRows[
                 )
                 var row_data: SIMD[Self.dtype, Self.simd_size]
 
-                @parameter
-                if skip_col_bound:
+                comptime if skip_col_bound:
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
                     #  without any predicate.
-                    row_data = self.original_matrix.load[
-                        width = Self.simd_size
-                    ](row_global_index)
+                    row_data = self.original_matrix.load[width=Self.simd_size](
+                        row_global_index
+                    )
                 else:
-                    # Not skipping col bound, need to to a partial fill of
+                    # Not skipping col bound, need to do a partial fill of
                     #  the transpose buffer row.
                     row_data = partial_simd_load[Self.simd_size](
                         self.original_matrix._offset(row_global_index),
@@ -204,12 +202,12 @@ struct PackMatrixRows[
                         0,
                     )
 
-                transpose_buffer.store[width = Self.simd_size](
+                transpose_buffer.store[width=Self.simd_size](
                     Index(inner_row_idx, 0), row_data
                 )
             else:
                 # Row out of defined bound, fill the transpose buffer with zero
-                transpose_buffer.store[width = Self.simd_size](
+                transpose_buffer.store[width=Self.simd_size](
                     Index(inner_row_idx, 0), SIMD[Self.dtype, Self.simd_size](0)
                 )
 
@@ -220,9 +218,8 @@ struct PackMatrixRows[
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
-        @parameter
-        for idx in range(Self.simd_size):
-            var transposed_data = transpose_buffer.load[width = Self.simd_size](
+        comptime for idx in range(Self.simd_size):
+            var transposed_data = transpose_buffer.load[width=Self.simd_size](
                 Index(idx, 0)
             )
             # compute the packed index
@@ -230,7 +227,7 @@ struct PackMatrixRows[
             var _row_inner = local_off_set[0] % Self.row_inner_size
 
             if skip_col_bound or (idx < write_bound[1]):
-                self.packed_matrix.store[width = Self.simd_size](
+                self.packed_matrix.store[width=Self.simd_size](
                     Index(
                         _row_outer,
                         local_off_set[1] + idx,
@@ -252,7 +249,7 @@ struct PackMatrixRows[
             MutAnyOrigin,
             DimList(Self.simd_size, Self.simd_size),
         ].stack_allocation[
-            alignment = align_of[SIMD[Self.dtype, Self.simd_size]]()
+            alignment=align_of[SIMD[Self.dtype, Self.simd_size]]()
         ]()
 
         var valid_tile_simd_dim = Index(
@@ -338,9 +335,11 @@ struct PackMatrixCols[
     # Interface function:
     @staticmethod
     fn run(
-        packed_matrix: NDBuffer[Self.dtype, 3, MutAnyOrigin, Self.packed_shape],
+        packed_matrix: NDBuffer[
+            Self.dtype, 3, Self.packed_origin, Self.packed_shape
+        ],
         original_matrix: NDBuffer[
-            Self.dtype, 2, MutAnyOrigin, Self.original_shape
+            Self.dtype, 2, Self.original_origin, Self.original_shape
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -400,7 +399,7 @@ struct PackMatrixCols[
             if skip_col_bound or (
                 col_idx + Self.simd_size <= self.valid_data_dim[1]
             ):
-                data = self.original_matrix.load[width = Self.simd_size](
+                data = self.original_matrix.load[width=Self.simd_size](
                     global_idx
                 )
             elif col_idx < self.valid_data_dim[1]:
@@ -416,7 +415,7 @@ struct PackMatrixCols[
             # map to packed index
             var col_idx_outer = col_idx // Self.column_inner_size
             var col_idx_inner = col_idx % Self.column_inner_size
-            self.packed_matrix.store[width = Self.simd_size](
+            self.packed_matrix.store[width=Self.simd_size](
                 Index(col_idx_outer, row_idx, col_idx_inner),
                 data,
             )
@@ -437,16 +436,12 @@ struct PackMatrixCols[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](global_row_idx, global_col_idx)
 
-        @parameter
-        if skip_row_bound:
+        comptime if skip_row_bound:
             if not CompilationTarget.has_neon():
-
-                @parameter
-                for i in range(unroll_factor):
+                comptime for i in range(unroll_factor):
                     prefetch_body[i]()
 
-            @parameter
-            for i in range(unroll_factor):
+            comptime for i in range(unroll_factor):
                 pack_body[i]()
         else:
             for row_idx in range(row_start, valid_row_count):
@@ -465,9 +460,7 @@ struct PackMatrixCols[
         for i in range(0, self.pack_tile_dim[0], vnni_cols):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
-
-                    @parameter
-                    for l in range(vnni_cols):
+                    comptime for l in range(vnni_cols):
                         var local_idx = Index(i + l, p + nr * j)
                         var val = (
                             0 if local_idx[0] >= kc
@@ -540,8 +533,7 @@ struct PackMatrixCols[
             row_idx += unroll_factor
 
     fn _pack(self):
-        @parameter
-        if Self.use_vnni:
+        comptime if Self.use_vnni:
             self._pack_vnni()
         elif Self.use_i8mm:
             self._pack_i8mm()
@@ -560,7 +552,7 @@ fn _pack_matmul_b_shape_func_impl[
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
 ](
-    b_input: NDBuffer[b_type, 2, _, b_shape], kernel_type_m: Int = 0
+    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape], kernel_type_m: Int = 0
 ) -> IndexList[2]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
     argument.
@@ -589,8 +581,7 @@ fn _pack_matmul_b_shape_func_impl[
 
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
-    @parameter
-    if transpose_in_0:
+    comptime if transpose_in_0:
         output[0] = b_input.dim(1)
         output[1] = b_input.dim(0)
     else:
@@ -602,8 +593,7 @@ fn _pack_matmul_b_shape_func_impl[
     # special gemv for M=1 (apple_gemv).
     # So override packing, BUT pack functions will do transpose (facilitates
     # apple_gemv), so assign the transposed B dimensions.
-    @parameter
-    if not use_apple_accelerate_lib[c_type, a_type, b_type]():
+    comptime if not use_apple_accelerate_lib[c_type, a_type, b_type]():
         comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
         comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
         comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
@@ -620,20 +610,20 @@ fn _pack_matmul_b_shape_func_impl[
 @register_internal("pack_matmul_b_shape_func")
 @always_inline
 fn pack_matmul_b_shape_func[
-    a_type: DType,
-    a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
+    //,
+    a_type: DType,
+    a_shape: DimList,
     c_type: DType,
     c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[b_type, 2, _, b_shape]) -> IndexList[2]:
+](b_input: NDBuffer[mut=False, b_type, 2, _, b_shape]) -> IndexList[2]:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
-    @parameter
-    if a_shape.at[0]().has_value():
+    comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
 
     return _pack_matmul_b_shape_func_impl[
@@ -678,8 +668,7 @@ fn pack_b[
     comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
     comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
-    @parameter
-    if not transpose_b:
+    comptime if not transpose_b:
         var k_in = src.dim[0]()
         var n_in = src.dim[1]()
         var k_out = dst.dim[0]()
@@ -696,7 +685,7 @@ fn pack_b[
             for idx_n in range(0, n_out, tile_n):
                 var packed_dst_view = NDBuffer[b_type, 3](
                     dst_flat.data + dst_offset,
-                    DimList(
+                    IndexList[3](
                         tile_n // inner_size2,
                         tile_k2 // factor,
                         inner_size2 * factor,
@@ -741,7 +730,7 @@ fn pack_b[
             for idx_n_t in range(0, n_out_t, tile_n):
                 var packed_dst_view_t = NDBuffer[b_type, 3](
                     dst_flat.data + dst_offset,
-                    DimList(tile_n // inner_size, tile_k, inner_size),
+                    IndexList[3](tile_n // inner_size, tile_k, inner_size),
                 )
                 var valid_k_t = min(tile_k, k_in_t - idx_k_t)
                 var valid_n_t = min(tile_n, n_in_t - idx_n_t)
@@ -766,19 +755,17 @@ fn pack_b[
 
 @always_inline
 fn _pack_b_ndbuffer_impl[
-    b_mut: Bool,
+    b_type: DType,
+    b_shape: DimList,
     //,
     a_type: DType,
     a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
     transposed: Bool,
-    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[b_type, 2, b_origin, b_shape],
+    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],
     kernel_type_m: Int,
 ) raises:
@@ -802,11 +789,9 @@ fn _pack_b_ndbuffer_impl[
         # (which is a binding for cblas_sgemm that doesn't support packing) and a
         # special gemv for M=1 (apple_gemv).
         # So override packing, BUT do transpose (facilitates apple_gemv).
-        @parameter
-        if use_apple_accelerate_lib[c_type, a_type, b_type]():
+        comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
             # If already transposed, skip transpose step and do a memcpy.
-            @parameter
-            if not transposed:
+            comptime if not transposed:
                 var perm = NDBuffer[
                     DType.int, 1, MutAnyOrigin, 2
                 ].stack_allocation()
@@ -842,7 +827,7 @@ fn _pack_b_ndbuffer_impl[
                 b_type,
                 c_type,
                 src_shape=b_shape,
-                dst_shape = DimList.create_unknown[2](),
+                dst_shape=DimList.create_unknown[2](),
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
 
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
@@ -850,31 +835,26 @@ fn _pack_b_ndbuffer_impl[
 
 @register_internal("layout_transform_KN_to_KNkni")
 fn pack_b_ndbuffer[
-    b_mut: Bool,
+    b_type: DType,
+    b_shape: DimList,
     //,
     a_type: DType,
     a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[b_type, 2, b_origin, b_shape],
+    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],
 ) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
-    @parameter
-    if a_shape.at[0]().has_value():
+    comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
-        b_type,
-        b_shape,
         c_type,
         c_shape,
         transposed=False,
@@ -890,20 +870,17 @@ fn pack_transposed_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](
-    b_input: NDBuffer[b_type, 2, _, b_shape],
-    output_buffer: NDBuffer[mut=True, b_type, 2],
+    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
+    output_buffer: NDBuffer[mut=True, b_type, 2, _],
 ) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
-    @parameter
-    if a_shape.at[0]().has_value():
+    comptime if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
-        b_type,
-        b_shape,
         c_type,
         c_shape,
         transposed=True,
@@ -956,8 +933,7 @@ struct BTileGenerator[
             "b cannot be both transposed and pre-packed.",
         )
 
-        @parameter
-        if not Self.b_packed:
+        comptime if not Self.b_packed:
             b_tile_stack_ptr = stack_allocation[
                 get_pack_data_size[Self.b_type](),
                 Self.b_type,
@@ -981,7 +957,7 @@ struct BTileGenerator[
         global_offset: GemmShape,
         tile_dim_nk: IndexList[2],
         valid_data_dim_nk: IndexList[2],
-    ) -> NDBuffer[Self.b_type, 3, MutAnyOrigin, Self.config.packed_shape]:
+    ) -> NDBuffer[Self.b_type, 3, ImmutAnyOrigin, Self.config.packed_shape]:
         """Get a packed matrix (B) tile.
 
         Args:
@@ -1003,7 +979,7 @@ struct BTileGenerator[
         comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
         var k = align_up(tile_dim_nk[1], factor)
-        var tile_shape_nopack = DimList(
+        var tile_shape_nopack = IndexList[3](
             tile_dim_nk[0] // inner_size2,
             k // factor,
             factor * inner_size2,
@@ -1013,8 +989,7 @@ struct BTileGenerator[
             self.b_tile_stack_ptr, tile_shape_nopack
         )
 
-        @parameter
-        if Self.transpose_b and not Self.b_packed:
+        comptime if Self.transpose_b and not Self.b_packed:
             PackMatrixRows[
                 Self.shape,
                 Self.config.packed_shape,
@@ -1031,7 +1006,7 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
-            return packed_b
+            return packed_b.get_immutable()
         elif (not Self.transpose_b) and (not Self.b_packed):
             PackMatrixCols[
                 Self.shape,
@@ -1067,7 +1042,7 @@ struct BTileGenerator[
                 min(self.tile_n_k[1], valid_data_dim_nk[1]), factor
             )
 
-            var tile_shape_pack = DimList(
+            var tile_shape_pack = IndexList[3](
                 self.tile_n_k[0] // inner_size2,
                 tile_k2 // factor,
                 inner_size2 * factor,
@@ -1089,11 +1064,11 @@ struct BTileGenerator[
                 + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
                 tile_shape_pack,
             )
-            return b_tile_view
+            return b_tile_view.as_any_origin()
 
         else:
             debug_assert(
                 False, "unreachable, b_packed not supported with transpose_b"
             )
 
-        return packed_b
+        return packed_b.get_immutable()

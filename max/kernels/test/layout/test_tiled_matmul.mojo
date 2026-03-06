@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm import sync_parallelize, vectorize
+from std.algorithm import sync_parallelize, vectorize
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 
 
 @fieldwise_init
-struct Dim(ImplicitlyCopyable, RegisterPassable, Stringable):
+struct Dim(ImplicitlyCopyable, RegisterPassable, Writable):
     var m: Int
     var n: Int
     var k: Int
@@ -30,9 +30,18 @@ struct Dim(ImplicitlyCopyable, RegisterPassable, Stringable):
             self.m // sub_dim.m, self.n // sub_dim.n, self.k // sub_dim.k
         )
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        return String("m: ", self.m, ", n: ", self.n, ", k: ", self.k)
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the dim.
+
+        Args:
+            writer: The writer to write to.
+        """
+        t"m: {self.m}, n: {self.n}, k: {self.k}".write_to(writer)
 
 
 trait TiledOp:
@@ -258,7 +267,7 @@ fn test_tiled_matmul[use_l1_cache: Bool]() raises:
     _ = dst^
 
 
-def main():
+def main() raises:
     # CHECK: === test_tiled_matmul_l1_cache
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0

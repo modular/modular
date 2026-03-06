@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_ui64
+from std.random import random_ui64
 
-from layout._coord import Coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
@@ -25,10 +23,12 @@ from nn.index_tensor import (
     advanced_indexing_setitem_inplace,
     index_tensor_shape,
 )
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_equal
+from std.math import align_up
+from std.runtime.asyncrt import DeviceContextPtr
+from std.sys import simd_width_of
+from std.testing import assert_equal
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 # TODO: It is like example 5 ONNX.
@@ -50,9 +50,10 @@ fn test_index_tensor_DLRM() raises:
 
     # dim_0 x dim_1 x dim_2 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_2]()
-    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
-        uninitialized=True
-    )
+    var input_stack = InlineArray[
+        Scalar[input_type],
+        align_up(input_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_2):
@@ -61,7 +62,9 @@ fn test_index_tensor_DLRM() raises:
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
-    var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
+    var a_stack = InlineArray[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var index_a = TileTensor(a_stack, row_major[index_len]())
     # Initialize with random values within [0-dim_1) since it points do dim_1 of
     # input.
@@ -69,7 +72,9 @@ fn test_index_tensor_DLRM() raises:
         a_stack[i] = random_ui64(0, dim_1 - 1)
 
     # index_len-element input tensor.
-    var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
+    var b_stack = InlineArray[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var index_b = TileTensor(b_stack, row_major[index_len]())
     # Initialize with random values within [0-dim_2) since it points do dim_2 of
     # input.
@@ -83,9 +88,10 @@ fn test_index_tensor_DLRM() raises:
 
     # Reference output of shape dim_0 x index_len.
     comptime ref_layout = row_major[dim_0, index_len]()
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
-        uninitialized=True
-    )
+    var ref_stack = InlineArray[
+        Scalar[input_type],
+        align_up(ref_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(dim_0):
         for j in range(index_len):
@@ -94,7 +100,9 @@ fn test_index_tensor_DLRM() raises:
     # Convert index_a, index_b (each of 1D size index_len) to a
     # 2D index_len x 2 indices TileTensor.
     # TODO: This needs to be part of the OP itself.
-    var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
+    var indices_stack = InlineArray[
+        UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
     for i in range(index_len):
         indices[i, 0] = index_a[i]
@@ -109,9 +117,10 @@ fn test_index_tensor_DLRM() raises:
         batch_dims,
     ](input_dyn, indices_dyn)
 
-    var output_data_stack = InlineArray[Scalar[input_type], dim_0 * index_len](
-        uninitialized=True
-    )
+    var output_data_stack = InlineArray[
+        Scalar[input_type],
+        align_up(dim_0 * index_len, simd_width_of[input_type]()),
+    ](uninitialized=True)
     comptime output_static_layout = row_major[dim_0, index_len]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
@@ -144,9 +153,10 @@ fn test_index_tensor_DLRM_batch() raises:
 
     # dim_0 x dim_1 x dim_3 x dim_4 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_3, dim_4]()
-    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
-        uninitialized=True
-    )
+    var input_stack = InlineArray[
+        Scalar[input_type],
+        align_up(input_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_3 * dim_4):
@@ -155,14 +165,18 @@ fn test_index_tensor_DLRM_batch() raises:
     # We have two 1D tensors with index_len elements each.
 
     # index_len-element input tensor.
-    var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
+    var a_stack = InlineArray[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var index_a = TileTensor(a_stack, row_major[index_len]())
     # Initialize with random values within [0-dim_3)
     for i in range(index_len):
         a_stack[i] = random_ui64(0, dim_3 - 1)
 
     # index_len-element input tensor.
-    var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
+    var b_stack = InlineArray[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var index_b = TileTensor(b_stack, row_major[index_len]())
     # Initialize with random values within [0-dim_4)
     for i in range(index_len):
@@ -176,9 +190,10 @@ fn test_index_tensor_DLRM_batch() raises:
 
     # Reference output of shape dim_0 x index_len
     comptime ref_layout = row_major[dim_0, dim_1, index_len]()
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
-        uninitialized=True
-    )
+    var ref_stack = InlineArray[
+        Scalar[input_type],
+        align_up(ref_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(dim_0):
         for j in range(dim_1):
@@ -187,7 +202,9 @@ fn test_index_tensor_DLRM_batch() raises:
 
     # Convert index_a, index_b (each of 1D size index_len) to a 2D index_len x 2
     # indices TileTensor.
-    var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
+    var indices_stack = InlineArray[
+        UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
     for i in range(index_len):
         indices[i, 0] = index_a[i]
@@ -203,7 +220,8 @@ fn test_index_tensor_DLRM_batch() raises:
     ](input_dyn, indices_dyn)
 
     var output_data_stack = InlineArray[
-        Scalar[input_type], dim_0 * dim_1 * index_len
+        Scalar[input_type],
+        align_up(dim_0 * dim_1 * index_len, simd_width_of[input_type]()),
     ](uninitialized=True)
     comptime output_static_layout = row_major[dim_0, dim_1, index_len]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
@@ -236,9 +254,10 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # dim_0 x dim_1 x dim_2 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_2]()
-    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
-        uninitialized=True
-    )
+    var input_stack = InlineArray[
+        Scalar[input_type],
+        align_up(input_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_2):
@@ -247,14 +266,18 @@ fn test_index_tensor_CLIPVIT() raises:
     # We have two 2D tensors with 1 element each.
 
     # 1-element input tensor.
-    var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
+    var a_stack = InlineArray[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var index_a = TileTensor(a_stack, row_major[index_len]())
     # Initialize with [0,1]
     a_stack[0] = 0
     a_stack[1] = 1
 
     # 1-element input tensor.
-    var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
+    var b_stack = InlineArray[
+        UInt64, align_up(index_len, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var index_b = TileTensor(b_stack, row_major[index_len]())
     # Initialize with [1,0]
     b_stack[0] = 1
@@ -263,9 +286,10 @@ fn test_index_tensor_CLIPVIT() raises:
     # Reference output of shape dim_0 x dim_2
 
     comptime ref_layout = row_major[dim_0, dim_2]()
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
-        uninitialized=True
-    )
+    var ref_stack = InlineArray[
+        Scalar[input_type],
+        align_up(ref_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var ref_output = TileTensor(ref_stack, ref_layout)
 
     for j in range(dim_2):
@@ -282,7 +306,9 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # Convert index_a, index_b (each of 1D size 2) to a
     # 2D indices_len x 2 indices TileTensor
-    var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
+    var indices_stack = InlineArray[
+        UInt64, align_up(index_len * 2, simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var indices = TileTensor(indices_stack, row_major[index_len, 2]())
     indices[0, 0] = index_a[0]
     indices[0, 1] = index_b[0]
@@ -302,9 +328,10 @@ fn test_index_tensor_CLIPVIT() raises:
         indices_dyn,
     )
 
-    var output_data_stack = InlineArray[Scalar[input_type], dim_0 * dim_2](
-        uninitialized=True
-    )
+    var output_data_stack = InlineArray[
+        Scalar[input_type],
+        align_up(dim_0 * dim_2, simd_width_of[input_type]()),
+    ](uninitialized=True)
     comptime output_static_layout = row_major[dim_0, dim_2]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
     var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
@@ -341,9 +368,10 @@ fn test_index_tensor_llama2_mistral() raises:
 
     # dim_0 x dim_1 input tensor.
     comptime input_layout = row_major[dim_0, dim_1]()
-    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
-        uninitialized=True
-    )
+    var input_stack = InlineArray[
+        Scalar[input_type],
+        align_up(input_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1):
@@ -353,9 +381,9 @@ fn test_index_tensor_llama2_mistral() raises:
 
     # index_len-element input tensor.
     comptime index_layout = row_major[index_dim_0, index_dim_1]()
-    var a_stack = InlineArray[UInt64, index_layout.product()](
-        uninitialized=True
-    )
+    var a_stack = InlineArray[
+        UInt64, align_up(index_layout.product(), simd_width_of[DType.uint64]())
+    ](uninitialized=True)
     var index_a = TileTensor(a_stack, index_layout)
     # Initialize with one.
     for i in range(index_dim_0):
@@ -366,9 +394,10 @@ fn test_index_tensor_llama2_mistral() raises:
 
     # Reference output of shape index_dim_0 x index_dim_1 x dim_1.
     comptime ref_layout = row_major[index_dim_0, index_dim_1, dim_1]()
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
-        uninitialized=True
-    )
+    var ref_stack = InlineArray[
+        Scalar[input_type],
+        align_up(ref_layout.product(), simd_width_of[input_type]()),
+    ](uninitialized=True)
     var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(index_dim_0):
         for j in range(index_dim_1):
@@ -384,7 +413,10 @@ fn test_index_tensor_llama2_mistral() raises:
     )
 
     var output_data_stack = InlineArray[
-        Scalar[input_type], index_dim_0 * index_dim_1 * dim_1
+        Scalar[input_type],
+        align_up(
+            index_dim_0 * index_dim_1 * dim_1, simd_width_of[input_type]()
+        ),
     ](uninitialized=True)
     comptime output_static_layout = row_major[index_dim_0, index_dim_1, dim_1]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
@@ -412,7 +444,8 @@ fn test_advanced_indexing_getitem() raises:
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 3, 5, 6)
     var input_stack = InlineArray[
-        Scalar[input_type], input_shape.flattened_length()
+        Scalar[input_type],
+        align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
     comptime input_static_layout = row_major[2, 3, 5, 6]()
     var input_buffer = TileTensor(input_stack, input_static_layout)
@@ -425,10 +458,12 @@ fn test_advanced_indexing_getitem() raises:
     comptime index_shape = IndexList[index_rank](2, 3)
     comptime index_type = DType.uint64
     var a_stack = InlineArray[
-        Scalar[index_type], index_shape.flattened_length()
+        Scalar[index_type],
+        align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
     var b_stack = InlineArray[
-        Scalar[index_type], index_shape.flattened_length()
+        Scalar[index_type],
+        align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
     comptime index_static_layout = row_major[2, 3]()
     var index_a = TileTensor(a_stack, index_static_layout)
@@ -447,7 +482,8 @@ fn test_advanced_indexing_getitem() raises:
         start_axis=start_axis, num_index_tensors=num_index_tensors
     ](input_shape, index_shape)
     var output_data_stack = InlineArray[
-        Scalar[input_type], output_shape.flattened_length()
+        Scalar[input_type],
+        align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
     comptime output_static_layout = row_major[2, 3, 2, 3]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
@@ -458,15 +494,14 @@ fn test_advanced_indexing_getitem() raises:
     fn input_tensor_fn[
         width: Int
     ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
-        return input_dyn.load[width=width](Coord(idx))
+        return input_dyn.load[width=width, alignment=1](Coord(idx))
 
     @always_inline
     @parameter
     fn indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
-        @parameter
-        if indices_index == 0:
+        comptime if indices_index == 0:
             return _index_a_dyn.load[width=1](Coord(coordinates))
         else:
             return _index_b_dyn.load[width=1](Coord(coordinates))
@@ -495,7 +530,8 @@ fn test_advanced_indexing_getitem() raises:
     )
 
     var output_stack = InlineArray[
-        Scalar[input_type], output_shape.flattened_length()
+        Scalar[input_type],
+        align_up(output_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
     var reference_output = TileTensor(output_stack, output_static_layout)
 
@@ -557,7 +593,8 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 2, 4, 4)
     var input_stack = InlineArray[
-        Scalar[input_type], input_shape.flattened_length()
+        Scalar[input_type],
+        align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
     comptime input_static_layout = row_major[2, 2, 4, 4]()
     var input_buffer = TileTensor(input_stack, input_static_layout)
@@ -574,10 +611,12 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime index_type = DType.uint64
 
     var a_stack = InlineArray[
-        Scalar[index_type], index_shape.flattened_length()
+        Scalar[index_type],
+        align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
     var b_stack = InlineArray[
-        Scalar[index_type], index_shape.flattened_length()
+        Scalar[index_type],
+        align_up(index_shape.flattened_length(), simd_width_of[index_type]()),
     ](uninitialized=True)
     comptime index_static_layout = row_major[2, 2]()
     var index_a = TileTensor(a_stack, index_static_layout)
@@ -592,7 +631,8 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime updates_rank = 4
     comptime updates_shape = IndexList[updates_rank](2, 2, 2, 2)
     var updates_stack = InlineArray[
-        Scalar[input_type], updates_shape.flattened_length()
+        Scalar[input_type],
+        align_up(updates_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
     comptime updates_static_layout = row_major[2, 2, 2, 2]()
     var updates = TileTensor(updates_stack, updates_static_layout)
@@ -605,15 +645,14 @@ fn test_advanced_indexing_setitem_inplace() raises:
     fn updates_tensor_fn[
         width: Int
     ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
-        return updates_dyn.load[width=width](Coord(idx))
+        return updates_dyn.load[width=width, alignment=1](Coord(idx))
 
     @always_inline
     @parameter
     fn indices_fn[
         indices_index: Int,
     ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
-        @parameter
-        if indices_index == 0:
+        comptime if indices_index == 0:
             return _index_a_dyn.load[width=1](Coord(coordinates))
         else:
             return _index_b_dyn.load[width=1](Coord(coordinates))
@@ -647,7 +686,8 @@ fn test_advanced_indexing_setitem_inplace() raises:
     )
 
     var output_stack = InlineArray[
-        Scalar[input_type], input_shape.flattened_length()
+        Scalar[input_type],
+        align_up(input_shape.flattened_length(), simd_width_of[input_type]()),
     ](uninitialized=True)
     var reference_output = TileTensor(output_stack, input_static_layout)
     # Fill with zeros
@@ -683,7 +723,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     _ = input_stack^
 
 
-def main():
+def main() raises:
     test_index_tensor_DLRM()
     test_index_tensor_DLRM_batch()
     test_index_tensor_CLIPVIT()

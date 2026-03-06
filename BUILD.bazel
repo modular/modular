@@ -88,27 +88,28 @@ config_setting(
 ###
 
 string_flag(
-    name = "modular_version_major",
-    build_setting_default = "0",
-    make_variable = "MODULAR_VERSION_MAJOR",
+    name = "max_base_version",
+    build_setting_default = "26.2.0",
+    make_variable = "MAX_BASE_VERSION",
 )
 
 string_flag(
-    name = "modular_version_minor",
-    build_setting_default = "0",
-    make_variable = "MODULAR_VERSION_MINOR",
+    name = "mojo_base_version",
+    build_setting_default = "0.26.2.0",
+    make_variable = "MOJO_BASE_VERSION",
+)
+
+# The base versions are 'stable', while the labels change frequently.
+string_flag(
+    name = "max_version_label",
+    build_setting_default = ".dev0",
+    make_variable = "MAX_VERSION_LABEL",
 )
 
 string_flag(
-    name = "modular_version_patch",
-    build_setting_default = "0",
-    make_variable = "MODULAR_VERSION_PATCH",
-)
-
-string_flag(
-    name = "modular_version_label",
-    build_setting_default = "",
-    make_variable = "MODULAR_VERSION_LABEL",
+    name = "mojo_version_label",
+    build_setting_default = ".dev0",
+    make_variable = "MOJO_VERSION_LABEL",
 )
 
 string_flag(

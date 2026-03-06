@@ -12,25 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu import barrier
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu import thread_idx
-from gpu.memory import CacheOperation
+from std.gpu import barrier
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu import thread_idx
+from std.gpu.memory import CacheOperation
 from layout import *
 from layout._fillers import arange
-from layout._utils import load_to_simd
+from layout._utils import ManagedLayoutTensor, load_to_simd
 from layout.layout_tensor import (
     LayoutTensor,
     copy_dram_to_local,
     copy_dram_to_sram,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import simd_width_of
-from utils import IndexList
-from benchmark import keep
+from std.sys import simd_width_of
+from std.utils import IndexList
+from std.benchmark import keep
 
 
 fn copy_dram_to_sram_buffer_load_kernel[
@@ -42,14 +42,14 @@ fn copy_dram_to_sram_buffer_load_kernel[
 ](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[
         layout,
-        element_type = q_tile_type.layout_int_type,
-        linear_idx_type = q_tile_type.linear_idx_type,
-    ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
+        element_type=q_tile_type.layout_int_type,
+        linear_idx_type=q_tile_type.linear_idx_type,
+    ].row_major(IndexList[2, element_type=q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
         input_ptr.address_space_cast[AddressSpace.GLOBAL](),
@@ -57,7 +57,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     )
     comptime layout_bmn = Layout.row_major(BM, BN)
     var smem = LayoutTensor[
-        dtype, layout_bmn, MutAnyOrigin, address_space = AddressSpace.SHARED
+        dtype, layout_bmn, MutAnyOrigin, address_space=AddressSpace.SHARED
     ].stack_allocation()
     if thread_idx.x == 0:
         _ = smem.fill(-1)
@@ -66,8 +66,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     var q_gmem_iter = q_tile.tiled_iterator[BM, BK, axis=1](0, 0)
     var smem_iter = smem.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    @parameter
-    for i in range(BN // BK):
+    comptime for i in range(BN // BK):
         var smem_tile = smem_iter.next_unsafe(smem_iter.linear_uint_type(i))[]
         copy_dram_to_sram[thread_layout=thread_layout](
             smem_tile.vectorize[1, 4](),
@@ -92,24 +91,19 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
 
     comptime thread_layout = Layout.row_major(4, 2)
     comptime layout = Layout.row_major(4, 16)
-    var stack = InlineArray[BFloat16, layout.size()](uninitialized=True)
-    var input_tensor = LayoutTensor[DType.bfloat16, layout](stack)
+    var input = ManagedLayoutTensor[DType.bfloat16, layout](ctx)
+    var input_tensor = input.tensor[update=False]()
     arange(input_tensor)
-    var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
-        comptime (input_tensor.layout.size())
-    )
-    ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     comptime kernel = copy_dram_to_sram_buffer_load_kernel[
         DType.bfloat16, 4, 16, 8, thread_layout
     ]
     ctx.enqueue_function_experimental[kernel](
-        device_tensor,
+        input.device_tensor().ptr,
         3,
         grid_dim=1,
         block_dim=(comptime (thread_layout.size())),
     )
     ctx.synchronize()
-    _ = device_tensor^
 
 
 fn copy_dram_to_local_buffer_load_kernel[
@@ -121,14 +115,14 @@ fn copy_dram_to_local_buffer_load_kernel[
 ](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[
         layout,
-        element_type = q_tile_type.layout_int_type,
-        linear_idx_type = q_tile_type.linear_idx_type,
-    ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
+        element_type=q_tile_type.layout_int_type,
+        linear_idx_type=q_tile_type.linear_idx_type,
+    ].row_major(IndexList[2, element_type=q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
         input_ptr.address_space_cast[AddressSpace.GLOBAL](),
@@ -146,11 +140,10 @@ fn copy_dram_to_local_buffer_load_kernel[
         dtype,
         a_reg_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
-    @parameter
-    for i in range(BN // BK):
+    comptime for i in range(BN // BK):
         copy_dram_to_local[src_thread_layout=thread_layout](
             a_reg_tile.tile[a_reg_tile.shape[0]() // (BN // BK), 2](
                 i, 0
@@ -186,26 +179,19 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     # CHECK: tid = 15 reg = [0.0, 0.0, 0.0, 0.0]
     comptime thread_layout = Layout.row_major(4, 4)
     comptime input_layout = Layout.row_major(4, 16)
-    var input_stack = InlineArray[BFloat16, input_layout.size()](
-        uninitialized=True
-    )
-    var input_tensor = LayoutTensor[DType.bfloat16, input_layout](input_stack)
+    var input = ManagedLayoutTensor[DType.bfloat16, input_layout](ctx)
+    var input_tensor = input.tensor[update=False]()
     arange(input_tensor)
-    var device_tensor = ctx.enqueue_create_buffer[DType.bfloat16](
-        comptime (input_tensor.layout.size())
-    )
-    ctx.enqueue_copy(device_tensor, input_tensor.ptr)
     comptime kernel = copy_dram_to_local_buffer_load_kernel[
         DType.bfloat16, 4, 16, 8, thread_layout
     ]
     ctx.enqueue_function_experimental[kernel](
-        device_tensor,
+        input.device_tensor().ptr,
         3,
         grid_dim=1,
         block_dim=(comptime (thread_layout.size())),
     )
     ctx.synchronize()
-    _ = device_tensor^
 
 
 fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
@@ -219,7 +205,7 @@ fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
             DType.bfloat16,
             Layout.row_major(16, 8),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation()
 
         comptime thread_layout = Layout.row_major(16, 16)
@@ -245,7 +231,7 @@ fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_dram_to_sram_buffer_load_tests(ctx)
         run_copy_dram_to_local_buffer_load_tests(ctx)

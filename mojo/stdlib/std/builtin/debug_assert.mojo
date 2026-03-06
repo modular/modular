@@ -15,24 +15,52 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from format._utils import _WriteBufferHeap
-from io.io import _printf
-from os import abort
-from sys import is_amd_gpu, is_apple_gpu, is_compile_time, is_gpu, is_nvidia_gpu
-from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
-from sys._build import is_debug_build
-from sys.intrinsics import assume
-from sys.param_env import env_get_string
+from std.format._utils import _WriteBufferHeap
+from std.io.io import _printf
+from std.os import abort
+from std.sys import (
+    is_amd_gpu,
+    is_apple_gpu,
+    is_compile_time,
+    is_gpu,
+    is_nvidia_gpu,
+)
+from std.sys._amdgpu import (
+    printf_append_args,
+    printf_append_string_n,
+    printf_begin,
+)
+from std.sys._build import is_debug_build
+from std.sys.intrinsics import assume
+from std.sys.defines import get_defined_string
 
-from reflection import call_location, SourceLocation
+from std.collections.string.string_slice import _get_kgen_string
+from std.reflection import call_location, SourceLocation
 
-comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
+comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
 """The compile-time assertion mode from the ASSERT environment variable."""
+
+
+@always_inline("nodebug")
+fn _string_free_comptime_assert[
+    cond: Bool, msg: StaticString, *extra: StaticString
+]():
+    """Compile-time assertion that avoids `String` to prevent circular deps.
+
+    This exists because `debug_assert` cannot use `comptime assert` with
+    `String`-based messages — `String` transitively depends on `debug_assert`,
+    which would create infinite recursion in the parameter domain.
+    """
+
+    __mlir_op.`kgen.param.assert`[
+        cond=cond.__mlir_i1__(),
+        message=_get_kgen_string[msg, extra](),
+    ]()
 
 
 @no_inline
 fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
-    constrained[
+    _string_free_comptime_assert[
         ASSERT_MODE == "none"
         or ASSERT_MODE == "warn"
         or ASSERT_MODE == "safe"
@@ -41,7 +69,7 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         ASSERT_MODE,
         " but must be one of: none, warn, safe, all",
     ]()
-    constrained[
+    _string_free_comptime_assert[
         assert_mode == "none" or assert_mode == "safe",
         "assert_mode=",
         assert_mode,
@@ -49,8 +77,9 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     ]()
 
     # FIXME: Enable assertions on Apple GPU after MOCO-2405 is fixed
-    @parameter
-    if ASSERT_MODE == "none" or (is_gpu() and cpu_only) or is_apple_gpu():
+    comptime if ASSERT_MODE == "none" or (
+        is_gpu() and cpu_only
+    ) or is_apple_gpu():
         return False
     elif ASSERT_MODE == "all" or ASSERT_MODE == "warn" or is_debug_build():
         return True
@@ -147,15 +176,13 @@ fn debug_assert[
             arguments to convert to a `String` message.
     """
 
-    @parameter
-    if _assert_enabled[assert_mode, cpu_only]():
+    comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond():
             return
 
         var message = _WriteBufferHeap()
 
-        @parameter
-        for i in range(messages.__len__()):
+        comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
         message.nul_terminate()
@@ -258,15 +285,13 @@ fn debug_assert[
             arguments to convert to a `String` message.
     """
 
-    @parameter
-    if _assert_enabled[assert_mode, cpu_only]():
+    comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
 
         var message = _WriteBufferHeap()
 
-        @parameter
-        for i in range(messages.__len__()):
+        comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
         message.nul_terminate()
@@ -368,8 +393,7 @@ fn debug_assert[
         message: A static string message.
     """
 
-    @parameter
-    if _assert_enabled[assert_mode, cpu_only]():
+    comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
         _debug_assert_msg(
@@ -383,7 +407,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[mut=False, Byte], length: Int, loc: SourceLocation
+    message: UnsafePointer[mut=False, Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 
@@ -397,16 +421,14 @@ fn _debug_assert_msg(
     if is_compile_time():
         print("At: ", loc, ": Assert Error: ", message, sep="")
 
-        @parameter
-        if ASSERT_MODE != "warn":
+        comptime if ASSERT_MODE != "warn":
             abort()
         return
 
     comptime fmt = "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu] Assert Error: %s\n"
 
-    @parameter
-    if is_nvidia_gpu():
-        from gpu.primitives.id import block_idx, thread_idx
+    comptime if is_nvidia_gpu():
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         _printf[fmt](
             loc.file_name.unsafe_ptr(),
@@ -422,7 +444,7 @@ fn _debug_assert_msg(
         )
     # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
     elif is_amd_gpu():
-        from gpu.primitives.id import block_idx, thread_idx
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         var fd = printf_begin()
         _ = printf_append_string_n(fd, fmt.as_bytes(), False)
@@ -453,6 +475,5 @@ fn _debug_assert_msg(
             message,
         )
 
-    @parameter
-    if ASSERT_MODE != "warn":
+    comptime if ASSERT_MODE != "warn":
         abort()

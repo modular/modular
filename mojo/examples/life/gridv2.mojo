@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
-from collections import Optional
+import std.random
+from std.collections import Optional
 
-from memory import memcpy, memset_zero
+from std.memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](Copyable, Stringable):
+struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -33,7 +33,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
         self.data = alloc[Int8](self.num_cells)
         memset_zero(self.data, self.num_cells)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.data = alloc[Int8](self.num_cells)
         memcpy(dest=self.data, src=copy.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
@@ -71,17 +71,15 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __str__(self) -> String:
-        str = String()
+    fn write_to(self, mut writer: Some[Writer]):
         for row in range(Self.rows):
             for col in range(Self.cols):
                 if self[row, col] == 1:
-                    str += "*"
+                    writer.write_string("*")
                 else:
-                    str += " "
+                    writer.write_string(" ")
             if row != Self.rows - 1:
-                str += "\n"
-        return str
+                writer.write_string("\n")
 
     # ===-------------------------------------------------------------------===#
     # Methods

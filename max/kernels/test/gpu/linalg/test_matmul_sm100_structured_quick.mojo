@@ -24,24 +24,21 @@ Usage:
     mojo max/kernels/test/gpu/linalg/test_matmul_sm100_structured_quick.mojo
 """
 
-from collections import OptionalReg
-from sys import align_of, size_of
+from std.collections import OptionalReg
+from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 
 # Direct import of structured kernel (same name, different module)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -50,8 +47,8 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_compute_lambda_type
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 
 def test_structured[
@@ -68,7 +65,9 @@ def test_structured[
     num_split_k: Int = 1,
     test_lambda: Bool = False,
     register_based_epilogue: Bool = True,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim, test_name: String):
+](
+    ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim, test_name: String
+) raises:
     """Test structured kernel with given configuration."""
     var M = m.value
     var N = n.value
@@ -101,11 +100,11 @@ def test_structured[
         k.dim, n.dim
     )
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
     var a_size = m.value * k.value
     var b_size = n.value * k.value if transpose_b else k.value * n.value
     var c_size = m.value * n.value
@@ -170,9 +169,9 @@ def test_structured[
         transpose_b=transpose_b,
         config=matmul_config,
     ](
-        lt_to_tt(from_ndbuffer_row_major(c_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(a_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(b_device_nd)),
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
         ctx,
     )
 
@@ -212,7 +211,7 @@ def test_structured[
     _ = b_device
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("SM100 STRUCTURED KERNEL QUICK TEST")
     print("=" * 60)
@@ -230,9 +229,9 @@ def main():
             dtype,
             dtype,
             DType.bfloat16,
-            block_tile_shape = Index(64, 32, BK),
-            mma_shape = Index(64, 32, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+            block_tile_shape=Index(64, 32, BK),
+            mma_shape=Index(64, 32, MMA_K),
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
             cta_group=1,
         ](ctx, dynamic(256), static[256](), static[256](), "1SM-basic")
 
@@ -242,9 +241,9 @@ def main():
             dtype,
             dtype,
             DType.bfloat16,
-            block_tile_shape = Index(128, 64, BK),
-            mma_shape = Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=Index(128, 64, BK),
+            mma_shape=Index(256, 128, MMA_K),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
         ](ctx, dynamic(512), static[512](), static[512](), "2SM-basic")
 
@@ -254,9 +253,9 @@ def main():
             dtype,
             dtype,
             DType.bfloat16,
-            block_tile_shape = Index(128, 64, BK),
-            mma_shape = Index(128, 64, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=Index(128, 64, BK),
+            mma_shape=Index(128, 64, MMA_K),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=1,
             swapAB=True,
         ](ctx, dynamic(256), static[512](), static[512](), "swapAB")
@@ -267,9 +266,9 @@ def main():
             dtype,
             dtype,
             DType.bfloat16,
-            block_tile_shape = Index(64, 32, BK),
-            mma_shape = Index(128, 64, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=Index(64, 32, BK),
+            mma_shape=Index(128, 64, MMA_K),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
             num_split_k=2,
         ](ctx, dynamic(256), static[256](), static[512](), "split-K")
@@ -280,9 +279,9 @@ def main():
             dtype,
             dtype,
             DType.bfloat16,
-            block_tile_shape = Index(64, 32, BK),
-            mma_shape = Index(64, 32, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+            block_tile_shape=Index(64, 32, BK),
+            mma_shape=Index(64, 32, MMA_K),
+            cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
             cta_group=1,
             k_group_size=2,
         ](ctx, dynamic(256), static[512](), static[1024](), "k_group=2")
@@ -293,9 +292,9 @@ def main():
             dtype,
             dtype,
             DType.bfloat16,
-            block_tile_shape = Index(128, 64, BK),
-            mma_shape = Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            block_tile_shape=Index(128, 64, BK),
+            mma_shape=Index(256, 128, MMA_K),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
             swapAB=True,
         ](ctx, dynamic(256), static[512](), static[512](), "2SM+swapAB")

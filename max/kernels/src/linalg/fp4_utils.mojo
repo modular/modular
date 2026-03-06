@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys._assembly import inlined_assembly
-from sys import is_nvidia_gpu, bit_width_of
-from sys.info import _is_sm_100x_or_newer, align_of
-from utils.index import IndexList
-from utils.numerics import FPUtils
-from memory import bitcast
+from std.sys._assembly import inlined_assembly
+from std.sys import is_nvidia_gpu, bit_width_of
+from std.sys.info import _is_sm_100x_or_newer, align_of
+from std.utils.index import IndexList
+from std.utils.numerics import FPUtils
+from std.memory import bitcast
 from layout import Layout, LayoutTensor
 from internal_utils._utils import ValOrDim, dynamic, static
-from builtin.simd import _convert_f32_to_float8_ue8m0
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
 
 
 comptime SF_ATOM_M = (32, 4)
@@ -79,11 +79,8 @@ fn cast_uint_to_fp4e2m1[
 
     var result = SIMD[out_dtype, out_width]()
 
-    @parameter
-    for i in range(in_width):
-
-        @parameter
-        for shift in range(0, num_fp4_values):
+    comptime for i in range(in_width):
+        comptime for shift in range(0, num_fp4_values):
             comptime BitsType = type_of(x[i].to_bits())
             var x = (
                 x[i].to_bits() >> BitsType(shift * FP4_E2M1_WIDTH)
@@ -118,8 +115,7 @@ fn cast_fp_to_fp4e2m1[
     var abs_x = abs(x)
     var result = SIMD[dtype, width]()
 
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         if abs_x[i] <= 0.25:
             result[i] = 0.0
         elif abs_x[i] < 0.75:
@@ -196,10 +192,9 @@ fn set_scale_factor[
     col_idx: Int,
     scale_value: SIMD[scales_dtype, width],
 ):
-    constrained[
-        scales_tensor.rank == 5,
-        "scales_tensor must be 5D for non-batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
     comptime assert (
         width <= SF_ATOM_K
     ), "width must be less than or equal to SF_ATOM_K"
@@ -227,10 +222,9 @@ fn get_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
-    constrained[
-        scales_tensor.rank == 5,
-        "scales_tensor must be 5D for non-batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
 
     return rebind[Scalar[scales_dtype]](
         scales_tensor[
@@ -255,10 +249,9 @@ fn set_batched_scale_factor[
     col_idx: Int,
     scale_value: Scalar[scales_dtype],
 ):
-    constrained[
-        scales_tensor.rank == 6,
-        "scales_tensor must be 6D for batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
 
     scales_tensor[
         batch_idx,
@@ -281,10 +274,9 @@ fn get_batched_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
-    constrained[
-        scales_tensor.rank == 6,
-        "scales_tensor must be 6D for batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
 
     return rebind[Scalar[scales_dtype]](
         scales_tensor[

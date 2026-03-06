@@ -27,7 +27,9 @@ from http import HTTPStatus
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from max.interfaces import OpenResponsesRequest
-from max.interfaces.request.open_responses import ResponseResource
+from max.interfaces.request.open_responses import (
+    ResponseResource,
+)
 from max.serve.dependencies import create_request_parser
 
 router = APIRouter(prefix="/v1")

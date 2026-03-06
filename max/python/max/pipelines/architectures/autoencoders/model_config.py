@@ -17,6 +17,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
 
 
@@ -57,7 +58,7 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
         }
         init_dict.update(
             {
-                "dtype": encoding.dtype,
+                "dtype": supported_encoding_dtype(encoding),
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
@@ -98,7 +99,7 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
                 init_dict[param] = config_dict[param]
         init_dict.update(
             {
-                "dtype": encoding.dtype,
+                "dtype": supported_encoding_dtype(encoding),
                 "device": DeviceRef.from_device(devices[0]),
             }
         )

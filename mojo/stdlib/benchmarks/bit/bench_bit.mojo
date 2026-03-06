@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_ui64, seed
-from sys import bit_width_of
-from sys.intrinsics import likely, unlikely
+from std.random import random_ui64, seed
+from std.sys import bit_width_of
+from std.sys.intrinsics import likely, unlikely
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
-from bit import bit_width, count_leading_zeros
-from bit._mask import splat
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.bit import bit_width, count_leading_zeros
+from std.bit._mask import splat
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
@@ -151,7 +151,7 @@ fn bench_next_power_of_two_uint[func: fn(UInt) -> UInt](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=10))
     m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v1]](

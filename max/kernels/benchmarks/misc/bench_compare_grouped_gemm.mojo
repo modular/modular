@@ -22,21 +22,27 @@ which is what you'd do without a grouped/persistent kernel. The structured
 kernel processes all groups in a single persistent launch.
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
-from time import perf_counter_ns
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
+from std.time import perf_counter_ns
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from random import rand, seed
+from std.gpu.host import DeviceContext
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.random import rand, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import Layout, LayoutTensor, RuntimeLayout
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.fp4_utils import (
@@ -109,16 +115,16 @@ fn bench_cublas_per_group[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
@@ -147,17 +153,17 @@ fn bench_cublas_per_group[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    var dynamic_a_shape = DimList(m.value, k_array_val)
-    var dynamic_b_shape = DimList(n.value, k_array_val)
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k_array_val)
+    var dynamic_b_shape = IndexList[2](n.value, k_array_val)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -291,16 +297,16 @@ fn bench_structured_kernel[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
@@ -329,17 +335,17 @@ fn bench_structured_kernel[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    var dynamic_a_shape = DimList(m.value, k_array_val)
-    var dynamic_b_shape = DimList(n.value, k_array_val)
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k_array_val)
+    var dynamic_b_shape = IndexList[2](n.value, k_array_val)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -536,7 +542,7 @@ fn bench_structured_kernel[
     sfb_ptrs_host.free()
 
 
-def main():
+def main() raises:
     print("=" * 70)
     print("Comparison: cuBLAS (per-group) vs Structured Grouped GEMM")
     print("=" * 70)
@@ -569,9 +575,9 @@ def main():
             b_type,
             c_type,
             scales_dtype,
-            m = static[4096](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[4096](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
         ](ctx, b)
 
@@ -580,9 +586,9 @@ def main():
             b_type,
             c_type,
             scales_dtype,
-            m = static[4096](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[4096](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
             mma_m=128,
             mma_n=128,
@@ -599,9 +605,9 @@ def main():
             b_type,
             c_type,
             scales_dtype,
-            m = static[128](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[128](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
         ](ctx, b)
 
@@ -610,9 +616,9 @@ def main():
             b_type,
             c_type,
             scales_dtype,
-            m = static[128](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[128](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
             mma_m=128,
             mma_n=128,
@@ -629,9 +635,9 @@ def main():
             fp4_b_type,
             fp4_c_type,
             fp4_scales_dtype,
-            m = static[4096](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[4096](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
         ](ctx, b)
@@ -641,14 +647,14 @@ def main():
             fp4_b_type,
             fp4_c_type,
             fp4_scales_dtype,
-            m = static[4096](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[4096](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
             mma_m=128,
             mma_n=128,
             k_grp_size=1,
-            scaling_kind = UMMAKind.KIND_MXF4NVF4,
+            scaling_kind=UMMAKind.KIND_MXF4NVF4,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
         ](ctx, b)
 
@@ -662,9 +668,9 @@ def main():
             fp4_b_type,
             fp4_c_type,
             fp4_scales_dtype,
-            m = static[128](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[128](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
         ](ctx, b)
@@ -674,14 +680,14 @@ def main():
             fp4_b_type,
             fp4_c_type,
             fp4_scales_dtype,
-            m = static[128](),
-            n = static[4096](),
-            k = static[7168](),
+            m=static[128](),
+            n=static[4096](),
+            k=static[7168](),
             num_groups=32,
             mma_m=128,
             mma_n=128,
             k_grp_size=1,
-            scaling_kind = UMMAKind.KIND_MXF4NVF4,
+            scaling_kind=UMMAKind.KIND_MXF4NVF4,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
         ](ctx, b)
 

@@ -11,14 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import ceildiv
-from sys import has_amd_gpu_accelerator
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import has_amd_gpu_accelerator
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -28,14 +34,14 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceContext
-from gpu.intrinsics import ldg
+from std.gpu.host import DeviceContext
+from std.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
-from memory import stack_allocation
+from std.memory import stack_allocation
 
-from utils import StaticTuple
-from utils.index import Index
-from utils.numerics import isnan
+from std.utils import StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import isnan
 
 comptime BLOCK_DIM = 8
 
@@ -109,14 +115,14 @@ fn sgemm_warp_tiling_kernel[
         1,
         MutAnyOrigin,
         DimList(BK * BM_padded),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
         MutAnyOrigin,
         DimList(BK * BN),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Move blocktile to beginning of A's row and B's column.
@@ -166,8 +172,7 @@ fn sgemm_warp_tiling_kernel[
                 + Int((inner_row_a + UInt(offset)) * UInt(K) + inner_col_a * 4)
             )
 
-            @parameter
-            for i in range(4):
+            comptime for i in range(4):
                 a_sram[
                     Int(
                         (inner_col_a * 4 + UInt(i)) * UInt(BM_padded)
@@ -193,11 +198,8 @@ fn sgemm_warp_tiling_kernel[
 
         for dot_idx in range(BK):
             # Populate registers for whole warptile.
-            @parameter
-            for w_sub_row_idx in range(WMITER):
-
-                @parameter
-                for i in range(0, TM, 4):
+            comptime for w_sub_row_idx in range(WMITER):
+                comptime for i in range(0, TM, 4):
                     var vec = a_sram.load[width=4, alignment=16](
                         (dot_idx * BM_padded)
                         + Int(warp_row) * WM
@@ -207,11 +209,8 @@ fn sgemm_warp_tiling_kernel[
                     )
                     reg_m.store(Index(w_sub_row_idx, i), vec)
 
-            @parameter
-            for w_sub_col_idx in range(WNITER):
-
-                @parameter
-                for i in range(0, TN, 4):
+            comptime for w_sub_col_idx in range(WNITER):
+                comptime for i in range(0, TN, 4):
                     var vec = b_sram.load[width=4, alignment=16](
                         (dot_idx * BN)
                         + Int(warp_col) * WN
@@ -221,17 +220,11 @@ fn sgemm_warp_tiling_kernel[
                     reg_n.store(Index(w_sub_col_idx, i), vec)
 
             # Execute warptile matmul.
-            @parameter
-            for w_sub_row_idx in range(WMITER):
-
-                @parameter
-                for w_sub_col_idx in range(WNITER):
+            comptime for w_sub_row_idx in range(WMITER):
+                comptime for w_sub_col_idx in range(WNITER):
                     # Calculate per-thread results.
-                    @parameter
-                    for res_idx_m in range(TM):
-
-                        @parameter
-                        for res_idx_n in range(TN):
+                    comptime for res_idx_m in range(TM):
+                        comptime for res_idx_n in range(TN):
                             thread_results[
                                 Index(
                                     w_sub_row_idx,
@@ -248,21 +241,15 @@ fn sgemm_warp_tiling_kernel[
         barrier()
 
     # Write out the results.
-    @parameter
-    for w_sub_row_idx in range(WMITER):
-
-        @parameter
-        for w_sub_col_idx in range(WNITER):
+    comptime for w_sub_row_idx in range(WMITER):
+        comptime for w_sub_col_idx in range(WNITER):
             # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
             var C_interim = cc_ptr + M_offset_subtile * N + N_offset_subtile
 
-            @parameter
-            for res_idx_m in range(TM):
-
-                @parameter
-                for res_idx_n in range(0, TN, 4):
+            comptime for res_idx_m in range(TM):
+                comptime for res_idx_n in range(0, TN, 4):
                     var M_offset_val = thread_row_in_warp * UInt(TM) + UInt(
                         res_idx_m
                     )
@@ -283,8 +270,7 @@ fn sgemm_warp_tiling_kernel[
                         width=4, alignment=16
                     ](Int(c_idx))
 
-                    @parameter
-                    if elementwise_lambda_fn:
+                    comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
                             Index(
@@ -537,7 +523,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     _ = c_host_naive
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         var m = Bench()
         bench_matmuls(m, ctx)

@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of
+from std.sys import align_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu import block_dim, global_idx, thread_idx
-from gpu.memory import external_memory
-from gpu.sync import barrier
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu import block_dim, global_idx, thread_idx
+from std.gpu.memory import external_memory
+from std.gpu.sync import barrier
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
 
 fn test_external_shared_mem(ctx: DeviceContext) raises:
@@ -28,7 +28,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     fn dynamic_smem_kernel(data: UnsafePointer[Float32]):
         var dynamic_sram = external_memory[
-            Float32, address_space = AddressSpace.SHARED, alignment=4
+            Float32, address_space=AddressSpace.SHARED, alignment=4
         ]()
         dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()
@@ -95,8 +95,8 @@ fn shared_memory_kernel(
     # Get a pointer to shared memory for the indices and values
     var shared_data = external_memory[
         Float32,
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[Float32](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[Float32](),
     ]()
 
     # Load data into shared memory
@@ -277,7 +277,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
         assert_almost_equal(output_host[i], expected, atol=1e-6)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_external_shared_mem(ctx)
         test_occupancy_max_active_blocks(ctx)

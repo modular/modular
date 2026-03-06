@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max import functional as F
-from max.nn import Linear, Module
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.tensor import Tensor
 
 
 class GELU(Module[[Tensor], Tensor]):

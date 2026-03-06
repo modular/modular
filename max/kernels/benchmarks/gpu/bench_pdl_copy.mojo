@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
+from std.sys import get_defined_int
 
-from benchmark import Bench, Bencher, BenchId
-from builtin._closure import __ownership_keepalive
-from gpu import *
-from gpu.primitives.grid_controls import pdl_launch_attributes
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.benchmark import Bench, Bencher, BenchId
+from std.builtin._closure import __ownership_keepalive
+from std.gpu import *
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -245,8 +245,8 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     d_host.free()
 
 
-def main():
-    comptime length = env_get_int["length", 4096]()
+def main() raises:
+    comptime length = get_defined_int["length", 4096]()
     var m = Bench()
 
     with DeviceContext() as ctx:

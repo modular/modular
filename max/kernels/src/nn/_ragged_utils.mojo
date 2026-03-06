@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _current_target, simd_width_of
+from std.sys.info import _current_target, simd_width_of
 
-from algorithm.functional import elementwise
-from gpu.host import get_gpu_target
-from gpu.host.info import is_cpu
-from layout import LayoutTensor
-from layout._tile_tensor import TileTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm.functional import elementwise
+from std.gpu.host import get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import LayoutTensor, TileTensor
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
@@ -111,20 +110,26 @@ fn merge_ragged_tensors[
     //,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, dtype, ...],
-    c_row_offsets: LayoutTensor[mut=True, DType.uint32, ...],
-    a: LayoutTensor[dtype, ...],
-    a_row_offsets: LayoutTensor[DType.uint32, ...],
-    b: LayoutTensor[dtype, ...],
-    b_row_offsets: LayoutTensor[DType.uint32, ...],
+    c: TileTensor[mut=True, dtype, ...],
+    c_row_offsets: TileTensor[mut=True, DType.uint32, ...],
+    a: TileTensor[dtype, ...],
+    a_row_offsets: TileTensor[DType.uint32, ...],
+    b: TileTensor[dtype, ...],
+    b_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContextPtr,
 ) raises:
-    comptime assert c.rank == rank, "c.rank must equal rank"
-    comptime assert a.rank == rank, "a.rank must equal rank"
-    comptime assert b.rank == rank, "b.rank must equal rank"
-    comptime assert c_row_offsets.rank == 1, "c_row_offsets.rank must be 1"
-    comptime assert a_row_offsets.rank == 1, "a_row_offsets.rank must be 1"
-    comptime assert b_row_offsets.rank == 1, "b_row_offsets.rank must be 1"
+    comptime assert c.flat_rank == rank, "c.flat_rank must equal rank"
+    comptime assert a.flat_rank == rank, "a.flat_rank must equal rank"
+    comptime assert b.flat_rank == rank, "b.flat_rank must equal rank"
+    comptime assert (
+        c_row_offsets.flat_rank == 1
+    ), "c_row_offsets.flat_rank must be 1"
+    comptime assert (
+        a_row_offsets.flat_rank == 1
+    ), "a_row_offsets.flat_rank must be 1"
+    comptime assert (
+        b_row_offsets.flat_rank == 1
+    ), "b_row_offsets.flat_rank must be 1"
 
     @always_inline
     @parameter
@@ -133,7 +138,7 @@ fn merge_ragged_tensors[
     ](idx: IndexList[rank_]):
         comptime assert rank_ == rank, "Invalid rank passed to the kernel"
 
-        var a_tensor_size = a.dim[0]()
+        var a_tensor_size = Int(a.dim[0]())
         var is_tensor_a = idx[0] < a_tensor_size
 
         var batch_id: Int
@@ -154,38 +159,47 @@ fn merge_ragged_tensors[
 
         dst_idx[0] = dst_row_idx
 
+        # Compute flat offsets for pointer load/store (Horner form).
+        # Inner dimensions are the same across a, b, and c.
+        @always_inline
+        @parameter
+        fn _flat_offset[r: Int](index: IndexList[r]) -> Int:
+            comptime assert r == rank
+            var flat = index[0]
+            comptime for i in range(1, rank):
+                flat = flat * Int(c.dim[i]()) + index[i]
+            return flat
+
+        var src_flat = _flat_offset(src_idx)
+        var dst_flat = _flat_offset(dst_idx)
+
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
         # this `merge_fn`function with width = 1 for the last few elements.
         var val: SIMD[dtype, width]
         if is_tensor_a:
-            val = a.load[width=width](src_idx)
+            val = a.ptr.load[width=width](src_flat)
         else:
-            val = b.load[width=width](src_idx)
+            val = b.ptr.load[width=width](src_flat)
 
-        c.store[width=width](rebind[IndexList[rank]](dst_idx), val)
+        c.ptr.mut_cast[True]().store[width=width](dst_flat, val)
 
         # Update the row offsets if this is the first element of the batch
         var is_first_element = is_tensor_a and src_idx[0] == Int(
             a_row_offsets[batch_id]
         )
 
-        @parameter
-        for i in range(1, rank):
+        comptime for i in range(1, rank):
             if idx[i] != 0:
                 is_first_element = False
 
         if is_first_element:
-            c_row_offsets.store[width=1](
-                IndexList[1](batch_id), UInt32(dst_row_idx)
-            )
+            c_row_offsets[batch_id] = UInt32(dst_row_idx)
 
             # If this is the last batch, also update the last row offset to the total size
-            if batch_id == c_row_offsets.dim[0]() - 2:
-                var total_size = a.dim[0]() + b.dim[0]()
-                c_row_offsets.store[width=1](
-                    IndexList[1](batch_id + 1), UInt32(total_size)
-                )
+            if batch_id == Int(c_row_offsets.dim[0]()) - 2:
+                var total_size = Int(a.dim[0]()) + Int(b.dim[0]())
+                c_row_offsets[batch_id + 1] = UInt32(total_size)
 
     comptime compile_target = _current_target() if is_cpu[
         target
@@ -193,9 +207,13 @@ fn merge_ragged_tensors[
     comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
     comptime kernel_simd_width = 1 if rank == 1 else target_simd_width
 
+    var shape = IndexList[rank]()
+    comptime for i in range(rank):
+        shape[i] = Int(c.dim[i]())
+
     elementwise[
         func=merge_fn,
         simd_width=kernel_simd_width,
         target=target,
         _trace_description="merge_ragged_tensors",
-    ](c.runtime_layout.shape.value.canonicalize(), ctx)
+    ](shape, ctx)

@@ -14,25 +14,44 @@
 
 from __future__ import annotations
 
-import enum
 import logging
-from collections.abc import Mapping
+from typing import Annotated, Any
 
 from max.config import ConfigFileModel
 from max.dtype import DType
 from max.interfaces import SamplingParamsGenerationConfigDefaults
-from pydantic import Field, PrivateAttr
+from pydantic import BeforeValidator, Field, PrivateAttr
 
 logger = logging.getLogger("max.pipelines")
 
 
+def _coerce_dtype(value: Any) -> DType | Any:
+    """Coerce string values to DType enum members.
+
+    DType is a C++ enum with integer values, so Pydantic cannot natively
+    coerce YAML/CLI strings like ``"float32"`` into :class:`DType` members.
+    This validator handles case-insensitive name matching.
+    """
+    if isinstance(value, DType):
+        return value
+    if isinstance(value, str):
+        value_cf = value.casefold()
+        for member in DType:
+            if member.name.casefold() == value_cf:
+                return member
+    return value
+
+
+CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
+
+
 class SamplingConfig(ConfigFileModel):
-    in_dtype: DType = Field(
+    in_dtype: CoercedDType = Field(
         default=DType.float32,
         description="The data type of the input tokens.",
     )
 
-    out_dtype: DType = Field(
+    out_dtype: CoercedDType = Field(
         default=DType.float32,
         description="The data type of the output logits.",
     )
@@ -125,10 +144,3 @@ class SamplingConfig(ConfigFileModel):
                 config_kwargs["enable_min_tokens"] = True
 
         return cls(**config_kwargs)
-
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for SamplingConfig."""
-        return {
-            "DType": DType,
-        }

@@ -69,6 +69,8 @@ class BatchMetrics:
     total_host_kv_blocks: int
     h2d_blocks_copied: int
     d2h_blocks_copied: int
+    disk_blocks_written: int
+    disk_blocks_read: int
 
     @classmethod
     def create(
@@ -98,21 +100,24 @@ class BatchMetrics:
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
+        disk_blocks_written = 0
+        disk_blocks_read = 0
+        num_replicas = sch_config.data_parallel_degree
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
             total_kv_blocks = sum(
                 kv_cache.get_num_pages(replica_idx)
-                for replica_idx in range(kv_cache.num_replicas)
+                for replica_idx in range(num_replicas)
             )
             used_kv_blocks = sum(
                 kv_cache.get_num_used_pages(replica_idx)
-                for replica_idx in range(kv_cache.num_replicas)
+                for replica_idx in range(num_replicas)
             )
             assert total_kv_blocks > 0
             used_kv_pct = used_kv_blocks / total_kv_blocks
             cache_hit_tokens = sum(
                 kv_cache.get_metrics(replica_idx).cache_tokens
-                for replica_idx in range(kv_cache.num_replicas)
+                for replica_idx in range(num_replicas)
             )
             all_tokens = cache_hit_tokens + cache_miss_tokens
             # We have to handle case where denominator is 0 (empty batch)
@@ -121,23 +126,31 @@ class BatchMetrics:
                 # calculation takes chunked prefill into account.
                 cache_hit_rate = cache_hit_tokens / all_tokens
 
-            if kv_cache.enable_kvcache_swapping_to_host:
+            if kv_cache.params.enable_kvcache_swapping_to_host:
                 total_host_kv_blocks = sum(
                     kv_cache.get_num_host_pages(replica_idx)
-                    for replica_idx in range(kv_cache.num_replicas)
+                    for replica_idx in range(num_replicas)
                 )
                 used_host_kv_blocks = sum(
                     kv_cache.get_num_used_host_pages(replica_idx)
-                    for replica_idx in range(kv_cache.num_replicas)
+                    for replica_idx in range(num_replicas)
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
                 h2d_blocks_copied = sum(
                     kv_cache.get_metrics(replica_idx).h2d_blocks_copied
-                    for replica_idx in range(kv_cache.num_replicas)
+                    for replica_idx in range(num_replicas)
                 )
                 d2h_blocks_copied = sum(
                     kv_cache.get_metrics(replica_idx).d2h_blocks_copied
-                    for replica_idx in range(kv_cache.num_replicas)
+                    for replica_idx in range(num_replicas)
+                )
+                disk_blocks_written = sum(
+                    kv_cache.get_metrics(replica_idx).disk_blocks_written
+                    for replica_idx in range(num_replicas)
+                )
+                disk_blocks_read = sum(
+                    kv_cache.get_metrics(replica_idx).disk_blocks_read
+                    for replica_idx in range(num_replicas)
                 )
 
             kv_cache.reset_metrics()
@@ -167,6 +180,8 @@ class BatchMetrics:
             total_host_kv_blocks=total_host_kv_blocks,
             h2d_blocks_copied=h2d_blocks_copied,
             d2h_blocks_copied=d2h_blocks_copied,
+            disk_blocks_written=disk_blocks_written,
+            disk_blocks_read=disk_blocks_read,
         )
 
     def pretty_format(self) -> str:
@@ -183,9 +198,15 @@ class BatchMetrics:
 
         host_kv_str = ""
         if self.total_host_kv_blocks != 0:
+            disk_str = ""
+            if self.disk_blocks_written > 0 or self.disk_blocks_read > 0:
+                disk_str = (
+                    f", Disk: {self.disk_blocks_written} written, "
+                    f"{self.disk_blocks_read} read"
+                )
             host_kv_str = (
                 f"Host KVCache Usage: {self.used_host_kv_pct:.1%} of {self.total_host_kv_blocks} blocks, "
-                f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H | "
+                f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H{disk_str} | "
             )
 
         return (

@@ -27,7 +27,7 @@ These primitives are essential for implementing complex GPU execution pipelines 
 multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
-from sys import env_get_int, has_nvidia_gpu_accelerator
+from std.sys import get_defined_int, has_nvidia_gpu_accelerator
 
 from ..host.info import H100, GPUInfo, _accelerator_arch
 from ..host.launch_attribute import (
@@ -51,8 +51,7 @@ fn _support_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
-    @parameter
-    if (
+    comptime if (
         has_nvidia_gpu_accelerator()
         and GPUInfo.from_name[_accelerator_arch()]().compute >= H100.compute
     ):
@@ -108,8 +107,7 @@ fn launch_dependent_grids():
           should trigger the execution of other grids.
     """
 
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
+    comptime if _SUPPORT_PDL_LAUNCH:
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action launch_dependents`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
@@ -129,8 +127,7 @@ fn wait_on_dependent_grids():
           with subsequent operations in the parent grid.
     """
 
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
+    comptime if _SUPPORT_PDL_LAUNCH:
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action wait`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
@@ -155,7 +152,7 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
     @always_inline
     fn __init__(out self):
         """Initialize the PDL level to OFF."""
-        self = PDLLevel(env_get_int["PDL_LEVEL", 0]())
+        self = PDLLevel(get_defined_int["PDL_LEVEL", 0]())
 
     @always_inline
     fn __init__(out self, level: Int):

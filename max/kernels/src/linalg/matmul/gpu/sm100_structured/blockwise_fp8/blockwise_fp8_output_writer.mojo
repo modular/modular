@@ -22,38 +22,45 @@ Supports two write modes:
   grouped matmul with expert boundary bounds checking
 """
 
-from sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
-from gpu import WARP_SIZE, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, fence_async_view_proxy
-from gpu.sync import named_barrier
-from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
-from layout._layout import row_major
+from std.gpu import WARP_SIZE, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from std.gpu.sync import named_barrier
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
 from ..structured_kernels.epilogue_components import (
+    EpilogueConfig,
     TMEMToSMemWriter,
     TMAStoreCoords,
     TMAStoreExecutor,
     tma_wait_pipelined,
 )
-from ..structured_kernels.barriers import WarpGroupBarrier
-from layout._layout import TensorLayout
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from structured_kernels.barriers import WarpGroupBarrier
+from layout.tile_layout import TensorLayout
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 
 # TileTensor-based types for C tiles
-from ..structured_kernels.tile_types import SMemTileArray2DRowMajor
+from structured_kernels.tile_types import SMemTileArray2DRowMajor
 
 
 # =============================================================================
@@ -116,21 +123,26 @@ struct BlockwiseFP8TileWriter[
     comptime stageN = Self.repeats * (Self.bits // 32)
     comptime fragments_per_stage = Self.fragment_size * Self.repeats
 
+    # EpilogueConfig bundles common epilogue parameters
+    comptime epc = EpilogueConfig.create(
+        MMA_M=Self.MMA_M,
+        MMA_N=Self.MMA_N,
+        stageN=Self.stageN,
+        cta_group=Self.cta_group,
+        transpose_c=False,  # blockwise FP8 never transposes
+        BM=Self.BM,
+        BN=Self.BN,
+    )
+
     # Reuse TMEMToSMemWriter for fragment → SMEM path
     comptime SMEMWriter = TMEMToSMemWriter[
         Self.c_type,
         Self.accum_type,
         Self.c_smem_dim0,
         Self.c_smem_dim1,
-        Self.BM,
-        Self.BN,
-        Self.MMA_M,
-        Self.MMA_N,
-        Self.stageN,
-        Self.cta_group,
+        Self.epc,
         Int(Self.num_output_warps),
         Self.c_swizzle,
-        False,  # transpose_c (blockwise FP8 never transposes)
     ]
 
     # ========== Public Write Method ==========
@@ -138,8 +150,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn write[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -152,11 +165,13 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM."""
-        Self._write_impl[c_layout, c_desc_layout, cluster_size](
+        Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
 
@@ -165,8 +180,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn _write_impl[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -179,15 +195,16 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Internal implementation for writing accumulated register tiles."""
         var warp_id = get_warp_id()
         var smem_writer = Self.SMEMWriter(UInt32(warp_id), UInt32(lane_id()))
 
-        @parameter
-        for stage in range(Self.num_stages):
+        comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
                 Coord(Idx(stage), Idx(0))
             )
@@ -198,7 +215,7 @@ struct BlockwiseFP8TileWriter[
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
 
             # Cast from accum_type to c_type, then write to SMEM
-            comptime frag_size = Self.SMEMWriter.Config.fragment_size * Self.repeats
+            comptime frag_size = Self.epc.fragment_size * Self.repeats
             smem_writer.write_fragments[Self.repeats](
                 rebind[SIMD[Self.c_type, frag_size]](
                     upper_frag.cast[Self.c_type]()
@@ -215,12 +232,7 @@ struct BlockwiseFP8TileWriter[
 
             # Use shared TMA store components from epilogue_components
             comptime StoreCoords = TMAStoreCoords[
-                Self.BM,
-                Self.BN,
-                Self.MMA_M,
-                Self.MMA_N,
-                Self.stageN,
-                Self.cta_group,
+                Self.epc,
                 Self.c_smem_dim0,
                 stage,
             ]
@@ -232,18 +244,11 @@ struct BlockwiseFP8TileWriter[
                 Self.c_type,
                 Self.c_smem_dim0,
                 Self.c_smem_dim1,
-                Self.BM,
-                Self.BN,
-                Self.MMA_M,
-                Self.MMA_N,
-                Self.stageN,
+                Self.epc,
                 Self.stageN,  # stage_contiguous_size
-                Self.cta_group,
                 Self.c_swizzle,
-                False,  # transpose_c
-                Self.is_lower_frag_required,
             ]
-            StoreExec.execute[c_layout, c_desc_layout](
+            StoreExec.execute[c_rank, c_tile_shape, c_desc_shape](
                 c_smem_tile,
                 store_coords,
                 c_tma_op,
@@ -252,13 +257,13 @@ struct BlockwiseFP8TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                c_layout,
-                c_desc_layout,
+                c_rank,
+                c_tile_shape,
+                c_desc_shape,
                 stage == Self.num_stages - 1,
             ](c_tma_op)
 
-            @parameter
-            if stage > 0 and stage < Self.num_stages - 1:
+            comptime if stage > 0 and stage < Self.num_stages - 1:
                 named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
 
     # ========== Bounds-Checked Write for 1D2D Grouped Matmul ==========
@@ -334,8 +339,7 @@ struct BlockwiseFP8TileWriter[
         comptime swizzle = make_swizzle[Self.c_type, Self.c_swizzle]()
         comptime c_smem_tile_m = Self.BM // Int(Self.num_output_warps)
 
-        @parameter
-        for stage in range(Self.num_stages):
+        comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
                 Coord(Idx(stage), Idx(0))
             )
@@ -346,8 +350,7 @@ struct BlockwiseFP8TileWriter[
             # Apply expert scale
             upper_frag = upper_frag * scale
 
-            @parameter
-            if Self.is_lower_frag_required:
+            comptime if Self.is_lower_frag_required:
                 lower_frag = lower_frag * scale
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
@@ -361,17 +364,16 @@ struct BlockwiseFP8TileWriter[
                 Self.data_paths, Self.stageN
             ](0, 0)
             stsm_helper[
-                swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
+                swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
             ](upper_frag.cast[Self.c_type](), c_smem_warp_tile_upper)
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 Self.data_paths, Self.stageN
             ](1, 0)
 
-            @parameter
-            if Self.is_lower_frag_required:
+            comptime if Self.is_lower_frag_required:
                 stsm_helper[
-                    swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
+                    swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
                 ](lower_frag.cast[Self.c_type](), c_smem_warp_tile_lower)
 
             named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
@@ -387,8 +389,7 @@ struct BlockwiseFP8TileWriter[
                 UInt32(lane_id()),
             )
 
-            @parameter
-            if stage > 0 and stage < Self.num_stages - 1:
+            comptime if stage > 0 and stage < Self.num_stages - 1:
                 named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
 
     @staticmethod
@@ -434,8 +435,7 @@ struct BlockwiseFP8TileWriter[
         WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
 
         # Iterate over SMEM chunks
-        @parameter
-        for i in range(c_smem_M // TMA_BM):
+        comptime for i in range(c_smem_M // TMA_BM):
             var c_smem_split = c_smem_tile.tile[TMA_BM, Self.stageN](i, 0)
             comptime split_layout = c_smem_split.layout
             comptime zipped = zipped_divide(
@@ -443,11 +443,10 @@ struct BlockwiseFP8TileWriter[
             )
             comptime split_layout_new = row_major[TMA_BM, Self.stageN]()
 
-            @parameter
-            for j in range(zipped.shape[1][0].value()):
+            comptime for j in range(zipped.shape[1][0].value()):
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
-                    element_type = DType.uint32,
+                    element_type=DType.uint32,
                 ](Int(thread_idx.x), j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
@@ -461,9 +460,9 @@ struct BlockwiseFP8TileWriter[
                 ) * UInt32(
                     simd_size
                 )
-                var cmem_crd = split_layout_new.idx2crd[
-                    out_dtype = DType.uint32
-                ](Int(linear_idx))
+                var cmem_crd = split_layout_new.idx2crd[out_dtype=DType.uint32](
+                    Int(linear_idx)
+                )
                 var local_i = cmem_crd[0].value()
                 var local_j = cmem_crd[1].value()
                 var coord_m = m_abs + UInt32(i * TMA_BM)
@@ -478,8 +477,7 @@ struct BlockwiseFP8TileWriter[
                     )
                     var dst_ptr = c_tensor.ptr + Int(dst_offset)
 
-                    @parameter
-                    if size_of[Self.c_type]() == 2:
+                    comptime if size_of[Self.c_type]() == 2:
                         var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment

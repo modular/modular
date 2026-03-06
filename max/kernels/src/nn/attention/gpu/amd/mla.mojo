@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from sys import simd_width_of
+from std.collections import OptionalReg
+from std.sys import simd_width_of
 
-from gpu import barrier, block_idx, lane_id
+from std.gpu import barrier, block_idx, lane_id
 from layout import IntTuple, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
-from utils import IndexList
-from utils.numerics import get_accum_type
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 
 from .attention import AttentionConfig
 from .buffers import KBuffer, VBufferTransposeLoads
@@ -142,14 +142,14 @@ __extension Attention:
             var num_b_rows = Int(kv_tile_num_rows)
 
             var k_buffer = KBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](
                 k_tile,
                 num_b_rows,
@@ -157,12 +157,12 @@ __extension Attention:
             )
 
             var v_buffer = VBufferTransposeLoads[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Int(Self.BN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                tensor_core_mma=Self.get_tensor_core_mma_pv(),
+                BN=Int(Self.BN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
             comptime k_rope_gmem_layout = Layout(
@@ -194,13 +194,13 @@ __extension Attention:
             )
 
             var k_rope_buffer = KBuffer[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
                 num_stages=2,
             ](
                 k_rope_tile,
@@ -216,7 +216,7 @@ __extension Attention:
             self.mma_qk[
                 prefetch_function=prefetch_function1,
                 beg_iter=0,
-                num_iters = Int(Self.depth // Self.BK),
+                num_iters=Int(Self.depth // Self.BK),
             ](k_buffer)
 
             @parameter
@@ -226,8 +226,8 @@ __extension Attention:
 
             self.mma_qk[
                 prefetch_function=prefetch_function2,
-                beg_iter = Int(Self.depth // Self.BK),
-                num_iters = rope_depth // Int(Self.BK),
+                beg_iter=Int(Self.depth // Self.BK),
+                num_iters=rope_depth // Int(Self.BK),
                 prefetched_b_tile=True,
             ](k_rope_buffer)
 

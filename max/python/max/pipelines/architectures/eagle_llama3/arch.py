@@ -15,30 +15,28 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
-from ..llama3_legacy.model_config import Llama3Config
+from ..llama3.model_config import Llama3Config
 from . import weight_adapters
 from .model import EagleLlama3Model
 
 eagle_llama_arch = SupportedArchitecture(
-    name="LlamaForCausalLMEagle_Legacy",
+    name="LlamaForCausalLMEagle",
     example_repo_ids=[
         "lmsys/sglang-EAGLE-LLaMA3-Instruct-8B",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float32: ["paged"],
+        "bfloat16",
+        "float32",
     },
     pipeline_model=EagleLlama3Model,
     context_type=TextContext,
     tokenizer=TextTokenizer,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={

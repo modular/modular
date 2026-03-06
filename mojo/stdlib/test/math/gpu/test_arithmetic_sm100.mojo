@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from random import random_float64
+from std.random import random_float64
 
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext, HostBuffer
-from testing import assert_equal, TestSuite
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext, HostBuffer
+from std.testing import assert_equal, TestSuite
 
 
 fn simd_add_kernel[
@@ -100,7 +100,7 @@ fn host_elementwise_fma(
         c[i] = c_temp
 
 
-def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
+def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
     comptime thread_count = 32
     comptime block_count = 1
     comptime buff_size = thread_count * block_count * width
@@ -131,8 +131,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
     c_expected.enqueue_fill(0)
     ctx.synchronize()
 
-    @parameter
-    if mode == "add":
+    comptime if mode == "add":
         comptime kernel = simd_add_kernel[width]
 
         ctx.enqueue_function_experimental[kernel](
@@ -179,7 +178,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
         assert_equal(c_result[i], c_expected[i])
 
 
-def test_arithmetic_sm100():
+def test_arithmetic_sm100() raises:
     with DeviceContext() as ctx:
         _test_arithmetic[2, "add"](ctx)
         _test_arithmetic[4, "add"](ctx)
@@ -192,5 +191,5 @@ def test_arithmetic_sm100():
         _test_arithmetic[8, "fma"](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from std.collections import Optional
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
-import itertools
+from std.utils import IndexList
+from std.utils.index import Index
+import std.itertools
 
 
 @always_inline
@@ -119,6 +119,9 @@ fn test[
     comptime static_b_shape = DimList(
         num_experts, 3 * N if qkv_perm_dim else N, K
     )
+    var dynamic_b_shape = IndexList[3](
+        num_experts, 3 * N if qkv_perm_dim else N, K
+    )
     var b_size = num_experts * (3 * N if qkv_perm_dim else N) * K
     comptime b_layout = Layout.row_major(
         num_experts, 3 * N if qkv_perm_dim else N, K
@@ -161,27 +164,27 @@ fn test[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, actual_N),
+        IndexList[2](total_num_tokens, actual_N),
     )
     var c_ref_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_ref_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, actual_N),
+        IndexList[2](total_num_tokens, actual_N),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_experts + 1,
+        IndexList[1](num_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_experts,
+        IndexList[1](num_experts),
     )
 
     # Move inputs to device
@@ -217,8 +220,7 @@ fn test[
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
         ptr = c_dev_ndbuffer.data + idx[0] * N + idx[1]
@@ -268,8 +270,7 @@ fn test[
 
     rtol = 1e-2
 
-    @parameter
-    if qkv_perm_dim:
+    comptime if qkv_perm_dim:
         for qkv_idx, m, n in itertools.product(
             range(3), range(total_num_tokens), range(N)
         ):
@@ -279,17 +280,9 @@ fn test[
             assert_almost_equal(
                 actual,
                 expect,
-                msg=String(
-                    "qkv_idx: ",
-                    qkv_idx,
-                    " m: ",
-                    m,
-                    " n: ",
-                    n,
-                    " ref: ",
-                    expect,
-                    " actual: ",
-                    actual,
+                msg=(
+                    t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
+                    t" {actual}"
                 ),
                 rtol=rtol,
             )
@@ -297,16 +290,13 @@ fn test[
         for m, n in itertools.product(range(total_num_tokens), range(N)):
             var expect: Scalar[out_type]
 
-            @parameter
-            if has_epilogue:
+            comptime if has_epilogue:
                 expect = test_epilogue(m, n, c_ref_host[m, n][0])
             else:
                 expect = c_ref_host[m, n][0]
 
             var actual = c_host[m, n][0]
-            assert_almost_equal(
-                actual, expect, msg=String("m: ", m, " n: ", n), rtol=rtol
-            )
+            assert_almost_equal(actual, expect, msg=t"m: {m} n: {n}", rtol=rtol)
 
     # Cleanup
     a_host_ptr.free()
@@ -391,6 +381,7 @@ fn test_negative_lora_id[
 
     # Create host B buffers
     comptime static_b_shape = DimList(num_experts, N, K)
+    comptime dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
     comptime b_layout = Layout.row_major(num_experts, N, K)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
@@ -428,23 +419,23 @@ fn test_negative_lora_id[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Move inputs to device
@@ -536,21 +527,21 @@ fn test_negative_lora_id[
     _ = expert_ids_dev_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(256, 256),
+            expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(16, 256),
+            expert_shape=Index(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
@@ -558,14 +549,14 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(1024, 256),
+            expert_shape=Index(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=1,
-            expert_shape = Index(512, 1024),
+            expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
@@ -573,7 +564,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(256, 64),
+            expert_shape=Index(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
@@ -581,7 +572,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(256, 64),
+            expert_shape=Index(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
@@ -589,21 +580,21 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(256, 64),
+            expert_shape=Index(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(2880, 512),
+            expert_shape=Index(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(5760, 512),
+            expert_shape=Index(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -611,7 +602,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
+            expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -620,7 +611,7 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(1280, 1024),
+            expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts
@@ -630,23 +621,22 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(192, 1024),
+            expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
-        @parameter
-        if ctx.default_device_info == B200:
+        comptime if ctx.default_device_info == B200:
             test[
                 DType.bfloat16,
                 DType.bfloat16,
                 num_experts=6,
-                expert_shape = Index(1280, 16),
+                expert_shape=Index(1280, 16),
             ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(16, 1024),
+            expert_shape=Index(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
@@ -654,33 +644,27 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=4,
-            expert_shape = Index(768, 1024),
+            expert_shape=Index(768, 1024),
             has_epilogue=True,
         ](2, [128, 256], [0, 2], ctx)
 
         comptime ns = [16, 256]
         comptime ms = [16, 512]
 
-        @parameter
-        for n_idx in range(len(ns)):
-
-            @parameter
-            for m_idx in range(len(ms)):
+        comptime for n_idx in range(len(ns)):
+            comptime for m_idx in range(len(ms)):
                 comptime n = ns[n_idx]
                 comptime m = ms[m_idx]
 
-                @parameter
-                if m == 16 or n == 16:
-
-                    @parameter
-                    if ctx.default_device_info != B200:
+                comptime if m == 16 or n == 16:
+                    comptime if ctx.default_device_info != B200:
                         continue
                 # Test that expert id of -1 results in 0s in the output
                 test[
                     DType.bfloat16,
                     DType.bfloat16,
                     num_experts=2,
-                    expert_shape = Index(n, m),
+                    expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
                 # Test negative lora_id behavior with naive matmul
@@ -688,7 +672,7 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     num_experts=2,
-                    expert_shape = Index(n, m),
+                    expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
         # QKV perm dim test
@@ -696,6 +680,6 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             num_experts=6,
-            expert_shape = Index(192, 1024),
+            expert_shape=Index(192, 1024),
             qkv_perm_dim=True,
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)

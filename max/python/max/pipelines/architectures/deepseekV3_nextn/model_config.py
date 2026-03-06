@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
@@ -73,6 +73,7 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
         )
 
     @staticmethod

@@ -11,13 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a no-op :class:`DummyKVCache` implementation for testing when KV caching is disabled."""
+
 from __future__ import annotations
 
 from typing import Any
 
+from max.dtype import DType
+from max.graph import DeviceRef
 from max.interfaces import RequestID
 
-from .cache_manager import KVCacheMetrics, PagedKVCacheManager
+from .cache_manager import KVCacheMetrics, KVCacheParams, PagedKVCacheManager
 
 
 class DummyKVCache(PagedKVCacheManager):
@@ -26,8 +30,13 @@ class DummyKVCache(PagedKVCacheManager):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initializes the dummy cache with a single replica and no host swapping."""
         self.reqs = set[RequestID]()
-        self.num_replicas = 1
-        self.enable_kvcache_swapping_to_host = False
+        self.params = KVCacheParams(
+            dtype=DType.float32,
+            n_kv_heads=1,
+            head_dim=1,
+            num_layers=1,
+            devices=[DeviceRef.CPU()],
+        )
 
     def get_pct_used_blocks_after_allocation(
         self, *args: Any, **kwargs: Any

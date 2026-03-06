@@ -15,13 +15,14 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import Deque
-from collections.deque import _DequeIter
-from collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
-from collections.list import _ListIter
-from hashlib import Hasher
+from std.collections import Deque
+from std.collections.deque import _DequeIter
+from std.collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
+from std.collections.list import _ListIter
+from std.collections.inline_array import _InlineArrayIter
+from std.hashlib import Hasher
 
-from memory.span import Span, _SpanIter
+from std.memory.span import Span, _SpanIter
 
 from .range import _StridedRange
 
@@ -95,6 +96,28 @@ fn reversed[
 
     Returns:
         The reversed iterator of the list.
+    """
+    return value.__reversed__()
+
+
+fn reversed[
+    T: Copyable, size: Int
+](ref value: InlineArray[T, size]) -> _InlineArrayIter[
+    T, size, origin_of(value), False
+]:
+    """Get a reversed iterator of the input array.
+
+    **Note**: iterators are currently non-raising.
+
+    Parameters:
+        T: The type of the elements in the array.
+        size: The size of the array.
+
+    Args:
+        value: The array to get the reversed iterator of.
+
+    Returns:
+        The reversed iterator of the array.
     """
     return value.__reversed__()
 
@@ -207,7 +230,7 @@ fn reversed[
 @always_inline
 fn reversed[
     T: Copyable
-](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
+](value: Span[T, _]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 
     **Note**: iterators are currently non-raising.
@@ -221,4 +244,6 @@ fn reversed[
     Returns:
         The reversed iterator of the Span.
     """
-    return value.__reversed__()
+    return rebind[_SpanIter[T, value.origin, forward=False]](
+        value.__reversed__()
+    )

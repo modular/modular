@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 
 comptime float_dtype = DType.float32
@@ -24,8 +24,8 @@ comptime BLOCK_SIZE = 5
 comptime layout = Layout.row_major(VECTOR_WIDTH)
 
 
-def main():
-    constrained[has_accelerator(), "This example requires a supported GPU"]()
+def main() raises:
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Get context for the attached GPU
     var ctx = DeviceContext()

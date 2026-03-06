@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu.host import DeviceContext
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime BLOCK_DIM = 4
 
@@ -82,7 +82,7 @@ fn stencil2d_smem(
         2,
         MutAnyOrigin,
         DimList(BLOCK_DIM + 2, BLOCK_DIM + 2),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Each element is loaded in shared memory.
@@ -199,7 +199,7 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     _ = b_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_stencil2d[False](ctx)
         run_stencil2d[True](ctx)

@@ -11,34 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import randn, seed
-from sys import has_nvidia_gpu_accelerator
+from std.math import ceildiv
+from std.random import randn, seed
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from buffer import NDBuffer
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
 
-from utils import IndexList
-from utils.index import Index
-from utils.numerics import isnan
+from std.utils import Index, IndexList
+from std.utils.numerics import isnan
 from internal_utils import assert_almost_equal
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
-def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_naive = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -86,7 +81,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
             DType.float32,
             DType.float32,
             DType.float32,
-            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
         ctx.enqueue_function_experimental[kernel](
@@ -188,17 +183,16 @@ fn run_matvec_with_epilogue_fn(
     comptime seed_val = 42
 
     var iterations = 100
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
 
     seed(seed_val)
 
     # over-allocate C to simulate a view tensor
-    var c_host = UnsafePointer[Float32].alloc(M * N * c_stride)
-    var c_host_naive = UnsafePointer[Float32].alloc(M * N * c_stride)
+    var c_host = alloc[Float32](M * N * c_stride)
+    var c_host_naive = alloc[Float32](M * N * c_stride)
 
     randn(a_host, M * K)
-
     randn(b_host, K * N)
 
     for i in range(M * N * c_stride):
@@ -263,7 +257,7 @@ fn run_matvec_with_epilogue_fn(
             DType.float32,
             DType.float32,
             DType.float32,
-            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
         var func = ctx.compile_function_experimental[kernel]()
@@ -365,12 +359,11 @@ fn run_matvec_with_epilogue_fn(
     _ = c_host_naive
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # gemv for matrix vector multiply
         run_matvec(4096, 1, 4096, ctx=ctx)
         run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply
-        if has_nvidia_gpu_accelerator():
-            run_matvec(1, 4096, 4096, ctx=ctx)
-            run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)
+        run_matvec(1, 4096, 4096, ctx=ctx)
+        run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)

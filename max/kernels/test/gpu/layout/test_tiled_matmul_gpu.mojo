@@ -13,21 +13,21 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
-from gpu.compute.mma import mma
-from gpu.sync import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.compute.mma import mma
+from std.gpu.sync import barrier
 from layout import *
 from layout._fillers import arange
 from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn naive_matmul[
@@ -108,7 +108,7 @@ fn sram_blocked_matmul[
         DType.float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
@@ -117,7 +117,7 @@ fn sram_blocked_matmul[
         DType.float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
@@ -161,8 +161,7 @@ fn sram_blocked_matmul[
 
         barrier()
 
-        @parameter
-        for kk in range(BK):
+        comptime for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
@@ -348,7 +347,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
         DType.float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
@@ -357,7 +356,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
         DType.float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
@@ -410,8 +409,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
         barrier()
 
-        @parameter
-        for kk in range(BK):
+        comptime for kk in range(BK):
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
@@ -493,7 +491,7 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         print("")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK: === test_naive_matmul_kernel
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0

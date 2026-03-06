@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from max.nn import Linear
-from max.tensor import Tensor
+from max.experimental.nn import Linear
+from max.experimental.tensor import Tensor
 
 
 def test_repr() -> None:

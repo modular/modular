@@ -18,13 +18,13 @@ by comparing against numpy reference implementations.
 
 import numpy as np
 import pytest
-from max import _realization_context as rc
-from max import functional as F
-from max import random as max_random
-from max._realization_context import set_seed
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor, realization_context
+from max.experimental import functional as F
+from max.experimental import random as max_random
+from max.experimental import realization_context as rc
+from max.experimental.realization_context import set_seed
+from max.experimental.tensor import Tensor, realization_context
 
 # DTypes to test for elementwise operations
 # Note: bfloat16 is excluded since NumPy doesn't support it natively
@@ -1304,81 +1304,224 @@ class TestMatmulOp:
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
 
 
-class TestRangeOp:
-    """Tests for range Mojo op via Tensor.arange with interpreter."""
+class TestBatchMatmulOp:
+    """Tests for batch matmul Mojo op."""
 
-    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
-    def test_range_basic(self, dtype: DType) -> None:
-        """Test basic range op matches numpy arange."""
+    @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
+    def test_batch_matmul_3d(self, dtype: DType) -> None:
+        """Test 3D batch matmul: (2, 3, 4) @ (2, 4, 5)."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(24, dtype=np_dtype).reshape(2, 3, 4) % 10
+        b_np = np.arange(40, dtype=np_dtype).reshape(2, 4, 5) % 10
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(10, dtype=dtype, device=CPU())
+            c = a @ b
 
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_batch_matmul_4d(self, dtype: DType) -> None:
+        """Test 4D batch matmul: (2, 3, 4, 5) @ (2, 3, 5, 6)."""
         np_dtype = dtype.to_numpy()
+        a_np = np.arange(120, dtype=np_dtype).reshape(2, 3, 4, 5) % 10
+        b_np = np.arange(180, dtype=np_dtype).reshape(2, 3, 5, 6) % 10
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a @ b
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_batch_matmul_float_precision(self, dtype: DType) -> None:
+        """Test batch matmul with random floats for precision."""
+        np_dtype = dtype.to_numpy()
+        np.random.seed(42)
+        a_np = np.random.randn(2, 8, 16).astype(np_dtype)
+        b_np = np.random.randn(2, 16, 8).astype(np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a @ b
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_almost_equal(
+            np.from_dlpack(c), expected, decimal=5
+        )
+
+    def test_batch_matmul_single_batch(self) -> None:
+        """Test batch matmul with single batch dimension."""
+        a_np = np.arange(12, dtype=np.float32).reshape(1, 3, 4) % 10
+        b_np = np.arange(20, dtype=np.float32).reshape(1, 4, 5) % 10
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a @ b
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(np.from_dlpack(c), expected)
+
+
+class TestRangeOp:
+    """Tests for range Mojo op via Tensor.arange with typed tensor inputs."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_range_basic(self, dtype: DType) -> None:
+        """Test basic range op matches numpy arange."""
+        np_dtype = dtype.to_numpy()
+        start_t = Tensor.from_dlpack(np.array(0, dtype=np_dtype))
+        stop_t = Tensor.from_dlpack(np.array(10, dtype=np_dtype))
+        step_t = Tensor.from_dlpack(np.array(1, dtype=np_dtype))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=10,
+                dtype=dtype,
+                device=CPU(),
+            )
+
         expected = np.arange(0, 10, 1, dtype=np_dtype)
         np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_range_with_step(self, dtype: DType) -> None:
         """Test range op with custom step size."""
+        np_dtype = dtype.to_numpy()
+        start_t = Tensor.from_dlpack(np.array(0, dtype=np_dtype))
+        stop_t = Tensor.from_dlpack(np.array(10, dtype=np_dtype))
+        step_t = Tensor.from_dlpack(np.array(2, dtype=np_dtype))
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(0, 10, 2, dtype=dtype, device=CPU())
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=5,
+                dtype=dtype,
+                device=CPU(),
+            )
 
-        np_dtype = dtype.to_numpy()
         expected = np.arange(0, 10, 2, dtype=np_dtype)
         np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_range_float_step(self, dtype: DType) -> None:
         """Test range op with float step size."""
+        np_dtype = dtype.to_numpy()
+        start_t = Tensor.from_dlpack(np.array(0.0, dtype=np_dtype))
+        stop_t = Tensor.from_dlpack(np.array(1.0, dtype=np_dtype))
+        step_t = Tensor.from_dlpack(np.array(0.25, dtype=np_dtype))
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(0.0, 1.0, 0.25, dtype=dtype, device=CPU())
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=4,
+                dtype=dtype,
+                device=CPU(),
+            )
 
-        np_dtype = dtype.to_numpy()
         expected = np.arange(0.0, 1.0, 0.25, dtype=np_dtype)
         np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_range_negative_step(self, dtype: DType) -> None:
         """Test range op with negative step."""
+        np_dtype = dtype.to_numpy()
+        start_t = Tensor.from_dlpack(np.array(5, dtype=np_dtype))
+        stop_t = Tensor.from_dlpack(np.array(0, dtype=np_dtype))
+        step_t = Tensor.from_dlpack(np.array(-1, dtype=np_dtype))
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(5, 0, -1, dtype=dtype, device=CPU())
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=5,
+                dtype=dtype,
+                device=CPU(),
+            )
 
-        np_dtype = dtype.to_numpy()
         expected = np.arange(5, 0, -1, dtype=np_dtype)
         np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
 
     @pytest.mark.parametrize("dtype", INT_DTYPES)
     def test_range_int(self, dtype: DType) -> None:
         """Test range op with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        start_t = Tensor.from_dlpack(np.array(0, dtype=np_dtype))
+        stop_t = Tensor.from_dlpack(np.array(10, dtype=np_dtype))
+        step_t = Tensor.from_dlpack(np.array(1, dtype=np_dtype))
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(10, dtype=dtype, device=CPU())
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=10,
+                dtype=dtype,
+                device=CPU(),
+            )
 
-        np_dtype = dtype.to_numpy()
         expected = np.arange(0, 10, 1, dtype=np_dtype)
         np.testing.assert_array_equal(np.from_dlpack(t), expected)
 
     def test_range_nonzero_start(self) -> None:
         """Test range op with nonzero start value."""
+        start_t = Tensor.from_dlpack(np.array(5, dtype=np.float32))
+        stop_t = Tensor.from_dlpack(np.array(15, dtype=np.float32))
+        step_t = Tensor.from_dlpack(np.array(2, dtype=np.float32))
+
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            t = Tensor.arange(5, 15, 2, dtype=DType.float32, device=CPU())
+            t = Tensor.arange(
+                start_t,
+                stop_t,
+                step_t,
+                out_dim=5,
+                dtype=DType.float32,
+                device=CPU(),
+            )
 
         expected = np.arange(5, 15, 2, dtype=np.float32)
         np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
@@ -2531,3 +2674,404 @@ class TestConcatOp:
 
         expected = np.concatenate([a_np, b_np], axis=0)
         np.testing.assert_array_almost_equal(np.from_dlpack(result), expected)
+
+
+def _numpy_layer_norm(
+    x: np.ndarray, gamma: np.ndarray, beta: np.ndarray, eps: float = 1e-5
+) -> np.ndarray:
+    """Numerically stable layer normalization reference implementation."""
+    mean = np.mean(x, axis=-1, keepdims=True)
+    var = np.var(x, axis=-1, keepdims=True)
+    return (x - mean) / np.sqrt(var + eps) * gamma + beta
+
+
+class TestLayerNormOps:
+    """Tests for layer_norm Mojo op."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_layer_norm_2d(self, dtype: DType) -> None:
+        """Test layer_norm on a 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+        beta_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_layer_norm_3d(self, dtype: DType) -> None:
+        """Test layer_norm on a 3D tensor."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+        beta_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_layer_norm_4d(self, dtype: DType) -> None:
+        """Test layer_norm on a 4D tensor."""
+        shape = [2, 3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np_dtype)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+        beta_np = rng.standard_normal(shape[-1]).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    def test_layer_norm_large_feature_dim(self) -> None:
+        """Test layer_norm with a large feature dimension."""
+        shape = [8, 128]
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np.float32)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np.float32)
+        beta_np = rng.standard_normal(shape[-1]).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_layer_norm_single_element_feature(self) -> None:
+        """Test layer_norm with a single-element feature dimension."""
+        shape = [4, 1]
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal(shape).astype(np.float32)
+        gamma_np = rng.standard_normal(shape[-1]).astype(np.float32)
+        beta_np = rng.standard_normal(shape[-1]).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+        expected = _numpy_layer_norm(x_np, gamma_np, beta_np, eps=1e-5)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestSliceOp:
+    """Tests for slice operations."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_slice_1d(self, dtype: DType) -> None:
+        """Test basic 1D slice."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(10, dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(2, 7)])
+
+        expected = x_np[2:7]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_slice_2d(self, dtype: DType) -> None:
+        """Test 2D slice across both dimensions."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3)])
+
+        expected = x_np[0:2, 1:3]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_with_step(self) -> None:
+        """Test slice with step > 1."""
+        x_np = np.arange(10, dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 10, 2)])
+
+        expected = x_np[0:10:2]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_3d(self) -> None:
+        """Test slice with 3D tensor."""
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 2), slice(1, 3), slice(0, 2)])
+
+        expected = x_np[0:2, 1:3, 0:2]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_slice_int_dtypes(self, dtype: DType) -> None:
+        """Test slice with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(1, 3), slice(0, 2)])
+
+        expected = x_np[1:3, 0:2]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_single_element(self) -> None:
+        """Test slice extracting a single element along each dim."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(1, 2), slice(2, 3)])
+
+        expected = x_np[1:2, 2:3]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+    def test_slice_full_dim(self) -> None:
+        """Test slice that takes the full range of a dimension."""
+        x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.slice_tensor(x, [slice(0, 3), slice(0, 4)])
+
+        expected = x_np[0:3, 0:4]
+        np.testing.assert_array_equal(np.from_dlpack(result), expected)
+
+
+class TestCumsumOps:
+    """Tests for cumsum Mojo ops."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_1d(self, dtype: DType) -> None:
+        """Test cumsum on a 1D tensor."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0)
+
+        expected = np.cumsum(x_np, axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_2d_last_axis(self, dtype: DType) -> None:
+        """Test cumsum on the last axis of a 2D tensor."""
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=-1)
+
+        expected = np.cumsum(x_np, axis=-1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_2d_first_axis(self, dtype: DType) -> None:
+        """Test cumsum on the first axis of a 2D tensor."""
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(12, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0)
+
+        expected = np.cumsum(x_np, axis=0)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_3d_middle_axis(self, dtype: DType) -> None:
+        """Test cumsum on the middle axis of a 3D tensor."""
+        shape = [2, 3, 4]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(24, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=1)
+
+        expected = np.cumsum(x_np, axis=1)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_4d(self, dtype: DType) -> None:
+        """Test cumsum on a 4D tensor along axis 2."""
+        shape = [2, 3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(120, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=2)
+
+        expected = np.cumsum(x_np, axis=2)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_5d(self, dtype: DType) -> None:
+        """Test cumsum on a 5D tensor along axis 3."""
+        shape = [2, 3, 2, 4, 2]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(96, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=3)
+
+        expected = np.cumsum(x_np, axis=3)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_exclusive(self, dtype: DType) -> None:
+        """Test cumsum with exclusive=True."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0, exclusive=True)
+
+        # exclusive cumsum: [0, 1, 3]
+        expected = np.array([0, 1, 3], dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_reverse(self, dtype: DType) -> None:
+        """Test cumsum with reverse=True."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0, reverse=True)
+
+        # reverse cumsum: [6, 5, 3]
+        expected = np.array([6, 5, 3], dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_cumsum_exclusive_reverse(self, dtype: DType) -> None:
+        """Test cumsum with both exclusive=True and reverse=True."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0, exclusive=True, reverse=True)
+
+        # exclusive reverse cumsum: [5, 3, 0]
+        expected = np.array([5, 3, 0], dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", [DType.int32, DType.int64])
+    def test_cumsum_integer(self, dtype: DType) -> None:
+        """Test cumsum with integer dtypes."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1, 2, 3, 4], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.cumsum(x, axis=0)
+
+        expected = np.cumsum(x_np, axis=0)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)

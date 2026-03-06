@@ -16,22 +16,22 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from algorithm import parallel_memcpy
+from std.algorithm import parallel_memcpy
 ```
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from memory import memcpy
-from runtime.asyncrt import parallelism_level
+from std.memory import memcpy
+from std.runtime.asyncrt import parallelism_level
 
 
 fn parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype]],
-    src: UnsafePointer[mut=False, Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype], _],
+    src: UnsafePointer[mut=False, Scalar[dtype], _],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -73,8 +73,8 @@ fn parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype]],
-    src: UnsafePointer[mut=False, Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype], _],
+    src: UnsafePointer[mut=False, Scalar[dtype], _],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.

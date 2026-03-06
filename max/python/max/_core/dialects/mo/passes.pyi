@@ -275,14 +275,11 @@ def PropagateShapes() -> max._core.Pass:
     reducing shape logic as much as it can.
     """
 
-def ResolveUnknownParameters() -> max._core.Pass:
+def RemoveUnusedOps() -> max._core.Pass:
     """
-    This pass parameterizes `mo` ops that can be parameterized. This involves 2
-    things:
-    1. replacing unknown shape and dimension parameters (i.e. `?`) in `!mo.tensor`
-    instances with parameter references.
-    2. letting newly parameterized ops declare their new parameters that appear
-    in their results.
+    Some MO ops have no uses but can't be erased by CSE because of their memory effects.
+    In practice the chains def / use of those ops already encode the dependencies.
+    If the output chain of such an op is unused, that means it can be removed.
     """
 
 def SplatLargeConstants(num_elements: int = 100000000) -> max._core.Pass:

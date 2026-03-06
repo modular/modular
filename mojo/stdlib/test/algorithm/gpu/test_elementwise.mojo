@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from gpu.host import DeviceContext, get_gpu_target
-from testing import assert_equal, TestSuite
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn _linear_index[
@@ -28,8 +28,7 @@ fn _linear_index[
     var linear_idx = 0
     var stride = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         linear_idx += coords[i] * stride
         stride *= shape[i]
     return linear_idx
@@ -42,14 +41,13 @@ fn _strided_index[
     """
     var linear_idx = 0
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         linear_idx += coords[i] * strides[i]
     return linear_idx
 
 
 fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_host_stack = InlineArray[Scalar[dtype], 16](fill=0)
     var in_host = Span(in_host_stack)
@@ -128,7 +126,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
     var in_host_stack = InlineArray[Scalar[dtype], 9](fill=0)
     var in_host = Span(in_host_stack)
     var out_host_stack = InlineArray[Scalar[dtype], 9](fill=0)
@@ -197,7 +195,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
     var in_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
     var in_host = Span(in_host_stack)
     var out_host_stack = InlineArray[Scalar[dtype], 2 * 4 * 5](fill=0)
@@ -305,10 +303,10 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-def _test_elementwise_zero_dimension_3d(ctx: DeviceContext):
+def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     """Test elementwise operations with zero dimension in 3D tensor."""
     comptime dtype = DType.float32
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var input_device_ptr = ctx.enqueue_create_buffer[dtype](1)
     var output_device_ptr = ctx.enqueue_create_buffer[dtype](1)
@@ -364,7 +362,7 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext):
     _ = output_device_ptr
 
 
-def test_elementwise_gpu():
+def test_elementwise_gpu() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float32](ctx)
         run_elementwise_uneven_simd[DType.float32](ctx)
@@ -378,5 +376,5 @@ def test_elementwise_gpu():
         _test_elementwise_zero_dimension_3d(ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

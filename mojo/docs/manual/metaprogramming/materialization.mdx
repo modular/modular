@@ -68,7 +68,7 @@ cannot materialize comptime value of type 'List[Int]' to runtime
 because it is not 'ImplicitlyCopyable'
 ```
 
-Just like Mojo forces you to explicitly `copy()` a value that's expensive to
+Just like Mojo forces you to explicitly copy a value that's expensive to
 copy, it forces you to explicitly materialize values that are expensive to
 materialize, by calling the
 [`materialize()`](/mojo/std/builtin/value/materialize/) function.
@@ -136,7 +136,7 @@ allocates a statically sized array of elements on the stack. The following code
 uses `global_constant()` to create a static lookup table.
 
 ```
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 fn use_lookup(idx: Int) -> Int64:
     comptime numbers: InlineArray[Int64, 10] = [
@@ -234,9 +234,3 @@ var static_str: StaticString = str_literal  # or a StaticString
 Both `String` and `StaticString` can be implicitly created from a
 `StringLiteral`, but without a type annotation, Mojo defaults to materializing
 `StringLiteral` as a `String`.
-
-You can define a "nonmaterializable" struct that can only exist at compile time,
-and which is replaced by a different type at run time. For example, the standard
-library `IntLiteral` type supports arbitrary-precision math at compile time, but
-materializes as a standard `Int` in run-time code. For more information, see the
-[`@nonmaterializable`](/mojo/manual/decorators/nonmaterializable) decorator.

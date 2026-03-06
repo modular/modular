@@ -13,11 +13,10 @@
 
 """Test warp-level bitonic sort correctness in MoE router."""
 
-from gpu.host import DeviceContext
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major
 from nn.moe import router_group_limited
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn test_warp_bitonic_sort_interleaved[
@@ -154,7 +153,7 @@ fn test_warp_bitonic_sort_interleaved[
                 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # academic-ds-9b: 64 experts, 8 groups, 8 experts/group
         test_warp_bitonic_sort_interleaved[64, 8, 8, 4](ctx)

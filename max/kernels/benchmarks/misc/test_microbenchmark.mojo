@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_si64
+from std.random import random_si64
 
 import microbenchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from microbenchmark import Benchmarkable
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime alignment = 64
 
@@ -84,7 +84,7 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
 
     @no_inline
     fn __str__(self) -> String:
-        return String("m = ", self.m, ", n = ", self.n, ", k = ", self.k)
+        return t"m = {self.m}, n = {self.n}, k = {self.k}"
 
     fn __del__(deinit self):
         self.a_ptr.free()
@@ -163,7 +163,7 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
 
     @no_inline
     fn __str__(self) -> String:
-        return String("m = ", self.m, ", n = ", self.n, ", k = ", self.k)
+        return t"m = {self.m}, n = {self.n}, k = {self.k}"
 
     fn __del__(deinit self):
         self.a_ptr.free()

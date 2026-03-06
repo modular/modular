@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from os import getenv, abort
-from ffi import (
+from std.pathlib import Path
+from std.os import getenv, abort
+from std.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -21,7 +21,7 @@ from ffi import (
     c_int,
     RTLD,
 )
-from sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from std.sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -31,8 +31,7 @@ comptime MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 fn mpi_lib_name() -> String:
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         return "nvshmem_bootstrap_mpi.so.3"
     else:
         return "libmpi.so"
@@ -51,14 +50,13 @@ fn _init_mpi_dylib() -> OwnedDLHandle:
     var flags = RTLD.NOW | RTLD.GLOBAL
 
     # AMD interaction with libmpi needs the handle to stay alive after MPI_Finalize
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         flags = flags | RTLD.NODELETE
 
     try:
         return OwnedDLHandle(path=lib, flags=flags)
     except e:
-        abort(String("failed to load MPI library: ", e))
+        abort(t"failed to load MPI library: {e}")
 
 
 @always_inline
@@ -88,13 +86,17 @@ comptime MPI_THREAD_MULTIPLE = 3
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
+fn MPI_Init(
+    mut argc: Int, mut argv: Span[StaticString, StaticConstantOrigin]
+) raises:
     """Initialize MPI."""
     var result = _get_mpi_function[
         "MPI_Init",
         fn(
             UnsafePointer[Int, MutAnyOrigin],
-            UnsafePointer[VariadicList[StaticString], MutAnyOrigin],
+            UnsafePointer[
+                Span[StaticString, StaticConstantOrigin], MutAnyOrigin
+            ],
         ) -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
     if result != 0:
@@ -103,7 +105,7 @@ fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
 
 fn MPI_Init_thread(
     mut argc: Int,
-    mut argv: VariadicList[StaticString],
+    mut argv: Span[StaticString, StaticConstantOrigin],
     required: c_int,
     provided: UnsafePointer[c_int, MutAnyOrigin],
 ) raises:
@@ -112,7 +114,9 @@ fn MPI_Init_thread(
         "MPI_Init_thread",
         fn(
             UnsafePointer[Int, MutAnyOrigin],
-            UnsafePointer[VariadicList[StaticString], MutAnyOrigin],
+            UnsafePointer[
+                Span[StaticString, StaticConstantOrigin], MutAnyOrigin
+            ],
             c_int,
             UnsafePointer[c_int, MutAnyOrigin],
         ) -> c_int,

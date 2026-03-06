@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp, exp2, log, rsqrt
-from sys.info import simd_width_of
+from std.math import exp, exp2, log, rsqrt
+from std.sys.info import simd_width_of
 
-from algorithm.functional import _get_start_indices_of_nth_subvolume
+from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -24,7 +24,7 @@ from layout import (
 )
 from layout._fillers import random
 from layout.int_tuple import fill_like
-from memory import alloc
+from std.memory import alloc
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_update_cpu,
@@ -33,9 +33,9 @@ from state_space.selective_scan import (
     Strides3D,
     Strides4D,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # LOG2E constant for converting exp to exp2
@@ -86,7 +86,7 @@ fn run_selective_scan_fwd[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan forward kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -336,7 +336,7 @@ fn run_selective_scan_update[
     delta_softplus: Bool = False,
 ](batch: Int, dim: Int, n_groups: Int, rtol: Float64 = 0.01,) raises:
     """Test selective scan update kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -763,5 +763,5 @@ fn test_selective_scan_update_larger_dimensions() raises:
     ](batch=2, dim=4, n_groups=1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

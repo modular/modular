@@ -11,31 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import strided_load
+from std.sys.intrinsics import strided_load
 
-from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer
+from std.gpu.host.compile import _compile_code
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn strided_load_kernel[
     *, dtype: DType = DType.uint32, width: Int = 1
 ](
     output: UnsafePointer[SIMD[dtype, width]],
-    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC],
+    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.GENERIC],
     stride: Int,
 ):
     output[] = strided_load[width](ptr, stride)
 
 
-def test_strided_load():
+def test_strided_load() raises:
     assert_true(
         "@llvm.masked.gather"
         in _compile_code[strided_load_kernel[width=4], emission_kind="llvm"]()
     )
 
 
-def main():
+def main() raises:
     test_strided_load()

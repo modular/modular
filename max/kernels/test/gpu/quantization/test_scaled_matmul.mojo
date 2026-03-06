@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-from utils.index import Index, IndexList
+from std.testing import assert_almost_equal
+from std.utils.index import Index, IndexList
 
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
@@ -141,22 +141,30 @@ fn test_matmul_dynamic_scaled_fp8[
         return DimList(shape.at[1](), 1)
 
     var a_ndbuffer = NDBuffer[
-        in_dtype, 2, _, static_a_shape, stride_from_shape[static_a_shape]()
+        in_dtype,
+        2,
+        ImmutAnyOrigin,
+        static_a_shape,
+        stride_from_shape[static_a_shape](),
     ](
         a_device.unsafe_ptr(),
-        DimList(m, k),
+        IndexList[2](m, k),
     )
     var b_ndbuffer = NDBuffer[
-        in_dtype, 2, _, static_b_shape, stride_from_shape[static_b_shape]()
+        in_dtype,
+        2,
+        ImmutAnyOrigin,
+        static_b_shape,
+        stride_from_shape[static_b_shape](),
     ](
         b_device.unsafe_ptr(),
-        DimList(n, k) if transpose_b else DimList(k, n),
+        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
     var c_ndbuffer = NDBuffer[
         out_dtype, 2, _, static_c_shape, stride_from_shape[static_c_shape]()
     ](
         c_device.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
     var a_scales_ndbuffer = NDBuffer[
         scales_dtype,
@@ -166,7 +174,7 @@ fn test_matmul_dynamic_scaled_fp8[
         stride_from_shape[static_a_scales_shape](),
     ](
         a_scales_device.unsafe_ptr(),
-        DimList(1, m),
+        IndexList[2](1, m),
     )
     var b_scales_ndbuffer = NDBuffer[
         scales_dtype,
@@ -176,11 +184,11 @@ fn test_matmul_dynamic_scaled_fp8[
         stride_from_shape[static_b_scales_shape](),
     ](
         b_scales_device.unsafe_ptr(),
-        DimList(n, 1) if transpose_b else DimList(1, n),
+        IndexList[2](n, 1) if transpose_b else IndexList[2](1, n),
     )
     var c_ref_ndbuffer = NDBuffer[DType.float32, 2, _, static_c_shape](
         c_device_ref.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
 
     matmul_dynamic_scaled_fp8[
@@ -205,7 +213,7 @@ fn test_matmul_dynamic_scaled_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, 1, k_dim),
+        scales_granularity_mnk=Index(1, 1, k_dim),
     ](
         c_ref_ndbuffer,
         a_ndbuffer,
@@ -243,46 +251,46 @@ fn test_matmul_dynamic_scaled_fp8[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(256 + 256),
-            K = Int(256),
+            N=Int(256 + 256),
+            K=Int(256),
         ](ctx, 17, 256 + 256, 256)
 
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(512),
-            K = Int(512),
+            N=Int(512),
+            K=Int(512),
         ](ctx, 124, 512, 512)
 
         # these tests are guaranteed to hit a mojo fp8 kernel in the dispatch table.
         # if the fp8 kernel is not registered, these tests will fail.
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(5376),
-            K = Int(4096),
+            N=Int(5376),
+            K=Int(4096),
         ](ctx, 3000, 5376, 4096)
 
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(43008),
-            K = Int(5376),
+            N=Int(43008),
+            K=Int(5376),
         ](ctx, 224, 43008, 5376)

@@ -11,28 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
-from sys.info import _TargetType
+from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
+from std.sys.info import _TargetType
 
-from algorithm._gpu.reduction import reduce_launch
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm._gpu.reduction import reduce_launch
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from layout import LayoutTensor, Layout, RuntimeLayout
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
+    CacheBustingBuffer,
     arg_parse,
-    env_get_shape,
+    get_defined_shape,
     int_list_to_tuple,
     update_bench_config_args,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList, StaticTuple
-from utils.index import product
+from std.utils import IndexList, StaticTuple
+from std.utils.index import product
 
 
 fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
@@ -55,42 +61,28 @@ fn run_reduce[
     var out_shape = shape
     out_shape[axis] = 1
     comptime init: Scalar[dtype] = Scalar[dtype](0.0)
-    comptime align = align_of_simd[dtype, simd_target = get_gpu_target()]()
+    comptime align = align_of_simd[dtype, simd_target=get_gpu_target()]()
 
     var in_size = shape.flattened_length()
     var out_size = in_size // shape[axis]
 
-    # For cache busting: allocate buffers larger than 2x L2 cache.
-    # H100 has 50MB L2, MI300x has 256MB infinity cache.
-    # Use 128 MiB to exceed 2x H100 L2, and 512 MiB option for MI300x.
-    comptime MB_512 = 512 * 1024 * 1024
-    comptime assert MB_512 % align == 0, (
-        "Cache busting allocation size must be a multiple of dtype SIMD"
-        " alignment."
-    )
-
-    # Calculate total cache buffer sizes (in elements, not bytes)
-    var in_stride = align_up(in_size, align)
-    var in_cache_elems = (
-        align_up(MB_512, in_stride * size_of[dtype]()) // size_of[dtype]()
-    ) if cache_busting else in_size
+    var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
     # Allocate & initialize host data
     var expected_vals = UnsafePointer[Scalar[dtype]].alloc(
         out_size, alignment=align
     )
 
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(in_cache_elems)
+    var in_host = UnsafePointer[Scalar[dtype]].alloc(cb_in.alloc_size())
     var res_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
 
-    for i in range(in_cache_elems):
+    for i in range(cb_in.alloc_size()):
         in_host[i] = 1
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
         expected_vals[i] = Scalar[dtype](shape[axis]) * Scalar[dtype](1)
 
-    var multi_in_buffer = ctx.enqueue_create_buffer[dtype](in_cache_elems)
     var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
 
     comptime res_layout = Layout.row_major[rank]()
@@ -98,7 +90,7 @@ fn run_reduce[
         res_buffer, RuntimeLayout[res_layout].row_major(out_shape)
     )
 
-    ctx.enqueue_copy(multi_in_buffer, in_host)
+    ctx.enqueue_copy(cb_in.device_buffer(), in_host)
 
     @always_inline
     @parameter
@@ -128,11 +120,10 @@ fn run_reduce[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var offset = iteration * in_stride % in_cache_elems
             var input_lt = LayoutTensor[
                 dtype, Layout.row_major[rank](), MutAnyOrigin
             ](
-                multi_in_buffer.unsafe_ptr() + offset,
+                cb_in.offset_ptr(iteration),
                 RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
             )
 
@@ -175,7 +166,7 @@ fn run_reduce[
     for i in range(out_size):
         assert_equal(res_host[i], expected_vals[i])
 
-    _ = multi_in_buffer
+    _ = cb_in
     _ = res_device
 
     in_host.free()
@@ -191,12 +182,14 @@ fn reduce_add[
     return x + y
 
 
-def main():
-    comptime dtype = DType._from_str(env_get_string["dtype", "DType.float16"]())
+def main() raises:
+    comptime dtype = DType._from_str(
+        get_defined_string["dtype", "DType.float16"]()
+    )
 
-    comptime shape_in_list = env_get_shape["shape", "1x1x4096"]()
+    comptime shape_in_list = get_defined_shape["shape", "1x1x4096"]()
     comptime shape = int_list_to_tuple[shape_in_list]()
-    comptime axis = env_get_int["axis", 1]()
+    comptime axis = get_defined_int["axis", 1]()
     comptime cache_busting = True
 
     var m = Bench()

@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from io.io import _printf
-from math import ceildiv
-from os import abort
-from sys import size_of
-from sys.info import align_of, simd_width_of
+from std.collections import Optional
+from std.io.io import _printf
+from std.math import ceildiv
+from std.os import abort
+from std.sys import size_of
+from std.sys.info import align_of, simd_width_of
 
 from buffer.dimlist import Dim
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -28,8 +28,8 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import external_memory
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
@@ -45,11 +45,11 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import block_swizzle
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 struct BackToBackMatmulConfig[
@@ -64,10 +64,10 @@ struct BackToBackMatmulConfig[
     # D is MxN
     # We block over M and L, yielding BM and BL.
     # BM x BN x BK
-    var block_tile_shape: IndexList[3, element_type = DType.uint64]
+    var block_tile_shape: IndexList[3, element_type=DType.uint64]
 
     # WM x WN x WK
-    var warp_tile_shape: IndexList[3, element_type = DType.uint64]
+    var warp_tile_shape: IndexList[3, element_type=DType.uint64]
 
     var num_pipeline_stages: UInt
 
@@ -98,8 +98,8 @@ struct BackToBackMatmulConfig[
 
     fn __init__(
         out self,
-        block_tile_shape: IndexList[3, element_type = DType.uint64],
-        warp_tile_shape: IndexList[3, element_type = DType.uint64],
+        block_tile_shape: IndexList[3, element_type=DType.uint64],
+        warp_tile_shape: IndexList[3, element_type=DType.uint64],
         num_pipeline_stages: UInt = 2,
     ):
         self.block_tile_shape = block_tile_shape
@@ -232,14 +232,14 @@ fn b2b_gemm[
     # memory and reuse it on each iteration.
     var a_smem = external_memory[
         Scalar[in_type],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[in_type, simd_size]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[in_type, simd_size]](),
     ]()
     comptime a_smem_size = BM * Int(K)  # single block
     var a_smem_iter = LayoutTensorIter[
         in_type,
         Layout.row_major(BM, BK),
-        address_space = a_smem.address_space,
+        address_space=a_smem.address_space,
     ](
         a_smem,
         a_smem_size,
@@ -255,7 +255,7 @@ fn b2b_gemm[
     var b_smem_iter = LayoutTensorIter[
         in_type,
         b_smem_layout,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ](b_smem, b_smem_size)
     # C may not have the same layout
@@ -295,7 +295,7 @@ fn b2b_gemm[
             accum_type,
             layout,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -305,7 +305,7 @@ fn b2b_gemm[
         accum_type,
         layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
@@ -337,7 +337,7 @@ fn b2b_gemm[
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
-                next_op_b_iter_masked = type_of(c_gmem_iter).masked,
+                next_op_b_iter_masked=type_of(c_gmem_iter).masked,
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
@@ -363,7 +363,7 @@ fn b2b_gemm[
                 num_pipeline_stages,
                 transpose_b,
                 b_next_smem_layout=c_smem_layout,
-                next_op_b_iter_masked = type_of(c_gmem_iter).masked,
+                next_op_b_iter_masked=type_of(c_gmem_iter).masked,
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
@@ -418,7 +418,7 @@ fn b2b_gemm[
             next_op_b_iter_masked=False,
             b_next_smem_layout=b_smem_layout,
             prefetch_init=False,
-            static_num_iters = Dim(BN // BK),
+            static_num_iters=Dim(BN // BK),
         ](
             d_reg_tile,
             ab_iter,
@@ -441,21 +441,20 @@ fn b2b_gemm[
     # Each thread's fragment has 2x2 fp32 values. Casting to half float and
     # directly storing to global memory results in 2 4B writes. Following cutlass,
     # we stage the fragments in shared memory so that each thread can store 16B.
-    @parameter
-    if d_type.is_half_float():
+    comptime if d_type.is_half_float():
         comptime swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+            num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
         var accum_smem_warp_tile = LayoutTensor[
             accum_type,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * UInt(WM) * UInt(WN))
 
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4),
+            thread_layout=Layout.row_major(8, 4),
             swizzle=swizzle,
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
@@ -468,8 +467,7 @@ fn b2b_gemm[
         # Vectorized copy from shared to global memory, during which every 2 FP32
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
@@ -491,8 +489,7 @@ fn b2b_gemm[
                 accum_smem_warp_tile.ptr
             )
 
-            @parameter
-            for i in range(num_stores_per_thread):
+            comptime for i in range(num_stores_per_thread):
                 comptime src_idx = type_of(d_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
@@ -503,8 +500,7 @@ fn b2b_gemm[
 
                 comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
 
-                @parameter
-                if d_layout.all_dims_known():
+                comptime if d_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
@@ -532,7 +528,7 @@ fn b2b_gemm[
                     )
         else:
             copy_sram_to_dram[
-                thread_layout = Layout.row_major(
+                thread_layout=Layout.row_major(
                     WARP_SIZE * simd_size // WN, WN // simd_size
                 ),
                 swizzle=swizzle,
@@ -543,9 +539,7 @@ fn b2b_gemm[
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             var d_gmem_frag = d_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
@@ -553,12 +547,10 @@ fn b2b_gemm[
             var d_reg_frag = d_reg_tile.vectorize[1, 2]().transpose()
             var thread_offset = d_gmem_frag.distance(D.ptr)
 
-            @parameter
-            for i in range(type_of(d_gmem_frag).layout.size()):
+            comptime for i in range(type_of(d_gmem_frag).layout.size()):
                 comptime src_idx = d_reg_frag.layout(i)
 
-                @parameter
-                if d_layout.all_dims_known():
+                comptime if d_layout.all_dims_known():
                     comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
                     dst_idx = dst_static_idx
                 else:
@@ -580,12 +572,12 @@ fn b2b_gemm[
                 )
                 if m < Int(M) and n < Int(N):
                     var vec = (d_reg_frag.ptr + src_idx).load[
-                        width=2, alignment = align_of[SIMD[d_type, 2]]()
+                        width=2, alignment=align_of[SIMD[d_type, 2]]()
                     ]()
                     epilogue((m, n), vec)
 
         else:
-            copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+            copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
                 d_gmem_warp_tile.vectorize[1, 2](),
                 d_reg_tile.vectorize[1, 2]().transpose(),
             )
@@ -733,8 +725,8 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     # print("Host Matrix:\n", host_d_ref)
 
     comptime config = BackToBackMatmulConfig[dst_type, src_type](
-        IndexList[3, element_type = DType.uint64](32, 64, 64),
-        IndexList[3, element_type = DType.uint64](16, 64, 16),
+        IndexList[3, element_type=DType.uint64](32, 64, 64),
+        IndexList[3, element_type=DType.uint64](16, 64, 16),
         num_pipeline_stages=2,
     )
     multistage_b2b_gemm[config](
@@ -754,12 +746,8 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
                 mat_d_tensor[m, n],
                 host_d_ref[m, n],
             )
-    _ = mat_a^
-    _ = mat_b^
-    _ = mat_c^
-    _ = mat_d^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_b2b_matmul(ctx)

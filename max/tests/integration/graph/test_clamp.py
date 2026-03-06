@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import max.nn as nn
 import numpy as np
 import pytest
 import torch
@@ -19,7 +20,6 @@ from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import legacy as nn
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 

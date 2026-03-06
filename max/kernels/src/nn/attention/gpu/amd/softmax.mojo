@@ -11,9 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.primitives.warp as warp
-from bit import log2_floor
-from gpu import WARP_SIZE, barrier, lane_id, thread_idx, warp_id as get_warp_id
+import std.gpu.primitives.warp as warp
+from std.bit import log2_floor
+from std.gpu import (
+    WARP_SIZE,
+    barrier,
+    lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
+)
 from layout import Layout, LayoutTensor
 from layout._utils import idx2crd
 from layout.layout_tensor import LayoutTensor
@@ -66,7 +72,7 @@ struct Softmax[
         Self.dtype,
         Self.row_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime RowSumTensorType = Self.RowMaxTensorType
@@ -78,19 +84,19 @@ struct Softmax[
         Self.dtype,
         Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     var score_frag_rowsum: LayoutTensor[
         Self.dtype,
         Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     var correction: LayoutTensor[
         Self.dtype,
         Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     @always_inline
@@ -111,32 +117,23 @@ struct Softmax[
         score_reg_tile: LayoutTensor[Self.dtype, ...],
         warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
     ):
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-
-            @parameter
-            for row in range(Self.frag_num_rows):
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
                 self.score_frag_rowmax[col_tile, row] = self.rowmax_tensor[
                     col_tile, row
                 ]
 
         var warp_x = get_warp_id() % UInt(Self.num_rowwise_warps)
 
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-
-            @parameter
-            for row_tile in range(Self.num_rowwise_tiles):
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row_tile in range(Self.num_rowwise_tiles):
                 comptime tile_id = col_tile + row_tile * Self.num_colwise_tiles
 
                 # Assume this is a rowwise vector for now see above constraint.
                 var frag = score_reg_tile[tile_id, 0]
 
-                @parameter
-                for row in range(Self.frag_num_rows):
-
-                    @parameter
-                    for col in range(Self.frag_num_cols):
+                comptime for row in range(Self.frag_num_rows):
+                    comptime for col in range(Self.frag_num_cols):
                         self.score_frag_rowmax[col_tile, row] = max(
                             self.score_frag_rowmax[col_tile, row],
                             frag[col if Self.frag_is_row_vector else row],
@@ -145,13 +142,12 @@ struct Softmax[
             # Every four threads have elements on the same row.
             # Reduce max for T0-T3, T4-T7, etc for nvidia
             #                T0-T15, T16-T31, etc for amd
-            @parameter
-            for row in range(Self.frag_num_rows):
+            comptime for row in range(Self.frag_num_rows):
                 self.score_frag_rowmax[
                     col_tile, row
                 ] = warp.lane_group_max_and_broadcast[
                     Int(Self.num_rowwise_lanes),
-                    stride = Int(Self.rowwise_lanes_stride),
+                    stride=Int(Self.rowwise_lanes_stride),
                 ](
                     self.score_frag_rowmax[col_tile, row]
                 )
@@ -162,16 +158,11 @@ struct Softmax[
 
         # If a row is split across multiple warps, communicate via shared memory
         # to achieve the rowwise max.
-        @parameter
-        if Self.num_rowwise_warps > 1:
+        comptime if Self.num_rowwise_warps > 1:
             # Write per warp rowmax to shared memory.
             if lane_contains_first_column:
-
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
+                comptime for col_tile in range(Self.num_colwise_tiles):
+                    comptime for row in range(Self.frag_num_rows):
                         var score_row_idx = (
                             UInt32(col_tile)
                             * Self.num_colwise_lanes
@@ -190,12 +181,8 @@ struct Softmax[
 
             # Reduce the warpwise rowmax.
             if lane_contains_first_column:
-
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
+                comptime for col_tile in range(Self.num_colwise_tiles):
+                    comptime for row in range(Self.frag_num_rows):
                         var score_row_idx = (
                             UInt32(col_tile)
                             * Self.num_colwise_lanes
@@ -204,8 +191,7 @@ struct Softmax[
                             + UInt32(row)
                         )
 
-                        @parameter
-                        for row_warp in range(Self.num_rowwise_warps):
+                        comptime for row_warp in range(Self.num_rowwise_warps):
                             self.score_frag_rowmax[col_tile, row] = max(
                                 rebind[Scalar[Self.dtype]](
                                     self.score_frag_rowmax[col_tile, row]
@@ -217,19 +203,15 @@ struct Softmax[
 
         # TODO: We can let all threads read shared memory in the above so that
         # we don't need to use warp shuffling.
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        comptime for col_tile in range(Self.num_colwise_tiles):
             # Broadcast to 4 threads in the same row.
-            @parameter
-            if Self.num_rowwise_warps > 1:
-
-                @parameter
-                for row in range(Self.frag_num_rows):
+            comptime if Self.num_rowwise_warps > 1:
+                comptime for row in range(Self.frag_num_rows):
                     self.score_frag_rowmax[
                         col_tile, row
                     ] = warp.lane_group_max_and_broadcast[
                         Int(Self.num_rowwise_lanes),
-                        stride = Int(Self.rowwise_lanes_stride),
+                        stride=Int(Self.rowwise_lanes_stride),
                     ](
                         self.score_frag_rowmax[col_tile, row]
                     )
@@ -240,11 +222,8 @@ struct Softmax[
         score_reg_tile: LayoutTensor[Self.dtype, ...],
         warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
     ):
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-
-            @parameter
-            for row in range(Self.frag_num_rows):
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
                 self.score_frag_rowsum[col_tile, row] = 0
 
         var tid = thread_idx.x
@@ -257,46 +236,35 @@ struct Softmax[
         var lane_contains_first_column = coords[1] == 0
         var lane_row = coords[0]
 
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        comptime for col_tile in range(Self.num_colwise_tiles):
             # Sum softmax numerator from a thread's fragments.
-            @parameter
-            for row_tile in range(Self.num_rowwise_tiles):
+            comptime for row_tile in range(Self.num_rowwise_tiles):
                 comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
                 var frag = score_reg_tile[tile_id, 0]
 
-                @parameter
-                for row in range(Self.frag_num_rows):
-
-                    @parameter
-                    for col in range(Self.frag_num_cols):
+                comptime for row in range(Self.frag_num_rows):
+                    comptime for col in range(Self.frag_num_cols):
                         self.score_frag_rowsum[col_tile, row] += frag[
                             col if Self.frag_is_row_vector else row
                         ]
 
-            @parameter
-            for row in range(Self.frag_num_rows):
+            comptime for row in range(Self.frag_num_rows):
                 self.score_frag_rowsum[
                     col_tile, row
                 ] = warp.lane_group_sum_and_broadcast[
                     Int(Self.num_rowwise_lanes),
-                    stride = Int(Self.rowwise_lanes_stride),
+                    stride=Int(Self.rowwise_lanes_stride),
                 ](
                     self.score_frag_rowsum[col_tile, row]
                 )
 
         # Reduce rowsum via shared memory.
 
-        @parameter
-        if Self.num_rowwise_warps > 1:
+        comptime if Self.num_rowwise_warps > 1:
             # Write per warp rowmax to shared memory.
             if lane_contains_first_column:
-
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
+                comptime for col_tile in range(Self.num_colwise_tiles):
+                    comptime for row in range(Self.frag_num_rows):
                         # Each thread handle two rows in the mma output.
                         var score_row_idx = (
                             UInt32(col_tile)
@@ -316,12 +284,8 @@ struct Softmax[
 
             # Reduce the warpwise rowsum.
             if lane_contains_first_column:
-
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
+                comptime for col_tile in range(Self.num_colwise_tiles):
+                    comptime for row in range(Self.frag_num_rows):
                         var score_row_idx = (
                             UInt32(col_tile)
                             * Self.num_colwise_lanes
@@ -333,8 +297,7 @@ struct Softmax[
                         self.score_frag_rowsum[col_tile, row] = 0
 
                         # Reduce rowmax. Warps in the same row do the same reduction.
-                        @parameter
-                        for row_warp in range(Self.num_rowwise_warps):
+                        comptime for row_warp in range(Self.num_rowwise_warps):
                             self.score_frag_rowsum[col_tile, row] += rebind[
                                 Scalar[Self.dtype]
                             ](
@@ -346,17 +309,14 @@ struct Softmax[
 
                 # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
 
-            @parameter
-            for col_tile in range(Self.num_colwise_tiles):
-
-                @parameter
-                for row in range(Self.frag_num_rows):
+            comptime for col_tile in range(Self.num_colwise_tiles):
+                comptime for row in range(Self.frag_num_rows):
                     # Broadcast to 4 threads in the same row.
                     self.score_frag_rowsum[
                         col_tile, row
                     ] = warp.lane_group_max_and_broadcast[
                         Int(Self.num_rowwise_lanes),
-                        stride = Int(Self.rowwise_lanes_stride),
+                        stride=Int(Self.rowwise_lanes_stride),
                     ](
                         self.score_frag_rowsum[col_tile, row]
                     )
@@ -367,15 +327,14 @@ struct Softmax[
     ](self, score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...]):
         comptime frag_type = score_reg_tile.element_type
 
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        comptime for col_tile in range(Self.num_colwise_tiles):
             # Softmax numerator based on mma results.
-            @parameter
-            for row_tile in range(start, Self.num_rowwise_tiles, stride):
+            comptime for row_tile in range(
+                start, Self.num_rowwise_tiles, stride
+            ):
                 comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
 
-                @parameter
-                if Self.frag_is_row_vector:
+                comptime if Self.frag_is_row_vector:
                     score_reg_tile[tile_id, 0] = Self.exp_function(
                         score_reg_tile[tile_id, 0]
                         - rebind[frag_type](
@@ -385,9 +344,7 @@ struct Softmax[
                         )
                     )
                 else:
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
+                    comptime for row in range(Self.frag_num_rows):
                         score_reg_tile[tile_id, 0][row] = Self.exp_function(
                             score_reg_tile[tile_id, 0][row]
                             - self.score_frag_rowmax[col_tile, row][0]
@@ -395,11 +352,9 @@ struct Softmax[
 
     @always_inline
     fn calculate_correction(self):
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        comptime for col_tile in range(Self.num_colwise_tiles):
             # Corrention since previous max may be updated.
-            @parameter
-            for row in range(Self.frag_num_rows):
+            comptime for row in range(Self.frag_num_rows):
                 self.correction[col_tile, row] = Self.exp_function(
                     self.rowmax_tensor[col_tile, row]
                     - self.score_frag_rowmax[col_tile, row]
@@ -420,29 +375,22 @@ struct Softmax[
         )
 
         # if num_output_replications
-        @parameter
-        for k in range(num_output_replications):
+        comptime for k in range(num_output_replications):
             # Correct previous result
-            @parameter
-            for col_tile in range(Self.num_colwise_tiles):
-
-                @parameter
-                for row_tile in range(Self.num_rowwise_tiles):
+            comptime for col_tile in range(Self.num_colwise_tiles):
+                comptime for row_tile in range(Self.num_rowwise_tiles):
                     comptime tile_id = col_tile + row_tile * Self.num_colwise_tiles + k * Self.num_colwise_tiles * Self.num_rowwise_tiles
 
                     comptime output_frag_type = type_of(
                         output_reg_tile
                     ).element_type
 
-                    @parameter
-                    if Self.frag_is_row_vector:
+                    comptime if Self.frag_is_row_vector:
                         output_reg_tile[tile_id, 0] = output_reg_tile[
                             tile_id, 0
                         ] * output_frag_type(self.correction[col_tile, 0][0])
                     else:
-
-                        @parameter
-                        for row in range(Self.frag_num_rows):
+                        comptime for row in range(Self.frag_num_rows):
                             output_reg_tile[tile_id, 0][row] = (
                                 output_reg_tile[tile_id, 0][row]
                                 * self.correction[col_tile, row][0]
@@ -451,11 +399,8 @@ struct Softmax[
     @always_inline
     fn update_sum(self):
         # Save current rowmax and rowsum
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-
-            @parameter
-            for row in range(Self.frag_num_rows):
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
                 self.rowsum_tensor[col_tile, row] = (
                     self.rowsum_tensor[col_tile, row]
                     * self.correction[col_tile, row]

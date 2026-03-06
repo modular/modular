@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-mojo-to-python-conversions
-from python import Python
+from std.python import Python
 
 
-def main():
+def main() raises:
     py_module = """
 def type_printer(value):
     print(type(value))

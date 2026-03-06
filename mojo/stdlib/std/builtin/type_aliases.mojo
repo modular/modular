@@ -25,8 +25,9 @@ comptime MutOrigin = Origin[mut=True]
 """Mutable origin reference type."""
 
 comptime AnyOrigin[*, mut: Bool] = Origin[
-    mut=mut,
-    __mlir_attr[`#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`],
+    _mlir_origin=__mlir_attr[
+        `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
+    ],
 ]()
 """An origin that might access any memory value.
 
@@ -41,8 +42,7 @@ comptime MutAnyOrigin = AnyOrigin[mut=True]
 """The mutable origin that might access any memory value."""
 
 comptime ExternalOrigin[*, mut: Bool] = Origin[
-    mut=mut,
-    __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         +mut._mlir_value,
         `>`,
@@ -76,7 +76,7 @@ Useful when interfacing with memory from outside the current Mojo program.
 
 # Static constants are a named subset of the global origin.
 comptime StaticConstantOrigin = Origin[
-    __mlir_attr[
+    _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
         `#lit.static.origin : !lit.origin<0>`,
         `, "__constants__"> : !lit.origin<0>`,
@@ -100,7 +100,7 @@ comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
 ]
 
 
-struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
+struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     TrivialRegisterPassable
 ):
     """This represents a origin reference for a memory value.
@@ -121,7 +121,7 @@ struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
 
     @always_inline("builtin")
     @implicit
-    fn __init__(v: Origin[_]) -> ImmutOrigin[v._mlir_origin]:
+    fn __init__(v: Origin) -> ImmutOrigin[_mlir_origin=v._mlir_origin]:
         """Implicitly convert an origin to an immutable one.
 
         Args:
@@ -130,21 +130,25 @@ struct Origin[mut: Bool, //, _mlir_origin: _lit_origin_type_of_mut[mut]](
         return {}
 
     @always_inline("builtin")
-    fn __init__(
-        *, unsafe_mut_cast: Origin
-    ) -> Origin[
-        __mlir_attr[
+    @staticmethod
+    fn unsafe_mut_cast[
+        dest_mut: Bool
+    ]() -> Origin[
+        _mlir_origin=__mlir_attr[
             `#lit.origin.mutcast<`,
-            unsafe_mut_cast._mlir_origin,
+            Self._mlir_origin,
             `> : !lit.origin<`,
-            Self.mut._mlir_value,
+            dest_mut._mlir_value,
             `>`,
         ]
     ]:
-        """Cast an origin to a different mutability, potentially introducing more
-        mutability, which is an unsafe operation.
+        """Cast this origin to a different mutability, potentially introducing
+        more mutability, which is an unsafe operation.
 
-        Args:
-            unsafe_mut_cast: The origin to cast.
+        Parameters:
+            dest_mut: The desired mutability of the resulting origin.
+
+        Returns:
+            The same origin but with a new specified mutability.
         """
         return {}

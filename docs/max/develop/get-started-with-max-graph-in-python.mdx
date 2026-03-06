@@ -1,0 +1,369 @@
+---
+title: Get started with MAX graphs
+sidebar_label: Graphs
+description: Learn how to build a model graph with our Python API for inference with MAX Engine
+github_url: https://github.com/modular/modular/tree/main/max/examples/max-graph
+is_tutorial: true
+---
+
+import InstallModular from '../../_includes/install-modular.mdx';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import MDXListing from '@site/src/components/Listing/MDXListing';
+
+MAX provides a high-performance computation framework that lets you build and
+execute efficient machine learning models. It provides a flexible way to define
+computational workflows as graphs, where each node represents an operation
+(like matrix multiplication or addition) and edges represent the flow of data.
+By using the MAX Python API, you can create optimized machine learning models
+that run faster and more efficiently on modern hardware.
+
+In this tutorial, you'll build a graph using the Python
+[`Graph`](/max/api/python/graph/Graph) API with an [`ops`
+function](/max/api/python/graph/ops).
+
+To do this, you will complete the following steps:
+
+1. [Build a simple graph that adds two numbers](#build-the-graph)
+2. [Create an inference session to load and compile the graph](#create-inference-session)
+3. [Execute the graph with input data](#execute-the-graph)
+
+By the end of this tutorial, you'll have an understanding of how to construct
+basic computational graphs, set up inference sessions, and run computations
+using the MAX Python API.
+
+## Set up your environment
+
+Create a Python project to install our APIs and CLI tools.
+
+<InstallModular />
+
+Then, create a working directory.
+
+<Tabs groupId="install">
+  <TabItem value="pip" label="pip" default>
+
+  Create a folder called `max_ops`:
+
+  ```sh
+  mkdir max_ops
+  cd max_ops
+  ```
+
+  You can check your MAX version like this:
+
+  ```sh
+  max --version
+  ```
+
+  You can check your Python version like this:
+
+  ```sh
+  python --version
+  ```
+
+  </TabItem>
+  <TabItem value="uv" label="uv" default>
+
+  Create a folder called `max_ops`:
+
+  ```sh
+  mkdir max_ops
+  cd max_ops
+  ```
+
+  You can check your MAX version like this:
+
+  ```sh
+  max --version
+  ```
+
+  You can check your Python version like this:
+
+  ```sh
+  python --version
+  ```
+
+  </TabItem>
+  <TabItem value="pixi" label="pixi" default>
+
+  Change folders to your working directory:
+
+  ```sh
+  cd src/quickstart
+  ```
+
+  You can check your MAX version like this:
+  ```sh
+  pixi run max --version
+  ```
+
+  You can check your Python version like this:
+  ```sh
+  pixi run python --version
+  ```
+
+  :::tip
+
+  To clear cached data while iterating on graph builds, you can use `pixi clean`
+  to remove the MEF cache and other environment data:
+
+  ```sh
+  pixi clean
+  ```
+
+  This removes the entire pixi environment, so you'll need to reinstall packages
+  afterward.
+
+  :::
+
+  </TabItem>
+</Tabs>
+
+If you have any questions along the way, ask them on [our Discord channel](https://discord.gg/modular).
+
+## 1. Build the graph {#build-the-graph}
+
+Now with our environment and packages setup, lets create the graph.
+This graph will define a computational workflow that adds two tensors together.
+
+Let's start by creating a new file called `addition.py` inside of your working
+directory and add the following libraries:
+
+```python
+import numpy as np
+from max import engine
+from max.driver import CPU, Buffer
+from max.dtype import DType
+from max.graph import DeviceRef, Graph, TensorType, ops
+```
+
+To create a computational graph, use the
+[`Graph()`](/max/api/python/graph/Graph) class from the MAX Python API. When
+initializing, specify a name for the graph and define the types of inputs it
+will accept.
+
+```python
+def add_tensors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    # 1. Build the graph
+    input_type = TensorType(
+        dtype=DType.float32, shape=(1,), device=DeviceRef.CPU()
+    )
+    with Graph(
+        "simple_add_graph", input_types=(input_type, input_type)
+    ) as graph:
+        lhs, rhs = graph.inputs
+        out = ops.add(lhs, rhs)
+        graph.output(out)
+```
+
+Inside the context manager, access the graph's inputs using the
+[`inputs`](/max/api/python/graph/Graph#max.graph.Graph.inputs) property. This
+returns a symbolic tensor representing the input arguments.
+
+The symbolic tensor is a placeholder that represents the shape and type of data
+that will flow through the graph during the execution, rather than containing
+the actual numeric values like in eager execution.
+
+Then use the [`add()`](/max/api/python/graph/ops#max.graph.ops.add) function
+from the [`ops`](/max/api/python/graph/ops) package to add the two input
+tensors. This creates a new symbolic tensor representing the sum.
+
+Finally, set the output of the graph using the
+[`output()`](/max/api/python/graph/Graph#max.graph.Graph.output) method. This
+specifies which tensors should be returned when the graph is executed.
+
+Now, add a `print()` function to the graph to see what's created.
+
+```python
+def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
+    # 1. Build the graph
+        # ...
+        print("final graph:", graph)
+```
+
+The output will show us the structure of our graph, including the input it
+expects and the operations it will perform. This helps us understand how our
+graph will process data when we use it.
+
+Next, let's load the graph into an inference session.
+
+## 2. Create an inference session {#create-inference-session}
+
+Now that our graph is constructed, let's set up an environment where it can
+operate. This involves creating an inference session and loading our graph into
+it.
+
+Create an
+[`InferenceSession()`](/max/api/python/engine#max.engine.InferenceSession)
+instance that loads and runs the graph inside the `add_tensors()` function.
+
+```python
+def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
+    # 1. Build the graph
+    # ...
+    # 2. Create an inference session
+    session = engine.InferenceSession(devices=[CPU()])
+    model = session.load(graph)
+```
+
+This step transforms our abstract graph into a computational model that's ready
+for execution.
+
+:::tip Debugging graph compilation errors
+
+If you encounter errors during `session.load(graph)` (graph compilation), you
+can enable detailed debugging information by setting the `MODULAR_MAX_DEBUG`
+environment variable:
+
+```bash
+export MODULAR_MAX_DEBUG=True
+python addition.py
+```
+
+This provides detailed stack traces for graph lowering failures. This can help
+you diagnose the problem and fix it but it does make the graph creation slower
+and should only be used when debugging compilation errors.
+
+:::
+
+To ensure our model is set up correctly, let's examine its input requirements.
+
+Print the graph's input metadata by using the
+[`input_metadata`](/max/api/python/engine#max.engine.Model.input_metadata)
+property.
+
+```python
+def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
+    # 1. Build the graph
+    # ...
+    # 2. Create an inference session
+    session = engine.InferenceSession(devices=[CPU()])
+    model = session.load(graph)
+    # highlight-start
+    for tensor in model.input_metadata:
+    # highlight-end
+        print(
+            f"name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}"
+        )
+```
+
+This will output the exact specifications of the input our model expects,
+helping us prepare appropriate data for processing.
+
+Next, let's execute the graph.
+
+## 3. Execute the graph {#execute-the-graph}
+
+To give the model something to add, create two inputs of a shape and a data type
+that match our graph's input requirements.
+Then pass the inputs to the
+[`execute()`](/max/api/python/engine#max.engine.Model.execute) function:
+
+```python
+def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
+    # ...
+    # 2. Create an inference session
+    # ...
+    # 3. Execute the graph
+    # highlight-start
+    output = model.execute(a, b)[0]
+    result = output.to_numpy()
+    # highlight-end
+    return result
+```
+
+Notice that the [`execute()`](/max/api/python/engine#max.engine.Model.execute)
+function returns a list of outputs. We know we want the first element and must
+assert that the type is [`Buffer`](/max/api/python/driver#max.driver.Buffer) so
+we can convert it to a NumPy array.
+
+
+## 4. Run the example
+
+Now that we've built our graph, created an inference session, and defined how to
+execute the graph, let's put it all together and run our complete example.
+
+At the end of your `addition.py` file, add the following code:
+
+```python
+if __name__ == "__main__":
+    input0 = np.array([1.0], dtype=np.float32)
+    input1 = np.array([1.0], dtype=np.float32)
+    result = add_tensors(input0, input1)
+    print("result:", result)
+```
+
+This passes your arguments `input0` and `input1` to the `add_tensors()`
+function.
+
+Then, run the Python file from the command line:
+
+<Tabs>
+  <TabItem value="pip" label="pip" default>
+
+  ```sh
+  python addition.py
+  ```
+
+  </TabItem>
+  <TabItem value="uv" label="uv" default>
+
+  ```sh
+  python addition.py
+  ```
+
+  </TabItem>
+  <TabItem value="pixi" label="pixi" default>
+
+  ```sh
+  pixi run python addition.py
+  ```
+
+  </TabItem>
+</Tabs>
+
+You've successfully created your first graph using the MAX Python API.
+Let's examine what was printed to the terminal:
+
+```output
+final graph: mo.graph @simple_add_graph(%arg0: !mo.tensor<[1], f32>, %arg1: !mo.tensor<[1], f32>) -> !mo.tensor<[1], f32> attributes {argument_names = ["input0", "input1"], result_names = ["output0"]} {
+  %0 = rmo.add(%arg0, %arg1) : (!mo.tensor<[1], f32>, !mo.tensor<[1], f32>) -> !mo.tensor<[1], f32>
+  mo.output %0 : !mo.tensor<[1], f32>
+}
+```
+- Two input tensors (`%arg0`, `%arg1`) of shape `[1]` and float32 type
+- The addition operation connecting them
+- One output tensor of matching shape/type
+
+The metadata lines confirm both input tensors match the required specifications.
+
+```output
+name: input0, shape: [1], dtype: DType.float32
+name: input1, shape: [1], dtype: DType.float32
+```
+
+The result shows the addition worked correctly:
+$$
+[1.0] + [1.0] = [2.0]
+$$
+
+```output
+result: [2.]
+```
+
+Now that you've built your first MAX graph that performs addition, you can
+explore more complex examples:
+
+- [MAX graph API example](https://github.com/modular/modular/tree/main/max/examples/max-graph)
+- [MAX graph implementation of Llama3](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures)
+
+## Next steps
+
+export const docs = [
+  '../../develop/build-custom-ops.mdx',
+  '../../develop/serve-custom-model-architectures.mdx',
+  '../../develop/build-an-mlp-block.mdx',
+];
+
+<MDXListing mdxList={docs} />

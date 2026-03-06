@@ -26,14 +26,17 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
-from max.interfaces.request import Request, RequestID
+from max.interfaces.request import RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
 
 
 @dataclass(frozen=True)
-class PixelGenerationRequest(Request):
+class PixelGenerationRequest:
+    request_id: RequestID = field()
+    """A unique identifier for the request."""
+
     model_name: str = field()
     """
     The name of the model to be used for generating pixels. This should match

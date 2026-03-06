@@ -11,14 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import stencil, stencil_gpu
+from std.algorithm.functional import stencil, stencil_gpu
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from testing import assert_almost_equal
+from std.gpu.host import DeviceContext
+from layout import Layout
+from layout._utils import ManagedLayoutTensor
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import min_or_neg_inf
 
 comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
@@ -67,16 +69,25 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     comptime dilation = 1
 
     comptime input_shape = DimList(1, input_height, input_width, 1)
+    var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
     comptime output_shape = DimList(1, output_height, output_width, 1)
+    var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
-    var h_input = NDBuffer[
-        dtype, rank, MutAnyOrigin, input_shape
-    ].stack_allocation()
-    var h_output = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
-    ].stack_allocation()
+    var d_input_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, input_height, input_width, 1)
+    ](ctx)
+    var d_output_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, output_height, output_width, 1)
+    ](ctx)
+
+    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+        d_input_managed.tensor[update=False]().ptr, input_shape_dyn
+    )
+    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor[update=False]().ptr, output_shape_dyn
+    )
     var h_output_ref = NDBuffer[
         dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
@@ -85,21 +96,12 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     h_output.fill(0)
     h_output_ref.fill(0)
 
-    # Create device buffers
-    var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        Int(input_shape.product())
-    )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
-    var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        Int(output_shape.product())
+    var d_input = NDBuffer[dtype, rank](
+        d_input_managed.device_tensor().ptr, input_shape_dyn
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf.unsafe_ptr(), output_shape
+        d_output_managed.device_tensor().ptr, output_shape_dyn
     )
-
-    # Copy to device
-    ctx.enqueue_copy(d_input_buf, h_input.data)
-    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -169,9 +171,10 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
         avg_pool_compute_finalize_gpu,
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
-    # Copy results back
-    ctx.enqueue_copy(h_output.data, d_output_buf)
-    ctx.synchronize()
+    # Refresh host view; tensor() handles device-to-host transfer and sync.
+    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor().ptr, output_shape_dyn
+    )
 
     # Reference implementation on CPU
     @always_inline
@@ -214,9 +217,6 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
             print(h_output[0, i, j, 0], "\t", end="")
         print("")
 
-    _ = d_output_buf^
-    _ = d_input_buf^
-
 
 fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool_padded")
@@ -236,16 +236,25 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     comptime pad_w = 2
 
     comptime input_shape = DimList(1, input_height, input_width, 1)
+    var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
     comptime output_shape = DimList(1, output_height, output_width, 1)
+    var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
-    var h_input = NDBuffer[
-        dtype, rank, MutAnyOrigin, input_shape
-    ].stack_allocation()
-    var h_output = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
-    ].stack_allocation()
+    var d_input_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, input_height, input_width, 1)
+    ](ctx)
+    var d_output_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, output_height, output_width, 1)
+    ](ctx)
+
+    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+        d_input_managed.tensor[update=False]().ptr, input_shape_dyn
+    )
+    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor[update=False]().ptr, output_shape_dyn
+    )
     var h_output_ref = NDBuffer[
         dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
@@ -254,21 +263,12 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     fill_buffer(h_input)
     h_output.fill(0)
 
-    # Create device buffers
-    var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        Int(input_shape.product())
-    )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
-    var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        Int(output_shape.product())
+    var d_input = NDBuffer[dtype, rank](
+        d_input_managed.device_tensor().ptr, input_shape_dyn
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf.unsafe_ptr(), output_shape
+        d_output_managed.device_tensor().ptr, output_shape_dyn
     )
-
-    # Copy to device
-    ctx.enqueue_copy(d_input_buf, h_input.data)
-    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -340,9 +340,10 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         avg_pool_compute_finalize_gpu,
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
-    # Copy results back
-    ctx.enqueue_copy(h_output.data, d_output_buf)
-    ctx.synchronize()
+    # Refresh host view; tensor() handles device-to-host transfer and sync.
+    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor().ptr, output_shape_dyn
+    )
 
     # Reference implementation on CPU
     @always_inline
@@ -386,9 +387,6 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
             print(h_output[0, i, j, 0], "\t", end="")
         print("")
 
-    _ = d_output_buf^
-    _ = d_input_buf^
-
 
 fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     print("== test_stencil_avg_pool_stride_2")
@@ -406,16 +404,25 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     comptime dilation = 1
 
     comptime input_shape = DimList(1, input_height, input_width, 1)
+    var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = (input_height - pool_window_h) // stride + 1
     comptime output_width = (input_width - pool_window_w) // stride + 1
     comptime output_shape = DimList(1, output_height, output_width, 1)
+    var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
-    var h_input = NDBuffer[
-        dtype, rank, MutAnyOrigin, input_shape
-    ].stack_allocation()
-    var h_output = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
-    ].stack_allocation()
+    var d_input_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, input_height, input_width, 1)
+    ](ctx)
+    var d_output_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, output_height, output_width, 1)
+    ](ctx)
+
+    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+        d_input_managed.tensor[update=False]().ptr, input_shape_dyn
+    )
+    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor[update=False]().ptr, output_shape_dyn
+    )
     var h_output_ref = NDBuffer[
         dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
@@ -424,21 +431,12 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     fill_buffer(h_input)
     h_output.fill(0)
 
-    # Create device buffers
-    var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        Int(input_shape.product())
-    )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
-    var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        Int(output_shape.product())
+    var d_input = NDBuffer[dtype, rank](
+        d_input_managed.device_tensor().ptr, input_shape_dyn
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf.unsafe_ptr(), output_shape
+        d_output_managed.device_tensor().ptr, output_shape_dyn
     )
-
-    # Copy to device
-    ctx.enqueue_copy(d_input_buf, h_input.data)
-    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -511,9 +509,10 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         avg_pool_compute_finalize_gpu,
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
-    # Copy results back
-    ctx.enqueue_copy(h_output.data, d_output_buf)
-    ctx.synchronize()
+    # Refresh host view; tensor() handles device-to-host transfer and sync.
+    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor().ptr, output_shape_dyn
+    )
 
     # Reference implementation on CPU
     @always_inline
@@ -557,9 +556,6 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
             print(h_output[0, i, j, 0], "\t", end="")
         print("")
 
-    _ = d_output_buf^
-    _ = d_input_buf^
-
 
 fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     print("== test_stencil_gpu_max_pool")
@@ -577,7 +573,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     comptime dilation = 1
 
     comptime input_shape = DimList(1, input_height, input_width, 1)
-
+    var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = (
         input_height - pool_window_h - (pool_window_h - 1) * (dilation - 1)
     ) // stride + 1
@@ -586,15 +582,23 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     ) // stride + 1
 
     comptime output_shape = DimList(1, output_height, output_width, 1)
+    var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var pad_value = 0
 
-    var h_input = NDBuffer[
-        dtype, rank, MutAnyOrigin, input_shape
-    ].stack_allocation()
-    var h_output = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
-    ].stack_allocation()
+    var d_input_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, input_height, input_width, 1)
+    ](ctx)
+    var d_output_managed = ManagedLayoutTensor[
+        dtype, Layout.row_major(1, output_height, output_width, 1)
+    ](ctx)
+
+    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+        d_input_managed.tensor[update=False]().ptr, input_shape_dyn
+    )
+    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor[update=False]().ptr, output_shape_dyn
+    )
     var h_output_ref = NDBuffer[
         dtype, rank, MutAnyOrigin, output_shape
     ].stack_allocation()
@@ -603,21 +607,12 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     fill_buffer(h_input)
     h_output.fill(0)
 
-    # Create device buffers
-    var d_input_buf = ctx.enqueue_create_buffer[dtype](
-        Int(input_shape.product())
-    )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
-    var d_output_buf = ctx.enqueue_create_buffer[dtype](
-        Int(output_shape.product())
+    var d_input = NDBuffer[dtype, rank](
+        d_input_managed.device_tensor().ptr, input_shape_dyn
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf.unsafe_ptr(), output_shape
+        d_output_managed.device_tensor().ptr, output_shape_dyn
     )
-
-    # Copy to device
-    ctx.enqueue_copy(d_input_buf, h_input.data)
-    ctx.enqueue_copy(d_output_buf, h_output.data)
 
     @parameter
     fn map_fn[
@@ -689,10 +684,11 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         max_pool_compute_finalize,
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
-    # Copy results back
-    ctx.enqueue_copy(h_output.data, d_output_buf)
+    # Refresh host view; tensor() handles device-to-host transfer and sync.
+    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+        d_output_managed.tensor().ptr, output_shape_dyn
+    )
     # ctx.enqueue_copy(h_input.data, d_input_buf)
-    ctx.synchronize()
 
     # Reference implementation on CPU
     @always_inline
@@ -735,11 +731,8 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
             print(h_output[0, i, j, 0], "\t", end="")
         print("")
 
-    _ = d_output_buf^
-    _ = d_input_buf^
 
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_stencil_avg_pool(ctx)
         test_stencil_avg_pool_padded(ctx)

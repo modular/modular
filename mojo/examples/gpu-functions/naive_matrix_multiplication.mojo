@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 
 comptime float_dtype = DType.float32
@@ -30,29 +30,35 @@ comptime n_layout = Layout.row_major(J, K)
 comptime p_layout = Layout.row_major(I, K)
 
 
-def main():
-    constrained[
-        has_accelerator(), "This example requires a supported accelerator"
-    ]()
+def main() raises:
+    comptime assert (
+        has_accelerator()
+    ), "This example requires a supported accelerator"
 
     var ctx = DeviceContext()
-    var m_buffer = ctx.enqueue_create_buffer[float_dtype](m_layout.size())
-    var n_buffer = ctx.enqueue_create_buffer[float_dtype](n_layout.size())
-    var p_buffer = ctx.enqueue_create_buffer[float_dtype](p_layout.size())
+    var m_buffer = ctx.enqueue_create_buffer[float_dtype](
+        comptime (m_layout.size())
+    )
+    var n_buffer = ctx.enqueue_create_buffer[float_dtype](
+        comptime (n_layout.size())
+    )
+    var p_buffer = ctx.enqueue_create_buffer[float_dtype](
+        comptime (p_layout.size())
+    )
 
     # Map input buffers to host to fill with values from CPU
     with m_buffer.map_to_host() as host_buffer:
         var m_tensor = LayoutTensor[float_dtype, m_layout](host_buffer)
         for m_row in range(I):
             for m_col in range(J):
-                m_tensor[m_row, m_col] = m_row - m_col
+                m_tensor[m_row, m_col] = Float32(m_row - m_col)
         print("M matrix:", m_tensor)
 
     with n_buffer.map_to_host() as host_buffer:
         var n_tensor = LayoutTensor[float_dtype, n_layout](host_buffer)
         for n_row in range(J):
             for n_col in range(K):
-                n_tensor[n_row, n_col] = n_row + n_col
+                n_tensor[n_row, n_col] = Float32(n_row + n_col)
         print("N matrix:", n_tensor)
 
     # Wrap device buffers in `LayoutTensor`

@@ -1,0 +1,213 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+import Admonition from '@theme/Admonition';
+import Link from '@docusaurus/Link';
+
+export default function InstallModular({ folder = "example-project", extraLibraries = [] }) {
+  const extraLibsString = extraLibraries.length > 0 ? ' ' + extraLibraries.join(' ') : '';
+  const installDescription = extraLibraries.length > 0
+    ? <>Install <code>modular</code> and other required packages:</>
+    : <>Install the <code>modular</code> conda package:</>;
+  const installDescriptionPython = extraLibraries.length > 0
+    ? <>Install <code>modular</code> and other required packages:</>
+    : <>Install the <code>modular</code> Python package:</>;
+  return (
+    <>
+      <Tabs groupId="install">
+        <TabItem value="pixi" label="pixi">
+          <ol>
+            <li>
+              If you don't have it, install <a
+                href="https://pixi.sh/latest/"><code>pixi</code></a>:
+              <CodeBlock language="sh">
+                {`curl -fsSL https://pixi.sh/install.sh | sh`}
+              </CodeBlock>
+              <p>Then restart your terminal for the changes to take effect.</p>
+            </li>
+
+            <li>
+              Create a project:
+              <CodeBlock language="sh">
+                {`pixi init ${folder} \\
+  -c https://conda.modular.com/max-nightly/ -c conda-forge \\
+  && cd ${folder}`}
+              </CodeBlock>
+
+              <Admonition type="tip">
+                <p>
+                  <b>Tip:</b>{' '}
+                  You can skip the <code>-c</code> options if you{' '}
+                  <Link to="/pixi#create-a-project-and-virtual-environment">
+                    add these channels as defaults
+                  </Link>.
+                </p>
+              </Admonition>
+
+            </li>
+
+            <li>
+              {installDescription}
+              <Tabs groupId="release">
+                <TabItem value="nightly" label="Nightly">
+                  <CodeBlock language="sh">
+                    {`pixi add modular${extraLibsString}`}
+                  </CodeBlock>
+                </TabItem>
+                <TabItem value="stable" label="Stable">
+                  <CodeBlock language="sh">
+                    {`pixi add "modular==26.1"${extraLibsString}`}
+                  </CodeBlock>
+                </TabItem>
+              </Tabs>
+            </li>
+
+            <li>
+              Start the virtual environment:
+              <CodeBlock language="sh">
+                {`pixi shell`}
+              </CodeBlock>
+            </li>
+          </ol>
+        </TabItem>
+
+        <TabItem value="uv" label="uv">
+          <ol>
+            <li>
+              If you don't have it, install <a
+                href="https://docs.astral.sh/uv/"><code>uv</code></a>:
+              <CodeBlock language="sh">
+                {`curl -LsSf https://astral.sh/uv/install.sh | sh`}
+              </CodeBlock>
+              <p>Then restart your terminal to make <code>uv</code> accessible.</p>
+            </li>
+
+            <li>
+              Create a project:
+              <CodeBlock language="sh">
+                {`uv init ${folder} && cd ${folder}`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              Create and start a virtual environment:
+              <CodeBlock language="sh">
+                {`uv venv && source .venv/bin/activate`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              {installDescriptionPython}
+              <Tabs groupId="release">
+                <TabItem value="nightly" label="Nightly">
+                  <CodeBlock language="sh">
+                    {`uv pip install modular${extraLibsString} \\
+  --index https://whl.modular.com/nightly/simple/ \\
+  --prerelease allow`}
+                  </CodeBlock>
+                </TabItem>
+                <TabItem value="stable" label="Stable">
+                  <CodeBlock language="sh">
+                    {`uv pip install modular${extraLibsString} \\
+  --extra-index-url https://modular.gateway.scarf.sh/simple/`}
+                  </CodeBlock>
+                </TabItem>
+              </Tabs>
+            </li>
+          </ol>
+        </TabItem>
+
+        <TabItem value="pip" label="pip">
+          <ol>
+            <li>
+              Create a project folder:
+              <CodeBlock language="sh">
+                {`mkdir ${folder} && cd ${folder}`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              Create and activate a virtual environment:
+              <CodeBlock language="sh">
+                {`python3 -m venv .venv/${folder} \\
+  && source .venv/${folder}/bin/activate`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              {installDescriptionPython}
+              <Tabs groupId="release">
+                <TabItem value="nightly" label="Nightly">
+                  <CodeBlock language="sh">
+                    {`pip install --pre modular${extraLibsString} \\
+  --extra-index-url https://whl.modular.com/nightly/simple/`}
+                  </CodeBlock>
+                </TabItem>
+                <TabItem value="stable" label="Stable">
+                  <CodeBlock language="sh">
+                    {`pip install modular${extraLibsString} \\
+  --extra-index-url https://modular.gateway.scarf.sh/simple/`}
+                  </CodeBlock>
+                </TabItem>
+              </Tabs>
+            </li>
+          </ol>
+        </TabItem>
+
+        <TabItem value="conda" label="conda">
+          <ol>
+            <li>If you don't have it, install <a
+              href="https://docs.conda.io/projects/conda/en/latest/index.html"
+            >conda</a>. A common choice is with <code>brew</code>:
+              <CodeBlock language="sh">
+                {`brew install miniconda`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              Initialize <code>conda</code> for shell interaction:
+              <CodeBlock language="sh">
+                {`conda init`}
+              </CodeBlock>
+              <p>If you're on a Mac, instead use:</p>
+              <CodeBlock language="sh">
+                {`conda init zsh`}
+              </CodeBlock>
+              <p>Then restart your terminal for the changes to take effect.</p>
+            </li>
+
+            <li>
+              Create a project:
+              <CodeBlock language="sh">
+                {`conda create -n ${folder}`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              Start the virtual environment:
+              <CodeBlock language="sh">
+                {`conda activate ${folder}`}
+              </CodeBlock>
+            </li>
+
+            <li>
+              {installDescription}
+              <Tabs groupId="release">
+                <TabItem value="nightly" label="Nightly">
+                  <CodeBlock language="sh">
+                    {`conda install -c conda-forge -c https://conda.modular.com/max-nightly/ modular${extraLibsString}`}
+                  </CodeBlock>
+                </TabItem>
+                <TabItem value="stable" label="Stable">
+                  <CodeBlock language="sh">
+                    {`conda install -c conda-forge -c https://conda.modular.com/max/ modular${extraLibsString}`}
+                  </CodeBlock>
+                </TabItem>
+              </Tabs>
+            </li>
+          </ol>
+        </TabItem>
+      </Tabs>
+    </>
+  );
+}

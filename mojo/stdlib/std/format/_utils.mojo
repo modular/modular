@@ -17,21 +17,20 @@ standard library for formatting and writing data. These utilities are not
 intended for public use and may change without notice.
 """
 
-from builtin.constrained import _constrained_conforms_to
-from io.io import _printf
-from os import abort
-from reflection.type_info import _unqualified_type_name
-from sys import align_of, size_of
-from sys.info import is_gpu
-from sys.param_env import env_get_int
+from std.builtin.constrained import _constrained_conforms_to
+from std.io.io import _printf
+from std.os import abort
+from std.reflection.type_info import _unqualified_type_name
+from std.sys import align_of, size_of
+from std.sys.info import is_gpu
+from std.sys.defines import get_defined_int
 
-from bit import byte_swap
-from memory import Span, bitcast, memcpy
+from std.bit import byte_swap
+from std.memory import Span, bitcast, memcpy
 
 
 fn constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    @parameter
-    for i in range(Variadic.size(Ts)):
+    comptime for i in range(Variadic.size(Ts)):
         comptime T = Ts[i]
         _constrained_conforms_to[
             conforms_to(T, Writable),
@@ -76,8 +75,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
             self.is_first_element = False
             self.at_element_start = False
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(self.writer[])
 
 
@@ -188,11 +186,8 @@ fn write_sequence_to[
     """
     writer.write_string(open)
 
-    @parameter
-    for i in range(size):
-
-        @parameter
-        if i != 0:
+    comptime for i in range(size):
+        comptime if i != 0:
             writer.write_string(sep)
         ElementFn[i=i](writer)
 
@@ -210,7 +205,7 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
             writer.write_string(_unqualified_type_name[Self.Types[i]]())
 
         write_sequence_to[
-            size = Variadic.size(Self.Types),
+            size=Variadic.size(Self.Types),
             ElementFn=elements,
         ](writer, open="", close="")
 
@@ -389,10 +384,12 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         self._writer[].write_string(")")
 
 
-comptime HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
+comptime HEAP_BUFFER_BYTES = get_defined_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
 
-comptime STACK_BUFFER_BYTES = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
+comptime STACK_BUFFER_BYTES = UInt(
+    get_defined_int["STACK_BUFFER_BYTES", 4096]()
+)
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -403,9 +400,9 @@ struct _WriteBufferHeap(Writable, Writer):
     fn __init__(out self):
         comptime alignment: Int = align_of[Byte]()
         self._data = __mlir_op.`pop.stack_allocation`[
-            count = HEAP_BUFFER_BYTES._mlir_value,
-            _type = type_of(self._data)._mlir_type,
-            alignment = alignment._mlir_value,
+            count=HEAP_BUFFER_BYTES._mlir_value,
+            _type=type_of(self._data)._mlir_type,
+            alignment=alignment._mlir_value,
         ]()
         self._pos = 0
 
@@ -574,10 +571,10 @@ fn _hex_digits_to_hex_chars(
     Examples:
 
     ```mojo
-    %# from memory import memset_zero
-    %# from testing import assert_equal
-    %# from utils import StringSlice
-    %# from io.write import _hex_digits_to_hex_chars
+    %# from std.memory import memset_zero
+    %# from std.testing import assert_equal
+    %# from std.utils import StringSlice
+    %# from std.io.write import _hex_digits_to_hex_chars
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
@@ -627,8 +624,7 @@ fn _write_hex[
     comptime `u` = Byte(ord("u"))
     comptime `U` = Byte(ord("U"))
 
-    @parameter
-    if amnt_hex_bytes == 2:
+    comptime if amnt_hex_bytes == 2:
         var chars = _hex_digits_to_hex_chars(UInt8(decimal))
         var buf = InlineArray[Byte, 4](uninitialized=True)
         buf[0] = `\\`

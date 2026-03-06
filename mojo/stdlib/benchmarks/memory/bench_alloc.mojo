@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 @parameter
@@ -27,7 +27,7 @@ fn bench_allocation(mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig())
     m.bench_function[bench_allocation](BenchId("bench_allocation"))
     m.dump_report()

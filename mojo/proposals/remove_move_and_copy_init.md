@@ -1,4 +1,6 @@
-Erica Sadun, Date: 11 Dec 2025, Status: Accepted
+Erica Sadun, Date: 11 Dec 2025
+
+Status: Implemented for Mojo 26.2
 
 # Pitch: Init Unification
 

@@ -46,7 +46,7 @@ struct Parrot(Bird, Copyable, NamedAnimal):
         return "Parrot"
 
 
-def main():
+def main() raises:
     parrot = Parrot()
     parrot.make_sound()
     parrot.fly()

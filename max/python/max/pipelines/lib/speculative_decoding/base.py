@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from pathlib import Path
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, load_devices
+from max.driver import Buffer, Device, DLPackArray, load_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -37,17 +37,31 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..config_enums import RepoType
-from ..hf_utils import download_weight_files
-from ..interfaces import ModelOutputs, PipelineModel
-from ..pipeline_variants.text_generation import TextGenerationPipelineInterface
-from ..sampling import rejection_sampler_with_residuals, token_sampler
+from ..interfaces import ModelOutputs, PipelineModel, PipelineModelWithKVCache
+from ..pipeline_variants.text_generation import (
+    TextGenerationPipelineInterface,
+    get_eos_tokens,
+    get_weight_paths,
+)
+from ..sampling import (
+    greedy_acceptance_sampler,
+    rejection_sampler,
+    rejection_sampler_with_residuals,
+    token_sampler,
+    typical_acceptance_sampler,
+)
+from ..sampling.sampling_logits_processor import (
+    FrequencyData,
+    _build_token_frequency_csr,
+    _check_need_penalties,
+)
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -151,6 +165,158 @@ def hidden_states_return_config(
         return ReturnHiddenStates.NONE
 
 
+def get_vocab_size(huggingface_config: AutoConfig) -> int:
+    """Get the vocab size from the HuggingFace config."""
+    if hasattr(huggingface_config, "vocab_size"):
+        return huggingface_config.vocab_size
+    elif hasattr(huggingface_config, "text_config") and hasattr(
+        huggingface_config.text_config, "vocab_size"
+    ):
+        return huggingface_config.text_config.vocab_size
+    else:
+        raise ValueError(
+            "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
+        )
+
+
+class _TypicalAcceptanceRunner:
+    """Routes per-batch: temp=0 uses greedy (argmax), temp>0 uses stochastic."""
+
+    def __init__(
+        self,
+        greedy_model: Any,
+        stochastic_model: Any,
+        target_device: Device,
+    ) -> None:
+        self._greedy = greedy_model
+        self._stochastic = stochastic_model
+        self._device = target_device
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        assert context_batch is not None
+        temps = [ctx.sampling_params.temperature for ctx in context_batch]
+        all_greedy = all(t == 0 for t in temps)
+        if all_greedy:
+            a, b, c = self._greedy(
+                draft_tokens,
+                target_logits,
+                target_logit_offsets,
+            )
+        else:
+            top_k_np = np.array(
+                [ctx.sampling_params.top_k for ctx in context_batch],
+                dtype=np.int64,
+            )
+            top_p_np = np.array(
+                [ctx.sampling_params.top_p for ctx in context_batch],
+                dtype=np.float32,
+            )
+            temps_np = np.array(temps, dtype=np.float32)
+            np.clip(temps_np, a_min=1e-6, a_max=None, out=temps_np)
+            a, b, c = self._stochastic(
+                draft_tokens,
+                target_logits,
+                target_logit_offsets,
+                Buffer.from_numpy(temps_np).to(self._device),
+                Buffer.from_numpy(top_k_np).to(self._device),
+                Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
+                Buffer.from_numpy(top_p_np).to(self._device),
+                Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
+            )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
+class _GreedyRunner:
+    """Always argmax acceptance. No draft logits needed."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        a, b, c = self._model(
+            draft_tokens,
+            target_logits,
+            target_logit_offsets,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
+class _LogitComparisonRunner:
+    """draft_logit <= target_logit + eps. No bonus token (returns None)."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, None]:
+        a, b = self._model(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        return a, b, None
+
+
+class _ResidualRunner:
+    """p_target/p_draft ratio acceptance. Needs all_draft_logits."""
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer,
+        context_batch: list[TextContext] | None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        a, b, c = self._model(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+            all_draft_logits,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
 class SpeculativeDecodingPipelineBase(
     TextGenerationPipelineInterface[TextContext],
     ABC,
@@ -180,7 +346,7 @@ class SpeculativeDecodingPipelineBase(
             self.pipeline_config.model.device_specs
         )
         target_config = self.pipeline_config.model.huggingface_config
-        target_session = InferenceSession(devices=self.target_devices)
+        target_session = InferenceSession(devices=[*self.target_devices])
         self.pipeline_config.configure_session(target_session)
         target_config = AutoConfig.from_pretrained(
             self.pipeline_config.model.model_path,
@@ -188,49 +354,9 @@ class SpeculativeDecodingPipelineBase(
             revision=self.pipeline_config.model.huggingface_model_revision,
         )
 
-        # Expand EOS
-        if "eos_token_id" in target_config:
-            eos_tokens = target_config.eos_token_id
-            if isinstance(eos_tokens, int):
-                if eos_tokens != eos_token_id:
-                    msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
-                    logger.warning(msg)
+        self._eos_token_id = get_eos_tokens(target_config, eos_token_id)
 
-                self._eos_token_id = set([eos_tokens])
-            elif isinstance(eos_tokens, list):
-                if eos_token_id in eos_tokens:
-                    self._eos_token_id = set(eos_tokens)
-                else:
-                    self._eos_token_id = set([eos_token_id])
-            else:
-                msg = f"eos_token_id in huggingface_config, is neither int or list: {eos_tokens}"
-                logger.warning(msg)
-                self._eos_token_id = set([eos_token_id])
-        else:
-            self._eos_token_id = set([eos_token_id])
-
-        target_hf_repo = self.pipeline_config.model.huggingface_weight_repo
-
-        weight_paths: list[Path] = []
-        if (
-            self.pipeline_config.model.huggingface_weight_repo.repo_type
-            == RepoType.online
-        ):
-            # Download weight files if not existent.
-            weight_paths = download_weight_files(
-                huggingface_model_id=target_hf_repo.repo_id,
-                filenames=[
-                    str(x) for x in self.pipeline_config.model.weight_path
-                ],
-                revision=self.pipeline_config.model.huggingface_weight_revision,
-                max_workers=8,
-            )
-        else:
-            # Use the resolved repo_id (which points to local cache in offline mode)
-            local_path = Path(target_hf_repo.repo_id)
-            weight_paths = [
-                local_path / x for x in self.pipeline_config.model.weight_path
-            ]
+        weight_paths = get_weight_paths(self.pipeline_config.model)
 
         target_weights = load_weights(weight_paths)
         _target_weights_format = weights_format(weight_paths)
@@ -240,11 +366,32 @@ class SpeculativeDecodingPipelineBase(
                 f"quantization_encoding must be provided, {self.pipeline_config.model.quantization_encoding}"
             )
 
+        # Use draft model's pipeline model and weight adapters if provided
+        # Otherwise fall back to target model's (for backward compatibility)
+        actual_draft_pipeline_model = (
+            draft_pipeline_model
+            if draft_pipeline_model is not None
+            else pipeline_model
+        )
+        actual_draft_weight_adapters = (
+            draft_weight_adapters
+            if draft_weight_adapters is not None
+            else weight_adapters
+        )
+
+        if not (
+            issubclass(pipeline_model, PipelineModelWithKVCache)
+            and issubclass(
+                actual_draft_pipeline_model, PipelineModelWithKVCache
+            )
+        ):
+            raise ValueError(
+                f"Speculative decoding requires both the target and draft models to support KV cache, found {pipeline_model.__name__} and {actual_draft_pipeline_model.__name__}"
+            )
+
         self._target_model = pipeline_model(
             pipeline_config=self.pipeline_config,
             session=target_session,
-            huggingface_config=target_config,
-            encoding=self.pipeline_config.model.quantization_encoding,
             devices=self.target_devices,
             kv_cache_config=self.pipeline_config.model.kv_cache,
             weights=target_weights,
@@ -275,7 +422,7 @@ class SpeculativeDecodingPipelineBase(
         self.draft_devices = load_devices(
             self.pipeline_config.draft_model.device_specs
         )
-        draft_session = InferenceSession(devices=self.draft_devices)
+        draft_session = InferenceSession(devices=[*self.draft_devices])
         self.pipeline_config.configure_session(draft_session)
 
         if self.pipeline_config.draft_model is None:
@@ -288,20 +435,7 @@ class SpeculativeDecodingPipelineBase(
                 "Please ensure the draft model is a standard Transformers model with a valid config.json."
             )
 
-        if hasattr(target_hf_config, "vocab_size"):
-            self.vocab_size = target_hf_config.vocab_size
-        elif hasattr(target_hf_config, "text_config"):
-            if hasattr(target_hf_config.text_config, "vocab_size"):
-                self.vocab_size = target_hf_config.text_config.vocab_size
-            else:
-                raise ValueError(
-                    "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
-                )
-
-        else:
-            raise ValueError(
-                "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
-            )
+        self.vocab_size = get_vocab_size(target_hf_config)
 
         # Retrieve Encoding, and Files for Draft Model
         if self.pipeline_config.draft_model is None:
@@ -309,73 +443,45 @@ class SpeculativeDecodingPipelineBase(
                 "draft_model must be provided for speculative decoding"
             )
 
-        draft_hf_repo = self.pipeline_config.draft_model.huggingface_weight_repo
-
-        # Use the quantization_encoding from draft_model if provided
-        if self.pipeline_config.draft_model.quantization_encoding:
-            draft_encoding = (
-                self.pipeline_config.draft_model.quantization_encoding
-            )
-        else:
-            # Fall back to first supported encoding if not specified
-            encodings = draft_hf_repo.supported_encodings
-            if not encodings:
-                raise ValueError(
-                    "could not identify supported encodings for draft model."
-                )
-            logger.warning(
-                f"using first supported encoding for draft model: {encodings[0]}"
-            )
-            draft_encoding = encodings[0]
-
         # Use already-resolved weight paths from draft_model
-        draft_weight_paths: list[Path] = []
-        if (
-            self.pipeline_config.draft_model.huggingface_weight_repo.repo_type
-            == RepoType.online
-        ):
-            # Download weight files if not existent.
-            draft_weight_paths = download_weight_files(
-                huggingface_model_id=self.pipeline_config.draft_model.model_path,
-                filenames=[
-                    str(x) for x in self.pipeline_config.draft_model.weight_path
-                ],
-                revision=self.pipeline_config.draft_model.huggingface_weight_revision,
-                max_workers=8,
-            )
-        else:
-            # Use the resolved repo_id (which points to local cache in offline mode)
-            draft_local_path = Path(
-                self.pipeline_config.draft_model.huggingface_weight_repo.repo_id
-            )
-            draft_weight_paths = [
-                draft_local_path / x
-                for x in self.pipeline_config.draft_model.weight_path
-            ]
+        draft_weight_paths = get_weight_paths(self.pipeline_config.draft_model)
 
         draft_weights = load_weights(draft_weight_paths)
         _draft_weights_format = weights_format(draft_weight_paths)
         assert self.pipeline_config.speculative is not None
         self._speculative_config = self.pipeline_config.speculative
 
-        # Use draft model's pipeline model and weight adapters if provided
-        # Otherwise fall back to target model's (for backward compatibility)
-        actual_draft_pipeline_model = (
-            draft_pipeline_model
-            if draft_pipeline_model is not None
-            else pipeline_model
-        )
-        actual_draft_weight_adapters = (
-            draft_weight_adapters
-            if draft_weight_adapters is not None
-            else weight_adapters
-        )
+        shared_weights: dict[str, DLPackArray] | None = None
+        shared_ep_comm_initializer = None
+        if self.pipeline_config.speculative is not None and (
+            self.pipeline_config.speculative.is_eagle()
+            or self.pipeline_config.speculative.is_mtp()
+        ):
+            shared_weights, shared_ep_comm_initializer = (
+                self._maybe_build_deepseekv3_nextn_shared_resources(
+                    actual_draft_pipeline_model
+                )
+            )
+
+        draft_model_kwargs: dict[str, Any] = {}
+        if shared_weights and getattr(
+            actual_draft_pipeline_model, "supports_shared_weights", False
+        ):
+            draft_model_kwargs["shared_weights"] = shared_weights
+        elif shared_weights:
+            logger.debug(
+                "Draft model %s does not support shared weights; skipping",
+                actual_draft_pipeline_model.__name__,
+            )
+
+        if shared_ep_comm_initializer is not None:
+            draft_model_kwargs["shared_ep_comm_initializer"] = (
+                shared_ep_comm_initializer
+            )
 
         self._draft_model = actual_draft_pipeline_model(
             pipeline_config=self.pipeline_config,
             session=draft_session,
-            huggingface_config=draft_config,
-            encoding=draft_encoding,
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model.kv_cache,
             weights=draft_weights,
@@ -384,6 +490,7 @@ class SpeculativeDecodingPipelineBase(
             return_hidden_states=hidden_states_return_config(
                 self.pipeline_config, is_draft=True
             ),
+            **draft_model_kwargs,
         )
 
         # Load draft sampler
@@ -397,12 +504,21 @@ class SpeculativeDecodingPipelineBase(
             )
         )
 
-        # TODO: add option to load greedy sampler
-        self._rejection_sampler = target_session.load(
-            rejection_sampler_with_residuals(
-                device=DeviceRef.from_device(self.target_devices[0])
-            )
+        strategy = self._speculative_config.rejection_sampling_strategy
+        if strategy is None:
+            if (
+                self._speculative_config.is_eagle()
+                or self._speculative_config.is_mtp()
+            ):
+                strategy = "typical-acceptance"
+            else:
+                strategy = "residual"
+        logger.info(f"Using '{strategy}' rejection sampling strategy")
+        target_device_ref = DeviceRef.from_device(self.target_devices[0])
+        self._run_rejection_sampler = self._build_rejection_runner(
+            strategy, target_session, target_device_ref
         )
+        self._needs_all_draft_logits = strategy == "residual"
 
         # Initialize metrics tracker
         self._metrics = SpeculativeDecodingMetrics()
@@ -434,6 +550,69 @@ class SpeculativeDecodingPipelineBase(
         self._num_draft_steps = (
             self.pipeline_config.speculative.num_speculative_tokens
         )
+
+        target_kv_params = self._target_model.kv_params
+        assert isinstance(target_kv_params, KVCacheParams)
+        self._target_kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=target_kv_params,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_seq_len=self._target_model.max_seq_len,
+            session=self._target_session,
+            available_cache_memory=self._target_model.kv_cache_config._available_cache_memory,
+        )
+        draft_kv_params = self._draft_model.kv_params
+        assert isinstance(draft_kv_params, KVCacheParams)
+        self._draft_kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=draft_kv_params,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_seq_len=self._draft_model.max_seq_len,
+            session=self._draft_session,
+            available_cache_memory=self._draft_model.kv_cache_config._available_cache_memory,
+        )
+
+    def _maybe_build_deepseekv3_nextn_shared_resources(
+        self,
+        draft_model_cls: type[PipelineModel[TextContext]],
+    ) -> tuple[dict[str, DLPackArray] | None, Any]:
+        # Imported here to avoid circular imports
+        from max.pipelines.architectures.deepseekV3.model import (  # type: ignore[import-not-found]
+            DeepseekV3Model,
+        )
+        from max.pipelines.architectures.deepseekV3_nextn.model import (  # type: ignore[import-not-found]
+            DeepseekV3NextNModel,
+        )
+
+        if not isinstance(self._target_model, DeepseekV3Model):
+            return None, None
+        if not issubclass(draft_model_cls, DeepseekV3NextNModel):
+            return None, None
+
+        # Share EP buffers between target and draft to avoid duplicating
+        shared_ep_comm_initializer = self._target_model.ep_comm_initializer
+        target_state_dict = getattr(self._target_model, "state_dict", None)
+        if not isinstance(target_state_dict, dict):
+            raise ValueError(
+                "Target DeepseekV3 model has no state_dict; "
+                "cannot share weights with NextN draft model."
+            )
+
+        required_prefixes = ("embed_tokens.", "lm_head.")
+        shared_weights: dict[str, DLPackArray] = {}
+        for name, value in target_state_dict.items():
+            for prefix in required_prefixes:
+                if name.startswith(prefix):
+                    shared_weights[name] = value
+
+        if len(shared_weights) != len(required_prefixes):
+            raise ValueError(
+                f"Missing weight prefixes {required_prefixes} in target DeepseekV3 "
+                f"state_dict. Cannot share weights with NextN draft model."
+            )
+
+        logger.info(
+            "Sharing DeepseekV3 embedding and head weights with NextN draft model."
+        )
+        return shared_weights, shared_ep_comm_initializer
 
     @traced
     def calculate_num_steps(
@@ -515,6 +694,67 @@ class SpeculativeDecodingPipelineBase(
 
         return (top_k, max_k, temperature, top_p, min_top_p, seed)
 
+    def _create_penalty_inputs(
+        self,
+        batch: list[TextContext],
+        device: Device,
+        num_steps: int = 1,
+    ) -> tuple[list[FrequencyData], Buffer, Buffer, Buffer] | None:
+        """Create penalty input tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters.
+            device: Device to place the tensors on.
+            num_steps: Number of generation steps for frequency CSR padding.
+
+        Returns:
+            Tuple of (frequency_data, frequency_penalty, presence_penalty,
+            repetition_penalty) or None if penalties are disabled and not
+            needed.
+        """
+        if not self.pipeline_config.sampling.enable_penalties:
+            _check_need_penalties(batch)
+            return None
+
+        frequency_data = [
+            _build_token_frequency_csr(batch, num_steps, device),
+            _build_token_frequency_csr(
+                batch, num_steps, device, include_prompt=True
+            ),
+        ]
+
+        frequency_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.frequency_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+        presence_penalty = Buffer.from_numpy(
+            np.array(
+                [context.sampling_params.presence_penalty for context in batch],
+                dtype=np.float32,
+            )
+        ).to(device)
+        repetition_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.repetition_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+
+        return (
+            frequency_data,
+            frequency_penalty,
+            presence_penalty,
+            repetition_penalty,
+        )
+
     @traced
     def sample_draft_logits(
         self,
@@ -527,9 +767,13 @@ class SpeculativeDecodingPipelineBase(
         top_p: Buffer,
         min_top_p: Buffer,
         seed: Buffer,
+        frequency_data: list[FrequencyData] | None = None,
+        frequency_penalty: Buffer | None = None,
+        presence_penalty: Buffer | None = None,
+        repetition_penalty: Buffer | None = None,
     ) -> tuple[Buffer, Buffer, Buffer]:
         """Samples draft tokens from the draft model logits."""
-        graph_inputs = [
+        graph_inputs: list[Buffer] = [
             model_outputs.logits,
             prev_tokens,
             top_k,
@@ -540,18 +784,20 @@ class SpeculativeDecodingPipelineBase(
             seed,
             prev_logits,
         ]
+        if frequency_data is not None:
+            assert frequency_penalty is not None
+            assert presence_penalty is not None
+            assert repetition_penalty is not None
+            for freq_data in frequency_data:
+                graph_inputs.extend([freq_data.data, freq_data.offsets])
+            graph_inputs.extend(
+                [frequency_penalty, presence_penalty, repetition_penalty]
+            )
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)
         assert isinstance(c, Buffer)
         return (a, b, c)
-
-    @property
-    def kv_managers(
-        self,
-    ) -> list[PagedKVCacheManager]:
-        """Returns the KV cache managers for target and draft models."""
-        return [self._target_model.kv_manager, self._draft_model.kv_manager]
 
     @property
     def metrics(self) -> SpeculativeDecodingMetrics:
@@ -570,12 +816,77 @@ class SpeculativeDecodingPipelineBase(
         ):
             logger.info(f"Speculative decoding metrics: {self._metrics}")
 
+    def _build_rejection_runner(
+        self,
+        strategy: str,
+        target_session: InferenceSession,
+        device_ref: DeviceRef,
+    ) -> Callable[..., Any]:
+        """Loads the compiled rejection sampler graph and returns a runner."""
+        if strategy == "typical-acceptance":
+            return _TypicalAcceptanceRunner(
+                greedy_model=target_session.load(
+                    greedy_acceptance_sampler(device=device_ref)
+                ),
+                stochastic_model=target_session.load(
+                    typical_acceptance_sampler(device=device_ref)
+                ),
+                target_device=self.target_devices[0],
+            )
+        if strategy == "greedy":
+            return _GreedyRunner(
+                target_session.load(
+                    greedy_acceptance_sampler(device=device_ref)
+                )
+            )
+        if strategy == "logit-comparison":
+            return _LogitComparisonRunner(
+                target_session.load(rejection_sampler(device=device_ref))
+            )
+        return _ResidualRunner(
+            target_session.load(
+                rejection_sampler_with_residuals(device=device_ref)
+            )
+        )
+
+    def _call_rejection_sampler(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer | None,
+        context_batch: list[TextContext] | None = None,
+    ) -> tuple[Buffer, Buffer, Buffer | None]:
+        """Calls the rejection sampler with the appropriate arguments.
+
+        Args:
+            draft_tokens: Draft token ids.
+            draft_logits: Logits for sampled draft tokens.
+            target_logits: Target model logits.
+            target_logit_offsets: Offsets into target_logits per batch element.
+            all_draft_logits: Full draft logits (used by residual sampler).
+            context_batch: Batch contexts for per-request sampling params.
+
+        Returns:
+            A tuple of (first_rejected_tokens, recovered_tokens, bonus_tokens).
+            bonus_tokens is None when using logit-comparison strategy.
+        """
+        return self._run_rejection_sampler(
+            draft_tokens,
+            draft_logits,
+            target_logits,
+            target_logit_offsets,
+            all_draft_logits,
+            context_batch,
+        )
+
     def update_contexts(
         self,
         context_batch: list[TextContext],
         first_rejected_tokens: npt.NDArray[np.integer[Any]],
         recovered_tokens: npt.NDArray[np.integer[Any]],
-        bonus_tokens: npt.NDArray[np.integer[Any]],
+        bonus_tokens: npt.NDArray[np.integer[Any]] | None,
         draft_tokens: npt.NDArray[np.integer[Any]],
         num_draft_tokens_generated: int,
     ) -> None:
@@ -602,11 +913,19 @@ class SpeculativeDecodingPipelineBase(
                 token = int(draft_tokens[idx, token_idx])
                 context.update(token)
 
-            if rejected_token_idx == num_draft_tokens_generated:
+            if (
+                rejected_token_idx == num_draft_tokens_generated
+                and bonus_tokens is not None
+            ):
                 context.update(bonus_tokens[idx, 0].item())
                 total_bonus_used += 1
             else:
-                context.update(recovered_tokens[idx, rejected_token_idx].item())
+                # For residual sampler, index by rejected position;
+                # for greedy sampler (or no bonus), always index 0.
+                recover_idx = (
+                    rejected_token_idx if bonus_tokens is not None else 0
+                )
+                context.update(recovered_tokens[idx, recover_idx].item())
 
             total_draft_accepted += rejected_token_idx
             acceptance_lengths.append(rejected_token_idx)
@@ -652,8 +971,9 @@ class SpeculativeDecodingPipelineBase(
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 
-            # Construct generation output
-            res[context.request_id] = context.to_generation_output()
+            output = context.to_generation_output()
+            if output.tokens:
+                res[context.request_id] = output
 
         return res
 
@@ -672,10 +992,11 @@ class SpeculativeDecodingPipelineBase(
         # The request may not have been claimed yet if it errored before
         # execute() ran the draft model, so check before releasing.
         replica_idx = self._draft_replica_idx.pop(request_id, 0)
-        if self._draft_model.kv_manager.contains(
-            request_id, replica_idx=replica_idx
-        ):
-            self._draft_model.kv_manager.release(
-                request_id, replica_idx=replica_idx
-            )
+        if self._draft_kv_manager.contains(request_id, replica_idx=replica_idx):
+            self._draft_kv_manager.release(request_id, replica_idx=replica_idx)
         # Target model KV cache is released by scheduler via batch_constructor
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the target model KV cache manager."""
+        return self._target_kv_manager

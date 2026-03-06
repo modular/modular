@@ -21,18 +21,18 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
-from ffi import external_call
-from sys import size_of
+from std.ffi import external_call
+from std.sys import size_of
 
-from gpu._utils import to_llvm_ptr
-from gpu.host.device_context import (
+from std.gpu._utils import to_llvm_ptr
+from std.gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceBufferPtr,
 )
 
-from utils import IndexList, StaticTuple
-from builtin.device_passable import DevicePassable
+from std.utils import IndexList, StaticTuple
+from std.builtin.device_passable import DevicePassable
 
 
 @fieldwise_init("implicit")
@@ -96,8 +96,7 @@ struct TensorMapDataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        @parameter
-        if dtype == DType.float32:
+        comptime if dtype == DType.float32:
             return Self.FLOAT32
         elif dtype == DType.float16:
             return Self.FLOAT16
@@ -131,7 +130,6 @@ struct TensorMapSwizzle(
     Hashable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -195,6 +193,7 @@ struct TensorMapSwizzle(
         """
         return Int((2**self._value) * 16)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Converts the swizzle mode to a string representation.
@@ -302,7 +301,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of a TMA descriptor.
 
         Args:
@@ -311,7 +310,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = copy.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False]):
+fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     """Prefetches a TMA descriptor into the constant cache.
 
     Issues a hardware prefetch instruction to bring the TMA descriptor into
@@ -321,7 +320,7 @@ fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False]):
     Args:
         desc_ptr: Pointer to the TMA descriptor to prefetch.
     """
-    __mlir_op.`nvvm.prefetch`[tensormap = __mlir_attr.unit](
+    __mlir_op.`nvvm.prefetch`[tensormap=__mlir_attr.unit](
         to_llvm_ptr(desc_ptr),
     )
 
@@ -375,8 +374,7 @@ fn create_tma_descriptor[
     var box_dim_arg = InlineArray[Int32, rank](uninitialized=True)
     var element_stride_arg = InlineArray[Int32, rank](fill=1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         global_dim_arg[i] = Int64(global_shape[rank - i - 1])
         global_strides_arg[i] = Int64(
             global_strides[rank - i - 1] * size_of[dtype]()

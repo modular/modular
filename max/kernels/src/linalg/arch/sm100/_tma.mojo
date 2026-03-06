@@ -16,9 +16,9 @@ This module provides TMA descriptor creation and management for efficient memory
 transfers on NVIDIA Blackwell (SM100) GPUs using the Tensor Memory Accelerator.
 """
 
-from utils.index import IndexList
-from gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
-from gpu.memory import (
+from std.utils.index import IndexList
+from std.gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
+from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
 )
@@ -28,12 +28,12 @@ from layout.layout_tensor import LayoutTensor
 from layout.layout import Layout, zipped_divide, blocked_product
 from layout.copy import CopyPolicy
 from layout.tma_async import SharedMemBarrier
-from gpu.host import DeviceBuffer, DeviceContext
-from sys import size_of
-from memory.pointer import AddressSpace as _AddressSpace
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.sys import size_of
+from std.memory.pointer import AddressSpace as _AddressSpace
 from layout.swizzle import Swizzle
-from bit import log2_floor
-from builtin.device_passable import DevicePassable
+from std.bit import log2_floor
+from std.builtin.device_passable import DevicePassable
 
 
 struct TMADescriptor[
@@ -53,7 +53,7 @@ struct TMADescriptor[
         self.tensormap = tensormap
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """
         Copy initializes this `TMADescriptor` from another instance.
 
@@ -70,7 +70,7 @@ fn create_tma_descriptor[
     *,
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
 ](
-    gmem_tensor: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    gmem_tensor: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises -> TMADescriptor[dtype, tile_shape, swizzle_mode]:
     """
@@ -190,13 +190,11 @@ struct TMALoad[
         comptime shape = repeat_pattern.shape
         comptime stride = repeat_pattern.stride
 
-        @parameter
-        for i in range(len(shape)):
+        comptime for i in range(len(shape)):
             comptime current_shape = product(shape[i])
             comptime current_stride = product(stride[i]) * size_of[Self.dtype]()
 
-            @parameter
-            if current_shape > 1 and current_stride % Self.smem_alignment != 0:
+            comptime if current_shape > 1 and current_stride % Self.smem_alignment != 0:
                 return False
 
         return True
@@ -236,9 +234,9 @@ struct TMALoad[
         return materialize[repeat_pattern]()
 
 
-comptime UInt32Indices[rank: Int] = IndexList[rank, element_type = DType.uint32]
+comptime UInt32Indices[rank: Int] = IndexList[rank, element_type=DType.uint32]
 comptime MBarPtr = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
+    SharedMemBarrier, _, address_space=AddressSpace.SHARED
 ]
 
 
@@ -248,7 +246,7 @@ fn copy[
     cta_group: Int = 1,
 ](
     policy: TMALoad[...],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
+    dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
     mbar_ptr: MBarPtr,
     coords: UInt32Indices[rank],
 ):
@@ -346,8 +344,7 @@ fn copy[
     the shared memory layout but in row major order.
     """
 
-    @parameter
-    for i in range(num_copies):
+    comptime for i in range(num_copies):
         # The index i represents the tile we want to operate on.
         # We plug i into the repeat pattern to get the starting offset
         # of the desired tile.
@@ -359,9 +356,9 @@ fn copy[
         # If repeat_pattern is (2, 2):(32, 4), the 2nd tile is at (1, 0) in (2, 2)
         # its offset's coordinates is (32, 0).
         comptime offset_coords_tuple = coalesced_layout.idx2crd(src_copy_offset)
-        comptime offset_coords = to_index_list[
-            rank, element_type = DType.uint32
-        ](offset_coords_tuple)
+        comptime offset_coords = to_index_list[rank, element_type=DType.uint32](
+            offset_coords_tuple
+        )
 
         # expects X, Y, Z coordinates
         var copy_tile_coords = (coords + offset_coords).reverse()
@@ -390,8 +387,7 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    @parameter
-    if mode in (
+    comptime if mode in (
         SwizzleMode._128B,
         SwizzleMode._64B,
         SwizzleMode._32B,
@@ -399,5 +395,4 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     ):
         return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
     else:
-        constrained[False, "Only support 32B, 64B, 128B, or no swizzle"]()
-        return Swizzle(0, 0, 0)
+        comptime assert False, "Only support 32B, 64B, 128B, or no swizzle"

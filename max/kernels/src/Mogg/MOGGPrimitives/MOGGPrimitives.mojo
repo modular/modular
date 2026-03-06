@@ -11,25 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import fma
-from ffi import external_call
-from sys import size_of, align_of
+from std.math import fma
+from std.ffi import external_call
+from std.sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from collections import InlineArray
-from gpu.host import DeviceBuffer
-from gpu.host.info import is_cpu, is_gpu
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from std.collections import InlineArray
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.info import is_cpu, is_gpu
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from std.memory import memcpy
 
 from nn.concat import concat
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
     DynamicTensor,
     InputTensor,
@@ -40,9 +46,7 @@ from tensor.io_spec import IO
 from tensor.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
-from utils import Index, IndexList, StaticTuple
-
-from .MOGGIntList import IntList
+from std.utils import Index, IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
@@ -217,8 +221,7 @@ fn create_tensor_spec_async[
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
     var storage = InlineArray[Int, spec_rank](uninitialized=True)
 
-    @parameter
-    for i in range(spec_rank):
+    comptime for i in range(spec_rank):
         storage[i] = spec[i]
 
     external_call["MGP_RT_CreateAsyncTensorShape", NoneType](
@@ -392,8 +395,7 @@ fn unpack_tensor[
         tensor_async_ptr,
     )
 
-    @parameter
-    if tensor_rank == 0:
+    comptime if tensor_rank == 0:
         shapes[0] = 1
 
     return NDBuffer[dtype, buffer_rank](
@@ -413,8 +415,7 @@ fn unpack_tensor_spec[
     ](storage.unsafe_ptr(), spec_rank, async_ptr)
     var shape = IndexList[spec_rank]()
 
-    @parameter
-    for i in range(spec_rank):
+    comptime for i in range(spec_rank):
         shape[i] = storage[i]
 
     return shape
@@ -457,8 +458,7 @@ fn mgp_tensor_create[
     buffer: NDBuffer[DType.int8, 1, MutAnyOrigin],
     spec: IndexList[spec_rank],
 ) -> NDBuffer[dtype, buffer_rank, MutAnyOrigin]:
-    @parameter
-    if spec_rank == 0:
+    comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
         return NDBuffer[dtype, buffer_rank](
@@ -482,8 +482,7 @@ fn mgp_tensor_extract_tensor_spec[
 ](buffer: NDBuffer[dtype, buffer_rank, ImmutAnyOrigin]) -> IndexList[
     tensor_rank
 ]:
-    @parameter
-    if tensor_rank == 0:
+    comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
@@ -503,7 +502,7 @@ fn mgp_tensor_extract_buffer[
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
     return NDBuffer[DType.int8, 1](
-        buffer.data.bitcast[Int8](), buffer.bytecount()
+        buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
     )
 
 
@@ -535,7 +534,7 @@ fn mgp_buffer_constant(
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
     return NDBuffer[DType.int8, 1](
-        resource_ptr.bitcast[Int8](), resource_bytecount
+        resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
 
 
@@ -563,13 +562,18 @@ fn mgp_buffer_constant_external(
             align,
         )
 
-    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(size))
+    return NDBuffer[DType.int8, 1](
+        weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
+    )
 
 
 @no_inline
 fn fill_buffer[
     dtype: DType
-](buf: NDBuffer[DType.int8, 1, MutAnyOrigin], vals: VariadicList[Int]):
+](
+    buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    vals: VariadicList[Int, is_owned=False],
+):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
@@ -685,8 +689,7 @@ fn mgp_buffer_device_to_host[
     host_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
+    comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             host_buf.data,
             DeviceBuffer[DType.int8](
@@ -711,8 +714,7 @@ fn mgp_buffer_device_to_device[
     src_dev_ctx: DeviceContextPtr,
     dst_dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
+    comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         dst_dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dst_dev_ctx[],
@@ -746,8 +748,7 @@ fn mgp_buffer_host_to_device[
     dev_buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
     dev_ctx: DeviceContextPtr,
 ) raises:
-    @parameter
-    if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
+    comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             DeviceBuffer[DType.int8](
                 dev_ctx[],
@@ -820,16 +821,16 @@ fn mgp_tensor_spec_create[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
-    var static_shape = IntList[aRawDims]()
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
     # Update Shape with runtime elements.
-    for i in range(aRawDimsRank):
-        if static_shape[i] > -1:
-            shape[i] = static_shape[i]
+    comptime for i in range(aRawDimsRank):
+        var dim = aRawDims.at[i]()
+        if dim.get() > -1:
+            shape[i] = dim.get()
         else:
             shape[i] = runtimeDims[runtimeIndex]
-            runtimeIndex = runtimeIndex + 1
+            runtimeIndex += 1
     return shape
 
 
@@ -1063,8 +1064,8 @@ fn reshape_contiguous_buffer[
     dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
 ](
     buffer: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, old_rank].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, old_rank].create_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
@@ -1079,14 +1080,13 @@ fn reshape_contiguous_buffer[
 @register_internal("get_simd_width_for_dtypes")
 @always_inline
 fn get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType], target: StaticString
+    dtypes: StaticTuple[DType, _], target: StaticString
 ]() -> Int:
     comptime assert dtypes.size > 0
 
     var width = get_kernel_simd_width[dtypes[0], target]()
 
-    @parameter
-    for i in range(dtypes.size - 1):
+    comptime for i in range(dtypes.size - 1):
         width = max(get_kernel_simd_width[dtypes[i + 1], target](), width)
 
     return width
@@ -1116,19 +1116,6 @@ fn build_static_tensor_specs[
     )
 
 
-# Build the tuple of StaticTensorSpecs for DPS kernels
-@register_internal("build_static_tensor_specs_tuple")
-fn build_static_tensor_specs_tuple[
-    dtype: DType,
-    rank: Int,
-    size: Int,
-](
-    array_of_specs: VariadicList[StaticTensorSpec[dtype, rank]],
-    out result: StaticTuple[StaticTensorSpec[dtype, rank], size],
-):
-    return {array_of_specs}
-
-
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @register_internal("to_managed_tensor_slice")
@@ -1139,8 +1126,8 @@ fn to_managed_tensor_slice[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape: UnsafePointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
@@ -1148,8 +1135,7 @@ fn to_managed_tensor_slice[
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
         shape_tuple[i] = shape_ptr[i]
         stride_tuple[i] = stride
@@ -1162,7 +1148,7 @@ fn to_managed_tensor_slice[
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
-](tensor: ManagedTensorSlice[dtype=dtype]) -> Scalar[dtype]:
+](tensor: ManagedTensorSlice[dtype=dtype, ...]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
@@ -1175,8 +1161,8 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType, mut: Bool, input: IO
 ](
     tensor: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[dtype, 1].create_unknown(),
     ]
 ) -> Scalar[dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
@@ -1190,31 +1176,6 @@ fn get_int_from_shape[
     return shape[param_index]
 
 
-@register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
-@no_inline
-fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: __TypeOfAllTypes,
-    //,
-    dtype: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[dtype, rank],
-    out_compute_lambda: func_type,
-) -> StaticTensorSpec[dtype, rank]:
-    return StaticTensorSpec[dtype, rank](
-        shape=spec.shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=None,
-        out_lambda=None,
-        out_compute_lambda=rebind[spec.out_compute_lambda_t](
-            out_compute_lambda
-        ),
-    )
-
-
 @always_inline
 fn _to_managed_tensor_slice_index_list_shape[
     dtype: DType, rank: Int, mut: Bool, input: IO
@@ -1222,14 +1183,13 @@ fn _to_managed_tensor_slice_index_list_shape[
     data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     shape_tuple: IndexList[rank],
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
 ]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
@@ -1246,8 +1206,8 @@ fn to_managed_tensor_slice_list[
     raw_list_ptr: OpaquePointer[MutAnyOrigin],
     out out_list: List[
         ManagedTensorSlice[
-            io_spec = IOSpec[mut, input](),
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+            io_spec=IOSpec[mut, input](),
+            static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
         ]
     ],
 ):
@@ -1274,8 +1234,7 @@ fn to_managed_tensor_slice_list[
 
         var dims = IndexList[rank]()
 
-        @parameter
-        for dim in range(rank):
+        comptime for dim in range(rank):
             dims[dim] = dim_values[dim + i * rank].__int__()
 
         var buffer = _to_managed_tensor_slice_index_list_shape[
@@ -1295,7 +1254,7 @@ struct MyInt(Movable):
     fn __init__(out self, val: Int):
         self.val = val
 
-    fn __moveinit__(out self, deinit take: MyInt):
+    fn __init__(out self, *, deinit take: MyInt):
         print("MyInt.__moveinit__", take.val)
         self.val = take.val
 
@@ -1534,8 +1493,7 @@ fn mogg_async_pack_borrow[
     value to the given async value in that it's a simple refcount increment.
     """
 
-    @parameter
-    if is_tensor:
+    comptime if is_tensor:
         external_call["MGP_RT_TensorBorrowV2", NoneType](
             borrower,
             buffer.data,
@@ -1583,8 +1541,8 @@ fn mogg_tensor_init[
 ](
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank](
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[dtype, rank](
         static_shape,
         static_stride,
         alignment,
@@ -1612,9 +1570,22 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 
 @register_internal("mogg.async.error")
 @no_inline
-fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
-    """Indicates to the C++ runtime that the kernel has failed."""
+fn mogg_async_error(
+    async_ptr: AnyAsyncValueRefPtr,
+    err: Error,
+    source_notes: String = "",
+):
+    """Indicates to the C++ runtime that the kernel has failed.
+
+    When source_notes is non-empty it is prepended to the error message as a
+    Python stack trace so users can locate the failing op in their code.
+    See GEX-2678.
+    """
     var error_message = String(err)
+    if source_notes:
+        error_message = (
+            "\nSource Traceback:\n" + source_notes + "\n\n" + error_message
+        )
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),
@@ -1630,8 +1601,8 @@ fn tmp_reshape_contiguous_buffer[
     buffer: ManagedTensorSlice,
     shape: IndexList[new_rank],
 ) -> ManagedTensorSlice[
-    io_spec = buffer.io_spec,
-    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+    io_spec=buffer.io_spec,
+    static_spec=StaticTensorSpec[buffer.dtype, new_rank](
         static_shape,
         static_stride,
         1,
@@ -1643,7 +1614,7 @@ fn tmp_reshape_contiguous_buffer[
     ),
 ]:
     """
-    Constructs a new ManagedTensorSlice with with a new shape and static spec.
+    Constructs a new ManagedTensorSlice with a new shape and static spec.
     """
     return {buffer._ptr, shape}
 
@@ -1711,7 +1682,7 @@ fn mgp_assert(
 @always_inline
 fn split_dim_indices[
     rank: Int, axis: Int
-](indices: IndexList[rank], new_shape_dim: Int64) -> IndexList[rank + 1]:
+](indices: IndexList[rank], new_shape_dim: Int) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
 
     # This op is transforming the INDICES of an access into a reshaped tensor.
@@ -1721,14 +1692,11 @@ fn split_dim_indices[
     # Or [21 // 8, 21 % 8, ...old dims...].
     # In this case, the axis = 0 and the new_shape_dim = 8.
 
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i == axis:
-            out[i] = indices[axis] // Int(new_shape_dim)
+    comptime for i in range(rank + 1):
+        comptime if i == axis:
+            out[i] = indices[axis] // new_shape_dim
         elif i == axis + 1:
-            out[i] = indices[axis] % Int(new_shape_dim)
+            out[i] = indices[axis] % new_shape_dim
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
@@ -1741,7 +1709,7 @@ fn split_dim_indices[
 @always_inline
 fn merge_dim_indices[
     rank: Int, axis: Int
-](indices: IndexList[rank], old_shape_dim: Int64) -> IndexList[rank - 1]:
+](indices: IndexList[rank], old_shape_dim: Int) -> IndexList[rank - 1]:
     var out = IndexList[rank - 1]()
 
     # This op is transforming the INDICES of an access into a reshaped tensor.
@@ -1751,12 +1719,9 @@ fn merge_dim_indices[
     # Or [2 * 8 + 5, 16, 1].
     # In this case, the axis = 0 and the old_shape_dim = 8.
 
-    @parameter
-    for i in range(rank - 1):
-
-        @parameter
-        if i == axis:
-            out[i] = fma(indices[i], Int(old_shape_dim), indices[i + 1])
+    comptime for i in range(rank - 1):
+        comptime if i == axis:
+            out[i] = fma(indices[i], old_shape_dim, indices[i + 1])
         elif i < axis:
             out[i] = indices[i]
         elif i > axis:
@@ -1772,11 +1737,8 @@ fn insert_index[
 ](indices: IndexList[rank]) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
 
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i < axis:
+    comptime for i in range(rank + 1):
+        comptime if i < axis:
             out[i] = indices[i]
         elif i > axis:
             out[i] = indices[i - 1]
@@ -1787,8 +1749,7 @@ fn insert_index[
 
 
 fn all_zeros(indices: IndexList) -> Bool:
-    @parameter
-    for i in range(indices.size):
+    comptime for i in range(indices.size):
         if indices[i] != 0:
             return False
     return True

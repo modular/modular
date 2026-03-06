@@ -12,13 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer, Dim, DimList
-from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
-from layout._coord import ComptimeInt, Idx, Coord, RuntimeInt
+from std.utils.index import IndexList
+from layout.tile_layout import Layout
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
-from math import ceildiv
-from testing import (
+from std.math import ceildiv
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,
@@ -27,7 +34,7 @@ from testing import (
 )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
@@ -85,7 +92,7 @@ fn test_distribute_with_swizzle() raises:
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
-    var layout_tensor = TileTensor[dtype = DType.uint32](
+    var layout_tensor = TileTensor[dtype=DType.uint32](
         ptr=ptr,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -143,7 +150,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
 
-    var tensor_no_swizzle = TileTensor[dtype = DType.uint32](
+    var tensor_no_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_no_swizzle,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -151,7 +158,7 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
         ),
     )
 
-    var tensor_with_swizzle = TileTensor[dtype = DType.uint32](
+    var tensor_with_swizzle = TileTensor[dtype=DType.uint32](
         ptr=ptr_with_swizzle,
         layout=Layout(
             shape=data_layout_shape(Idx[4](), Idx[4]()),
@@ -190,11 +197,8 @@ fn test_tile() raises:
 
     var counter = 0
 
-    @parameter
-    for tile_i in range(2):
-
-        @parameter
-        for tile_j in range(2):
+    comptime for tile_i in range(2):
+        comptime for tile_j in range(2):
             var current_tile = layout_tensor.tile[2, 2](
                 (Idx(tile_i), Idx(tile_j)),
             )
@@ -214,7 +218,7 @@ fn test_tile() raises:
         assert_equal(data[i], UInt32(expected[i]))
 
 
-def test_tensor_span_constructor():
+def test_tensor_span_constructor() raises:
     var bytes: List[UInt8] = [0, 1, 2, 3]
     var _tensor = TileTensor(
         bytes,
@@ -222,7 +226,7 @@ def test_tensor_span_constructor():
     )
 
 
-def test_fill():
+def test_fill() raises:
     var stack = InlineArray[UInt32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
     for i in range(tensor.layout.shape[0]().value()):
@@ -230,7 +234,7 @@ def test_fill():
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
 
 
-def test_fill_large():
+def test_fill_large() raises:
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = InlineArray[UInt32, 4096](fill=0)
     var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
@@ -357,6 +361,47 @@ fn test_slice_3d() raises:
 #     assert_equal(sliced[(Idx(1), Idx(1))], Float32(10))
 
 
+fn test_slice_dynamic() raises:
+    """Test slice with runtime (start, end) tuples."""
+    var data_2d = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data_2d[i] = Int32(i)
+
+    # 4x4 row-major:
+    # [0  1  2  3]
+    # [4  5  6  7]
+    # [8  9  10 11]
+    # [12 13 14 15]
+    var tensor_2d = TileTensor(data_2d, row_major[4, 4]())
+
+    # Slice middle 2x2: rows [1:3], cols [1:3] -> [5,6],[9,10]
+    var sliced = tensor_2d.slice((1, 3), (1, 3))
+    assert_equal(sliced.layout.shape[0]().value(), 2)
+    assert_equal(sliced.layout.shape[1]().value(), 2)
+    assert_equal(sliced[0, 0], 5)
+    assert_equal(sliced[0, 1], 6)
+    assert_equal(sliced[1, 0], 9)
+    assert_equal(sliced[1, 1], 10)
+
+    # Top-left 2x2
+    var top_left = tensor_2d.slice((0, 2), (0, 2))
+    assert_equal(top_left[0, 0], 0)
+    assert_equal(top_left[0, 1], 1)
+    assert_equal(top_left[1, 0], 4)
+    assert_equal(top_left[1, 1], 5)
+
+    # Single row: rows [2:3], all cols
+    var row2 = tensor_2d.slice((2, 3), (0, 4))
+    assert_equal(row2.layout.shape[0]().value(), 1)
+    assert_equal(row2.layout.shape[1]().value(), 4)
+    assert_equal(row2[0, 0], 8)
+    assert_equal(row2[0, 3], 11)
+
+    # Verify it's a view
+    sliced[(Idx(0), Idx(0))] = 99
+    assert_equal(tensor_2d[(Idx(1), Idx(1))], 99)
+
+
 fn test_vectorize() raises:
     """Test tensor vectorization functionality."""
     # Create a 16x16 tensor with row-major layout
@@ -456,14 +501,14 @@ fn test_vectorize_1d() raises:
     assert_equal(vectorized[(Idx(3),)][0], 12)
 
 
-def test_indexing():
+def test_indexing() raises:
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]())
     assert_equal(tensor[Int32(0), Int64(0)], 1)
     assert_equal(tensor[Int(1), Int64(0)], 3)
 
 
-def test_to_layout_tensor_square():
+def test_to_layout_tensor_square() raises:
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]()).to_layout_tensor()
     assert_equal(materialize[tensor.layout](), layout.Layout.row_major(2, 2))
@@ -476,7 +521,7 @@ def test_to_layout_tensor_square():
     )
 
 
-def test_to_layout_tensor_3d():
+def test_to_layout_tensor_3d() raises:
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
     var tensor = TileTensor(stack, row_major[64, 8, 4]())
     var lt = tensor.to_layout_tensor()
@@ -490,7 +535,7 @@ def test_to_layout_tensor_3d():
     )
 
 
-def test_to_layout_tensor_3d_dynamic():
+def test_to_layout_tensor_3d_dynamic() raises:
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
     var tensor = TileTensor(
         stack, row_major((Idx[64](), Idx[8](), Idx(Int(4))))
@@ -616,6 +661,35 @@ fn test_to_nd_buffer_partially_dynamic() raises:
     assert_equal(buffer.shape.at[1](), Dim(4))
     assert_equal(buffer.dynamic_shape[0], 4)
     assert_equal(buffer.dynamic_shape[1], 4)
+
+
+fn test_from_ndbuffer_row_major_strides() raises:
+    """Verify TileTensor(NDBuffer) computes static row-major strides.
+
+    When an NDBuffer has mixed static/dynamic shape dims (e.g. shape=(?, 128)),
+    the constructor should produce static strides where possible:
+    strides=(128, 1). This is critical for kernels that read static_stride
+    (e.g. BlackwellMatmulSM100FallbackKernel).
+    """
+    var stack = InlineArray[Float32, 256](fill=0)
+    var ptr = stack.unsafe_ptr()
+
+    # Mixed shape: dim 0 dynamic, dim 1 static (128).
+    comptime shape = DimList(Dim(), 128)
+    var ndbuf = NDBuffer[DType.float32, 2, _, shape](ptr, IndexList[2](2, 128))
+    var tt = TileTensor(ndbuf)
+
+    # Runtime values correct.
+    assert_equal(Int(tt.dim[0]()), 2)
+    assert_equal(Int(tt.dim[1]()), 128)
+
+    # Compile-time stride types: stride[0]=128 (static), stride[1]=1.
+    assert_equal(tt.layout.static_stride[0], 128)
+    assert_equal(tt.layout.static_stride[1], 1)
+
+    # Shape types: dim 0 is runtime (-1), dim 1 is static (128).
+    assert_equal(tt.layout.static_shape[0], -1)
+    assert_equal(tt.layout.static_shape[1], 128)
 
 
 fn test_to_nd_buffer_fully_dynamic() raises:

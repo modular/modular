@@ -18,8 +18,13 @@ import os
 from collections.abc import Iterable
 from typing import Any
 
-import numpy as np
+# Force vLLM to use 'spawn' instead of 'fork' for multiprocessing.
+# The calling process (generate_llm_logits) may initialize CUDA before
+# vLLM starts (e.g. via device_specs_from_normalized_device_handle), and
+# CUDA cannot be re-initialized in a forked subprocess.
+os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
 
+import numpy as np
 from test_common.test_data import MockTextGenerationRequest
 
 

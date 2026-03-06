@@ -194,16 +194,9 @@ trait ImplicitlyDestructible:
     """
 
 
-# A temporary alias to help with the linear types transition, see
-# https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
-@deprecated(use=AnyType)
-comptime UnknownDestructibility = AnyType
-"""Temporary alias for types that can be implicitly destroyed."""
-
-
 comptime __SomeImpl[Trait: __TypeOfAllTypes, T: Trait] = T
 
-comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait]
+comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait, ...]
 """An alias allowing users to tersely express that a function argument is an
 instance of a type that implements a trait or trait composition.
 

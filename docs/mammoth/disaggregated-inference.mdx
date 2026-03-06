@@ -1,0 +1,111 @@
+---
+title: Disaggregated inference
+sidebar_label: Disaggregated inference
+description: Use separate prefill and decode nodes to optimize inference workloads
+---
+
+import ContactSection from '@site/src/components/ContactSection';
+
+Disaggregated inference is a serving architecture pattern designed for large
+language models (LLMs), particularly decoder-only transformer models like those
+in the LLaMA or GPT model families. In decoder-only transformers, the process
+of generating model output is divided into two distinct phases: prefill and
+decode.
+
+With disaggregated inference, these phases are executed on different hardware
+resources. You might see this technique referred to by several names, including
+disaggregated inference, disaggregated prefill, or disaggregated serving. All
+of these describe the same core idea: separating the model's inference phases
+and providing each phase with dedicated resources optimized to improve
+performance and scalability.
+
+:::note
+
+Mammoth is the technology behind advanced features like disaggregated inference,
+routing, and scaling in Modular's Dedicated Endpoint and Enterprise
+[editions](https://www.modular.com/pricing).
+
+[Get in touch](https://www.modular.com/request-demo) to learn how Mammoth
+enables more efficient, large-scale model serving.
+
+:::
+
+## When to use disaggregated inference
+
+Disaggregated inference is particularly valuable if your priority is minimizing
+latency. Since the prefill stage is compute-intensive and the decode stage is
+more memory-bound, isolating the two stages and allocating them to different
+GPUs or GPU nodes reduces resource contention and helps achieve both faster
+time-to-first-token and smoother token streaming.
+
+Because disaggregated inference gives you separate levers to manage the prefill
+and decode phases independently, it is especially effective for improving tail
+latency, such as P95, which measures how long it takes to complete 95% of
+requests. By optimizing tail latency, you reduce delays for the slowest requests
+and can improve overall responsiveness.
+
+Disaggregation itself doesn't directly increase throughput, but it enables more
+granular parallelism strategies and resource allocation, which can increase
+processing capacity. This flexibility allows you to optimize each phase
+appropriately and scale prefill and decode nodes independently as needed,
+improving GPU utilization and overall efficiency without over-provisioning
+capacity just to handle peak workloads.
+
+Additionally, disaggregated inference offers flexibility in heterogeneous or
+resource-constrained environments. You can match each phase with hardware that
+suits its specific demands.
+
+## How disaggregated inference works
+
+LLM inference involves two distinct phases known as prefill and decode, each
+with unique performance characteristics that affect how systems should allocate
+and optimize resources.
+
+<figure>
+  <img src={require('./images/disaggregated-inference-light.png').default}
+       className="light" alt="" width="704" />
+  <img src={require('./images/disaggregated-inference-dark.png').default}
+       className="dark" alt="" width="704" />
+  <figcaption>A simplified illustration of the separate prefill and
+  decode nodes used in a disaggregated inference serving architecture.</figcaption>
+</figure>
+
+Prefill, also known as context encoding, is the initial phase where the model
+processes the entire input prompt. During this phase, the model performs a full
+forward pass to initialize its key-value (KV) cache and predict the first
+output token. This cache stores the intermediate attention states necessary for
+generating subsequent tokens. The prefill phase is compute-intensive,
+especially in the case of long user prompts, as it involves large-scale matrix
+operations that demand high floating-point throughput. The metric associated
+with this phase is often referred to as Time-to-First-Token (TTFT), indicating
+the duration from receiving the input prompt to producing the first output
+token.
+
+Following prefill, the model enters the decode phase, or token generation. In
+this phase, the model generates output tokens one at a time, using the KV cache
+initialized during prefill. By leveraging this cache, the model can quickly
+access previously computed information without reprocessing the full input each
+time. As a result, the decoding phase is less compute-intensive per token but
+becomes memory-bound, relying heavily on efficient access to the cached data.
+The key performance metric here is Inter-Token Latency (ITL), which measures
+the time taken to generate each subsequent token after the first.
+
+Disaggregated inference involves separating these two phases onto different
+GPUs or GPU nodes. By doing so, each phase can be optimized independently.
+Prefill workloads can be routed to hardware with high compute throughput to
+handle the intensive matrix operations required to process long input prompts.
+Meanwhile, decode workloads can be assigned to hardware with fast memory
+access, which are better suited for the sequential, cache-dependent nature of
+token generation. This separation reduces contention between compute-bound and
+memory-bound tasks, improves resource utilization, and allows for more scalable
+and predictable inference performance.
+
+## Become a design partner
+
+If you're exploring disaggregated inference for your deployments, start by
+analyzing your workload to spot any imbalances between prompt processing and
+token generation. Check whether your GPUs are underutilized during either
+phase. If you're encountering these challenges, feel free to reach out to talk
+to an AI expert.
+
+<ContactSection />

@@ -13,8 +13,8 @@
 
 from internal_utils import correlation, kl_div
 from internal_utils._testing import assert_with_measure
-from itertools import product
-from testing import assert_almost_equal
+from std.itertools import product
+from std.testing import assert_almost_equal
 
 
 fn test_assert_with_custom_measure() raises:
@@ -55,14 +55,14 @@ fn test_correlation() raises:
             (0.1 * Float64(i) + 0.1 * Float64(j)).cast[DType.float32](),
         )
 
-    assert_almost_equal(1.0, correlation[out_type = DType.float64](u, u, len))
-    assert_almost_equal(-1.0, correlation[out_type = DType.float64](u, v, len))
+    assert_almost_equal(1.0, correlation[out_type=DType.float64](u, u, len))
+    assert_almost_equal(-1.0, correlation[out_type=DType.float64](u, v, len))
     # +/- 0.773957299203321 is the exactly rounded fp64 answer calculated using mpfr
     assert_almost_equal(
-        0.773957299203321, correlation[out_type = DType.float64](u, x, len)
+        0.773957299203321, correlation[out_type=DType.float64](u, x, len)
     )
     assert_almost_equal(
-        -0.773957299203321, correlation[out_type = DType.float64](v, x, len)
+        -0.773957299203321, correlation[out_type=DType.float64](v, x, len)
     )
     u.free()
     v.free()
@@ -87,7 +87,7 @@ fn test_kl_div() raises:
     assert_almost_equal(0.19430683493087375, ab)
 
 
-def main():
+def main() raises:
     test_assert_with_custom_measure()
     test_correlation()
     test_kl_div()

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
+from std.math import align_up, ceildiv
 
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout, LayoutTensor
-from logger import Logger
-from gpu.primitives.warp import shuffle_xor
-from math import recip
+from std.logger import Logger
+from std.gpu.primitives.warp import shuffle_xor
+from std.math import recip
 from linalg.fp4_utils import (
     cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
@@ -32,24 +32,24 @@ from linalg.fp4_utils import (
     set_scale_factor,
     get_scale_factor,
 )
-from gpu.host.info import B200
-from utils import StaticTuple
-from collections import Optional
+from std.gpu.host.info import B200
+from std.utils import StaticTuple
+from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
     elementwise_compute_lambda_type,
 )
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from memory import bitcast
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import barrier
-from sys import size_of, align_of, simd_width_of
+from std.memory import bitcast
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import barrier
+from std.sys import size_of, align_of, simd_width_of
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from algorithm import elementwise
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.algorithm import elementwise
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -91,10 +91,10 @@ fn heuristic_and_outliers_dispatch[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
@@ -159,8 +159,7 @@ fn heuristic_and_outliers_dispatch[
 
     comptime outlier_configs = outliers.find[rule]()
 
-    @parameter
-    for tuning_config in outlier_configs:
+    comptime for tuning_config in outlier_configs:
         if m >= tuning_config.M and m < tuning_config.M_end:
             comptime matmul_config = BlockScaledMatmulConfig[
                 a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -208,8 +207,7 @@ fn heuristic_and_outliers_dispatch[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](m, static_N, static_K)
 
-    @parameter
-    for config in configs:
+    comptime for config in configs:
         if config_runtime == config:
             logger.info("Using heuristic config: ", config)
             _block_scaled_matmul_with_epilogue[
@@ -250,10 +248,10 @@ fn _block_scaled_matmul_with_epilogue[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -268,8 +266,7 @@ fn _block_scaled_matmul_with_epilogue[
     if m == 0 or n == 0:
         return
 
-    @parameter
-    if not elementwise_lambda_fn:
+    comptime if not elementwise_lambda_fn:
         if not c.ptr:
             raise "c must be allocated!"
 
@@ -292,7 +289,7 @@ fn _block_scaled_matmul_with_epilogue[
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
         comptime use_32b_simd = True
         comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target = get_gpu_target()]()
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
 
         @parameter
@@ -411,8 +408,7 @@ fn _vendor_blas_block_scaled_matmul_with_epilogue[
     if m == 0 or n == 0:
         return
 
-    @parameter
-    if not elementwise_lambda_fn:
+    comptime if not elementwise_lambda_fn:
         if not c.ptr:
             raise "c must be allocated!"
 
@@ -432,7 +428,7 @@ fn _vendor_blas_block_scaled_matmul_with_epilogue[
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
         comptime use_32b_simd = True
         comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target = get_gpu_target()]()
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
 
         @parameter

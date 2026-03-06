@@ -12,22 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for RMSNorm with fused residual connection."""
 
-from math import sqrt
-from sys.info import CompilationTarget
+from std.math import sqrt
+from std.sys.info import CompilationTarget
 
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import alloc
-from random import Random
+from std.memory import alloc
+from std.random import Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_cpu
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn compute_rms_ref[
     dtype: DType
 ](
-    data_ptr: UnsafePointer[Scalar[dtype]], size: Int, eps: Scalar[dtype]
+    data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Scalar[dtype]
 ) -> Scalar[DType.float32]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()
@@ -240,8 +240,7 @@ fn test_rms_norm_fused_residual_float32_3d() raises:
 fn test_rms_norm_fused_residual_bfloat16() raises:
     """Test rms_norm_fused_residual with bfloat16."""
 
-    @parameter
-    if not CompilationTarget.has_neon():
+    comptime if not CompilationTarget.has_neon():
         run_rms_norm_fused_residual_cpu[DType.bfloat16](Index(4, 16), rtol=1e-2)
 
 
@@ -274,12 +273,11 @@ fn test_rms_norm_fused_residual_dropout_float32_large_cols() raises:
 fn test_rms_norm_fused_residual_dropout_bfloat16() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (bfloat16)."""
 
-    @parameter
-    if not CompilationTarget.has_neon():
+    comptime if not CompilationTarget.has_neon():
         run_rms_norm_fused_residual_cpu[DType.bfloat16](
             Index(4, 16), rtol=1e-2, dropout_p=0.2, seed=99
         )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

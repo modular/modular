@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import env_get_int
+from std.math import ceildiv
+from std.sys import get_defined_int
 
-from gpu import block_dim, global_idx, grid_dim
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer
+from comm.sync import enable_p2p
+from std.gpu import block_dim, global_idx, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
 
 fn p2p_copy_kernel(
@@ -54,14 +55,15 @@ fn launch_p2p_copy_kernel(
     ctx1.synchronize()
 
 
-def main():
-    comptime log2_length = env_get_int["log2_length", 20]()
+def main() raises:
+    comptime log2_length = get_defined_int["log2_length", 20]()
     comptime assert log2_length > 0
     var length = 1 << log2_length
 
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Create contexts for both devices
     var ctx1 = DeviceContext(device_id=0)

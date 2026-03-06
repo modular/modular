@@ -16,9 +16,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from std.collections import Optional
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.bmm import batched_matmul
@@ -32,12 +32,12 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import elementwise_epilogue_type
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime alignment = 64
 comptime some_constant = 20
@@ -105,14 +105,14 @@ def test_matmul[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    a: NDBuffer[mut=False, a_type, 2, _, a_shape],
+    b: NDBuffer[mut=False, b_type, 2, _, b_shape],
     bp: NDBuffer[mut=True, b_type, 2, _, DimList.create_unknown[2]()],
     m: Int,
     n: Int,
     k: Int,
     kernel_type_m: Int,
-) -> Int:
+) raises -> Int:
     var c1_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
     var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
     for i in range(m):
@@ -125,8 +125,6 @@ def test_matmul[
                 _pack_b_ndbuffer_impl[
                     a_type,
                     a_shape,
-                    b_type,
-                    b_shape,
                     c_type,
                     c_shape,
                     transpose_b,
@@ -135,8 +133,6 @@ def test_matmul[
                 pack_b_ndbuffer[
                     a_type,
                     a_shape,
-                    b_type,
-                    b_shape,
                     c_type,
                     c_shape,
                 ](b, bp)
@@ -145,8 +141,6 @@ def test_matmul[
                 _pack_b_ndbuffer_impl[
                     a_type,
                     a_shape,
-                    b_type,
-                    b_shape,
                     c_type,
                     c_shape,
                     transpose_b,
@@ -185,8 +179,7 @@ def test_matmul[
 
     bench_fn_matmul()
 
-    @parameter
-    if do_benchmarking:
+    comptime if do_benchmarking:
         var matmul_perf = bench_run[bench_fn_matmul]()
         benchmark.keep(c[0, 0])
         print(
@@ -198,8 +191,7 @@ def test_matmul[
             1e-9 * (Float64((2 * m * k * n)) / matmul_perf.mean()),
         )
 
-    @parameter
-    if epilogue_fn:
+    comptime if epilogue_fn:
         gemm_naive_elementwise[transpose_b](
             a, b, golden, m, n, k, some_constant
         )
@@ -242,7 +234,7 @@ def test_matmul[
     b_packed: Bool,
     mixed_kernels: Bool,
     transpose_b: Bool,
-](m: Int, n: Int, k: Int):
+](m: Int, n: Int, k: Int) raises:
     print("== test_matmul")
     var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
@@ -272,8 +264,6 @@ def test_matmul[
         padded_n_k = pack_matmul_b_shape_func[
             a_type,
             a_shape,
-            b_type,
-            b_shape,
             c_type,
             c_shape,
             transpose_b,
@@ -324,8 +314,7 @@ def test_matmul[
     ](coords: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(coords, rebind[SIMD[c_type, width]](val + some_constant))
 
-    @parameter
-    if lambdas_have_fusion:
+    comptime if lambdas_have_fusion:
         errors = test_matmul[
             a_type,
             a_shape,
@@ -383,9 +372,11 @@ def test_shapes[
     c_type: DType,
     b_packed: Bool,
     mixed_kernels: Bool,
-]():
+]() raises:
     @parameter
-    def test_shapes_helper[transpose_b: Bool = False](m: Int, n: Int, k: Int):
+    def test_shapes_helper[
+        transpose_b: Bool = False
+    ](m: Int, n: Int, k: Int) raises:
         # Test without output fusion.
         test_matmul[
             False,
@@ -444,7 +435,7 @@ def test_shapes[
     test_shapes_helper[True](1, 32768, 3072)
 
 
-def test_types[b_packed: Bool, mixed_kernels: Bool]():
+def test_types[b_packed: Bool, mixed_kernels: Bool]() raises:
     test_shapes[
         DType.float32,
         DType.float32,
@@ -486,14 +477,14 @@ fn bmm_naive(
 def test_batched_matmul[
     has_lambda: Bool
 ](
-    c: NDBuffer[mut=True, _, 3],
-    a: NDBuffer[mut=True, _, 3],
-    b: NDBuffer[mut=True, _, 3],
+    c: NDBuffer[mut=True, _, 3, _],
+    a: NDBuffer[mut=True, _, 3, _],
+    b: NDBuffer[mut=True, _, 3, _],
     batches: Int,
     m: Int,
     n: Int,
     k: Int,
-):
+) raises:
     var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
         batches * m * n, alignment=alignment
     )
@@ -534,8 +525,7 @@ def test_batched_matmul[
     @__copy_capture(c, a, b)
     @parameter
     fn bench_fn_batched_matmul() raises:
-        @parameter
-        if has_lambda:
+        comptime if has_lambda:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=False,
@@ -549,8 +539,7 @@ def test_batched_matmul[
 
     bench_fn_batched_matmul()
 
-    @parameter
-    if do_benchmarking:
+    comptime if do_benchmarking:
         var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
         benchmark.keep(c[0, 0, 0])
         print(
@@ -564,8 +553,7 @@ def test_batched_matmul[
             * (Float64((2 * batches * m * k * n)) / batched_matmul_perf.mean()),
         )
 
-    @parameter
-    if has_lambda:
+    comptime if has_lambda:
         bmm_naive(golden, a, b, batches, m, n, k, some_constant)
     else:
         bmm_naive(golden, a, b, batches, m, n, k)
@@ -606,7 +594,7 @@ def test_batched_matmul[
     golden_ptr.free()
 
 
-def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
+def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     comptime c_type = DType.float32
     comptime a_type = DType.float32
     comptime b_type = DType.float32
@@ -633,7 +621,7 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
     a_ptr.free()
 
 
-def test_batched_matmul():
+def test_batched_matmul() raises:
     for batch in [1, 2, 4, 9, 12]:
         test_batched_matmul(batch, 256, 1024, 4096)
         test_batched_matmul(batch, 4, 5, 6)
@@ -645,7 +633,7 @@ def test_batched_matmul():
         test_batched_matmul(batch, 2, 65, 1200)
 
 
-def main():
+def main() raises:
     test_types[b_packed=True, mixed_kernels=False]()
     test_types[b_packed=True, mixed_kernels=True]()
     test_types[b_packed=False, mixed_kernels=False]()

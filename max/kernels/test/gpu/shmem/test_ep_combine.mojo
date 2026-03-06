@@ -15,21 +15,21 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-import time
-from io.io import _printf
-from math import sqrt
-from os.path import dirname
-from pathlib import Path
-from random import randint, randn, seed
-from sys import align_of, argv, simd_width_of, size_of
-from sys.param_env import env_get_string
+import std.time
+from std.io.io import _printf
+from std.math import sqrt
+from std.os.path import dirname
+from std.pathlib import Path
+from std.random import randint, randn, seed
+from std.sys import align_of, argv, simd_width_of, size_of
+from std.sys.defines import get_defined_string
 
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 from shmem import *
 from shmem._mpi import MPI_Finalize
 from shmem.ep_comm import (
@@ -40,9 +40,9 @@ from shmem.ep_comm import (
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn is_benchmark() -> Bool:
@@ -73,7 +73,7 @@ fn welford_update(
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -106,7 +106,7 @@ fn test_combine[
         SIMD[DType.uint8, gpu_simd_width], target=gpu_target
     ]()
     comptime token_fmt_type = BF16TokenFormat[
-        output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        output_layout=Layout(), hidden_size, top_k, gpu_alignment
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime combine_msg_bytes = size_of[input_type]() * hidden_size
@@ -489,11 +489,10 @@ fn test_combine[
     shmem_free(recv_count)
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (8,)
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
@@ -503,7 +502,7 @@ def main():
             test_combine[
                 hidden_size=7168,
                 top_k=8,
-                n_experts = min(num_gpus * 32, 256),
+                n_experts=min(num_gpus * 32, 256),
                 n_ranks=num_gpus,
                 n_tokens_per_rank=128,
             ](shmem_ctx.get_device_context(), Int(mype_node))

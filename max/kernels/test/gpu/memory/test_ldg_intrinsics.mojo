@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu import thread_idx
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import ldg
-from memory import LegacyUnsafePointer
+from std.gpu import thread_idx
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import ldg
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import *
+from std.testing import *
 
 
 fn register_intrinsics(
@@ -59,21 +59,21 @@ fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
     assert_true("ld.global.nc.b64" in asm)
 
 
-def test_register_intrinsics_sm80():
+def test_register_intrinsics_sm80() raises:
     var asm = _compile_code[
-        register_intrinsics, target = get_gpu_target["sm_80"]()
+        register_intrinsics, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_register_intrinsics(asm)
 
 
-def test_register_intrinsics_sm90():
+def test_register_intrinsics_sm90() raises:
     var asm = _compile_code[
         register_intrinsics,
-        target = get_gpu_target["sm_90"](),
+        target=get_gpu_target["sm_90"](),
     ]().asm
     _verify_register_intrinsics(asm)
 
 
-def main():
+def main() raises:
     test_register_intrinsics_sm80()
     test_register_intrinsics_sm90()

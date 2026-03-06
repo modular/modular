@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 
-from gpu import memory, sync, thread_idx
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer, stack_allocation
+from std.gpu import memory, sync, thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -26,10 +26,10 @@ fn copy_via_shared(
 ):
     var thread_id = Int(thread_idx.x)
     var mem_buff: UnsafePointer[
-        Float32, address_space = AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
+        Float32, address_space=AddressSpace.SHARED
+    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
     var src_global: UnsafePointer[
-        Float32, address_space = AddressSpace.GLOBAL
+        Float32, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
@@ -38,7 +38,7 @@ fn copy_via_shared(
     )
 
     var m_barrier = stack_allocation[
-        1, DType.int32, address_space = AddressSpace.SHARED
+        1, DType.int32, address_space=AddressSpace.SHARED
     ]()
     sync.mbarrier_init(m_barrier, 16)
     sync.mbarrier(m_barrier)
@@ -105,6 +105,6 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     _ = copy_via_shared_gpu^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)

@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
+import std.math
 
-from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
-from testing import assert_almost_equal, assert_equal
-from testing import TestSuite
+from std.complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
+from std.testing import assert_almost_equal, assert_equal
+from std.testing import TestSuite
+from test_utils import check_write_to
 
 
-def test_init():
+def test_init() raises:
     comptime F32_2 = SIMD[DType.float32, 2]
     var x = ComplexFloat32(1, 2)
     assert_equal(x.re, 1)
@@ -47,12 +48,12 @@ def test_init():
     assert_equal(z.im, F32_2(2, 4))
 
 
-def test_conj():
+def test_conj() raises:
     var x = ComplexFloat32(1, 2)
     assert_equal(x.conj(), ComplexFloat32(1, -2))
 
 
-def test_math():
+def test_math() raises:
     var x = ComplexFloat32(1, 2)
     var y = ComplexFloat32(3, 4)
     var z = x + y
@@ -76,7 +77,7 @@ def test_math():
     assert_almost_equal(t.im, 1)
 
 
-def test_abs():
+def test_abs() raises:
     assert_equal(abs(ComplexFloat32(0, 0)), 0)
     assert_equal(abs(ComplexFloat32(1, 0)), 1)
     assert_equal(abs(ComplexFloat32(0, 1)), 1)
@@ -84,7 +85,7 @@ def test_abs():
     assert_almost_equal(abs(ComplexFloat32(-93, -23)), 95.801)
 
 
-def test_complex_str():
+def test_complex_str() raises:
     assert_equal(String(ComplexFloat32(0, 0)), "0.0")
     assert_equal(String(ComplexFloat32(1, 0)), "1.0")
     assert_equal(String(ComplexFloat32(0, 1)), "0.0 + 1.0i")
@@ -101,7 +102,7 @@ def test_complex_str():
     )
 
 
-def test_fma():
+def test_fma() raises:
     var x = ComplexFloat32(17, 31)
     var y = ComplexFloat32(42, 1337)
     var c = ComplexFloat32(13, 37)
@@ -111,7 +112,7 @@ def test_fma():
     assert_almost_equal(res1.im, res2.im)
 
 
-def test_exp():
+def test_exp() raises:
     var a = math.exp(ComplexFloat32(1, 2))
     assert_almost_equal(a.re, -1.1312)
     assert_almost_equal(a.im, 2.47173)
@@ -125,5 +126,13 @@ def test_exp():
     assert_almost_equal(c.im, 0)
 
 
-def main():
+def test_write_to() raises:
+    var c = ComplexFloat32(1, 2)
+    check_write_to(c, expected="1.0 + 2.0i", is_repr=False)
+    check_write_to(
+        c, expected="ComplexSIMD[float32, 1](1.0 + 2.0i)", is_repr=True
+    )
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -16,34 +16,26 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.log_probabilities import (
@@ -81,7 +73,7 @@ class Gemma3Inputs(ModelInputs):
 
 
 class Gemma3Model(
-    AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
 ):
     """A Gemma 3 pipeline model for text generation.
 
@@ -97,23 +89,16 @@ class Gemma3Model(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         """
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -121,25 +106,20 @@ class Gemma3Model(
             weights: The model weights (:obj:`max.graph.weights.Weights`).
             adapter: An optional adapter to modify weights before loading
                 (:obj:`max.graph.weights.WeightsAdapter`).
-            text_huggingface_config: The text configuration loaded from HuggingFace
-                if it differs from the base huggingface_config (:obj:`transformers.AutoConfig`).
             return_logits: The number of top logits to return from the model
                 execution.
         """
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
         )
-        self._is_multimodal = text_huggingface_config is not None
-        if self._is_multimodal:
-            self.huggingface_config = text_huggingface_config
+        # Detect multimodal models by presence of text_config
+        self._is_multimodal = hasattr(self.huggingface_config, "text_config")
 
         self.model = self.load_model(session)
         self.logprobs_device = devices[0]
@@ -163,7 +143,7 @@ class Gemma3Model(
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings
@@ -226,11 +206,14 @@ class Gemma3Model(
         Returns:
             The loaded MAX Engine model object.
         """
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices[0])
 
         timer = CompilationTimer("model")
@@ -247,25 +230,6 @@ class Gemma3Model(
             DeviceRef.from_device(self.logprobs_device), levels=3
         )
         return session.load(graph)
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        kv_params = self.kv_params
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(len(self.devices)):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     # For text-only models, we should be using all the weights.  This is
     # overridden for Gemma3 multi-modal.
@@ -294,11 +258,15 @@ class Gemma3Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        huggingface_config = self.huggingface_config
+        text_config = (
+            self.huggingface_config.text_config
+            if self._is_multimodal
+            else self.huggingface_config
+        )
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
-                huggingface_config=huggingface_config,
+                huggingface_config=text_config,
                 pipeline_config=self.pipeline_config,
             )
         else:
@@ -308,7 +276,7 @@ class Gemma3Model(
 
         state_dict_prefix = "language_model." if self._is_multimodal else ""
         float8_config = parse_float8_config(
-            huggingface_config,
+            text_config,
             state_dict,
             self.dtype,
             state_dict_name_prefix=state_dict_prefix,
@@ -316,10 +284,10 @@ class Gemma3Model(
         )
 
         model_config = Gemma3Config.initialize_from_config(
-            self.pipeline_config, huggingface_config
+            self.pipeline_config, text_config
         )
         model_config.finalize(
-            huggingface_config=huggingface_config,
+            huggingface_config=text_config,
             state_dict=state_dict,
             return_logits=self.return_logits,
             float8_config=float8_config,
@@ -338,12 +306,10 @@ class Gemma3Model(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"),
+            getattr(text_config, "model_type", "Gemma3"),
             input_types=[
                 tokens_type,
                 return_n_logits_type,
@@ -487,7 +453,6 @@ class Gemma3Model(
 
         context_batch = replica_batches[0]
         assert kv_cache_inputs is not None
-        assert isinstance(kv_cache_inputs, KVCacheInputsSequence)
 
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.

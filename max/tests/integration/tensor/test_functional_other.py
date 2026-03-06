@@ -19,11 +19,11 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 from typing import cast
 
 import pytest
-from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
-from max.tensor import Tensor
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
@@ -410,7 +410,7 @@ def test_functional_returns_tensor() -> None:
 def test_sum_axis_none() -> None:
     """Test that F.sum with axis=None reduces over all dimensions."""
     data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     result = F.sum(tensor, axis=None)
     assert isinstance(result, Tensor)
     result._sync_realize()
@@ -423,7 +423,7 @@ def test_sum_axis_none() -> None:
 def test_min_axis_none() -> None:
     """Test that F.min with axis=None reduces over all dimensions."""
     data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     result = F.min(tensor, axis=None)
     assert isinstance(result, Tensor)
     result._sync_realize()
@@ -436,7 +436,7 @@ def test_min_axis_none() -> None:
 def test_argmin_axis_none() -> None:
     """Test that F.argmin with axis=None returns flattened index."""
     data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     result = F.argmin(tensor, axis=None)
     assert isinstance(result, Tensor)
     result._sync_realize()
@@ -451,7 +451,7 @@ def test_argmin_axis_none() -> None:
 def test_axis_none_preserves_default_behavior() -> None:
     """Test that default axis=-1 behavior is unchanged."""
     data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-    tensor = Tensor.constant(data, dtype=DType.float32, device=DEVICE)
+    tensor = Tensor(data, dtype=DType.float32, device=DEVICE)
     # Default behavior (axis=-1)
     result_default = F.sum(tensor)
     assert isinstance(result_default, Tensor)

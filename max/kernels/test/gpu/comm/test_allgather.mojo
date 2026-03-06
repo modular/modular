@@ -12,20 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from sys import size_of, has_amd_gpu_accelerator
+from std.sys import size_of, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
+from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import assert_equal, assert_true
+from std.gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
+from std.testing import assert_equal, assert_true
+from std.utils.index import IndexList
 
 
 def all_gather_test[
     dtype: DType, rank: Int, ngpus: Int
-](list_of_ctx: List[DeviceContext], lengths: List[Int]) -> None:
+](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
     """Test allgather with new variadic output semantics.
 
     Each device should receive individual copies of all inputs,
@@ -63,7 +67,9 @@ def all_gather_test[
         host_buffers.append(host_buffer)
 
         # Initialize with unique values per device.
-        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
+        var host_nd_buf = NDBuffer[dtype, rank](
+            host_buffer, IndexList[rank](length)
+        )
         for j in range(length):
             host_nd_buf[j] = Scalar[dtype](
                 i * 1000 + j
@@ -92,13 +98,13 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
         fill={}
     )
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(lengths[i])
+            in_bufs_list[i].unsafe_ptr(), IndexList[rank](lengths[i])
         )
 
     # Create flat output buffer array (ngpus * ngpus).
@@ -111,7 +117,7 @@ def all_gather_test[
             var output_idx = device_idx * ngpus + input_idx
             out_bufs[output_idx] = NDBuffer[dtype, rank](
                 out_bufs_list[device_idx][input_idx].unsafe_ptr(),
-                DimList(lengths[input_idx]),
+                IndexList[rank](lengths[input_idx]),
             )
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
@@ -137,7 +143,7 @@ def all_gather_test[
                 var idx = device_idx * ngpus + input_idx
                 flat_out[idx] = NDBuffer[dtype, rank](
                     out_bufs_list[device_idx][input_idx].unsafe_ptr(),
-                    DimList(lengths[input_idx]),
+                    IndexList[rank](lengths[input_idx]),
                 )
 
         try:
@@ -184,7 +190,6 @@ def all_gather_test[
     # Clean up.
     for i in range(ngpus):
         host_buffers[i].free()
-    _ = signal_buffers^
 
 
 fn _verify_results[
@@ -201,7 +206,15 @@ fn _verify_results[
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
-            var host_output = alloc[Scalar[dtype]](length)
+            var host_output_managed = ManagedLayoutTensor[
+                dtype, Layout(UNKNOWN_VALUE)
+            ](
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](length)
+                ),
+                list_of_ctx[device_idx],
+            )
+            var host_output = host_output_managed.tensor[update=False]().ptr
 
             # Copy output back to host.
             list_of_ctx[device_idx].enqueue_copy(
@@ -231,13 +244,12 @@ fn _verify_results[
                     )
                     raise e^
 
-            host_output.free()
 
-
-def main() -> None:
+def main() raises -> None:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Test configurations.
     comptime test_lengths: List[List[Int]] = [
@@ -258,8 +270,7 @@ def main() -> None:
         [0, 8 * 1024],
     ]
 
-    @parameter
-    for test_idx in range(len(test_lengths)):
+    comptime for test_idx in range(len(test_lengths)):
         comptime lengths = test_lengths[test_idx]
         comptime num_gpus = len(lengths)
 

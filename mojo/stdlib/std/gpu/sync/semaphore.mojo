@@ -20,7 +20,7 @@ to implement efficient thread synchronization.
 Example:
 
     ```mojo
-    from gpu import Semaphore
+    from std.gpu import Semaphore
 
     var lock = UnsafePointer[Int32](...)
     var sem = Semaphore(lock, thread_id)
@@ -33,7 +33,7 @@ Example:
     ```
 """
 
-from sys import is_nvidia_gpu, llvm_intrinsic
+from std.sys import is_nvidia_gpu, llvm_intrinsic
 
 from ..intrinsics import Scope, load_acquire, store_release
 from .sync import MaxHardwareBarriers, barrier, named_barrier
@@ -87,7 +87,7 @@ struct Semaphore(TrivialRegisterPassable):
         using an acquire memory ordering to ensure proper synchronization.
         """
         if self._wait_thread:
-            self._state = load_acquire[scope = Scope.GPU](self._lock)
+            self._state = load_acquire[scope=Scope.GPU](self._lock)
 
     @always_inline
     fn state(self) -> Int32:
@@ -124,7 +124,7 @@ struct Semaphore(TrivialRegisterPassable):
         """
         barrier()
         if self._wait_thread:
-            store_release[scope = Scope.GPU](self._lock, status)
+            store_release[scope=Scope.GPU](self._lock, status)
 
 
 struct NamedBarrierSemaphore[
@@ -190,7 +190,7 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state != status:
-                self._state = load_acquire[scope = Scope.GPU](self._lock)
+                self._state = load_acquire[scope=Scope.GPU](self._lock)
 
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
@@ -204,7 +204,7 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state < count:
-                self._state = load_acquire[scope = Scope.GPU](self._lock)
+                self._state = load_acquire[scope=Scope.GPU](self._lock)
 
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
@@ -219,4 +219,4 @@ struct NamedBarrierSemaphore[
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
         if self._wait_thread:
-            store_release[scope = Scope.GPU](self._lock, status)
+            store_release[scope=Scope.GPU](self._lock, status)

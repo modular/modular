@@ -5,20 +5,9 @@
   | [Changelog] | [MAX Model Development]
 </div>
 
-[About Modular]: https://www.modular.com/
-[Get started]: https://docs.modular.com/max/get-started
-[API docs]: https://docs.modular.com/max/api
-[Contributing]: ./CONTRIBUTING.md
-[Changelog]: https://docs.modular.com/max/changelog
-[MAX Model Development]: /max/docs/development.md
-
 ---
-🔥 [Modular has acquired BentoMl][bentoml-joins] to extend our open source AI stack!
-[Join us][bentoml-joins-ama] on February 17th at
-[9:30-11:30am PT][ama-time] for an Ask Us Anything with Chris Lattner and
-BentoML Founder Chaoyu Yang [in the Modular forum][bentoml-joins-ama].
-We’ll answer questions and share more about our plans!
-[Feel free to share your questions now.][bentoml-joins-ama]
+🤝 Join our [monthly community meetings][public-com-meet-doc]: the next
+meeting is scheduled for [Monday, March 23rd at 10am PT][mar-com-meeting-time].
 
 # Modular Platform
 
@@ -131,8 +120,9 @@ here](https://github.com/modular/modular/issues/new/choose).
 
 **[2026/2]** We announced that [BentoML is joining Modular][bentoml-joins].
 We are committed to building in the open and will be extending our support
-of open source AI with [Bento's own open project][bentoml-github]. Join us
-[for an AMA February 17th][bentoml-joins-ama] to discuss our plans.
+of open source AI with [Bento's own open project][bentoml-github].
+Read the answers in our [February 2026 AMA][bentoml-joins-ama] to learn more
+about our plans.
 
 **[2026/1]** [Modular Platform 26.1][26.1] graduates the MAX Python API out of
 experimental with PyTorch-like eager mode and model.compile() for production,
@@ -181,43 +171,27 @@ Mojo and MAX.
 [GPU Kernel Hackathon][hackathon], featuring talks from Modular and
 Anthropic engineers.
 
-[bentoml-github]: https://github.com/bentoml/BentoML
-[bentoml-joins-ama]: https://forum.modular.com/t/modular-has-acquired-bentoml-ask-us-anything/2706/1
-[bentoml-joins]: https://www.modular.com/blog/bentoml-joins-modular
-[ama-time]: https://www.inyourowntime.zone/2026-02-17_09.30_America.Los_Angeles
-[26.1]: https://www.modular.com/blog/modular-26-1-a-big-step-towards-more-programmable-and-portable-ai-infrastructure
-[mojo-1.0]: https://www.modular.com/blog/the-path-to-mojo-1-0
-[dec-meetup]: https://www.youtube.com/live/WK5dVQ8vhbU?si=Fjde8j_50V4bwiAv
-[25.7]: https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience
-[250-funding]: https://www.modular.com/blog/modular-raises-250m-to-scale-ais-unified-compute-layer
-[pytorch-llvm]: https://www.modular.com/blog/pytorch-and-llvm-in-2025-keeping-up-with-ai-innovation
-[25.6]: https://www.modular.com/blog/modular-25-6-unifying-the-latest-gpus-from-nvidia-amd-and-apple
-[25.5]: https://www.modular.com/blog/modular-platform-25-5
-[la-meetup]: https://lu.ma/modular-aug-meetup
-[amd]: https://www.modular.com/blog/modular-x-amd-unleashing-ai-performance-on-amd-gpus
-[hack-weekend]: https://www.meetup.com/modular-meetup-group/events/308311461/
-[hackathon]: https://www.modular.com/blog/modverse-48
-
 ---
 
 ## Community & Events
 
-We host regular meetups, hackathons, and community calls. Join us!
+We host regular meetups digitally and around the world. During these meetups
+we share updates from the Modular team, feature community contributions, and
+invite guest speakers to share their expertise, as well as answer community
+questions.
 
-| Channel               | Link                                            |
+Join us!
+
+| Channel               | Link                                           |
 |-----------------------|-------------------------------------------------|
 | 💬 Discord            | [discord.gg/modular][discord]                   |
 | 💬 Forum              | [forum.modular.com][forum]                      |
 | 📅 Meetup Group       | [meetup.com/modular-meetup-group][meetup-group] |
-| 🎥 Community Meetings | Recordings on [YouTube][youtube]                |
+| 🎥 Community Meetings | [Upcoming community calls][public-com-meet-doc] |
 
 **Upcoming events** will be posted on our [Meetup page][meetup-group] and
-[Discord][discord].
-
-[discord]: https://discord.gg/modular
-[forum]: https://forum.modular.com/
-[meetup-group]: https://www.meetup.com/modular-meetup-group/
-[youtube]: https://www.youtube.com/@modularinc
+[Discord][discord]. Community meeting recordings will be posted on our
+[YouTube][youtube].
 
 ## Contact us
 
@@ -242,3 +216,38 @@ third parties (i.e. Huggingface) for related software and libraries that are dow
 <a href="https://github.com/modular/modular/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=modular/modular" />
 </a>
+
+<!-- Link references -->
+
+<!-- Header navigation links -->
+[About Modular]: https://www.modular.com/
+[Get started]: https://docs.modular.com/max/get-started
+[API docs]: https://docs.modular.com/max/api
+[Contributing]: ./CONTRIBUTING.md
+[Changelog]: https://docs.modular.com/max/changelog
+[MAX Model Development]: /max/docs/development.md
+
+<!-- News & Announcements links -->
+[mar-com-meeting-time]: https://www.inyourowntime.zone/2026-03-23_10.00_America.Los_Angeles
+[public-com-meet-doc]: https://modul.ar/community-meeting-doc
+[bentoml-github]: https://github.com/bentoml/BentoML
+[bentoml-joins-ama]: https://forum.modular.com/t/modular-has-acquired-bentoml-ask-us-anything/2706/1
+[bentoml-joins]: https://www.modular.com/blog/bentoml-joins-modular
+[26.1]: https://www.modular.com/blog/modular-26-1-a-big-step-towards-more-programmable-and-portable-ai-infrastructure
+[mojo-1.0]: https://www.modular.com/blog/the-path-to-mojo-1-0
+[dec-meetup]: https://www.youtube.com/live/WK5dVQ8vhbU?si=Fjde8j_50V4bwiAv
+[25.7]: https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience
+[250-funding]: https://www.modular.com/blog/modular-raises-250m-to-scale-ais-unified-compute-layer
+[pytorch-llvm]: https://www.modular.com/blog/pytorch-and-llvm-in-2025-keeping-up-with-ai-innovation
+[25.6]: https://www.modular.com/blog/modular-25-6-unifying-the-latest-gpus-from-nvidia-amd-and-apple
+[25.5]: https://www.modular.com/blog/modular-platform-25-5
+[la-meetup]: https://lu.ma/modular-aug-meetup
+[amd]: https://www.modular.com/blog/modular-x-amd-unleashing-ai-performance-on-amd-gpus
+[hack-weekend]: https://www.meetup.com/modular-meetup-group/events/308311461/
+[hackathon]: https://www.modular.com/blog/modverse-48
+
+<!-- Community & Events links -->
+[discord]: https://discord.gg/modular
+[forum]: https://forum.modular.com/
+[meetup-group]: https://www.meetup.com/modular-meetup-group/
+[youtube]: https://www.youtube.com/@modularinc

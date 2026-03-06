@@ -11,11 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, DeviceBuffer, HostBuffer
+from std.gpu.host import DeviceContext, DeviceBuffer, HostBuffer
 from internal_utils import assert_almost_equal
-from layout._coord import Coord, Idx, coord
-from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord,
+    row_major,
+)
+from layout.tile_layout import Layout
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -23,12 +28,12 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def test_rope_ragged_gpu[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) -> None:
+](ctx: DeviceContext) raises -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
     comptime assert (
@@ -158,7 +163,7 @@ def test_rope_ragged_gpu[
         dtype,
         dtype,
         interleaved=True,
-        target = StaticString("gpu"),
+        target=StaticString("gpu"),
         output_fn=output_fn,
     ](
         x=q_device_tensor.as_any_origin(),
@@ -194,8 +199,7 @@ def test_rope_ragged_gpu[
                     + head_idx * head_dim  # head offset
                 )
 
-                @parameter
-                if rope_dim == head_dim:
+                comptime if rope_dim == head_dim:
                     # Full RoPE case - compare entire output against golden
                     assert_almost_equal(
                         q_out_host_buffer.unsafe_ptr() + base_offset,
@@ -223,7 +227,7 @@ def test_rope_ragged_gpu[
                     )
 
 
-def execute_rope_ragged_gpu(ctx: DeviceContext) -> None:
+def execute_rope_ragged_gpu(ctx: DeviceContext) raises -> None:
     """Execute GPU RoPE tests with different rope dimensions."""
     # Full head RoPE
     test_rope_ragged_gpu[8, DType.float32](ctx)
@@ -232,6 +236,6 @@ def execute_rope_ragged_gpu(ctx: DeviceContext) -> None:
     test_rope_ragged_gpu[4, DType.float32](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_rope_ragged_gpu(ctx)

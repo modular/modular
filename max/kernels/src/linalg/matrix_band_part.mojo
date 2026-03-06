@@ -13,11 +13,11 @@
 """The module implements matrix band part functions."""
 
 
-from algorithm.functional import elementwise, unswitch
+from std.algorithm.functional import elementwise, unswitch
 from layout import Layout, LayoutTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @always_inline
@@ -106,8 +106,7 @@ fn _matrix_band_part_impl[
             lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
         ) and (upper_diagonal_index < 0 or (col - row) <= upper_diagonal_index)
 
-        @parameter
-        if exclude:
+        comptime if exclude:
             in_band = not in_band
 
         if in_band:

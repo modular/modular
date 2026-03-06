@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.conv import conv_cudnn, conv_gpu
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # input: NHWC
@@ -220,7 +220,7 @@ fn test_conv_cudnn[
     _ = output_ref_dev^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test configurations for data types.
         comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
@@ -242,8 +242,7 @@ def main():
         ](ctx)
 
         # Test different data types.
-        @parameter
-        for i in range(len(dtype_configs)):
+        comptime for i in range(len(dtype_configs)):
             comptime dtype = dtype_configs[i]
 
             test_conv_cudnn[

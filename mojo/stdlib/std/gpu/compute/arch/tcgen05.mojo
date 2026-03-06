@@ -14,31 +14,31 @@
 """This module includes utilities for working with the
 tensorcore 5th generation (tcgen05) instructions."""
 
-from os import abort
-from sys import _RegisterPackType, size_of
-from sys._assembly import inlined_assembly
-from sys.info import _has_blackwell_tcgen05
+from std.os import abort
+from std.sys import _RegisterPackType, size_of
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _has_blackwell_tcgen05
 
-from gpu import external_memory
-from gpu.compute.mma import _str_iota  # TODO: move to a string module
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from memory import bitcast
+from std.gpu import external_memory
+from std.gpu.compute.mma import _str_iota  # TODO: move to a string module
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from std.memory import bitcast
 
-comptime check_blackwell_constraint = constrained[
-    _has_blackwell_tcgen05(),
-    (
+
+@always_inline("nodebug")
+fn check_blackwell_constraint():
+    """Compile-time constraint ensuring Blackwell hardware is targeted."""
+    comptime assert _has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
         " (sm_100a, sm_101a) hardware."
-    ),
-]
-"""Compile-time constraint ensuring Blackwell hardware is targeted."""
+    )
 
 
 struct TensorMemory(TrivialRegisterPassable):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
     var ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     """Pointer to the tensor memory address."""
 
@@ -54,7 +54,7 @@ struct TensorMemory(TrivialRegisterPassable):
         """
         # Bitcast to avoid `cannot implicitly convert` error.
         self.ptr = external_memory[
-            UInt32, address_space = AddressSpace.SHARED, alignment=16
+            UInt32, address_space=AddressSpace.SHARED, alignment=16
         ]().bitcast[UInt32]()
         self.num_cols = num_cols
 
@@ -64,7 +64,7 @@ fn tcgen05_alloc[
     cta_group: Int32
 ](
     ptr_tmem_addr: UnsafePointer[
-        mut=True, UInt32, address_space = AddressSpace.SHARED
+        mut=True, UInt32, _, address_space=AddressSpace.SHARED
     ],
     num_cols: UInt32,
 ):
@@ -234,8 +234,7 @@ fn tcgen05_ld[
         return UnsafePointer(to=r).bitcast[SIMD[dtype, width]]()[]
 
     # fmt: off
-    @parameter
-    if width == 1:
+    comptime if width == 1:
         return call_ld_intrinsic[UInt32]()
     elif width == 2:
         return call_ld_intrinsic[
@@ -296,8 +295,7 @@ fn tcgen05_ld[
             ]
         ]()
     else:
-        constrained[False, "width must be a power of 2 in the range [1, 128]."]()
-        abort()
+        comptime assert False, "width must be a power of 2 in the range [1, 128]."
     # fmt: on
 
 
@@ -387,8 +385,7 @@ fn tcgen05_st[
     )
 
     # fmt: off
-    @parameter
-    if width == 1:
+    comptime if width == 1:
         inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
             data[0],
             tmem_addr)

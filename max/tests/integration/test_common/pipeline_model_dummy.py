@@ -29,7 +29,7 @@ from max.interfaces import (
     TextGenerationRequest,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -39,14 +39,12 @@ from max.pipelines import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
     SupportedArchitecture,
-    SupportedEncoding,
     TextContext,
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.lib import KVCacheMixin, RopeType
+from max.pipelines.lib import PipelineModelWithKVCache
 from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
 from transformers import AutoConfig
 
@@ -59,7 +57,7 @@ class DummyModelInputs(ModelInputs):
     input4: Buffer | None = None
 
 
-class DummyPipelineModel(PipelineModel, KVCacheMixin):
+class DummyPipelineModel(PipelineModelWithKVCache):
     """A pipeline model with setup, input preparation and execution methods."""
 
     def execute(
@@ -184,7 +182,6 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             n_kv_heads=num_kv_heads,
             head_dim=head_dim,
             num_layers=cls._get_num_layers(huggingface_config),
-            cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
@@ -199,7 +196,8 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         session: InferenceSession,
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
-        kv_inputs = self.kv_params.get_symbolic_inputs()[0]
+        assert hasattr(self, "kv_params")
+        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
         with Graph(
             "dummy",
             input_types=[
@@ -222,12 +220,12 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for DummyModel, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
@@ -237,7 +235,7 @@ class DummyTextTokenizer(TextTokenizer):
     def __init__(
         self, model_path: str, pipeline_config: PipelineConfig, *args, **kwargs
     ) -> None:
-        self.max_length = pipeline_config.max_length or 100
+        self.max_length = pipeline_config.model.max_length or 100
         self.delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
 
     @property
@@ -350,16 +348,16 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
         "modularai/Llama-3.1-8B-Instruct-GGUF",
         "trl-internal-testing/tiny-random-LlamaForCausalLM",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.gptq: ["paged"],
+        "gptq",
         # q4_k intentionally left out to test a valid SupportedEncoding but not
         # supported by the model (supported_encoding).
-        SupportedEncoding.q4_0: ["paged"],
-        SupportedEncoding.q6_k: ["paged"],
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
-        SupportedEncoding.float8_e4m3fn: ["paged"],
+        "q4_0",
+        "q6_k",
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -377,11 +375,11 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
         "jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding=SupportedEncoding.float32,
+    default_encoding="float32",
     supported_encodings={
-        SupportedEncoding.gptq: ["paged"],
-        SupportedEncoding.float32: ["paged"],
-        SupportedEncoding.bfloat16: ["paged"],
+        "gptq",
+        "float32",
+        "bfloat16",
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -409,15 +407,15 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
         # "google/gemma-3-27b-it",
         # "google/gemma-3-27b-pt",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: ["paged"],
+        "bfloat16",
     },
     pipeline_model=DummyPipelineModel,
     tokenizer=DummyTextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     multi_gpu_supported=False,
     config=DummyLlamaArchConfig,
 )

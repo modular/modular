@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import align_of, simd_width_of
+from std.collections import Optional
+from std.sys import align_of, simd_width_of
 
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -22,7 +22,7 @@ from gpu import (
     lane_id,
     warp_id,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
@@ -38,10 +38,10 @@ from layout.layout_tensor import (
 from layout._utils import idx2crd
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import stack_allocation
+from std.memory import stack_allocation
 
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
 from ....structuring import (
     IteratorScatterGatherAmd,
@@ -55,7 +55,7 @@ from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
     WarpSplitKReductionSMem,
 )
-from itertools import product
+from std.itertools import product
 
 comptime SMemWarpTileType[
     _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int
@@ -137,12 +137,12 @@ struct MmaOpAMD[
     fn load_tile_fragment[
         k_tile_idx: Int
     ](self, a_smem_tiles: SMemWarpTileType, b_smem_tiles: SMemWarpTileType):
-        Self.tensor_core_mma.mma_op.load_a[swizzle = Self.swizzle](
+        Self.tensor_core_mma.mma_op.load_a[swizzle=Self.swizzle](
             a_smem_tiles,
             self.a_reg_tile(k_tile_idx).vectorize(),
             UInt(k_tile_idx),
         )
-        Self.tensor_core_mma.mma_op.load_b[swizzle = Self.swizzle](
+        Self.tensor_core_mma.mma_op.load_b[swizzle=Self.swizzle](
             b_smem_tiles,
             self.b_reg_tile(k_tile_idx).vectorize(),
             UInt(k_tile_idx),
@@ -294,8 +294,8 @@ fn gemm_kernel_amd[
         b: Input matrix B (must be transposed).
     """
     # Validate input constraints
-    constrained[transpose_b, "Transpose b must be true"]()
-    constrained[a_type == b_type, "a and b must have same type"]()
+    comptime assert transpose_b, "Transpose b must be true"
+    comptime assert a_type == b_type, "a and b must have same type"
 
     # Type and shape aliases
     comptime accum_type = get_accum_type[a_type]()
@@ -339,19 +339,19 @@ fn gemm_kernel_amd[
     var M = a.dim[0]()
 
     comptime N = b.shape[0]() if transpose_b else b.shape[1]()
-    constrained[N != UNKNOWN_VALUE, "N should be known at compile time"]()
+    comptime assert N != UNKNOWN_VALUE, "N should be known at compile time"
 
     var K = b.dim[1 if transpose_b else 0]()
 
     comptime stride = b.stride[0]() if transpose_b else b.stride[1]()
-    constrained[
-        stride != UNKNOWN_VALUE, "stride should be known at compile time"
-    ]()
+    comptime assert (
+        stride != UNKNOWN_VALUE
+    ), "stride should be known at compile time"
 
     comptime c_stride = c.stride[0]()
-    constrained[
-        c_stride != UNKNOWN_VALUE, "c_stride should be known at compile time"
-    ]()
+    comptime assert (
+        c_stride != UNKNOWN_VALUE
+    ), "c_stride should be known at compile time"
 
     # Thread and warp indices
     var warp_id = Int(warp_id())
@@ -439,7 +439,7 @@ fn gemm_kernel_amd[
     var mma_op = MmaOpAMD[
         out_type=accum_type,
         in_type=a_type,
-        shape = config.mma_shape,
+        shape=config.mma_shape,
         transpose_b=True,
         k_group_size=k_group_size,
         num_k_tiles=num_k_tiles,
@@ -454,9 +454,9 @@ fn gemm_kernel_amd[
     # A tensor tiles manager
     var a_tiles = MMATileBuffers[
         mma_op.in_type,
-        smem_layout = smem_tile_layout[BM, BK](),
-        reg_tile_layout = mma_op.reg_tile_layout[num_m_mmas],
-        tensor_type = type_of(a),
+        smem_layout=smem_tile_layout[BM, BK](),
+        reg_tile_layout=mma_op.reg_tile_layout[num_m_mmas],
+        tensor_type=type_of(a),
         thread_layout=thread_layout,
         warp_rows=WM,
         warp_cols=WK,
@@ -475,9 +475,9 @@ fn gemm_kernel_amd[
     # B tensor tiles manager
     var b_tiles = MMATileBuffers[
         mma_op.in_type,
-        smem_layout = smem_tile_layout[BN, BK](),
-        reg_tile_layout = mma_op.reg_tile_layout[num_n_mmas],
-        tensor_type = type_of(b),
+        smem_layout=smem_tile_layout[BN, BK](),
+        reg_tile_layout=mma_op.reg_tile_layout[num_n_mmas],
+        tensor_type=type_of(b),
         thread_layout=thread_layout,
         warp_rows=WN,
         warp_cols=WK,
@@ -563,15 +563,13 @@ fn gemm_kernel_amd[
         comptime mmas_per_smem_store = num_remaining_mma_ops // num_smem_store_ops
         comptime mmas_per_smem_store_extra = num_remaining_mma_ops % num_smem_store_ops
 
-        @parameter
-        for i in range(num_mn_mmas * (num_k_tiles - 1)):
+        comptime for i in range(num_mn_mmas * (num_k_tiles - 1)):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(
                 AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
             )
 
-        @parameter
-        for i in range(num_smem_store_ops):
+        comptime for i in range(num_smem_store_ops):
             comptime mmas_this_smem_store = (
                 mmas_per_smem_store + 1
             ) if i < mmas_per_smem_store_extra else mmas_per_smem_store
@@ -587,8 +585,7 @@ fn gemm_kernel_amd[
                 0,
             )
 
-        @parameter
-        for i in range(num_mn_mmas):
+        comptime for i in range(num_mn_mmas):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(
                 AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
@@ -618,9 +615,7 @@ fn gemm_kernel_amd[
 
     # Stage 3: Main computation loop - Pipelined execution with double buffering
     for _ in range(2, K // BK):
-
-        @parameter
-        for k_tile_idx in range(1, num_k_tiles):
+        comptime for k_tile_idx in range(1, num_k_tiles):
             mma_op.load_tile_fragment[k_tile_idx](
                 a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
             )
@@ -632,8 +627,7 @@ fn gemm_kernel_amd[
         copy_tiles_to_smem()
         load_tiles_from_dram()
 
-        @parameter
-        for k_tile_idx in range(1, num_k_tiles):
+        comptime for k_tile_idx in range(1, num_k_tiles):
             mma_op.mma[k_tile_idx]()
 
         barrier()
@@ -646,8 +640,7 @@ fn gemm_kernel_amd[
 
     schedule_barrier()
 
-    @parameter
-    for k_tile_idx in range(1, num_k_tiles):
+    comptime for k_tile_idx in range(1, num_k_tiles):
         mma_op.load_tile_fragment[k_tile_idx](
             a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
         )
@@ -656,29 +649,25 @@ fn gemm_kernel_amd[
 
     copy_tiles_to_smem()
 
-    @parameter
-    for k_tile_idx in range(0, num_k_tiles):
+    comptime for k_tile_idx in range(0, num_k_tiles):
         mma_op.mma[k_tile_idx]()
 
     schedule_barrier()
 
     barrier()
 
-    @parameter
-    for k_tile_idx in range(0, num_k_tiles):
+    comptime for k_tile_idx in range(0, num_k_tiles):
         mma_op.load_tile_fragment[k_tile_idx](
             a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
         )
 
-    @parameter
-    for k_tile_idx in range(0, num_k_tiles):
+    comptime for k_tile_idx in range(0, num_k_tiles):
         mma_op.mma[k_tile_idx]()
 
     schedule_barrier()
 
     # Accumulate the warp-k tiles via shared memory.
-    @parameter
-    if num_warps_k > 1:
+    comptime if num_warps_k > 1:
         warp_split_k_reduction[
             BM, BN, Int(config.num_threads() // UInt(num_warps_k)), num_warps_k
         ](warp_k, mma_op.out_reg_tile, reduction_smem.ptr)
@@ -696,13 +685,11 @@ fn gemm_kernel_amd[
         MMA_M, MMA_N // c_frag_size
     )
 
-    constrained[
-        c_warp_tile.layout.all_dims_known(),
-        "c_warp_tile layout must be fully static",
-    ]()
+    comptime assert (
+        c_warp_tile.layout.all_dims_known()
+    ), "c_warp_tile layout must be fully static"
 
-    @parameter
-    if Bool(elementwise_lambda_fn) or (N % BN != 0):
+    comptime if Bool(elementwise_lambda_fn) or (N % BN != 0):
         # 3D view on the output register fragments, see FIXME note on out_reg_layout
         comptime out_frag_layout = Layout(
             IntTuple(num_m_mmas, num_n_mmas, c_frag_size),
@@ -743,7 +730,7 @@ fn gemm_kernel_amd[
     else:
         # Direct tile copy to global memory
         var c_scatter_gather = ScatterGatherAmd[
-            output_thread_layout, thread_scope = ThreadScope.WARP
+            output_thread_layout, thread_scope=ThreadScope.WARP
         ](c)
 
         c_scatter_gather.copy(
@@ -801,26 +788,25 @@ fn write_output_fragments[
     comptime frag_height = c_gmem_fragment.layout.shape[0].value()
     comptime frag_width = c_gmem_fragment.layout.shape[1].value()
 
-    @parameter
-    for frag_m, frag_n in product(range(frag_height), range(frag_width)):
+    comptime for frag_m, frag_n in product(
+        range(frag_height), range(frag_width)
+    ):
         if frag_m < max_valid_frag_m and frag_n < max_valid_frag_n:
             # Load result vector, cast to output tensor data type
             var result_vec = c_reg_fragment[frag_m, frag_n, 0].cast[c_type]()
 
-            @parameter
-            if elementwise_lambda_fn:
+            comptime if elementwise_lambda_fn:
                 # Apply custom elementwise operation to each output element
-                constrained[
-                    elementwise_lambda_fn is not None,
-                    "elementwise_lambda_fn is not valid",
-                ]()
+                comptime assert (
+                    elementwise_lambda_fn is not None
+                ), "elementwise_lambda_fn is not valid"
                 comptime epilogue_fn = elementwise_lambda_fn.value()
 
                 # Compute global coordinates
                 var m = thread_tile_m + frag_m * MMA_M
                 var n = thread_tile_n + frag_n * MMA_N
 
-                epilogue_fn[alignment = align_of[SIMD[c_type, c_frag_size]]()](
+                epilogue_fn[alignment=align_of[SIMD[c_type, c_frag_size]]()](
                     (m, n), result_vec
                 )
             else:

@@ -13,19 +13,22 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from random import random_si64
+from std.random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from linalg.matmul.gpu import _matmul_gpu
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-from utils import IndexList
+from std.utils import IndexList
 
 comptime epilogue_func_type = fn[
     type: DType, width: Int, *, alignment: Int = 1
@@ -47,8 +50,7 @@ fn epilogue_test_fn[
 ]:
     var bias = SIMD[dtype, width](0)
 
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         bias[i] = (
             0.5
             + Float64(idx[0] + idx[1] + i)
@@ -100,72 +102,61 @@ fn test[
         M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
     )
 
-    # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[in_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[in_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[out_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[out_type]].alloc(c_size)
-
-    var a_host = LayoutTensor[in_type, a_layout](
-        a_host_ptr,
+    var a_managed = ManagedLayoutTensor[in_type, a_layout](
         RuntimeLayout[a_layout].row_major(dynamic_a_shape),
+        ctx,
     )
-    var b_host = LayoutTensor[in_type, b_layout](
-        b_host_ptr,
-        RuntimeLayout[b_layout].row_major(dynamic_b_shape),
-    )
-    var c_host = LayoutTensor[out_type, c_layout](
-        c_host_ptr,
+    var b_managed = ManagedLayoutTensor[in_type, b_layout](ctx)
+    var c_managed = ManagedLayoutTensor[out_type, c_layout](
         RuntimeLayout[c_layout].row_major(dynamic_c_shape),
+        ctx,
     )
-    var c_host_ref = LayoutTensor[out_type, c_layout](
-        c_host_ref_ptr,
+    var c_ref_managed = ManagedLayoutTensor[out_type, c_layout](
         RuntimeLayout[c_layout].row_major(dynamic_c_shape),
+        ctx,
     )
 
-    # Device allocations
-    var a_device_buffer = ctx.enqueue_create_buffer[in_type](a_size)
-    var b_device_buffer = ctx.enqueue_create_buffer[in_type](b_size)
-    var c_device_buffer = ctx.enqueue_create_buffer[out_type](c_size)
-    var c_device_ref_buffer = ctx.enqueue_create_buffer[out_type](c_size)
-
-    var a_device = NDBuffer[in_type, 2, _, static_a_shape](
-        a_device_buffer.unsafe_ptr(),
-        DimList(m, k),
-    )
-    var b_device = NDBuffer[in_type, 2, _, static_b_shape](
-        b_device_buffer.unsafe_ptr(),
-        DimList(n, k) if transpose_b else DimList(k, n),
-    )
-    var c_device = NDBuffer[out_type, 2, _, static_c_shape](
-        c_device_buffer.unsafe_ptr(),
-        DimList(m, n),
-    )
-    var c_device_ref = NDBuffer[out_type, 2, _, static_c_shape](
-        c_device_ref_buffer.unsafe_ptr(),
-        DimList(m, n),
-    )
+    var a_host = a_managed.tensor[update=False]()
+    var b_host = b_managed.tensor[update=False]()
+    var c_host = c_managed.tensor[update=False]()
+    var c_host_ref = c_ref_managed.tensor[update=False]()
 
     comptime rand_min = -100
     comptime rand_max = 100
 
     for i in range(m * k):
         var val = random_si64(rand_min, rand_max)
-        a_host_ptr[i] = val.cast[in_type]()
+        a_host.ptr[i] = val.cast[in_type]()
 
     for i in range(k * n):
         var val = random_si64(rand_min, rand_max)
-        b_host_ptr[i] = val.cast[in_type]()
+        b_host.ptr[i] = val.cast[in_type]()
 
     for i in range(m * n):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+        c_host.ptr[i] = 0
+        c_host_ref.ptr[i] = 0
 
-    # Move operands to the Device
+    var a_device_tensor = a_managed.device_tensor()
+    var b_device_tensor = b_managed.device_tensor()
+    var c_device_tensor = c_managed.device_tensor()
+    var c_device_ref_tensor = c_ref_managed.device_tensor()
 
-    ctx.enqueue_copy(a_device_buffer, a_host_ptr)
-    ctx.enqueue_copy(b_device_buffer, b_host_ptr)
-    ctx.enqueue_copy(c_device_buffer, c_host_ptr)
+    var a_device = NDBuffer[in_type, 2, _, static_a_shape](
+        a_device_tensor.ptr,
+        IndexList[2](m, k),
+    )
+    var b_device = NDBuffer[in_type, 2, _, static_b_shape](
+        b_device_tensor.ptr,
+        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
+    )
+    var c_device = NDBuffer[out_type, 2, _, static_c_shape](
+        c_device_tensor.ptr,
+        IndexList[2](m, n),
+    )
+    var c_device_ref = NDBuffer[out_type, 2, _, static_c_shape](
+        c_device_ref_tensor.ptr,
+        IndexList[2](m, n),
+    )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
         c_device,
@@ -174,9 +165,7 @@ fn test[
         ctx,
     )
 
-    ctx.synchronize()
-
-    ctx.enqueue_copy(c_host_ptr, c_device_buffer)
+    var c_host_final = c_managed.tensor()
 
     var handle = vendor_blas.Handle()
 
@@ -190,14 +179,13 @@ fn test[
         transpose_b=transpose_b,
     )
 
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
+    var c_host_ref_final = c_ref_managed.tensor()
 
-    ctx.synchronize()
     var errors = 0
     for i in range(m * n):
-        # print(i // n, i % n, c_host_ptr[i], c_host_ref_ptr[i])
-        if c_host_ptr[i] != c_host_ref_ptr[i]:
-            # print(i//n, i%n, c_host_ptr[i], c_host_ref_ptr[i])
+        # print(i // n, i % n, c_host.ptr[i], c_host_ref.ptr[i])
+        if c_host_final.ptr[i] != c_host_ref_final.ptr[i]:
+            # print(i//n, i%n, c_host.ptr[i], c_host_ref.ptr[i])
             errors += 1
 
     print("errors", errors)
@@ -243,18 +231,8 @@ fn test[
         [ThroughputMeasure(BenchMetric.elements, 2 * m * n * k)],
     )
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device_buffer^
-    _ = b_device_buffer^
-    _ = c_device_buffer^
-    _ = c_device_ref_buffer^
 
-
-def main():
+def main() raises:
     var bench = Bench()
 
     with DeviceContext() as ctx:
@@ -262,77 +240,77 @@ def main():
         # M = 1, K % simd_width == 0, transpose_b = True
 
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=True,
             M=None,
-            N = Int(4096),
-            K = Int(4096),
+            N=Int(4096),
+            K=Int(4096),
         ](bench, ctx, 1, 4096, 4096)
 
         # M = 1, N % TILE_N != 0, K % simd_width == 0, transpose_b = True
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=True,
             M=None,
-            N = Int(75837),
-            K = Int(5120),
+            N=Int(75837),
+            K=Int(5120),
         ](bench, ctx, 1, 75837, 5120)
 
         # GEMV_KERNEL_VECTOR
 
         # N = 1, K % simd_width == 0, transpose_b = False
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=False,
             M=None,
-            N = Int(1),
-            K = Int(4096),
+            N=Int(1),
+            K=Int(4096),
         ](bench, ctx, 4096, 1, 4096)
 
         # N = 1, K % simd_width == 0, transpose_b = True
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.bfloat16,
+            in_type=DType.bfloat16,
+            out_type=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(1),
-            K = Int(13824),
+            N=Int(1),
+            K=Int(13824),
         ](bench, ctx, 5120, 1, 13824)
 
         # GEMV_KERNEL
 
         # M = 1, K % simd_width !=0, transpose_b = True
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=True,
             M=None,
-            N = Int(4096),
-            K = Int(4095),
+            N=Int(4096),
+            K=Int(4095),
         ](bench, ctx, 1, 4096, 4095)
 
         # N = 1, K % simd_width !=0, transpose_b = False
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=False,
             M=None,
-            N = Int(1),
-            K = Int(4095),
+            N=Int(1),
+            K=Int(4095),
         ](bench, ctx, 4096, 1, 4095)
 
         # matmaul_naive
         # M = 1, K % WARP_SIZE != 0, transpose_b = False
         test[
-            in_type = DType.bfloat16,
-            out_type = DType.float32,
+            in_type=DType.bfloat16,
+            out_type=DType.float32,
             transpose_b=False,
             M=None,
-            N = Int(4096),
-            K = Int(4095),
+            N=Int(4096),
+            K=Int(4095),
         ](bench, ctx, 1, 4096, 4095)
 
     bench.dump_report()

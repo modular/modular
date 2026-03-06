@@ -21,21 +21,23 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.multi_latent_attention_fp8 import (
+from max.nn.attention.multi_latent_attention import MLADecodeMetadata
+from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.float8_config import (
+from max.nn.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kernels import compute_mla_dispatch_args_scalar
+from max.nn.kv_cache import (
     KVCacheParams,
-    PagedCacheValues,
+    unflatten_ragged_attention_inputs,
 )
-from max.nn.legacy.rotary_embedding import (
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -233,10 +235,10 @@ def generate_max_outputs_fp8(
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
-        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     # Create FP8 configuration with block-wise dynamic scaling [128, 128]
@@ -304,12 +306,28 @@ def generate_max_outputs_fp8(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = PagedCacheValues(
-                kv_blocks=graph.inputs[2].buffer,
-                cache_lengths=graph.inputs[3].tensor,
-                lookup_table=graph.inputs[4].tensor,
-                max_lengths=graph.inputs[5].tensor,
+            kv_collection = unflatten_ragged_attention_inputs(
+                graph.inputs[2:], n_devices=1
+            )[0]
+
+            # Compute MLA decode metadata for decode/auto graph mode.
+            batch_size = ops.shape_to_tensor(
+                input_row_offsets.shape
+            ) - ops.constant(1, DType.int64, device=DeviceRef.CPU())
+            max_cache_valid_length = ops.cast(
+                kv_collection.max_lengths[0, 1], DType.int64
+            ).reshape([1])
+            q_max_seq_len = ops.constant(
+                1, DType.int64, device=DeviceRef.CPU()
+            ).reshape([1])
+            gpu_args = compute_mla_dispatch_args_scalar(
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                num_heads=config.num_attention_heads,
+                device=DeviceRef.GPU(),
             )
+            mla_decode_metadata = MLADecodeMetadata(scalar_args=gpu_args)
 
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -317,6 +335,7 @@ def generate_max_outputs_fp8(
                 kv_collection,
                 freqs_cis=rope.freqs_cis,
                 input_row_offsets=input_row_offsets,
+                mla_decode_metadata=mla_decode_metadata,
             )
             graph.output(result)
         return graph
@@ -345,7 +364,7 @@ def generate_max_outputs_fp8(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+            kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -367,7 +386,7 @@ def generate_max_outputs_fp8(
 
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)

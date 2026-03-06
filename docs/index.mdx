@@ -1,0 +1,110 @@
+---
+title: Modular Documentation
+hide_table_of_contents: true
+hide_title: true
+pagination_prev: null
+pagination_next: null
+slug: /
+---
+
+import Homepage, { GetStartedButton } from "@site/src/components/Homepage";
+import CodeNote from "@site/src/components/Homepage/CodeNote";
+import { ArrowTransfer } from "@site/src/shared/Svgs/ArrowTransfer";
+import { ArrowCloud } from "@site/src/shared/Svgs/ArrowCloud";
+import { DesktopCode } from "@site/src/shared/Svgs/DesktopCode";
+import { AIChip } from "@site/src/shared/Svgs/AIChip";
+import { RecipesIcon } from "@site/src/shared/Svgs/RecipesIcon";
+import { OpenBook } from "@site/src/shared/Svgs/OpenBook";
+import { PuzzleIcon } from "@site/src/shared/Svgs/PuzzleIcon";
+
+<div className="homepage-header">
+<div className="left-side">
+## Modular Documentation
+
+The Modular Platform accelerates AI inference and abstracts hardware
+complexity. Using our Docker container, you can deploy a GenAI model from
+Hugging Face with an OpenAI-compatible endpoint on a wide range of hardware.
+
+And if you need to customize the model or tune a GPU kernel, Modular
+provides a depth of model extensibility and GPU programmability that you
+won't find anywhere else.
+
+<GetStartedButton />
+</div>
+
+<div className="right-side">
+<CodeNote />
+
+```python title="python"
+from openai import OpenAI
+
+client = OpenAI(base_url="http://0.0.0.0:8000/v1", api_key="EMPTY")
+
+completion = client.chat.completions.create(
+  model="google/gemma-3-27b-it",
+  messages=[
+    {"role": "user", "content": "Who won the world series in 2020?"}
+  ],
+)
+
+print(completion.choices[0].message.content)
+```
+
+</div>
+</div>
+
+export const sectionCards = [
+  {
+    title: "Serving",
+    description:
+      "Modular’s serving library is compatible with OpenAI APIs, so you can own your endpoint with minimal client-side code changes.",
+    to: "/max/container",
+    icon: <ArrowTransfer />,
+  },
+  {
+    title: "Deploying",
+    description:
+      "Deploy your GenAI models to the cloud and scale your deployments across heterogenous GPU clusters.",
+    to: "/mammoth/",
+    icon: <ArrowCloud />,
+  },
+  {
+    title: "Developing",
+    description:
+      "The Modular platform provides full extensibility, so you can write custom ops, hardware-agnostic GPU kernels, and more.",
+    to: "/max/develop/",
+    icon: <DesktopCode />,
+  },
+  {
+    title: "Programming with Mojo🔥",
+    description:
+      "Mojo is a Python-style programming language that allows you to write code for both CPUs and GPUs. ",
+    to: "/mojo/manual/",
+    icon: <AIChip />,
+  },
+];
+
+export const learningToolCards = [
+  {
+    title: "Agentic Cookbook",
+    description:
+      "Turn-key applications that use GenAI models with the Modular platform.",
+    href: "https://modul.ar/cookbook",
+    icon: <RecipesIcon />,
+  },
+  {
+    title: "GPU Puzzles",
+    description: "A hands-on guide to mastering GPU programming with Mojo.",
+    href: "https://builds.modular.com/puzzles",
+    icon: <PuzzleIcon />,
+  },
+  {
+    title: "Build an LLM with MAX",
+    description:
+      "Learn to build an LLM from scratch with MAX.",
+    href: "https://llm.modular.com/",
+    icon: <OpenBook />,
+  },
+];
+
+<Homepage sectionCards={sectionCards} learningToolCards={learningToolCards} />

@@ -18,14 +18,14 @@ from layout import (
     RuntimeLayout,
 )
 from layout._fillers import random
-from math import exp, exp2, log
-from memory import alloc
+from std.math import exp, exp2, log
+from std.memory import alloc
 from state_space.selective_scan import (
     ssd_combined_cpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
@@ -62,7 +62,7 @@ fn run_ssd_combined[
     rtol: Float64 = 0.01,
 ) raises:
     """Test SSD combined kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -426,5 +426,5 @@ fn test_ssd_combined_larger_shapes() raises:
     ](batch=4, dim=8, seqlen=16, n_groups=1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

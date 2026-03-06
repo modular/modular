@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""Modular framework Python bindings."""
+
 import enum
 import inspect
 import os
@@ -212,9 +214,11 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
-    def capture(self, *inputs: Buffer) -> list[Buffer]:
+    def capture(
+        self, graph_keys: int | Sequence[int], *inputs: Buffer
+    ) -> list[Buffer]:
         """
-        Capture execution into a device graph for the given inputs.
+        Capture execution into a device graph for caller-provided key.
 
         Capture is best-effort and model-dependent. It records the current execution
         path; models that perform unsupported operations during capture (for example,
@@ -222,19 +226,50 @@ class Model:
         phases are safe to capture (e.g. decode-only in serving).
         """
 
-    def replay(self, *inputs: Buffer) -> None:
-        """Replay the captured device graph for these inputs."""
+    def replay(self, graph_keys: int | Sequence[int], *inputs: Buffer) -> None:
+        """Replay the captured device graph for the provided key."""
+
+    def debug_verify_replay(
+        self, graph_keys: int | Sequence[int], *inputs: Buffer
+    ) -> None:
+        """
+        Execute eagerly and verify the launch trace matches the captured graph.
+
+        This method validates that graph capture correctly represents eager execution
+        by running the model and comparing kernel launch traces. Useful for debugging
+        graph capture issues.
+
+        Args:
+            graph_keys: One graph key per participating device stream.
+            inputs: Input buffers matching the captured input signature.
+
+        Raises:
+            RuntimeError: If no graph captured or trace verification fails.
+        """
 
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
     def _capture(
-        self, inputs: Sequence[max._core.driver.Buffer]
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
     ) -> list[max._core.driver.Buffer]:
         """Capture execution into a device graph."""
 
-    def _replay(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
+    def _replay(
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
+    ) -> None:
         """Replay the captured device graph."""
+
+    def _debug_verify_replay(
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
+    ) -> None:
+        """Debug verify replay against captured graph."""
 
     def _export_mef(self, path: str) -> None:
         """

@@ -11,23 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from math import ceildiv, align_up
-from sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
-    env_get_string,
+from std.os import abort
+from std.math import ceildiv, align_up
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
     has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -43,24 +49,28 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout._coord import Coord, Idx, RuntimeInt
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
 from linalg.utils import elementwise_epilogue_type
 
-from utils import Index, IndexList
-from collections import Optional
+from std.utils import Index, IndexList
+from std.collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -139,6 +149,7 @@ fn bench_grouped_matmul[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
+    AB_swapped: Bool = False,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -173,6 +184,7 @@ fn bench_grouped_matmul[
     comptime static_c_shape = DimList(Dim(), N)
     var c_size = total_num_tokens * N
     comptime static_b_shape = DimList(num_experts, N, packed_K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, packed_K)
     var b_size = num_experts * N * packed_K
 
     # Host allocations
@@ -199,8 +211,7 @@ fn bench_grouped_matmul[
         a_scale_dim0 += ceildiv(num_tokens, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids_input[i])
 
-        @parameter
-        if in_type == DType.float8_e4m3fn:
+        comptime if in_type == DType.float8_e4m3fn:
             comptime a_scale_alignment = 16 // size_of[DType.float32]()
             if num_tokens % a_scale_alignment != 0:
                 abort(
@@ -225,15 +236,15 @@ fn bench_grouped_matmul[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, packed_K),
+        IndexList[2](total_num_tokens, packed_K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
@@ -260,8 +271,7 @@ fn bench_grouped_matmul[
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
         c_dev.store[width=width, alignment=alignment](
@@ -274,12 +284,10 @@ fn bench_grouped_matmul[
     var a_offsets = from_ndbuffer_row_major(a_offsets_dev)
     var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
 
-    @parameter
-    if is_fp4e2m1:
-        constrained[
-            scaling_kind_str == "nvfp4",
-            "Only support nvfp4 scaling kind for float4-e2m1fn",
-        ]()
+    comptime if is_fp4e2m1:
+        comptime assert (
+            scaling_kind_str == "nvfp4"
+        ), "Only support nvfp4 scaling kind for float4-e2m1fn"
 
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
@@ -398,8 +406,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
@@ -419,7 +426,7 @@ fn bench_grouped_matmul[
                         mma_shape=umma_shape,
                         block_swizzle_size=8,
                         cta_group=1,
-                        AB_swapped=False,
+                        AB_swapped=AB_swapped,
                         k_group_size=1,
                         num_accum_pipeline_stages=2,
                     )
@@ -471,14 +478,16 @@ fn bench_grouped_matmul[
         expert_scales_host_ptr.free()
 
     elif in_type == DType.float8_e4m3fn:
-        constrained[
-            scaling_kind_str == "1d2d",
-            "Only support 1d2d scaling kind for float8_e4m3fn",
-        ]()
+        comptime assert (
+            scaling_kind_str == "1d2d"
+        ), "Only support 1d2d scaling kind for float8_e4m3fn"
         comptime BLOCK_SCALE_K = 128
         comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
         var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
         comptime static_b_scales_shape = DimList(
+            num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+        )
+        var dynamic_b_scales_shape = IndexList[3](
             num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
         )
         var b_scales_size = (
@@ -495,11 +504,11 @@ fn bench_grouped_matmul[
 
         var a_scales_dev = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
             a_scales_dev_buffer.unsafe_ptr(),
-            DimList(K // BLOCK_SCALE_K, total_num_tokens),
+            IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
         )
         var b_scales_dev = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
             b_scales_dev_buffer.unsafe_ptr(),
-            static_b_scales_shape,
+            dynamic_b_scales_shape,
         )
 
         init_vector_launch[DType.float32](
@@ -538,8 +547,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
@@ -552,12 +560,12 @@ fn bench_grouped_matmul[
                         cluster_shape=Index(1, 1, 1),
                         mma_shape=umma_shape,
                         cta_group=1,
-                        AB_swapped=False,
+                        AB_swapped=AB_swapped,
                         k_group_size=1,
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                         config=config,
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -620,14 +628,13 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
                 else:
                     grouped_matmul[
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -689,6 +696,7 @@ fn create_grouped_matmul_bench[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
+    AB_swapped: Bool = False,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -705,6 +713,7 @@ fn create_grouped_matmul_bench[
         use_vendor_blas=use_vendor_blas,
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
+        AB_swapped=AB_swapped,
     ](
         ctx,
         bench,
@@ -725,10 +734,10 @@ fn string_to_list(string: String) raises -> List[Int]:
     return list^
 
 
-def main():
-    comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
-    comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
-    comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()
+def main() raises:
+    comptime in_type = get_defined_dtype["in_type", DType.bfloat16]()
+    comptime out_type = get_defined_dtype["out_type", DType.bfloat16]()
+    comptime scaling_kind_str = get_defined_string["scaling_kind", "1d2d"]()
 
     var num_active_experts = Int(arg_parse("num_active_experts", 1))
     var num_tokens_by_expert_string = String(
@@ -739,15 +748,16 @@ def main():
     var num_tokens_by_expert = string_to_list(num_tokens_by_expert_string)
     var expert_ids = string_to_list(expert_ids_string)
 
-    comptime N = env_get_int["N", 256]()
-    comptime K = env_get_int["K", 256]()
-    comptime num_experts = env_get_int["num_experts", 1]()
+    comptime N = get_defined_int["N", 256]()
+    comptime K = get_defined_int["K", 256]()
+    comptime num_experts = get_defined_int["num_experts", 1]()
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    comptime has_epilogue = env_get_bool["has_epilogue", False]()
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+    comptime has_epilogue = get_defined_bool["has_epilogue", False]()
+    comptime AB_swapped = get_defined_bool["AB_swapped", False]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -761,6 +771,7 @@ def main():
             use_vendor_blas=use_vendor_blas,
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
+            AB_swapped=AB_swapped,
         ](
             ctx,
             b,

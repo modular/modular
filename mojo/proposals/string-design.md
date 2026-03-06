@@ -136,7 +136,7 @@ string data corresponding to the string, but there is an additional
 `Atomic[Index]` header *before* the string data the pointer points to.
 This header contains a reference count for the mutable string buffer.
 
-This design allows the `__copyinit__` for the String type to guarantee that it
+This design allows the copy constructor for the String type to guarantee that it
 is O(1): it just copies three words of data, and increments the reference count
 if indirect and mutable.  When checking to see if a string is mutable, the data
 is copied to a new buffer when the pointer is to an immutable string or when it

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-from itertools import product
+from std.itertools import product
 from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.conv import (
     ConvDirectNHWC,
@@ -33,7 +33,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime simd_size: Int = simd_width_of[DType.float32]()
 
@@ -113,8 +113,7 @@ fn test[
         output_ptr, RuntimeLayout[layout_3d].row_major(Index(N, WO, F))
     )
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
@@ -140,8 +139,7 @@ fn test[
     # Test direct conv
     comptime conv_attr = ConvInfoStatic[1]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_3d,
             layout_4d,
@@ -202,7 +200,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
     # No packing or padding.
     test[dtype, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)

@@ -17,7 +17,8 @@ import re
 from dataclasses import dataclass, field
 from math import isclose
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -25,6 +26,7 @@ import torch
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.engine.api import AssertLevel
 from max.graph import (
     DeviceRef,
     Graph,
@@ -74,6 +76,22 @@ def test_execute_success(
         output[0].to_numpy(),
         np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
     )
+
+
+def test_inference_session_reads_mojo_assert_level_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MOJO_ASSERT_LEVEL", "all")
+
+    with patch.object(
+        InferenceSession,
+        "set_mojo_assert_level",
+        autospec=True,
+    ) as set_mojo_assert_level:
+        _ = InferenceSession(devices=[CPU()])
+
+    assert set_mojo_assert_level.call_count == 1
+    assert set_mojo_assert_level.call_args.args[1] == AssertLevel.ALL
 
 
 def test_devicetensor_wrong_num_inputs(
@@ -369,9 +387,6 @@ def test_list_io(session: InferenceSession, mo_listio_model_path: Path) -> None:
     # The new API returns a list, so we need to access by index instead of key
     assert len(output) == 1  # Assuming single output containing the list
     output_list = output[0]  # Get the first (and likely only) output
-    # Type assertions to help mypy understand the types
-    from typing import Any
-
     # Cast to Any to avoid mypy issues with union types
     output_list_any: Any = output_list
     assert len(output_list_any) == 3
@@ -793,8 +808,8 @@ def test_session_device_initialization() -> None:
 
     # Case: Empty list specified.
     session3 = InferenceSession(devices=[])
-    assert not set(session3.devices), (
-        "Devices with empty list should give the empty set"
+    assert set(session3.devices) == {cpu}, (
+        "Devices with empty list should include host CPU"
     )
 
     if accelerator_count() == 0:
@@ -803,8 +818,8 @@ def test_session_device_initialization() -> None:
     gpu = Accelerator()
     # Case: Only GPU specified.
     session4 = InferenceSession(devices=[gpu])
-    assert set(session4.devices) == {gpu}, (
-        "Devices with only GPU should result in GPU"
+    assert set(session4.devices) == {gpu, cpu}, (
+        "Devices with only GPU should include host CPU"
     )
 
     # Case: GPU and CPU specified.
@@ -815,8 +830,8 @@ def test_session_device_initialization() -> None:
 
     # Case: Duplicate GPU specified.
     session6 = InferenceSession(devices=[gpu, gpu])
-    assert set(session6.devices) == {gpu}, (
-        "Devices with duplicate GPU should be unique"
+    assert set(session6.devices) == {gpu, cpu}, (
+        "Devices with duplicate GPU should still include host CPU"
     )
 
 

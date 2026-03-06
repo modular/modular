@@ -21,11 +21,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import sgmv_qkv_lora_kernel
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kernels import sgmv_qkv_lora_kernel
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -76,9 +73,10 @@ def dump_kv_cache_to_torch(
 ) -> list[torch.Tensor]:
     """Extract K or V cache contents for each sequence in batch."""
     torch_dtype = cache.params.dtype.to_torch()
-    device_tensor = cache.get_device_tensors(replica_idx=0)[device_id]
-    device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
-    device_tensor_torch = device_tensor_torch[:, key_or_value, :, :, :, :]
+    device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
+    device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
+    device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
+    page_size = cache.params.page_size
 
     results = []
     for ctx in batch:
@@ -92,13 +90,13 @@ def dump_kv_cache_to_torch(
             dtype=torch_dtype,
         )
 
-        for start_idx in range(0, seq_len, cache.page_size):
-            end_idx = min(start_idx + cache.page_size, seq_len)
-            block_id = req_blocks[start_idx // cache.page_size]
-            block_torch = device_tensor_torch[block_id, 0]
+        for start_idx in range(0, seq_len, page_size):
+            end_idx = min(start_idx + page_size, seq_len)
+            block_id = req_blocks[start_idx // page_size]
+            block_torch = device_buffer_torch[block_id, 0]
 
             for token_idx in range(start_idx, end_idx):
-                result[token_idx] = block_torch[token_idx % cache.page_size]
+                result[token_idx] = block_torch[token_idx % page_size]
 
         results.append(result.reshape(seq_len, -1))
 
@@ -293,7 +291,6 @@ def run_sgmv_qkv_lora_kernel(
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         devices=[device_ref],
     )
@@ -313,7 +310,7 @@ def run_sgmv_qkv_lora_kernel(
         batch.append(context)
 
     # Zero the KV cache
-    cache_tensor = kv_manager.get_device_tensors(replica_idx=0)[0]
+    cache_tensor = kv_manager.get_device_buffer(replica_idx=0).values[0]
     cache_tensor.inplace_copy_from(
         Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
@@ -405,7 +402,7 @@ def run_sgmv_qkv_lora_kernel(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     rank = combined_rank // 3
     result = compiled.execute(

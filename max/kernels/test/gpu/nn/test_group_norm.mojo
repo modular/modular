@@ -12,22 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import rsqrt
-from sys import simd_width_of
+from std.math import rsqrt
+from std.sys import simd_width_of
 
-from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def compute_group_stats[
     t: DType
-](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) -> Tuple[
+](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
     Scalar[t],
     Scalar[t],
 ]:
@@ -145,10 +143,10 @@ fn run_group_norm_gpu[
     beta_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime default_simd = simd_width_of[
-            DType.float32, target = get_gpu_target()
+            DType.float32, target=get_gpu_target()
         ]()
 
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===

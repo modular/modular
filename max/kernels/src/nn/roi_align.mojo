@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil
+from std.math import ceil
 
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 
-from utils.numerics import min_or_neg_inf
+from std.utils.numerics import min_or_neg_inf
 
 
 struct Weighted2DPoint[dtype: DType](TrivialRegisterPassable):
@@ -209,8 +209,7 @@ fn roi_align_nhwc[
         @parameter
         @always_inline
         fn init_fn[dtype: DType]() -> Scalar[dtype]:
-            @parameter
-            if mode == "AVG":
+            comptime if mode == "AVG":
                 return 0
             else:
                 return min_or_neg_inf[dtype]()
@@ -220,8 +219,7 @@ fn roi_align_nhwc[
         fn update_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
-            @parameter
-            if mode == "AVG":
+            comptime if mode == "AVG":
                 return a + b
             else:
                 return max(a, b)
@@ -231,8 +229,7 @@ fn roi_align_nhwc[
         fn reduce_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
-            @parameter
-            if mode == "AVG":
+            comptime if mode == "AVG":
                 return a / b
             else:
                 return a

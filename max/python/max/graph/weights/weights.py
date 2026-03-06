@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines the :class:`Weights` protocol and :class:`WeightData` container for model weight management."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -18,7 +20,7 @@ from collections.abc import Callable, Iterator
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import numpy.typing as npt
-from max.driver import CPU, DLPackArray
+from max.driver import CPU, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 
 from ..buffer_utils import cast_dlpack_to
@@ -230,6 +232,12 @@ class WeightData(DLPackArray):
         reinterprets the underlying bytes. Special handling is provided for
         bfloat16 conversions using PyTorch when available.
 
+        During cross-compilation (warm-cache) scenarios where no GPU is available,
+        this method skips the actual data conversion but still returns a WeightData
+        with the target dtype. This is safe because the weight data won't be used
+        for inference during compilation - only the dtype metadata matters for
+        graph construction.
+
         .. code-block:: python
 
             # Convert float32 weights to float16 for reduced memory
@@ -244,6 +252,17 @@ class WeightData(DLPackArray):
         """
         if self.dtype == dtype:
             return self
+        # In virtual device mode (warm-cache/cross-compilation), skip actual
+        # data casting but update the dtype metadata. The weight data won't be
+        # used for inference - only the dtype matters for graph construction.
+        if is_virtual_device_mode():
+            return WeightData(
+                data=self.data,
+                name=self.name,
+                dtype=dtype,
+                shape=self.shape,
+                quantization_encoding=self.quantization_encoding,
+            )
         data = cast_dlpack_to(self.data, self.dtype, dtype, CPU())
         return WeightData(
             data=data,

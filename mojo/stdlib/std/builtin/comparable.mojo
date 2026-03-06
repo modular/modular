@@ -11,14 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.constrained import _constrained_field_conforms_to
-from builtin.range import _ZeroStartingRange
-from reflection import struct_field_names, struct_field_types
-
-
-@deprecated(use=Equatable)
-comptime EqualityComparable = Equatable
-"""Deprecated alias for `Equatable`."""
+from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.range import _ZeroStartingRange
+from std.reflection import struct_field_names, struct_field_types
 
 
 trait Equatable(ImplicitlyDestructible):
@@ -66,8 +61,7 @@ trait Equatable(ImplicitlyDestructible):
         comptime names = struct_field_names[Self]()
         comptime types = struct_field_types[Self]()
 
-        @parameter
-        for i in range(names.size):
+        comptime for i in range(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Equatable),

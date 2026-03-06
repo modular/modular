@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from testing import *
+from std.testing import *
 
 
 fn test_gettempdir() raises:
-    from tempfile import gettempdir
+    from std.tempfile import gettempdir
 
     var temp_dir = gettempdir()
     assert_true(temp_dir != None)
@@ -25,8 +25,8 @@ fn test_gettempdir() raises:
 
 
 fn test_mkdtemp() raises:
-    from tempfile import mkdtemp
-    import os
+    from std.tempfile import mkdtemp
+    import std.os
 
     dir_path = mkdtemp()
     assert_true(os.path.exists(dir_path))
@@ -36,8 +36,8 @@ fn test_mkdtemp() raises:
 
 
 fn test_rmtree() raises:
-    from tempfile import mkdtemp
-    import os
+    from std.tempfile import mkdtemp
+    import std.os
 
     dir_path = mkdtemp()
     assert_true(os.path.exists(dir_path))
@@ -47,8 +47,8 @@ fn test_rmtree() raises:
 
 
 fn test_temporary_directory_context_manager() raises:
-    from tempfile import TemporaryDirectory
-    import os
+    from std.tempfile import TemporaryDirectory
+    import std.os
 
     var temp_dir_copy: String
     with TemporaryDirectory() as temp_dir:
@@ -60,8 +60,8 @@ fn test_temporary_directory_context_manager() raises:
 
 
 fn test_named_temporary_file_context_manager() raises:
-    from tempfile import NamedTemporaryFile
-    from pathlib import Path
+    from std.tempfile import NamedTemporaryFile
+    from std.pathlib import Path
 
     var p: Path
     with NamedTemporaryFile(mode="rw") as f:
@@ -73,8 +73,8 @@ fn test_named_temporary_file_context_manager() raises:
 
 
 fn test_file_close() raises:
-    from tempfile import NamedTemporaryFile
-    import os
+    from std.tempfile import NamedTemporaryFile
+    import std.os
 
     var temp_file = NamedTemporaryFile()  # delete=True by default
     temp_file.write("Temporary data")
@@ -89,8 +89,8 @@ fn test_file_close() raises:
 
 
 fn test_file_read() raises:
-    from tempfile import NamedTemporaryFile
-    from pathlib import Path
+    from std.tempfile import NamedTemporaryFile
+    from std.pathlib import Path
 
     var p: Path
     with NamedTemporaryFile(mode="rw") as f:
@@ -103,8 +103,8 @@ fn test_file_read() raises:
 
 
 fn test_read_bytes() raises:
-    from tempfile import NamedTemporaryFile
-    from pathlib import Path
+    from std.tempfile import NamedTemporaryFile
+    from std.pathlib import Path
 
     var p: Path
     var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]
@@ -124,8 +124,8 @@ fn test_read_bytes() raises:
 
 
 fn test_write() raises:
-    from tempfile import NamedTemporaryFile
-    from pathlib import Path
+    from std.tempfile import NamedTemporaryFile
+    from std.pathlib import Path
 
     with NamedTemporaryFile(mode="rw") as f:
         f.write("Hello world!")
@@ -134,7 +134,7 @@ fn test_write() raises:
 
 
 fn test_write_bytes() raises:
-    from tempfile import NamedTemporaryFile
+    from std.tempfile import NamedTemporaryFile
 
     var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello" in ASCII
 

@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._coord import Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import Idx, TileTensor, row_major
 from nn.argsort import argsort
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn test_argsort[
@@ -46,8 +44,7 @@ fn test_argsort[
             var lhs = input[indices[i]]
             var rhs = input[indices[i + 1]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs < rhs,
                     msg=String(
@@ -91,8 +88,7 @@ fn test_argsort[
             var lhs = input[indices[i]]
             var rhs = input[indices[0]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs > rhs,
                     msg=String(
@@ -133,7 +129,7 @@ fn test_argsort[
     indices_ptr.free()
 
 
-def main():
+def main() raises:
     fn linear_filler(i: Int, n: Int) -> Float32:
         return Float32(i)
 

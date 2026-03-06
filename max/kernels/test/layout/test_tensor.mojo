@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, product
 from layout.layout import Layout
 from layout.layout_tensor import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn print_raw_major_tensor(tensor: LayoutTensor):
@@ -690,9 +690,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[
-            stack_alignment = align_of[SIMD[DType.float32, 4]]()
-        ]()
+        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[1, 4]()
         .fill(0)
     )
@@ -738,9 +736,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[
-            stack_alignment = align_of[SIMD[DType.float32, 4]]()
-        ]()
+        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[4, 4]()
         .fill(0)
     )
@@ -805,7 +801,7 @@ fn test_distribute_vectorized():
         DType.float32,
         Layout(IntTuple(IntTuple(16, 16), 4), IntTuple(IntTuple(32, 2), 512)),
         MutAnyOrigin,
-        element_layout = Layout(2),
+        element_layout=Layout(2),
     ](ptr)
 
     comptime thread_layout = Layout(
@@ -1437,7 +1433,7 @@ fn test_slice_with_offsets():
     # CHECK: 12.0 14.0
     print("slice-of[0:3,:2,0]")
     print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
             IndexList[1](0)
         )
     )
@@ -1448,7 +1444,7 @@ fn test_slice_with_offsets():
     # CHECK: 13.0 15.0
     print("slice-of-[0:3,:2,1]")
     print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
             IndexList[1](1)
         )
     )
@@ -1459,7 +1455,7 @@ fn test_slice_with_offsets():
     # CHECK: 16.0 17.0
     print("slice-of-[2,:,:]")
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](
+        tensor_4x3x2_row_major.slice[:, :, slice_indices=(1, 2)](
             IndexList[1](2)
         )
     )
@@ -1471,7 +1467,7 @@ fn test_slice_with_offsets():
     # CHECK: 14.0 15.0
     # CHECK: 20.0 21.0
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](
+        tensor_4x3x2_row_major.slice[:, :, slice_indices=(0, 2)](
             IndexList[1](1)
         )
     )
@@ -1483,7 +1479,7 @@ fn test_slice_with_offsets():
     # CHECK: 18.0
     print("slice-of-[:,0,0]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](0)](
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](0)](
             IndexList[2](0, 0)
         )
     )
@@ -1494,7 +1490,7 @@ fn test_slice_with_offsets():
     # CHECK: 17.0
     print("slice-of-[2,:,1]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](1)](
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](1)](
             IndexList[2](2, 1)
         )
     )
@@ -2030,7 +2026,7 @@ fn test_merge():
     print(a)
 
 
-def main():
+def main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()

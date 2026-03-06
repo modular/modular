@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from os.atomic import Atomic
+from std.os.atomic import Atomic
 
-import gpu.primitives.warp as warp
-from builtin.device_passable import DevicePassable
-from gpu.host.info import H100
-from gpu import block_idx, thread_idx
-from gpu.sync import barrier, named_barrier
+import std.gpu.primitives.warp as warp
+from std.builtin.device_passable import DevicePassable
+from std.gpu.host.info import H100
+from std.gpu import block_idx, thread_idx
+from std.gpu.sync import barrier, named_barrier
 from nn.mha_fa3_utils import NullPointer, OptionalPointer
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -43,6 +43,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
         return self.is_valid_tile
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -94,8 +95,7 @@ struct SeqInfo(TrivialRegisterPassable):
     ) -> SeqInfo:
         var batch_idx: UInt32 = work.prompt_idx
 
-        @parameter
-        if not ValidLengthType.is_null:
+        comptime if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
             ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
                 valid_length.value()
@@ -134,7 +134,7 @@ struct MHATileState(TrivialRegisterPassable):
     # Linear work tile index i.e. idx-th work among all possible workload.
     var idx: UInt32
     var sidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     var max_idx: UInt32
 
@@ -143,7 +143,7 @@ struct MHATileState(TrivialRegisterPassable):
         out self,
         idx: UInt32,
         sidx_ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         max_idx: UInt32,
     ):
@@ -190,8 +190,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         """Map the thread block's index to coordinates of work tile."""
 
-        @parameter
-        if schedule == MHASchedule.PROMPT_ROTATE:
+        comptime if schedule == MHASchedule.PROMPT_ROTATE:
             return self._index_to_coords_prompt_rotate[num_heads](idx)
 
         return self._index_to_coords_default[num_heads](idx)
@@ -378,7 +377,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
@@ -492,7 +491,7 @@ struct TransientScheduler[
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
@@ -605,7 +604,7 @@ struct TileScheduler[
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
@@ -640,7 +639,7 @@ struct QueuedTileScheduler[
 
     # Linear work tile index i.e. idx-th work among all possible workload.
     var gidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+        UInt32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ]
 
     comptime may_advance: Bool = True
@@ -681,16 +680,13 @@ struct QueuedTileScheduler[
         Note that if `MHASchedulerSynchronization` is `NONE`, then we assume it is only called by `thread_idx.x==0`.
         """
 
-        @parameter
-        if producer:
+        comptime if producer:
             if thread_idx.x == 0:
                 var idx: UInt32
                 while True:
                     idx = Atomic.fetch_add(self.gidx_ptr, 1)
                     if not state.is_valid(idx):
-
-                        @parameter
-                        if sync == MHASchedulerSynchronization.NONE:
+                        comptime if sync == MHASchedulerSynchronization.NONE:
                             state.idx = idx
                             state.sidx_ptr.store(offset=pipeline_idx, val=idx)
                             return None
@@ -701,12 +697,9 @@ struct QueuedTileScheduler[
                         Self.tile_shape, Self.num_heads, Self.schedule
                     ](idx)
 
-                    @parameter
-                    if not Self.decoding:
+                    comptime if not Self.decoding:
                         if seq_info.is_valid():
-
-                            @parameter
-                            if sync == MHASchedulerSynchronization.NONE:
+                            comptime if sync == MHASchedulerSynchronization.NONE:
                                 state.idx = idx
                                 state.sidx_ptr.store(
                                     offset=pipeline_idx, val=idx
@@ -719,12 +712,10 @@ struct QueuedTileScheduler[
                 state.sidx_ptr.store(offset=pipeline_idx, val=idx)
 
             # producer needs to sync before loading
-            @parameter
-            if sync == MHASchedulerSynchronization.PRODUCER:
+            comptime if sync == MHASchedulerSynchronization.PRODUCER:
                 named_barrier[128,](id=1)
 
-        @parameter
-        if sync == MHASchedulerSynchronization.ALL:
+        comptime if sync == MHASchedulerSynchronization.ALL:
             barrier()
 
         # when !ALL, consumers rely on `async_copy_arrive`
@@ -756,7 +747,7 @@ struct QueuedTileScheduler[
     ](
         self,
         ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:

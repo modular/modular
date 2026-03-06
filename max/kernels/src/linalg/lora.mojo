@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu.host import DeviceContext
-from random import rand
+from buffer.dimlist import Dim, DimList
+from std.gpu.host import DeviceContext
+from std.random import rand
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
-from testing import assert_almost_equal
-from gpu.host.info import B200
+from std.testing import assert_almost_equal
+from std.gpu.host.info import B200
 
-from utils import IndexList
-from utils.index import Index
-import itertools
+from std.utils import IndexList
+from std.utils.index import Index
+import std.itertools
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
@@ -39,11 +39,11 @@ fn shrink_qkv_permute_3mn_sm100[
     b_type: DType,
     b_shape: DimList,
 ](
-    c_lora: NDBuffer[mut=True, c_type, 3, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    c_lora: NDBuffer[c_type, 3, MutAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -95,14 +95,12 @@ fn shrink_qkv_permute_3mn_sm100[
         c_type,
         2,
         MutAnyOrigin,
-        shape = DimList(Dim(), Dim(N_Total)),
-        strides = DimList.create_unknown[2](),
+        shape=DimList(Dim(), Dim(N_Total)),
+        strides=DimList.create_unknown[2](),
     ]()  # data=null, shape/stride zeroed
 
     # Populate the dynamic shape (row-major strides will be set later if needed).
-    c.dynamic_shape = _make_tuple[2, element_type = DType.uint64](
-        DimList(M, N_Total)
-    )
+    c.dynamic_shape = [M, N_Total]
 
     @always_inline
     @__copy_capture(c_tensor_lora, M)

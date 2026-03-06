@@ -38,7 +38,11 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 from tqdm.contrib.concurrent import thread_map
 from tqdm.std import TqdmDefaultWriteLock
 
-from .config_enums import RepoType, SupportedEncoding
+from .config.config_enums import (
+    RepoType,
+    SupportedEncoding,
+    parse_supported_encoding_from_file_name,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -269,18 +273,23 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
 
     for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
         try:
-            return huggingface_hub.revision_exists(
-                repo_id=repo_id, revision=revision
-            )
+            # We don't use revision_exists because its implementation turns
+            # GatedRepo errors into 'False' return values, which are
+            # uninformative.
+            _ = huggingface_hub.repo_info(repo_id=repo_id, revision=revision)
+            return True
         except (
-            hf_hub_errors.RepositoryNotFoundError,
             hf_hub_errors.GatedRepoError,
-            hf_hub_errors.RevisionNotFoundError,
             hf_hub_errors.EntryNotFoundError,
         ) as e:
             # Forward these specific errors to the user
             logger.error(f"Hugging Face repository error: {str(e)}")
             raise
+        except (
+            hf_hub_errors.RepositoryNotFoundError,
+            hf_hub_errors.RevisionNotFoundError,
+        ):
+            return False
         except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
             # Do not retry if Too Many Requests error received
             if e.response.status_code == 429:
@@ -327,18 +336,18 @@ class HuggingFaceRepo:
         # Get repo type.
         if not self.repo_type:
             if os.path.exists(self.repo_id):
-                object.__setattr__(self, "repo_type", RepoType.local)
+                object.__setattr__(self, "repo_type", "local")
             elif huggingface_hub.constants.HF_HUB_OFFLINE:
                 # Respect HF_HUB_OFFLINE, resolve from local cache
                 local_path = generate_local_model_path(
                     self.repo_id, self.revision
                 )
                 object.__setattr__(self, "repo_id", local_path)
-                object.__setattr__(self, "repo_type", RepoType.local)
+                object.__setattr__(self, "repo_type", "local")
             else:
-                object.__setattr__(self, "repo_type", RepoType.online)
+                object.__setattr__(self, "repo_type", "online")
 
-        if self.repo_type == RepoType.online:
+        if self.repo_type == "online":
             validate_hf_repo_access(
                 repo_id=self.repo_id, revision=self.revision
             )
@@ -362,11 +371,11 @@ class HuggingFaceRepo:
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:
         """Returns Hugging Face model info (online repos only)."""
-        if self.repo_type == RepoType.local:
+        if self.repo_type == "local":
             raise ValueError(
                 "using model info, on local repos is not supported."
             )
-        elif self.repo_type == RepoType.online:
+        elif self.repo_type == "online":
             return huggingface_hub.model_info(
                 self.repo_id, files_metadata=False
             )
@@ -380,7 +389,7 @@ class HuggingFaceRepo:
         gguf_search_pattern = "**/*.gguf"
 
         weight_files = {}
-        if self.repo_type == RepoType.local:
+        if self.repo_type == "local":
             safetensor_paths = glob.glob(
                 os.path.join(self.repo_id, safetensor_search_pattern),
                 recursive=True,
@@ -389,7 +398,7 @@ class HuggingFaceRepo:
                 os.path.join(self.repo_id, gguf_search_pattern),
                 recursive=True,
             )
-        elif self.repo_type == RepoType.online:
+        elif self.repo_type == "online":
             fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
                 list[str],
@@ -424,7 +433,7 @@ class HuggingFaceRepo:
 
     def size_of(self, filename: str) -> int | None:
         """Returns file size in bytes for online repos, or None."""
-        if self.repo_type == RepoType.online:
+        if self.repo_type == "online":
             url = huggingface_hub.hf_hub_url(self.repo_id, filename)
             metadata = huggingface_hub.get_hf_file_metadata(url)
             return metadata.size
@@ -438,13 +447,13 @@ class HuggingFaceRepo:
 
         # Parse gguf file names.
         for gguf_path in self.weight_files.get(WeightsFormat.gguf, []):
-            encoding = SupportedEncoding.parse_from_file_name(gguf_path)
+            encoding = parse_supported_encoding_from_file_name(gguf_path)
             if encoding:
                 supported_encodings.add(encoding)
 
         # Get Safetensor Metadata.
         if WeightsFormat.safetensors in self.weight_files:
-            if self.repo_type == RepoType.local:
+            if self.repo_type == "local":
                 # Safetensor repos are assumed to only have one encoding in them.
                 with open(
                     os.path.join(
@@ -463,13 +472,13 @@ class HuggingFaceRepo:
                 if not supported_encodings and re.search(
                     r"FP8|fp8", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                    supported_encodings.add("float8_e4m3fn")
                 if not supported_encodings and re.search(
                     r"FP4|fp4", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+                    supported_encodings.add("float4_e2m1fnx2")
 
-            elif self.repo_type == RepoType.online:
+            elif self.repo_type == "online":
                 safetensors_info = self.info.safetensors
 
                 # Workaround for FP8 models that don't have safetensors metadata populated
@@ -479,26 +488,22 @@ class HuggingFaceRepo:
                 if safetensors_info is None and re.search(
                     r"FP8|fp8", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                    supported_encodings.add("float8_e4m3fn")
                 if safetensors_info is None and re.search(
                     r"FP4|fp4", self.repo_id, re.IGNORECASE
                 ):
-                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+                    supported_encodings.add("float4_e2m1fnx2")
 
                 if safetensors_info:
                     for params in safetensors_info.parameters:
                         if "F8_E4M3" in params:
-                            supported_encodings.add(
-                                SupportedEncoding.float8_e4m3fn
-                            )
+                            supported_encodings.add("float8_e4m3fn")
                         elif "U8" in params:
-                            supported_encodings.add(
-                                SupportedEncoding.float4_e2m1fnx2
-                            )
+                            supported_encodings.add("float4_e2m1fnx2")
                         elif "BF16" in params:
-                            supported_encodings.add(SupportedEncoding.bfloat16)
+                            supported_encodings.add("bfloat16")
                         elif "F32" in params:
-                            supported_encodings.add(SupportedEncoding.float32)
+                            supported_encodings.add("float32")
                 else:
                     fs = huggingface_hub.HfFileSystem()
                     for weight_file in self.weight_files[
@@ -516,7 +521,7 @@ class HuggingFaceRepo:
                         "quantization_config"
                     ):
                         if quant_config["quant_method"] == "gptq":
-                            supported_encodings.add(SupportedEncoding.gptq)
+                            supported_encodings.add("gptq")
             else:
                 raise ValueError(f"Unsupported repo_type: {self.repo_type}")
 
@@ -534,17 +539,17 @@ class HuggingFaceRepo:
         # Interpret the bytes as a JSON object
         header = json.loads(header_bytes)
 
-        supported_encodings = set([])
+        supported_encodings: set[SupportedEncoding] = set()
         for weight_value in header.values():
             if weight_dtype := weight_value.get("dtype", None):
                 if weight_dtype == "F32":
-                    supported_encodings.add(SupportedEncoding.float32)
+                    supported_encodings.add("float32")
                 elif weight_dtype == "BF16":
-                    supported_encodings.add(SupportedEncoding.bfloat16)
+                    supported_encodings.add("bfloat16")
                 elif weight_dtype == "F8_E4M3":
-                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                    supported_encodings.add("float8_e4m3fn")
                 elif weight_dtype == "U8":
-                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+                    supported_encodings.add("float4_e2m1fnx2")
                 else:
                     logger.warning(
                         f"unknown dtype found in safetensors file: {weight_dtype}"
@@ -556,7 +561,7 @@ class HuggingFaceRepo:
     ) -> dict[WeightsFormat, list[Path]]:
         files = []
         for gguf_file in self.weight_files.get(WeightsFormat.gguf, []):
-            file_encoding = SupportedEncoding.parse_from_file_name(gguf_file)
+            file_encoding = parse_supported_encoding_from_file_name(gguf_file)
             if file_encoding == encoding:
                 files.append(Path(gguf_file))
 
@@ -601,7 +606,7 @@ class HuggingFaceRepo:
 
     def file_exists(self, filename: str) -> bool:
         """Returns whether the given file exists in the repo."""
-        if self.repo_type == RepoType.local:
+        if self.repo_type == "local":
             return os.path.exists(os.path.join(self.repo_id, filename))
         return huggingface_hub.file_exists(self.repo_id, filename)
 
@@ -616,7 +621,7 @@ class HuggingFaceRepo:
             # If this file is safetensors, return the first encoding, as Safetensor repos can only have one.
             return self.supported_encodings[0]
         elif str(file).endswith(".gguf"):
-            encoding = SupportedEncoding.parse_from_file_name(str(file))
+            encoding = parse_supported_encoding_from_file_name(str(file))
             if encoding:
                 return encoding
 

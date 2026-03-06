@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os import abort
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.math import ceildiv
+from std.os import abort
+from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -137,16 +137,13 @@ fn test_matmul[
 
 fn test_matmul[input_types: List[DType]]() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        for input_type in input_types:
+        comptime for input_type in input_types:
             test_matmul[input_type, 64, 16, 32](ctx)
             test_matmul[input_type, 512, 2560, 512](ctx)
 
 
-def main():
-    @parameter
-    if has_amd_gpu_accelerator():
+def main() raises:
+    comptime if has_amd_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()
     elif has_nvidia_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fn, DType.bfloat16]]()

@@ -15,13 +15,13 @@
 You can import these APIs from the `python` package. For example:
 
 ```mojo
-from python import Python
+from std.python import Python
 ```
 """
 
-from collections.dict import OwnedKwargsDict
-from os import abort
-from ffi import _Global
+from std.collections.dict import OwnedKwargsDict
+from std.os import abort
+from std.ffi import _Global
 
 from ._cpython import (
     CPython,
@@ -33,7 +33,9 @@ from ._cpython import (
 )
 from .python_object import PythonObject
 
-comptime _PYTHON_GLOBAL = _Global["Python", _PythonGlobal.__init__]
+comptime _PYTHON_GLOBAL = _Global[
+    StorageType=_PythonGlobal, name="Python", init_fn=_PythonGlobal.__init__
+]
 
 
 struct _PythonGlobal(Defaultable, Movable):
@@ -184,7 +186,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         For example:
 
         ```mojo
-        from python import Python
+        from std.python import Python
 
         # Specify path to `mypython.py` module
         Python.add_to_path("path/to/module")
@@ -214,7 +216,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         in Python. For example:
 
         ```mojo
-        from python import Python
+        from std.python import Python
 
         # This is equivalent to Python's `import numpy as np`
         np = Python.import_module("numpy")
@@ -400,7 +402,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     fn dict[
         K: ConvertibleToPython & Copyable = PythonObject,
         V: ConvertibleToPython & Copyable = PythonObject,
-    ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
+    ](tuples: Span[Tuple[K, V], _]) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
 
         Parameters:
@@ -435,7 +437,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @staticmethod
     fn list[
         T: ConvertibleToPython & Copyable
-    ](values: Span[T]) raises -> PythonObject:
+    ](values: Span[T, _]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
         Parameters:
@@ -477,8 +479,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var list_ptr = cpy.PyList_New(len(values))
 
-        @parameter
-        for i in range(Variadic.size(Ts)):
+        comptime for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
         return PythonObject(from_owned=list_ptr)
@@ -524,8 +525,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var tup_ptr = cpy.PyTuple_New(len(values))
 
-        @parameter
-        for i in range(Variadic.size(Ts)):
+        comptime for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             _ = cpy.PyTuple_SetItem(tup_ptr, i, obj.steal_data())
         return PythonObject(from_owned=tup_ptr)

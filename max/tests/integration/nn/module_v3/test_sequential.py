@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import re
 
-from max.nn import Module, Sequential, module_dataclass
-from max.tensor import Tensor
+from max.experimental.nn import Module, Sequential, module_dataclass
+from max.experimental.tensor import Tensor
 
 
 @module_dataclass
@@ -90,5 +90,5 @@ def test_call() -> None:
             TestModule(4),
         ),
     )
-    t = Tensor.constant(0)
+    t = Tensor(0)
     assert s(t).item() == 10

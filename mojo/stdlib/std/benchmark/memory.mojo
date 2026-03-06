@@ -18,7 +18,7 @@ This is essential for accurate benchmarking when memory access patterns need to
 be preserved exactly as written.
 """
 
-from os.atomic import Consistency, fence
+from std.os.atomic import Consistency, fence
 
 # ===-----------------------------------------------------------------------===#
 # clobber_memory

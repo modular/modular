@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
-from gpu.host import DeviceContext
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
 )
-from random import rand
+from std.random import rand
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_fwd_gpu,
@@ -33,12 +33,12 @@ from state_space.selective_scan import (
     Strides3D,
     Strides4D,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
@@ -58,7 +58,7 @@ fn run_selective_scan_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -384,7 +384,7 @@ fn run_selective_scan_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from math import ceildiv
+    from std.math import ceildiv
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
@@ -500,7 +500,7 @@ fn run_selective_scan_update_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan update GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups

@@ -15,15 +15,16 @@
 You can import these APIs from the `python` package. For example:
 
 ```mojo
-from python import PythonObject
+from std.python import PythonObject
 ```
 """
 
-from os import abort
-from sys import bit_width_of
-from ffi import c_double, c_long, c_size_t, c_ssize_t
+from std.os import abort
+from std.sys import bit_width_of
+from std.ffi import c_double, c_long, c_size_t, c_ssize_t
+import std.format._utils as fmt
 
-from reflection import get_type_name
+from std.reflection import get_type_name
 
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
@@ -240,8 +241,7 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
@@ -348,8 +348,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
 
-        @parameter
-        for i in range(Variadic.size(Ts)):
+        comptime for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
             if errno == -1:
@@ -380,7 +379,7 @@ struct PythonObject(
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=dict_ptr)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy the object.
 
         This increments the underlying refcount of the existing object.
@@ -573,8 +572,7 @@ struct PythonObject(
         else:
             key_ptr = cpy.PyTuple_New(size)
 
-            @parameter
-            for i in range(size):
+            comptime for i in range(size):
                 var arg = args[i].copy().to_python_object()
                 _ = cpy.PyTuple_SetItem(key_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
                 _ = arg^
@@ -594,7 +592,7 @@ struct PythonObject(
     ) raises:
         var callable_obj: PythonObject
         try:
-            callable_obj = self.__getattr__(String("__i", method_name[2:]))
+            callable_obj = self.__getattr__(t"__i{method_name[2:]}")
         except:
             self = self.__getattr__(method_name^)(rhs)
         else:
@@ -1527,8 +1525,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var args_ptr = cpy.PyTuple_New(size)
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             var arg = args[i].copy().to_python_object()
 
             _ = cpy.PyTuple_SetItem(args_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
@@ -1626,7 +1623,23 @@ struct PythonObject(
             writer.write(String(py=self))
         except e:
             # TODO: make this method raising when we can raise parametrically.
-            abort(String("failed to write PythonObject to writer: ", e))
+            abort(t"failed to write PythonObject to writer: {e}")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `PythonObject` to a writer.
+
+        Uses Python's `repr()` to get the representation of the underlying
+        Python object.
+
+        Args:
+            writer: The object to write to.
+        """
+        try:
+            var repr_str = String(py=self.__repr__())
+            fmt.FormatStruct(writer, "PythonObject").fields(repr_str)
+        except e:
+            abort(t"failed to write PythonObject repr to writer: {e}")
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1905,32 +1918,3 @@ fn _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
     cpy.Py_DecRef(stop)
     cpy.Py_DecRef(step)
     return res
-
-
-__extension SIMD:
-    @always_inline
-    fn __init__(out self: Scalar[dtype], *, py: PythonObject) raises:
-        """Initialize a SIMD value from a PythonObject.
-
-        Args:
-            py: The PythonObject to convert.
-
-        Raises:
-            If the conversion to double fails.
-        """
-
-        @parameter
-        if dtype.is_floating_point():
-            ref cpy = Python().cpython()
-            var float_value = cpy.PyFloat_AsDouble(py._obj_ptr)
-            if float_value == -1.0 and cpy.PyErr_Occurred():
-                # Note that -1.0 does not guarantee an error, it just means we
-                # need to check if there was an exception.
-                raise cpy.unsafe_get_error()
-            # NOTE: if dtype is not float64, we truncate.
-            self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
-            self = Scalar[dtype](Int(py=py))
-        else:
-            self = Scalar[dtype]()
-            constrained[False, "unsupported dtype"]()

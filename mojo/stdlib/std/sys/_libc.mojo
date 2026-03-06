@@ -17,8 +17,8 @@ C standard library counterparts. These are used to implement higher level
 functionality in the rest of the Mojo standard library.
 """
 
-from ffi import c_char, c_int, c_size_t, c_pid_t, external_call, get_errno
-from sys import CompilationTarget
+from std.ffi import c_char, c_int, c_size_t, c_pid_t, external_call, get_errno
+from std.sys import CompilationTarget
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -30,10 +30,10 @@ fn free(ptr: UnsafePointer[mut=True, NoneType, ...]):
     # manually construct the call to free and attach the
     # correct attributes
     __mlir_op.`pop.external_call`[
-        func = __mlir_attr[`"free" : !kgen.string`],
+        func=__mlir_attr[`"free" : !kgen.string`],
         _type=None,
-        argAttrs = __mlir_attr.`[{llvm.allocptr}]`,
-        funcAttrs = __mlir_attr.`[["allockind", "4"], ["alloc-family", "malloc"]]`,
+        argAttrs=__mlir_attr.`[{llvm.allocptr}]`,
+        funcAttrs=__mlir_attr.`[["allockind", "4"], ["alloc-family", "malloc"]]`,
     ](ptr)
 
 
@@ -50,7 +50,7 @@ comptime FILE_ptr = OpaquePointer[MutExternalOrigin]
 
 
 @always_inline
-fn fdopen(fd: c_int, mode: UnsafePointer[mut=False, c_char]) -> FILE_ptr:
+fn fdopen(fd: c_int, mode: UnsafePointer[mut=False, c_char, _]) -> FILE_ptr:
     return external_call["fdopen", FILE_ptr](fd, mode)
 
 
@@ -66,8 +66,8 @@ fn fflush(stream: FILE_ptr) -> c_int:
 
 @always_inline
 fn popen(
-    command: UnsafePointer[mut=False, c_char],
-    type: UnsafePointer[mut=False, c_char],
+    command: UnsafePointer[mut=False, c_char, _],
+    type: UnsafePointer[mut=False, c_char, _],
 ) -> FILE_ptr:
     return external_call["popen", FILE_ptr](command, type)
 
@@ -80,7 +80,7 @@ fn pclose(stream: FILE_ptr) -> c_int:
 @always_inline
 fn setvbuf(
     stream: FILE_ptr,
-    buffer: UnsafePointer[mut=True, c_char],
+    buffer: UnsafePointer[mut=True, c_char, _],
     mode: c_int,
     size: c_size_t,
 ) -> c_int:
@@ -110,10 +110,10 @@ fn posix_spawnp[
     origin: ImmutOrigin,
     //,
 ](
-    pid: UnsafePointer[mut=True, c_pid_t],
-    file: UnsafePointer[mut=False, c_char],
-    argv: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
-    envp: UnsafePointer[UnsafePointer[mut=False, c_char, origin]],
+    pid: UnsafePointer[mut=True, c_pid_t, _],
+    file: UnsafePointer[mut=False, c_char, _],
+    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
+    envp: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
     — function creates a new process (child process) from the specified process image.
@@ -151,8 +151,8 @@ fn execvp[
     origin: ImmutOrigin,
     //,
 ](
-    file: UnsafePointer[mut=False, c_char],
-    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin]],
+    file: UnsafePointer[mut=False, c_char, _],
+    argv: UnsafePointer[mut=False, UnsafePointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -189,7 +189,7 @@ fn kill(pid: c_int, sig: c_int) -> c_int:
 
 
 @always_inline
-fn pipe(fildes: UnsafePointer[mut=True, c_int]) -> c_int:
+fn pipe(fildes: UnsafePointer[mut=True, c_int, _]) -> c_int:
     """[`pipe()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html) — create an interprocess channel.
     """
     return external_call["pipe", c_int](fildes)
@@ -204,7 +204,7 @@ fn close(fd: c_int) -> c_int:
 
 
 @always_inline
-fn write(fd: c_int, buf: OpaquePointer[mut=False], nbyte: c_size_t) -> c_int:
+fn write(fd: c_int, buf: OpaquePointer[mut=False, _], nbyte: c_size_t) -> c_int:
     """[`write()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/write.html)
     — write to a file descriptor.
     """
@@ -226,7 +226,7 @@ struct WaitFlags:
 @always_inline
 fn waitpid(
     pid: c_pid_t,
-    status: UnsafePointer[mut=True, c_int],
+    status: UnsafePointer[mut=True, c_int, _],
     options: c_int,
 ) -> c_pid_t:
     """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
@@ -269,7 +269,7 @@ fn dlerror(out result: UnsafePointer[c_char, MutExternalOrigin]):
 
 @always_inline
 fn dlopen(
-    filename: UnsafePointer[mut=False, c_char], flags: c_int
+    filename: UnsafePointer[mut=False, c_char, _], flags: c_int
 ) -> OpaquePointer[MutExternalOrigin]:
     return external_call["dlopen", OpaquePointer[MutExternalOrigin]](
         filename, flags
@@ -277,7 +277,7 @@ fn dlopen(
 
 
 @always_inline
-fn dlclose(handle: OpaquePointer[mut=True]) -> c_int:
+fn dlclose(handle: OpaquePointer[mut=True, _]) -> c_int:
     return external_call["dlclose", c_int](handle)
 
 
@@ -287,15 +287,15 @@ fn dlsym[
     result_type: AnyType = NoneType
 ](
     handle: OpaquePointer,
-    name: UnsafePointer[mut=False, c_char],
+    name: UnsafePointer[mut=False, c_char, _],
     out result: UnsafePointer[result_type, MutExternalOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
 
 fn realpath(
-    path: UnsafePointer[mut=False, c_char],
-    resolved_path: UnsafePointer[mut=True, c_char] = UnsafePointer[
+    path: UnsafePointer[mut=False, c_char, _],
+    resolved_path: UnsafePointer[mut=True, c_char, _] = UnsafePointer[
         c_char, MutExternalOrigin
     ](),
     out result: UnsafePointer[c_char, MutExternalOrigin],

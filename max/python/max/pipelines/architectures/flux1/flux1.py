@@ -14,13 +14,13 @@
 import logging
 from collections.abc import Sequence
 
-from max import functional as F
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import LayerNorm
+from max.experimental.nn.sequential import ModuleList
+from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.nn import Linear, Module
-from max.nn.norm import LayerNorm
-from max.nn.sequential import ModuleList
-from max.tensor import Tensor
 
 from .layers.embeddings import (
     CombinedTimestepGuidanceTextProjEmbeddings,
@@ -349,7 +349,6 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
 
         self.gradient_checkpointing = False
 
-        self.max_device = device
         self.max_dtype = dtype
         self.in_channels = in_channels
         self.joint_attention_dim = joint_attention_dim
@@ -364,29 +363,29 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "image_seq_len", self.in_channels],
-            device=self.max_device,
+            device=self.device,
         )
         encoder_hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "text_seq_len", self.joint_attention_dim],
-            device=self.max_device,
+            device=self.device,
         )
         pooled_projections_type = TensorType(
             self.max_dtype,
             shape=["batch_size", self.pooled_projection_dim],
-            device=self.max_device,
+            device=self.device,
         )
         timestep_type = TensorType(
-            DType.float32, shape=["batch_size"], device=self.max_device
+            DType.float32, shape=["batch_size"], device=self.device
         )
         img_ids_type = TensorType(
-            self.max_dtype, shape=["image_seq_len", 3], device=self.max_device
+            self.max_dtype, shape=["image_seq_len", 3], device=self.device
         )
         txt_ids_type = TensorType(
-            self.max_dtype, shape=["text_seq_len", 3], device=self.max_device
+            self.max_dtype, shape=["text_seq_len", 3], device=self.device
         )
         guidance_type = TensorType(
-            self.max_dtype, shape=["batch_size"], device=self.max_device
+            self.max_dtype, shape=["batch_size"], device=self.device
         )
 
         return (

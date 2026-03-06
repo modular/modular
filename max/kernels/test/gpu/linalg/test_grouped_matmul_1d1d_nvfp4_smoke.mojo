@@ -17,20 +17,24 @@ arguments to verify enqueue_function type identity. This test catches the
 type mismatch that caused the DeepSeek-R1-NVFP4 pipeline failure.
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.host import DeviceContext
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from internal_utils._utils import InitializationType, init_vector_launch
-from layout._coord import Coord, Idx, RuntimeInt
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from utils.index import Index
+from layout import (
+    Coord,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
+from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_1d1d_nvfp4,
@@ -51,6 +55,8 @@ fn test_grouped_1d1d_nvfp4[
     num_experts: Int,
     N: Int,
     K: Int,
+    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cta_group: Int = 1,
 ](ctx: DeviceContext, num_active_experts: Int, tokens_per_expert: Int) raises:
     comptime a_type = DType.uint8
     comptime b_type = DType.uint8
@@ -156,24 +162,26 @@ fn test_grouped_1d1d_nvfp4[
     # This catches enqueue_function type identity mismatches that wouldn't
     # appear if we hand-constructed TileTensors with GMEMLayout1D.
     var a_nd = NDBuffer[a_type, 2, _, DimList(Dim(), packed_K)](
-        a_buf.unsafe_ptr(), DimList(total_tokens, packed_K)
+        a_buf.unsafe_ptr(), IndexList[2](total_tokens, packed_K)
     )
     var b_nd = NDBuffer[b_type, 3, _, DimList(num_experts, N, packed_K)](
-        b_buf.unsafe_ptr(), DimList(num_experts, N, packed_K)
+        b_buf.unsafe_ptr(), IndexList[3](num_experts, N, packed_K)
     )
     var c_nd = NDBuffer[c_type, 2, _, DimList(Dim(), N)](
-        c_buf.unsafe_ptr(), DimList(total_tokens, N)
+        c_buf.unsafe_ptr(), IndexList[2](total_tokens, N)
     )
     var a_off_nd = NDBuffer[DType.uint32, 1](
-        a_off_buf.unsafe_ptr(), num_active_experts + 1
+        a_off_buf.unsafe_ptr(), IndexList[1](num_active_experts + 1)
     )
     var a_soff_nd = NDBuffer[DType.uint32, 1](
-        a_soff_buf.unsafe_ptr(), num_active_experts
+        a_soff_buf.unsafe_ptr(), IndexList[1](num_active_experts)
     )
     var eid_nd = NDBuffer[DType.int32, 1](
-        eid_buf.unsafe_ptr(), num_active_experts
+        eid_buf.unsafe_ptr(), IndexList[1](num_active_experts)
     )
-    var es_nd = NDBuffer[DType.float32, 1](es_buf.unsafe_ptr(), num_experts)
+    var es_nd = NDBuffer[DType.float32, 1](
+        es_buf.unsafe_ptr(), IndexList[1](num_experts)
+    )
 
     var a_tt = TileTensor(a_nd)
     var b_tt = TileTensor(b_nd)
@@ -212,17 +220,19 @@ fn test_grouped_1d1d_nvfp4[
     ).as_any_origin()
 
     # Launch kernel
+    comptime mma_shape = Index(128 * cta_group, 128 * cta_group, 32)
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, NVFP4_SF_DTYPE, NVFP4_SF_DTYPE, True
     ](
         scaling_kind=UMMAKind.KIND_MXF4NVF4,
-        cluster_shape=Index(1, 1, 1),
-        mma_shape=Index(128, 128, 32),
+        cluster_shape=cluster_shape,
+        mma_shape=mma_shape,
         block_swizzle_size=0,
-        cta_group=1,
-        AB_swapped=False,
+        cta_group=cta_group,
+        AB_swapped=(cta_group == 2),
         k_group_size=1,
-        num_accum_pipeline_stages=2,
+        num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
+        is_gmm=True,
     )
 
     grouped_matmul_1d1d_nvfp4[transpose_b=True, config=config](
@@ -245,12 +255,27 @@ fn test_grouped_1d1d_nvfp4[
     a_scale_offsets_host.free()
     expert_ids_host.free()
     es_host.free()
+    _ = a_buf^
+    _ = b_buf^
+    _ = c_buf^
+    _ = a_off_buf^
+    _ = a_soff_buf^
+    _ = eid_buf^
+    _ = a_sf_buf^
+    _ = b_sf_buf^
+    _ = es_buf^
 
 
-def main():
+def main() raises:
     var ctx = DeviceContext()
     print("=== Grouped 1D1D NVFP4 Smoke Tests (TileTensor) ===")
     test_grouped_1d1d_nvfp4[4, 128, 256](ctx, 4, 64)
     test_grouped_1d1d_nvfp4[8, 128, 256](ctx, 4, 64)
     test_grouped_1d1d_nvfp4[4, 1024, 1024](ctx, 2, 128)
+
+    print("\n=== Grouped 1D1D NVFP4 2SM Smoke Tests (TileTensor) ===")
+    test_grouped_1d1d_nvfp4[4, 2048, 1024, Index(2, 1, 1), 2](ctx, 4, 64)
+    test_grouped_1d1d_nvfp4[4, 2048, 1024, Index(2, 1, 1), 2](ctx, 2, 256)
+
     print("=== ALL TESTS PASSED ===")
+    _ = ctx^

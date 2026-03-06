@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import c_int, external_call
-from sys.info import CompilationTarget, platform_map
+from std.ffi import c_int, external_call
+from std.sys.info import CompilationTarget, platform_map
 
 
 fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         result = external_call["__errno_location", type_of(result)]()
     elif CompilationTarget.is_macos():
         result = external_call["__error", type_of(result)]()
@@ -63,7 +62,7 @@ comptime pm = platform_map[T=Int, ...]
 
 
 @fieldwise_init
-struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
+struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,
@@ -71,8 +70,8 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
 
     Example:
         ```mojo
-        import os
-        from ffi import get_errno, set_errno, ErrNo
+        import std.os
+        from std.ffi import get_errno, set_errno, ErrNo
 
         try:
             _ = os.path.realpath("non-existent-file")
@@ -421,8 +420,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
             writer: The writer to write the error description to.
         """
 
-        @parameter
-        if CompilationTarget.is_macos():
+        comptime if CompilationTarget.is_macos():
             debug_assert(
                 self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
             )
@@ -432,6 +430,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
         var string = StringSlice(unsafe_from_utf8_ptr=ptr)
         string.write_to(writer)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns the human-readable error description as a string.
 

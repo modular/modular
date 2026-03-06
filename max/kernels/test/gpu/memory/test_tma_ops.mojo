@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.primitives.cluster import elect_one_sync
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.memory import (
+from std.gpu.primitives.cluster import elect_one_sync
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.memory import (
     CacheEviction,
     ReduceOp,
     AddressSpace,
@@ -25,13 +25,13 @@ from gpu.memory import (
     fence_proxy_tensormap_generic_sys_release,
 )
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from utils.index import Index
+from std.utils.index import Index
 
 
 # CHECK-LABEL: test_async_copy_asm
@@ -39,9 +39,9 @@ fn test_async_copy_asm():
     print("== test_async_copy_asm")
 
     fn test_async_copy_kernel(
-        dst_mem: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
+        dst_mem: UnsafePointer[Float32, address_space=AddressSpace.SHARED],
         tma_descriptor: OpaquePointer,
-        mem_bar: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
+        mem_bar: UnsafePointer[Float32, address_space=AddressSpace.SHARED],
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
@@ -56,7 +56,7 @@ fn test_async_copy_asm():
     print(
         _compile_code[
             test_async_copy_kernel,
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -66,7 +66,7 @@ fn test_async_store_asm():
     print("== test_async_store_asm")
 
     fn test_async_store_kernel(
-        src_mem: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
+        src_mem: UnsafePointer[Float32, address_space=AddressSpace.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
@@ -74,23 +74,23 @@ fn test_async_store_asm():
         cp_async_bulk_tensor_global_shared_cta(
             src_mem, tma_descriptor, Index(coords[0], coords[1])
         )
-        # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r4, %r5}], [%r1], %rd4;
+        # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r4, %r5}], [%r1], %rd8;
         cp_async_bulk_tensor_global_shared_cta[
-            eviction_policy = CacheEviction.EVICT_FIRST
+            eviction_policy=CacheEviction.EVICT_FIRST
         ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
         # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group [%rd1, {%r6}], [%r1];
         cp_async_bulk_tensor_global_shared_cta(
             src_mem, tma_descriptor, Index(coords[0])
         )
-        # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r7}], [%r1], %rd5;
+        # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r7}], [%r1], %rd11;
         cp_async_bulk_tensor_global_shared_cta[
-            eviction_policy = CacheEviction.EVICT_LAST
+            eviction_policy=CacheEviction.EVICT_LAST
         ](src_mem, tma_descriptor, Index(coords[0]))
 
     print(
         _compile_code[
             test_async_store_kernel,
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -100,29 +100,29 @@ fn test_async_bulk_tensor_reduce_asm():
     print("== test_async_bulk_tensor_reduce_asm")
 
     fn test_async_bulk_tensor_reduce_asm(
-        src_mem: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
+        src_mem: UnsafePointer[Float32, address_space=AddressSpace.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
-        cp_async_bulk_tensor_reduce[reduction_kind = ReduceOp.ADD](
+        cp_async_bulk_tensor_reduce[reduction_kind=ReduceOp.ADD](
             src_mem, tma_descriptor, Index(coords[0], coords[1])
         )
         cp_async_bulk_tensor_reduce[
-            reduction_kind = ReduceOp.ADD,
-            eviction_policy = CacheEviction.EVICT_FIRST,
+            reduction_kind=ReduceOp.ADD,
+            eviction_policy=CacheEviction.EVICT_FIRST,
         ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
-        cp_async_bulk_tensor_reduce[reduction_kind = ReduceOp.ADD](
+        cp_async_bulk_tensor_reduce[reduction_kind=ReduceOp.ADD](
             src_mem, tma_descriptor, Index(coords[0])
         )
         cp_async_bulk_tensor_reduce[
-            reduction_kind = ReduceOp.ADD,
-            eviction_policy = CacheEviction.EVICT_LAST,
+            reduction_kind=ReduceOp.ADD,
+            eviction_policy=CacheEviction.EVICT_LAST,
         ](src_mem, tma_descriptor, Index(coords[0]))
 
     print(
         _compile_code[
             test_async_bulk_tensor_reduce_asm,
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -140,7 +140,7 @@ fn test_tma_fence_proxy():
     print(
         _compile_code[
             test_tma_fence_proxy_kernel,
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -156,7 +156,7 @@ fn test_elect_one_sync():
     print(
         _compile_code[
             test_elect_one_sync_kernel,
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
 

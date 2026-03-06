@@ -16,8 +16,11 @@ MmaWarpContext: MMA warp - allocates TMEM, deallocates on exit
 EpilogueWarpContext: Epilogue warp - consumes TMEM, signals completion on exit
 """
 
-from .barriers import TmemDeallocBarrier, WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
+from .tmem import TmemDeallocBarrier
+from .config import OutputPipelineConfig
 from .tile_pipeline import (
+    MbarPtr,
     OutputTilePipeline,
     EpilogueKContext,
     MmaKStage,
@@ -26,7 +29,7 @@ from .tile_pipeline import (
     MmaStage,
     EpilogueStage,
 )
-from .pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation
 
 
@@ -36,19 +39,15 @@ from .tmem import TmemAllocation
 
 
 struct _WarpContextTypes[
-    num_accum_stages: Int,
-    stage_stride_cols: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
 ](TrivialRegisterPassable):
     """Shared type definitions for MMA and Epilogue warp contexts."""
 
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime Pipeline = OutputTilePipeline[
-        Self.num_accum_stages, Self.stage_stride_cols, Self.cta_group
-    ]
-    comptime Dealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
+    comptime Pipeline = OutputTilePipeline[Self.opc]
+    comptime Dealloc = TmemDeallocBarrier[Self.opc.cta_group]
     comptime Sync = WarpGroupBarrier[
         Self.mma_threads + Self.epilogue_threads, 1
     ]
@@ -60,9 +59,7 @@ struct _WarpContextTypes[
 
 
 struct MmaWarpContext[
-    num_accum_stages: Int,
-    stage_stride_cols: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
 ](TrivialRegisterPassable):
@@ -73,11 +70,7 @@ struct MmaWarpContext[
     """
 
     comptime _Types = _WarpContextTypes[
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-        Self.mma_threads,
-        Self.epilogue_threads,
+        Self.opc, Self.mma_threads, Self.epilogue_threads
     ]
     comptime Tmem = Self._Types.Tmem
     comptime Pipeline = Self._Types.Pipeline
@@ -103,7 +96,7 @@ struct MmaWarpContext[
     @always_inline
     fn create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
-        accum_barriers: Self.Pipeline.BarrierArray,
+        accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
         mma_complete_mask: UInt16,
     ) -> Self:
@@ -113,7 +106,7 @@ struct MmaWarpContext[
 
         Args:
             tmem_addr_storage: Shared storage for TMEM address communication.
-            accum_barriers: Barrier array for accumulator pipeline.
+            accum_barriers_ptr: Pointer to accumulator pipeline barriers.
             dealloc_mbar: Barrier for TMEM deallocation synchronization.
             mma_complete_mask: Multicast mask for MMA completion signaling.
 
@@ -122,7 +115,7 @@ struct MmaWarpContext[
         """
         var tmem = Self.Tmem.allocate(tmem_addr_storage)
         var output_pipeline = Self.Pipeline(
-            accum_barriers, tmem, mma_complete_mask
+            accum_barriers_ptr, tmem, mma_complete_mask
         )
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
@@ -138,12 +131,7 @@ struct MmaWarpContext[
     @always_inline
     fn per_k_stage(
         mut self,
-    ) -> MmaKStage[
-        origin_of(self.output_pipeline),
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]:
+    ) -> MmaKStage[origin_of(self.output_pipeline), Self.opc]:
         """Get per-K stage for blockwise FP8 MMA loop.
 
         Returns a context manager that acquires an output stage and
@@ -164,9 +152,7 @@ struct MmaWarpContext[
 
 
 struct EpilogueWarpContext[
-    num_accum_stages: Int,
-    stage_stride_cols: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
 ](TrivialRegisterPassable):
@@ -177,11 +163,7 @@ struct EpilogueWarpContext[
     """
 
     comptime _Types = _WarpContextTypes[
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-        Self.mma_threads,
-        Self.epilogue_threads,
+        Self.opc, Self.mma_threads, Self.epilogue_threads
     ]
     comptime Tmem = Self._Types.Tmem
     comptime Pipeline = Self._Types.Pipeline
@@ -207,7 +189,7 @@ struct EpilogueWarpContext[
     @always_inline
     fn create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
-        accum_barriers: Self.Pipeline.BarrierArray,
+        accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
         mma_complete_mask: UInt16,
     ) -> Self:
@@ -219,7 +201,7 @@ struct EpilogueWarpContext[
 
         Args:
             tmem_addr_storage: Shared storage containing TMEM address.
-            accum_barriers: Barrier array for accumulator pipeline.
+            accum_barriers_ptr: Pointer to accumulator pipeline barriers.
             dealloc_mbar: Barrier for TMEM deallocation synchronization.
             mma_complete_mask: Multicast mask for MMA completion signaling.
 
@@ -228,7 +210,7 @@ struct EpilogueWarpContext[
         """
         var tmem = Self.Tmem.from_shared(tmem_addr_storage)
         var output_pipeline = Self.Pipeline(
-            accum_barriers, tmem, mma_complete_mask
+            accum_barriers_ptr, tmem, mma_complete_mask
         )
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
@@ -254,9 +236,7 @@ struct EpilogueWarpContext[
     ) -> EpilogueKContext[
         origin_of(self.output_pipeline),
         origin_of(input_pipeline.pipeline),
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         num_group_stages,
     ]:
         """Get per-K stage context for blockwise FP8 epilogue.
@@ -303,9 +283,7 @@ struct EpilogueWarpContext[
 
 @explicit_destroy("Must call release() to deallocate TMEM")
 struct MmaWarp[
-    num_accum_stages: Int,
-    stage_stride_cols: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
 ]:
@@ -319,19 +297,13 @@ struct MmaWarp[
     3. Must call `release()` to wait for epilogue and deallocate (compiler-enforced)
 
     Parameters:
-        num_accum_stages: Number of accumulator pipeline stages.
-        stage_stride_cols: TMEM column stride between stages.
-        cta_group: CTA group size (1 or 2).
+        opc: Output pipeline configuration (stages, stride, cta_group).
         mma_threads: Number of MMA threads.
         epilogue_threads: Number of epilogue threads.
     """
 
     comptime _Types = _WarpContextTypes[
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-        Self.mma_threads,
-        Self.epilogue_threads,
+        Self.opc, Self.mma_threads, Self.epilogue_threads
     ]
     comptime Tmem = Self._Types.Tmem
     comptime Pipeline = Self._Types.Pipeline
@@ -357,7 +329,7 @@ struct MmaWarp[
     @always_inline
     fn create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
-        accum_barriers: Self.Pipeline.BarrierArray,
+        accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
         mma_complete_mask: UInt16,
     ) -> Self:
@@ -367,7 +339,7 @@ struct MmaWarp[
 
         Args:
             tmem_addr_storage: Shared storage for TMEM address communication.
-            accum_barriers: Barrier array for accumulator pipeline.
+            accum_barriers_ptr: Pointer to accumulator pipeline barriers.
             dealloc_mbar: Barrier for TMEM deallocation synchronization.
             mma_complete_mask: Multicast mask for MMA completion signaling.
 
@@ -376,7 +348,7 @@ struct MmaWarp[
         """
         var tmem = Self.Tmem.allocate(tmem_addr_storage)
         var output_pipeline = Self.Pipeline(
-            accum_barriers, tmem, mma_complete_mask
+            accum_barriers_ptr, tmem, mma_complete_mask
         )
         Self.Sync.arrive()  # Signal epilogue that TMEM is ready
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
@@ -384,12 +356,7 @@ struct MmaWarp[
     @always_inline
     fn per_k_stage(
         mut self,
-    ) -> MmaKStage[
-        origin_of(self.output_pipeline),
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]:
+    ) -> MmaKStage[origin_of(self.output_pipeline), Self.opc]:
         """Get per-K stage context manager (for compatibility).
 
         Prefer acquire_k_stage_linear() for flat code structure.
@@ -399,12 +366,7 @@ struct MmaWarp[
     @always_inline
     fn acquire_k_stage_linear(
         mut self,
-    ) -> MmaStage[
-        origin_of(self.output_pipeline),
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]:
+    ) -> MmaStage[origin_of(self.output_pipeline), Self.opc]:
         """Acquire a per-K stage using linear types.
 
         Waits for epilogue to free the stage, returns a linear handle.
@@ -428,9 +390,7 @@ struct MmaWarp[
 
 @explicit_destroy("Must call release() to signal completion")
 struct EpilogueWarp[
-    num_accum_stages: Int,
-    stage_stride_cols: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
 ]:
@@ -446,19 +406,13 @@ struct EpilogueWarp[
     IMPORTANT: Call Sync.wait() BEFORE create() to ensure TMEM address is visible.
 
     Parameters:
-        num_accum_stages: Number of accumulator pipeline stages.
-        stage_stride_cols: TMEM column stride between stages.
-        cta_group: CTA group size (1 or 2).
+        opc: Output pipeline configuration (stages, stride, cta_group).
         mma_threads: Number of MMA threads.
         epilogue_threads: Number of epilogue threads.
     """
 
     comptime _Types = _WarpContextTypes[
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-        Self.mma_threads,
-        Self.epilogue_threads,
+        Self.opc, Self.mma_threads, Self.epilogue_threads
     ]
     comptime Tmem = Self._Types.Tmem
     comptime Pipeline = Self._Types.Pipeline
@@ -484,7 +438,7 @@ struct EpilogueWarp[
     @always_inline
     fn create(
         tmem_addr_storage: Self.Tmem.SmemAddrStorage,
-        accum_barriers: Self.Pipeline.BarrierArray,
+        accum_barriers_ptr: MbarPtr,
         dealloc_mbar: Self.Dealloc.BarrierStorage,
         mma_complete_mask: UInt16,
     ) -> Self:
@@ -495,7 +449,7 @@ struct EpilogueWarp[
 
         Args:
             tmem_addr_storage: Shared storage containing TMEM address.
-            accum_barriers: Barrier array for accumulator pipeline.
+            accum_barriers_ptr: Pointer to accumulator pipeline barriers.
             dealloc_mbar: Barrier for TMEM deallocation synchronization.
             mma_complete_mask: Multicast mask for MMA completion signaling.
 
@@ -504,7 +458,7 @@ struct EpilogueWarp[
         """
         var tmem = Self.Tmem.from_shared(tmem_addr_storage)
         var output_pipeline = Self.Pipeline(
-            accum_barriers, tmem, mma_complete_mask
+            accum_barriers_ptr, tmem, mma_complete_mask
         )
         return Self(tmem, output_pipeline, Self.Dealloc(dealloc_mbar))
 
@@ -522,9 +476,7 @@ struct EpilogueWarp[
     ) -> EpilogueKContext[
         origin_of(self.output_pipeline),
         origin_of(input_pipeline.pipeline),
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         num_group_stages,
     ]:
         """Get per-K stage context manager (for compatibility).
@@ -536,12 +488,7 @@ struct EpilogueWarp[
     @always_inline
     fn acquire_k_stage_linear(
         mut self,
-    ) -> EpilogueStage[
-        origin_of(self.output_pipeline),
-        Self.num_accum_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]:
+    ) -> EpilogueStage[origin_of(self.output_pipeline), Self.opc]:
         """Acquire a per-K stage using linear types.
 
         Waits for MMA to complete the stage, returns a linear handle.

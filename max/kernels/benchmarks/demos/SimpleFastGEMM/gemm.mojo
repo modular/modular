@@ -13,13 +13,13 @@
 
 # Meant to be run on an AVX512 system
 
-from math import align_up
-from sys import align_of, prefetch, simd_width_of
-from sys.intrinsics import PrefetchOptions
+from std.math import align_up
+from std.sys import align_of, prefetch, simd_width_of
+from std.sys.intrinsics import PrefetchOptions
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.utils import (
@@ -27,7 +27,7 @@ from linalg.utils import (
     get_matmul_prefetch_b_distance_k,
 )
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -84,22 +84,18 @@ fn kernel(
 
     comptime NR2 = NR // simd_size
 
-    @parameter
-    for idx0 in range(MR):
+    comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c.load[width=simd_size](n * idx0 + simd_size * idx1)
             c_local.store(NR * idx0 + simd_size * idx1, cv)
 
     for pr in range(kc):
-
-        @parameter
-        for i in range(NR2):
+        comptime for i in range(NR2):
             prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ](b_ptr + NR * pr + simd_size * (i + 16))
 
-        @parameter
-        for idx0 in range(MR):
+        comptime for idx0 in range(MR):
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
                 var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
@@ -109,8 +105,7 @@ fn kernel(
                 cv += av * bv
                 c_local.store(NR * idx0 + simd_size * idx1, cv)
 
-    @parameter
-    for idx0 in range(MR):
+    comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
             c.store(n * idx0 + simd_size * idx1, cv)
@@ -171,7 +166,7 @@ fn gemm(
                         )
 
 
-def main():
+def main() raises:
     var m = align_up(1024, MR)
     var n = align_up(1024, NR)
     var k: Int = 1024

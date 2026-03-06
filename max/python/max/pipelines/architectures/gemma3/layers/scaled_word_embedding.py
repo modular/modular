@@ -18,7 +18,7 @@ from collections.abc import Iterable
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
 from max.graph.quantization import QuantizationEncoding
-from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.embedding import VocabParallelEmbedding
 
 
 class ScaledWordEmbedding(VocabParallelEmbedding):

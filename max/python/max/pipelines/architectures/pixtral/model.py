@@ -22,30 +22,27 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -80,7 +77,7 @@ class PixtralInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
 
     model: Model
@@ -90,8 +87,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -101,8 +96,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -279,12 +272,12 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Pixtral, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.text_config.max_position_embeddings})."
             ) from e
@@ -308,7 +301,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             }
         return state_dict
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
@@ -384,17 +377,12 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     return_n_logits,
                     *kv_cache_inputs,
                 ) = graph.inputs
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
+                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
                 outputs = nn_model(
                     input_ids=input_ids.tensor,
                     pixel_values=pixel_values.tensor,
                     attention_mask=attention_mask.tensor,
-                    kv_collection=kv_collection,
+                    kv_collection=kv_collections[0],
                     return_n_logits=return_n_logits.tensor,
                     input_row_offsets=input_row_offsets.tensor,
                 )
@@ -406,18 +394,21 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self,
         session: InferenceSession,
     ) -> Model:
-        if self.pipeline_config.enable_echo:
+        if self.pipeline_config.model.enable_echo:
             raise ValueError(
                 "Pixtral model does not currently implement enable echo."
             )
 
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices[0])
 
         if not isinstance(self.weights, SafetensorWeights):

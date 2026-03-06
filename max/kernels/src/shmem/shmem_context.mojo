@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import parallelize
-from collections.optional import OptionalReg
-from os import abort, getenv, setenv
-from builtin.variadics import Variadic
-from builtin.device_passable import DevicePassable
-from sys import (
+from std.algorithm import parallelize
+from std.collections.optional import OptionalReg
+from std.os import abort, getenv, setenv
+from std.builtin.variadics import Variadic
+from std.builtin.device_passable import DevicePassable
+from std.sys import (
     CompilationTarget,
     argv,
     has_amd_gpu_accelerator,
@@ -25,9 +25,9 @@ from sys import (
     is_nvidia_gpu,
     size_of,
 )
-from ffi import c_int, c_size_t, external_call
+from std.ffi import c_int, c_size_t, external_call
 
-from gpu.host import (
+from std.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
@@ -39,13 +39,16 @@ from gpu.host import (
     HostBuffer,
     LaunchAttribute,
 )
-from gpu.host.device_context import (
+from std.gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
 )
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+from std.gpu.host.launch_attribute import (
+    LaunchAttributeID,
+    LaunchAttributeValue,
+)
 
 from ._mpi import (
     MPI_Comm_rank,
@@ -54,15 +57,17 @@ from ._mpi import (
     MPI_Init,
     get_mpi_comm_world,
 )
-from ._rocshmem import ROCSHMEMUniqueID, rocshmem_create_uniqueid
 from .shmem_api import (
     SHMEM_TEAM_NODE,
+    SHMEMUniqueID,
     shmem_barrier_all_on_stream,
     shmem_finalize,
     shmem_init,
-    shmem_init_thread,
+    shmem_init_thread_tcp,
+    shmem_init_thread_mpi,
     shmem_module_init,
     shmem_team_t,
+    shmem_create_uniqueid,
 )
 
 
@@ -92,7 +97,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
         print("PE:", mype, "received message:", msg)
         assert_equal(msg, (mype + 1) % shmem_n_pes())
 
-    def main():
+    def main() raises:
         shmem_launch[simple_shift]()
     ```
 
@@ -104,14 +109,13 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
     the exception.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         _shmem_launch_mpi[func]()
     elif has_amd_gpu_accelerator():
         _shmem_launch_tcp[func]()
     else:
         return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -148,16 +152,13 @@ fn _shmem_launch_mpi[func: fn(ctx: SHMEMContext) raises]() raises:
 
 
 fn _shmem_launch_tcp[func: fn(ctx: SHMEMContext) raises]() raises:
-    # Create UID in main thread
-    var uid = rocshmem_create_uniqueid()
-
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
     fn shmem_error_wrapper(device_id_node: Int) capturing:
         try:
             var ctx = DeviceContext(device_id=device_id_node)
-            with SHMEMContext(ctx, UnsafePointer(to=uid)) as shmem_ctx:
+            with SHMEMContext[tcp=True](ctx) as shmem_ctx:
                 func(shmem_ctx)
         except e:
             abort(
@@ -175,7 +176,7 @@ fn _shmem_launch_tcp[func: fn(ctx: SHMEMContext) raises]() raises:
     parallelize[shmem_error_wrapper](npes_node, npes_node)
 
 
-struct SHMEMContext(ImplicitlyCopyable):
+struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     """Usable as a context manager to run kernels on a GPU with SHMEM support,
     on exit it will finalize SHMEM and clean up resources.
 
@@ -198,7 +199,9 @@ struct SHMEMContext(ImplicitlyCopyable):
     var _cooperative: Bool
     var _thread_per_gpu: Bool
 
-    fn __init__(out self, team: shmem_team_t = SHMEM_TEAM_NODE) raises:
+    fn __init__(
+        out self, team: shmem_team_t = SHMEM_TEAM_NODE
+    ) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support.
 
         This constructor initializes MPI and SHMEM, and creates a device
@@ -240,7 +243,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         )
         self._thread_per_gpu = False
 
-    fn __init__(out self, ctx: DeviceContext) raises:
+    fn __init__(out self, ctx: DeviceContext) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support, using one thread
         per GPU.
 
@@ -254,7 +257,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        shmem_init_thread(ctx)
+        shmem_init_thread_mpi(ctx)
         self._ctx = ctx
         # Store main stream to avoid retrieving it in each collective launch.
         self._main_stream = self._ctx.stream()
@@ -278,11 +281,12 @@ struct SHMEMContext(ImplicitlyCopyable):
     fn __init__(
         out self,
         ctx: DeviceContext,
-        uid: UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin],
         node_id: Int = -1,
         total_nodes: Int = -1,
         gpus_per_node: Int = -1,
-    ) raises:
+        server_ip: String = "-1",
+        server_port: Int = -1,
+    ) raises where Self.tcp == True:
         """Initializes a device context with SHMEM support, using one thread
         per GPU and TCP bootstrapping with a unique ID.
 
@@ -292,7 +296,9 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        shmem_init_thread(ctx, uid, node_id, total_nodes, gpus_per_node)
+        shmem_init_thread_tcp(
+            ctx, node_id, total_nodes, gpus_per_node, server_ip, server_port
+        )
         self._ctx = ctx
         # Store main stream to avoid retrieving it in each collective launch.
         self._main_stream = self._ctx.stream()
@@ -516,7 +522,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel():
             print("hello from the GPU")

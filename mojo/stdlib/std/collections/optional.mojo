@@ -32,14 +32,14 @@ print(d)  # prints 2
 ```
 """
 
-from os import abort
+from std.os import abort
 
-from utils import Variant
+from std.utils import Variant
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
-from format._utils import FormatStruct, TypeNames, write_to, write_repr_to
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
+from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 
 
 # TODO(27780): NoneType can't currently conform to traits
@@ -88,8 +88,6 @@ struct Optional[T: Movable](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
-    Representable,
-    Stringable,
     Writable,
 ):
     """A type modeling a value which may or may not be present.
@@ -103,6 +101,18 @@ struct Optional[T: Movable](
 
     Currently T is required to be a `Copyable` so we can implement
     copy/move for Optional and allow it to be used in collections itself.
+
+    ## Layout
+
+    The layout of `Optional` is not guaranteed and may change at any time.
+    The implementation may apply niche optimizations (for example, storing the
+    `None` sentinel inside spare bits of `T`) that alter the resulting layout.
+    Do not rely on `size_of[Optional[T]]()` or `align_of[Optional[T]]()` being
+    stable across compiler versions. The only guarantee is that the size and
+    alignment will be at least as large as those of `T` itself.
+
+    If you need to inspect the current size or alignment, use `size_of` and
+    `align_of`, but treat the results as non-stable implementation details.
 
     Examples:
 
@@ -404,39 +414,26 @@ struct Optional[T: Movable](
             raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self: Self) -> String:
         """Return the string representation of the value of the `Optional`.
 
         Returns:
             A string representation of the `Optional`.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Stringable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Stringable",
-        ]()
+        var output = String()
+        self.write_to(output)
+        return output^
 
-        if self:
-            return trait_downcast[Stringable](self.value()).__str__()
-        else:
-            return "None"
-
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self: Self) -> String:
         """Returns the verbose string representation of the `Optional`.
 
         Returns:
             A verbose string representation of the `Optional`.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Representable",
-        ]()
-
         var output = String()
-        output.write("Optional(", self, ")")
+        self.write_repr_to(output)
         return output^
 
     @always_inline("nodebug")
@@ -457,14 +454,12 @@ struct Optional[T: Movable](
         _constrained_conforms_to[
             conforms_to(Self.T, Writable),
             Parent=Self,
-            Element = Self.T,
+            Element=Self.T,
             ParentConformsTo="Writable",
         ]()
 
         if self:
-
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](self.value()).write_repr_to(writer)
             else:
                 trait_downcast[Writable](self.value()).write_to(writer)
@@ -737,7 +732,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
         Returns:
             A string representation of the type, e.g. `OptionalReg[Int]`.
         """
-        return String("OptionalReg[", get_type_name[Self.T](), "]")
+        return t"OptionalReg[{get_type_name[Self.T]()}]"
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -757,7 +752,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
             value: The value.
         """
         self._value = __mlir_op.`kgen.variant.create`[
-            _type = Self._mlir_type, index = Int(0)._mlir_value
+            _type=Self._mlir_type, index=Int(0)._mlir_value
         ](value)
 
     # TODO(MSTDL-715):
@@ -783,7 +778,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
             value: The None value.
         """
         self._value = __mlir_op.`kgen.variant.create`[
-            _type = Self._mlir_type, index = Int(1)._mlir_value
+            _type=Self._mlir_type, index=Int(1)._mlir_value
         ](__mlir_attr.false)
 
     # ===-------------------------------------------------------------------===#
@@ -840,7 +835,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
         Returns:
             True if the optional has a value and False otherwise.
         """
-        return __mlir_op.`kgen.variant.is`[index = Int(0)._mlir_value](
+        return __mlir_op.`kgen.variant.is`[index=Int(0)._mlir_value](
             self._value
         )
 
@@ -855,7 +850,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
         Returns:
             The contained value.
         """
-        return __mlir_op.`kgen.variant.get`[index = Int(0)._mlir_value](
+        return __mlir_op.`kgen.variant.get`[index=Int(0)._mlir_value](
             self._value
         )
 

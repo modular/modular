@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.host import DeviceContext
-from gpu.memory import async_copy
-from gpu.sync import async_copy_arrive
+from std.gpu import barrier, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.host import DeviceContext
+from std.gpu.memory import async_copy
+from std.gpu.sync import async_copy_arrive
 from layout.tma_async import PipelineState, SharedMemBarrier
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import stack_allocation
-from testing import assert_equal
-from utils import IndexList
+from std.memory import stack_allocation
+from std.testing import assert_equal
+from std.utils import IndexList
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():
@@ -31,7 +31,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
     var mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -51,7 +51,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
             print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
 
-def test_producer_consumer_kernel(ctx: DeviceContext):
+def test_producer_consumer_kernel(ctx: DeviceContext) raises:
     comptime kernel = producer_consumer_kernel[64]
     ctx.enqueue_function_experimental[kernel](
         grid_dim=(1),
@@ -71,18 +71,17 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var producer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumer_mbar = stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
-    @parameter
-    for i in range(Q_SIZE):
+    comptime for i in range(Q_SIZE):
         if thread_idx.x == 0:
             producer_mbar[i].init(1)
             consumer_mbar[i].init(128)
@@ -91,8 +90,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
 
     var k_tile = 0
 
-    @parameter
-    for i in range(Q_SIZE):
+    comptime for i in range(Q_SIZE):
         if thread_idx.x == 0:
             # pretend to load into smem tile
             print("prefetch: ", i)
@@ -125,7 +123,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
         k_tile_iters -= 1
 
 
-def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
+def test_producer_consumer_pipeline_kernel(ctx: DeviceContext) raises:
     comptime kernel = producer_consumer_pipeline_kernel[4]
     ctx.enqueue_function_experimental[kernel](
         4,
@@ -162,7 +160,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         size_per_stage * num_stages,
         DType.float32,
         alignment=16,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Initialize smem buffer
@@ -170,8 +168,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             offset = i * size_per_stage + Int(thread_idx.x) * size_per_copy
 
-            @parameter
-            for j in range(size_per_copy):
+            comptime for j in range(size_per_copy):
                 smem[offset + j] = -1000.0
 
     barrier()
@@ -179,18 +176,17 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     var produced_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
     var consumed_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
-    @parameter
-    for i in range(num_stages):
+    comptime for i in range(num_stages):
         if thread_idx.x == 0:
             produced_mbar[i].init(128)
             consumed_mbar[i].init(128)
@@ -220,8 +216,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
             offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
 
-            @parameter
-            for j in range(size_per_copy):
+            comptime for j in range(size_per_copy):
                 smem[offset + j] += Float32(i)
 
             read_pipeline_states.step()
@@ -230,14 +225,13 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             offset = i * size_per_stage + Int(warpgroup_tid) * size_per_copy
 
-            @parameter
-            for j in range(size_per_copy):
+            comptime for j in range(size_per_copy):
                 dst[offset + j] = smem[offset + j]
 
 
 def test_cpasync_producer_consumer_pipeline[
     num_stages: Int
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime size_per_stage = 128 * (16 // size_of[DType.float32]())
     comptime size = num_stages * size_per_stage
     comptime shape1d = IndexList[1](size)
@@ -289,7 +283,7 @@ def test_cpasync_producer_consumer_pipeline[
                     assert_equal(src[idx] + Float32(i), dst[idx])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_producer_consumer_kernel(ctx)
         test_producer_consumer_pipeline_kernel(ctx)

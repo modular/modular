@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functionality to start a mojo execution."""
 
-from ffi import external_call
-from ffi import _get_global
-from sys.compile import SanitizeAddress
+from std.ffi import external_call
+from std.ffi import _get_global
+from std.sys.compile import SanitizeAddress
 
 
 fn _init_global_runtime() -> OpaquePointer[MutExternalOrigin]:
@@ -50,8 +50,7 @@ fn __wrap_and_execute_main[
     # Initialize the global runtime.
     _ensure_current_or_global_runtime_init()
 
-    @parameter
-    if SanitizeAddress:
+    comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
 
     # Initialize the mojo argv with those provided.
@@ -85,8 +84,7 @@ fn __wrap_and_execute_raising_main[
     # Initialize the global runtime.
     _ensure_current_or_global_runtime_init()
 
-    @parameter
-    if SanitizeAddress:
+    comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
 
     # Initialize the mojo argv with those provided.

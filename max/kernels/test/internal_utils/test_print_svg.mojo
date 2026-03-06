@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
+from std.pathlib import Path
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg
@@ -80,7 +80,7 @@ fn test_svg_nvidia_tile_memory_bank() raises:
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.float32, layout](stack)
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
-    print_svg[memory_bank= (4, 32)](
+    print_svg[memory_bank=(4, 32)](
         tensor.get_immutable(),
         [tensor_dist.get_immutable()],
         file_path=Path("./test_svg_nvidia_tile_memory_bank.svg"),
@@ -200,7 +200,7 @@ fn test_svg_swizzle() raises:
     )
 
 
-def main():
+def main() raises:
     test_svg_nvidia_shape()
     test_svg_nvidia_tile()
     test_svg_nvidia_tile_memory_bank()

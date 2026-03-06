@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import WARP_SIZE, barrier, lane_id
-from gpu.host import DeviceContext
-from gpu.compute.mma import ld_matrix, mma
-from gpu.compute.mma_util import store_matrix_d
+from std.gpu import WARP_SIZE, barrier, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import ld_matrix, mma
+from std.gpu.compute.mma_util import store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.numerics import get_accum_type
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 
 
 fn test_ldmatrix_fp8[
@@ -50,10 +50,10 @@ fn test_ldmatrix_fp8[
     var d = SIMD[accum_type, c_frag_size](0)
 
     var a_shared = stack_allocation[
-        M * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
     var b_shared = stack_allocation[
-        N * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
     for i in range(lane_id(), M * K, WARP_SIZE):
@@ -100,18 +100,12 @@ fn check_ldmatrix_fp8[
     var c_host = UnsafePointer[Float32].alloc(M * N)
     var c_host_ref = UnsafePointer[Float32].alloc(M * N)
 
-    @parameter
-    for m in range(M):
-
-        @parameter
-        for k in range(K):
+    comptime for m in range(M):
+        comptime for k in range(K):
             a_host[m * K + k] = Scalar[input_type](m + k)
 
-    @parameter
-    for k in range(K):
-
-        @parameter
-        for n in range(N):
+    comptime for k in range(K):
+        comptime for n in range(N):
             b_host[n * K + k] = Scalar[input_type](k + n)
 
     for i in range(M * N):
@@ -201,7 +195,7 @@ fn check_ldmatrix_fp8[
     _ = c_host_ref
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         check_ldmatrix_fp8[DType.float8_e4m3fn](ctx)
         check_ldmatrix_fp8[DType.float8_e5m2](ctx)

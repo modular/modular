@@ -11,13 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
+from std.ffi import external_call
 
-from builtin.simd import _simd_apply
-from testing import assert_equal, assert_true
+from std.builtin.simd import _simd_apply
+from std.testing import assert_equal, assert_true
 
 
-def check_write_to(value: Some[Writable], *, expected: String, is_repr: Bool):
+def check_write_to(
+    value: Some[Writable], *, expected: String, is_repr: Bool
+) raises:
     """Check that the write_to or write_repr_to of the value is equal to the expected string.
 
     Args:
@@ -34,7 +36,9 @@ def check_write_to(value: Some[Writable], *, expected: String, is_repr: Bool):
     assert_equal(string, expected)
 
 
-def check_write_to(value: Some[Writable], *, contains: String, is_repr: Bool):
+def check_write_to(
+    value: Some[Writable], *, contains: String, is_repr: Bool
+) raises:
     """Check that the write_to or write_repr_to of the value contains the expected string.
 
     Args:
@@ -92,8 +96,7 @@ fn libm_call[
         DType.float64,
     ], "input dtype must be float32 or float64"
 
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return _simd_apply[_float32_dispatch, result_dtype=dtype](arg)
     else:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg)

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import (
@@ -26,10 +26,9 @@ from nn.mha_mask import (
     MaterializedMask,
     TileMaskStatus,
 )
-from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 def build_ChunkedCausalMask[
@@ -40,7 +39,7 @@ def build_ChunkedCausalMask[
     seq_len: Int,
     num_keys: Int,
     mask: LayoutTensor[mut=True, mask_type, ...],
-):
+) raises:
     # Initialize causal mask.
     for b in range(batch_size):
         for h in range(num_heads):
@@ -209,7 +208,6 @@ fn test_attention[
         k_device,
         v_device,
         ChunkedCausalMask[local_window_size](),
-        IdentityScoreMod(),
         scale,
         ctx,
     )
@@ -236,7 +234,6 @@ fn test_attention[
         k_device,
         v_device,
         MaterializedMask(mask4d),
-        IdentityScoreMod(),
         scale,
         ctx,
     )
@@ -274,11 +271,10 @@ fn test_attention[
     flash_output_ptr.free()
 
 
-def test_attention_suite(ctx: DeviceContext):
+def test_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16, DType.float32)
 
-    @parameter
-    for type_idx in range(len(types)):
+    comptime for type_idx in range(len(types)):
         comptime type = types[type_idx]
         # context encoding
         test_attention[
@@ -325,7 +321,7 @@ def test_attention_suite(ctx: DeviceContext):
         ](1, 11, ctx)
 
 
-def test_mask_status():
+def test_mask_status() raises:
     var mask = ChunkedCausalMask[local_window_size=4]()
 
     assert_equal(
@@ -377,7 +373,7 @@ def test_mask_status():
     )
 
 
-def test_mask_apply():
+def test_mask_apply() raises:
     comptime local_window_size = 4
     var mask = ChunkedCausalMask[local_window_size]()
 
@@ -421,7 +417,7 @@ def test_mask_apply():
     )
 
 
-def main():
+def main() raises:
     test_mask_status()
     test_mask_apply()
     with DeviceContext() as ctx:

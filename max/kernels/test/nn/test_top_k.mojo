@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota
-from random import rand, seed
+from std.math import iota
+from std.random import rand, seed
 
-from layout._coord import Coord, DynamicCoord, Idx, coord_to_index_list
-from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
+from layout.tile_layout import Layout
+from layout import TileTensor, row_major
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 
-from utils.index import IndexList, product
+from std.utils.index import IndexList, product
 
 
 struct TestTensor[rank: Int, dtype: DType](Movable):
@@ -39,8 +39,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
     ) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types = DynamicCoord[DType.int64, Self.rank].element_types,
-            stride_types = DynamicCoord[DType.int64, Self.rank].element_types,
+            shape_types=DynamicCoord[DType.int64, Self.rank].element_types,
+            stride_types=DynamicCoord[DType.int64, Self.rank].element_types,
         ],
         origin_of(self.storage),
     ]:
@@ -48,10 +48,10 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
             TileTensor[
                 Self.dtype,
                 Layout[
-                    shape_types = DynamicCoord[
+                    shape_types=DynamicCoord[
                         DType.int64, Self.rank
                     ].element_types,
-                    stride_types = DynamicCoord[
+                    stride_types=DynamicCoord[
                         DType.int64, Self.rank
                     ].element_types,
                 ],
@@ -83,8 +83,7 @@ fn test_case_sampling[
     var output_shape: IndexList[rank]
     var output_idxs_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         output_shape = IndexList[rank](K)
         output_idxs_shape = IndexList[rank](1)
     elif rank == 2:
@@ -105,8 +104,7 @@ fn test_case_sampling[
 
     var max_k = K
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
         batch_size = input_shape[0]
@@ -196,7 +194,7 @@ fn test_case[
     print("")
 
 
-def main():
+def main() raises:
     seed(1)
 
     @parameter

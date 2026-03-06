@@ -25,10 +25,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.legacy.kv_cache import (
+from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
+from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 from modular_graph_test import modular_graph_test
@@ -46,16 +46,15 @@ BATCH_SIZE = 4
 
 
 @pytest.mark.parametrize(
-    "cache_strategy,mask_strategy",
+    "mask_strategy",
     [
-        ("paged", MHAMaskVariant.CAUSAL_MASK),
-        ("paged", MHAMaskVariant.CHUNKED_CAUSAL_MASK),
-        ("paged", MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK),
+        MHAMaskVariant.CAUSAL_MASK,
+        MHAMaskVariant.CHUNKED_CAUSAL_MASK,
+        MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
     ],
 )
 def test_kv_cache_ragged_attention(
     session: InferenceSession,
-    cache_strategy: KVCacheStrategy,
     mask_strategy: MHAMaskVariant,
 ) -> None:
     num_q_heads = 32
@@ -64,7 +63,6 @@ def test_kv_cache_ragged_attention(
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy=cache_strategy,
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -87,9 +85,14 @@ def test_kv_cache_ragged_attention(
         max_batch_size=128,
     )
 
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
+    assert dispatch_metadata_symbol is not None
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
+    attention_dispatch_metadata_type = dispatch_metadata_symbol.tensor
 
     def construct() -> Graph:
         with Graph(
@@ -100,7 +103,8 @@ def test_kv_cache_ragged_attention(
                 blocks_type,
                 cache_lengths_type,
                 lookup_table_type,
-                is_cache_empty_type,
+                max_lengths_type,
+                attention_dispatch_metadata_type,
             ],
         ) as g:
             (
@@ -109,7 +113,8 @@ def test_kv_cache_ragged_attention(
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_lengths,
+                attention_dispatch_metadata,
             ) = g.inputs
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
@@ -117,14 +122,17 @@ def test_kv_cache_ragged_attention(
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_lengths.tensor,
+                dispatch_metadata=AttentionDispatchMetadata(
+                    attention_dispatch_metadata.tensor
+                ),
             )
             result = flash_attention_ragged(
                 kv_params,
-                input.tensor,
-                input_row_offsets.tensor,
-                kv_collection,
-                layer_idx,
+                input=input.tensor,
+                input_row_offsets=input_row_offsets.tensor,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
                 mask_variant=mask_strategy,
                 scale=math.sqrt(1.0 / kv_params.head_dim),
                 local_window_size=8192,
@@ -152,9 +160,8 @@ def test_kv_cache_ragged_attention(
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     @modular_graph_test(
         session,
@@ -165,10 +172,11 @@ def test_kv_cache_ragged_attention(
         },
         provided_inputs={
             1: input_row_offsets,
-            2: blocks,
-            3: cache_lengths,
-            4: lookup_table_tensor,
-            5: is_cache_empty_buf,
+            2: kv_runtime_inputs.blocks,
+            3: kv_runtime_inputs.cache_lengths,
+            4: kv_runtime_inputs.lookup_table,
+            5: kv_runtime_inputs.max_lengths,
+            6: kv_runtime_inputs.attention_dispatch_metadata,
         },
     )
     def test_runs_without_nan(

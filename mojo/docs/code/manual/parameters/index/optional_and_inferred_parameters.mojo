@@ -25,5 +25,5 @@ fn use_inferred():
     speak(Bar[9]())  # prints 'woof 9'
 
 
-def main():
+def main() raises:
     use_inferred()

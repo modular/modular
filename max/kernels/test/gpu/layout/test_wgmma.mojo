@@ -13,10 +13,10 @@
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu import thread_idx, warp_id, lane_id
-from gpu.compute.mma import (
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx, warp_id, lane_id
+from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
@@ -30,7 +30,7 @@ from layout.tensor_core_async import (
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 fn wgmma_kernel_rs[
@@ -55,14 +55,14 @@ fn wgmma_kernel_rs[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
@@ -124,8 +124,8 @@ fn wgmma_kernel_rs[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
         ](a_reg, mat_b_desc, c_reg)
 
         wgmma_commit_group_sync()
@@ -165,14 +165,14 @@ fn wgmma_kernel_ss[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
@@ -209,8 +209,8 @@ fn wgmma_kernel_ss[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -305,7 +305,7 @@ fn wgmma_bf16_bf16_f32[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         wgmma_bf16_bf16_f32[64, 8, 16, True](ctx)
         wgmma_bf16_bf16_f32[64, 16, 16, True](ctx)

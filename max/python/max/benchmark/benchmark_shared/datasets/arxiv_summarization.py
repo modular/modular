@@ -111,7 +111,7 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
             prompt_formatted = f"{prompt_prefix}{article}{prompt_suffix}"
 
             # Re-tokenize and get the actual prompt length.
-            # Note that the the final prompt size usually does not match
+            # Note that the final prompt size usually does not match
             # len(prefix)+len(suffix)+len(article_tokens) exactly because most
             # tokenizers are not entirely stateless; i.e. adding the prefix
             # changes the behavior. This means the result may be slightly larger

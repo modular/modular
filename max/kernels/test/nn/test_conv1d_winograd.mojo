@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
 from nn.conv import Naive2dConvolution
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn winograd_1d_convolution_3[
@@ -129,7 +129,7 @@ fn test[dtype: DType](C: Int):  # Input Len
     print("Succeed")
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
 
     # Make sure to test both even and odd

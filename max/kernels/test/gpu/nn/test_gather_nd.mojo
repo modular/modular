@@ -11,14 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceBuffer, DeviceContext
-from layout._coord import Coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceBuffer, DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def execute_gather_nd_test[
@@ -36,7 +34,7 @@ def execute_gather_nd_test[
     expected_output_device: DeviceBuffer[data_type],
     output_shape: IndexList[output_rank],
     ctx: DeviceContext,
-):
+) raises:
     # Create output device buffer
     var actual_output_device = ctx.enqueue_create_buffer[data_type](
         output_shape.flattened_length()
@@ -652,7 +650,7 @@ fn test_gather_nd_eg8(ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     """
     Note: Examples 1-5 are from:
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.

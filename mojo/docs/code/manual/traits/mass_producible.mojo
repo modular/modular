@@ -16,7 +16,7 @@
 #     fn __init__(out self): ...
 
 # trait Movable
-#     fn __moveinit__(out self, deinit take: Self):
+#     fn __init__(out self, *, deinit take: Self):
 
 comptime MassProducible = Defaultable & Movable
 
@@ -31,11 +31,11 @@ struct Thing(MassProducible):
     fn __init__(out self):
         self.id = 0
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.id = take.id
 
 
-def main():
+def main() raises:
     var thing = factory[Thing]()
     # end-trait-lifecycle-methods
     _ = thing^

@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceil, ceildiv
-from sys.info import size_of
+from std.math import ceil, ceildiv
+from std.sys.info import size_of
 
 from layout import Layout, LayoutTensor
-from memory import UnsafePointer, bitcast, memcpy
-from utils import IndexList, StaticTuple, product
+from std.memory import UnsafePointer, bitcast, memcpy
+from std.utils import IndexList, StaticTuple, product
 
 
 @always_inline
@@ -26,8 +26,7 @@ fn _to_StaticTuple[
 
     var res = StaticTuple[Scalar[dtype], size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
@@ -39,8 +38,7 @@ fn _to_SIMD[
     """Convert StaticTuple to SIMD."""
     var res = SIMD[dtype, size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
@@ -268,10 +266,10 @@ struct Q4sym[
     @staticmethod
     fn quantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         input_shape: IndexList[input_tensor.rank],
     ):
@@ -322,9 +320,9 @@ struct Q4sym[
                 var flat_index_input = (
                     input_inner_stride * i + j * Self.group_size
                 )
-                var loaded_group = input_tensor.ptr.load[
-                    width = Self.group_size
-                ](flat_index_input)
+                var loaded_group = input_tensor.ptr.load[width=Self.group_size](
+                    flat_index_input
+                )
 
                 var flat_index_output = output_inner_stride * i + j
                 var output_ptr = base_block_ptr + flat_index_output
@@ -346,10 +344,10 @@ struct Q4sym[
     @staticmethod
     fn dequantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            DType.uint8, address_space = AddressSpace.GENERIC, ...
+            DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_shape: IndexList[output_tensor.rank],
     ):
@@ -433,9 +431,7 @@ struct block_Q4_K:
 
 
 fn scale_min_k4(
-    src_ptr: UnsafePointer[
-        block_Q4_K, address_space = AddressSpace.GENERIC, ...
-    ],
+    src_ptr: UnsafePointer[block_Q4_K, address_space=AddressSpace.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
     if g < 4:
@@ -456,10 +452,10 @@ fn scale_min_k4(
 
 fn q4_k_dequantize_impl(
     input_tensor: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, ...
+        DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     output_tensor: LayoutTensor[
-        mut=True, DType.float32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     comptime group_nelems = block_Q4_K.group_size
@@ -481,8 +477,7 @@ fn q4_k_dequantize_impl(
         var b_min = src_ptr[].base_min.cast[DType.float32]()
 
         # Process 2 groups at a time to load 6-bit scales/mins.
-        @parameter
-        for group_idx in range(0, block_Q4_K.group_count, 2):
+        comptime for group_idx in range(0, block_Q4_K.group_count, 2):
             var q_scale: Float32
             var q_min: Float32
 
@@ -500,8 +495,7 @@ fn q4_k_dequantize_impl(
             var dst_idx = group_idx * group_nelems
 
             # Dequantize 1st group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + elem_idx] = (
                     d1
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] & 0xF).cast[
@@ -511,8 +505,7 @@ fn q4_k_dequantize_impl(
                 )
 
             # Dequantize 2nd group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + group_nelems + elem_idx] = (
                     d2
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] >> 4).cast[
@@ -564,11 +557,8 @@ fn q6_k_dequantize_impl(
         var sc = src_ptr[].q_scales.unsafe_ptr()
 
         # Process 8 groups at a time.
-        @parameter
-        for _ in range(0, block_Q6_K.group_count, 8):
-
-            @parameter
-            for l in range(32):
+        comptime for _ in range(0, block_Q6_K.group_count, 8):
+            comptime for l in range(32):
                 var sc_idx = l // 16
                 var q1 = ((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)).cast[
                     DType.int8

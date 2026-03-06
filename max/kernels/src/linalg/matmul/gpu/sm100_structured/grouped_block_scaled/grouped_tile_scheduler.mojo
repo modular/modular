@@ -33,22 +33,22 @@ Usage:
             process_tile(current)
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, block_id_in_cluster, grid_dim, thread_idx
-from gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
-from gpu.memory import fence_async_view_proxy
+from std.gpu import block_idx, block_id_in_cluster, grid_dim, thread_idx
+from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
+from std.gpu.memory import fence_async_view_proxy
 from layout import Layout, LayoutTensor
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.structuring import SMemPtr, SMemArray
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================
@@ -108,7 +108,7 @@ struct GroupedAdvanceContext[
 
 @fieldwise_init
 struct GroupedWorkInfo(
-    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterPassable, Writable
+    ImplicitlyCopyable, Movable, TrivialRegisterPassable, Writable
 ):
     """Work info for grouped GEMM with group-specific metadata.
 
@@ -157,6 +157,7 @@ struct GroupedWorkInfo(
         """Get (m, n) tile coordinates as a tuple."""
         return (UInt(self.m), UInt(self.n))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -261,8 +262,7 @@ struct GroupedWorkIterator[
 
         # Compute cumulative tile counts
         # Explicitly zero-initialize ALL slots to avoid stale memory issues
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -678,8 +678,7 @@ struct GroupedCLCWorkIterator[
         self.problem_k = StaticTuple[UInt32, Self.max_groups]()
 
         # Initialize cumulative tiles
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -957,8 +956,7 @@ struct GroupedCLCSchedulerIterator[
         self.signal_count = UInt32(0)
 
         # Initialize cumulative tiles
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             self.cumulative_tiles[i] = 0
 
         var cumsum: UInt32 = 0
@@ -1059,8 +1057,7 @@ struct GroupedCLCSchedulerIterator[
             var response_ptr = self.clc_response + self.producer_state.index()
             response_ptr[] = UInt128(Int(next_linear_idx))
 
-            @parameter
-            for cta in range(Self.cta_group):
+            comptime for cta in range(Self.cta_group):
                 self.full_mbar[self.producer_state.index()].arrive_cluster(
                     UInt32(cta)
                 )

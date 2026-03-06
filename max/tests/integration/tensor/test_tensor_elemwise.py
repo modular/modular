@@ -18,10 +18,10 @@ They don't otherwise make any attempt at coverage, edge cases, or correctness.
 
 from __future__ import annotations
 
-from max import random
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental import random
+from max.experimental.tensor import Tensor
 
 
 def test_abs() -> None:
@@ -75,7 +75,7 @@ def test_mean() -> None:
 
 
 def test_sum() -> None:
-    tensor = Tensor.constant(
+    tensor = Tensor(
         [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
         dtype=DType.float32,
         device=Accelerator() if accelerator_count() else CPU(),
@@ -91,7 +91,7 @@ def test_sum() -> None:
 
 
 def test_prod() -> None:
-    tensor = Tensor.constant(
+    tensor = Tensor(
         [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
         dtype=DType.float32,
         device=Accelerator() if accelerator_count() else CPU(),
@@ -642,7 +642,7 @@ def test_invert() -> None:
 def test_max_axis_none() -> None:
     """Test that tensor.max with axis=None reduces over all dimensions."""
     data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
-    tensor = Tensor.constant(
+    tensor = Tensor(
         data,
         dtype=DType.float32,
         device=Accelerator() if accelerator_count() else CPU(),
@@ -658,7 +658,7 @@ def test_max_axis_none() -> None:
 def test_min_axis_none() -> None:
     """Test that tensor.min with axis=None reduces over all dimensions."""
     data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
-    tensor = Tensor.constant(
+    tensor = Tensor(
         data,
         dtype=DType.float32,
         device=Accelerator() if accelerator_count() else CPU(),
@@ -674,7 +674,7 @@ def test_min_axis_none() -> None:
 def test_mean_axis_none() -> None:
     """Test that tensor.mean with axis=None reduces over all dimensions."""
     data = [[2.0, 4.0, 6.0], [8.0, 10.0, 12.0]]
-    tensor = Tensor.constant(
+    tensor = Tensor(
         data,
         dtype=DType.float32,
         device=Accelerator() if accelerator_count() else CPU(),
@@ -691,7 +691,7 @@ def test_mean_axis_none() -> None:
 def test_argmax_axis_none() -> None:
     """Test that tensor.argmax with axis=None returns flattened index."""
     data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
-    tensor = Tensor.constant(
+    tensor = Tensor(
         data,
         dtype=DType.float32,
         device=Accelerator() if accelerator_count() else CPU(),

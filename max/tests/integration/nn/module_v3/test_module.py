@@ -18,12 +18,13 @@ import re
 import weakref
 
 import pytest
-from max import driver, random
-from max import functional as F
+from max import driver
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.nn.module import Module, module_dataclass
-from max.tensor import Tensor, TensorType, defaults
+from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.nn.module import Module, module_dataclass
+from max.experimental.tensor import Tensor, TensorType, defaults
 
 
 @module_dataclass
@@ -52,8 +53,8 @@ class SuperModule(Module[[Tensor], Tensor]):
 @pytest.fixture
 def test_module():  # noqa: ANN201
     return TestModule(
-        a=Tensor.constant(1),
-        sub=SubModule(b=Tensor.constant(2)),
+        a=Tensor(1),
+        sub=SubModule(b=Tensor(2)),
     )
 
 
@@ -61,8 +62,8 @@ def test_module():  # noqa: ANN201
 def lazy_test_module():  # noqa: ANN201
     with F.lazy():
         return TestModule(
-            a=Tensor.constant(1),
-            sub=SubModule(b=Tensor.constant(2)),
+            a=Tensor(1),
+            sub=SubModule(b=Tensor(2)),
         )
 
 
@@ -89,7 +90,7 @@ def test_module_repr(test_module: TestModule) -> None:
     # eps is the default value, shouldn't be present
     assert "eps=" not in repr(test_module)
 
-    sub = SubModule(b=Tensor.constant(2), eps=1e-6)
+    sub = SubModule(b=Tensor(2), eps=1e-6)
 
     assert "SubModule" in repr(sub)
     assert "b=Tensor" in repr(sub)
@@ -120,19 +121,19 @@ def test_module_custom_repr() -> None:
 
 
 def test_module_decomposition(test_module: TestModule) -> None:
-    test_module_2 = TestModule(a=Tensor.constant(1), sub=test_module.sub)
+    test_module_2 = TestModule(a=Tensor(1), sub=test_module.sub)
     assert test_module_2.sub is test_module.sub
     assert dict(test_module_2.children) == dict(test_module.children)
 
 
 def test_module_decomposition_call(test_module: TestModule) -> None:
-    x = Tensor.constant(1)
+    x = Tensor(1)
     assert test_module.sub.b.item() == 2
     assert test_module.sub(x).item() == 3
 
 
 def test_module_forward(test_module: TestModule) -> None:
-    x = Tensor.constant(1)
+    x = Tensor(1)
     # __call__ invokes forward, so both should produce the same result
     assert test_module.forward(x).item() == test_module(x).item()
 
@@ -220,8 +221,8 @@ def test_map_parameters(test_module: TestModule) -> None:
 
 def test_load_state_simple_dict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
     }
     test_module.load_state(lambda name, _: weights[name])
     assert test_module.a.item() == 5
@@ -241,8 +242,8 @@ def test_load_state_name_remapping(test_module: TestModule) -> None:
         return name
 
     weights = {
-        "a": Tensor.constant(5),
-        "feed_forward.b": Tensor.constant(6),
+        "a": Tensor(5),
+        "feed_forward.b": Tensor(6),
     }
 
     test_module.load_state(lambda name, _: weights[remap_name(name)])
@@ -252,8 +253,8 @@ def test_load_state_name_remapping(test_module: TestModule) -> None:
 
 def test_load_state_dict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
     }
     test_module.load_state_dict(weights)
     assert test_module.a.item() == 5
@@ -262,9 +263,9 @@ def test_load_state_dict(test_module: TestModule) -> None:
 
 def test_load_state_dict_strict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
-        "extra": Tensor.constant(7),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
+        "extra": Tensor(7),
     }
     with pytest.raises(ValueError):
         test_module.load_state_dict(weights)
@@ -272,9 +273,9 @@ def test_load_state_dict_strict(test_module: TestModule) -> None:
 
 def test_load_state_dict_nonstrict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
-        "extra": Tensor.constant(7),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
+        "extra": Tensor(7),
     }
     test_module.load_state_dict(weights, strict=False)
     assert test_module.a.item() == 5

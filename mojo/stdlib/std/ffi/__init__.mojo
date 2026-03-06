@@ -26,7 +26,7 @@ foreign code. It includes:
 Example:
 
 ```mojo
-from ffi import c_int, external_call
+from std.ffi import c_int, external_call
 
 fn get_random() -> c_int:
     return external_call["rand", c_int]()
@@ -35,7 +35,7 @@ fn get_random() -> c_int:
 For loading dynamic libraries:
 
 ```mojo
-from ffi import OwnedDLHandle
+from std.ffi import OwnedDLHandle
 
 fn main() raises:
     var lib = OwnedDLHandle("libm.so")
@@ -44,16 +44,19 @@ fn main() raises:
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string, get_static_string
-from os import PathLike, abort
-from pathlib import Path
-from sys._libc import dlclose, dlerror, dlopen, dlsym
-from sys._libc_errno import ErrNo, get_errno, set_errno
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+    get_static_string,
+)
+from std.os import PathLike, abort
+from std.pathlib import Path
+from std.sys._libc import dlclose, dlerror, dlopen, dlsym
+from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 
-from sys.info import CompilationTarget, is_32bit, is_64bit
-from sys.intrinsics import _mlirtype_is_eq
+from std.sys.info import CompilationTarget, is_32bit, is_64bit
+from std.sys.intrinsics import _mlirtype_is_eq
 from .cstring import CStringSlice
 from .unsafe_union import UnsafeUnion
 
@@ -128,8 +131,7 @@ comptime MAX_PATH = _get_max_path()
 
 
 fn _get_max_path() -> Int:
-    @parameter
-    if CompilationTarget.is_linux():
+    comptime if CompilationTarget.is_linux():
         return 4096
     elif CompilationTarget.is_macos():
         return 1024
@@ -141,8 +143,7 @@ fn _get_max_path() -> Int:
 fn _c_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 
-    @parameter
-    if is_64bit() and (
+    comptime if is_64bit() and (
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
         # LP64: long is 64-bit on 64-bit systems (e.g. x86_64 or aarch64)
@@ -151,20 +152,17 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
         # ILP32: long is 32-bit on 32-bit systems (e.g. x86 or RISC-V 32bit)
         return DType.uint32 if unsigned else DType.int32
     else:
-        constrained[False, "size of C `long` is unknown on this target"]()
-        abort()
+        comptime assert False, "size of C `long` is unknown on this target"
 
 
 fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
     # `long long` is 64 bits on all common platforms (LP64, LLP64, ILP32).
 
-    @parameter
-    if is_64bit() or is_32bit():
+    comptime if is_64bit() or is_32bit():
         return DType.uint64 if unsigned else DType.int64
     else:
-        constrained[False, "size of C `long long` is unknown on this target"]()
-        abort()
+        comptime assert False, "size of C `long long` is unknown on this target"
 
 
 # ===-----------------------------------------------------------------------===#
@@ -204,7 +202,7 @@ struct OwnedDLHandle(Movable):
 
     Example usage:
     ```mojo
-    from ffi import OwnedDLHandle
+    from std.ffi import OwnedDLHandle
 
     fn main() raises:
         var lib = OwnedDLHandle("libm.so")
@@ -333,7 +331,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     fn _get_function[
         result_type: __TypeOfAllTypes
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -367,7 +365,7 @@ struct OwnedDLHandle(Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -407,7 +405,7 @@ struct OwnedDLHandle(Movable):
 
     fn call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
+    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
         Parameters:
@@ -482,7 +480,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     @staticmethod
     fn _dlopen(
-        file: UnsafePointer[mut=False, c_char], flags: Int
+        file: UnsafePointer[mut=False, c_char, _], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
@@ -573,7 +571,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     @always_inline
     fn _get_function[
         result_type: __TypeOfAllTypes
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -612,7 +610,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -666,9 +664,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             # Check if an error occurred during the 2nd `dlsym` call.
             var err = dlerror()
             if err:
-                abort(
-                    String("dlsym failed: ", String(unsafe_from_utf8_ptr=err))
-                )
+                abort(t"dlsym failed: {String(unsafe_from_utf8_ptr=err)}")
 
         return res
 
@@ -695,7 +691,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     fn call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
+    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
         Parameters:
@@ -724,7 +720,7 @@ fn _get_dylib_function[
     func_name: StaticString,
     result_type: __TypeOfAllTypes,
 ]() raises -> result_type:
-    var func_cache_name = String(dylib_global.name, "/", func_name)
+    var func_cache_name = String(t"{dylib_global.name}/{func_name}")
     var func_ptr = _get_global_or_null(func_cache_name)
     if func_ptr:
         var result = UnsafePointer(to=func_ptr).bitcast[result_type]()[]
@@ -814,9 +810,7 @@ fn _find_dylib[
     try:
         return _try_find_dylib[name](paths)
     except e:
-
-        @parameter
-        if abort_on_failure:
+        comptime if abort_on_failure:
             abort(String(e))
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
@@ -846,9 +840,7 @@ fn _find_dylib[
     try:
         return _try_find_dylib(paths)
     except e:
-
-        @parameter
-        if abort_on_failure:
+        comptime if abort_on_failure:
             abort[prefix="ERROR:"](msg())
         else:
             return OwnedDLHandle(unsafe_uninitialized=True)
@@ -906,8 +898,7 @@ struct _Global[
             Self.name, Self._init_wrapper, Self._deinit_wrapper
         ]()
 
-        @parameter
-        if Self.on_error_msg:
+        comptime if Self.on_error_msg:
             if not ptr:
                 raise Self.on_error_msg.value()()
 
@@ -935,8 +926,7 @@ struct _Global[
             Self._deinit_wrapper,
         )
 
-        @parameter
-        if Self.on_error_msg:
+        comptime if Self.on_error_msg:
             if not ptr:
                 raise Self.on_error_msg.value()()
 
@@ -996,7 +986,7 @@ fn external_call[
 fn external_call[
     callee: StaticString,
     return_type: __TypeOfAllTypes,
-](args: VariadicPack[element_trait=AnyType]) -> return_type:
+](args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
     """Calls an external function.
 
     Parameters:
@@ -1016,8 +1006,7 @@ fn external_call[
     var loaded_pack = args.get_loaded_kgen_pack()
     comptime callee_kgen_string = _get_kgen_string[callee]()
 
-    @parameter
-    if _mlirtype_is_eq[return_type, NoneType]():
+    comptime if _mlirtype_is_eq[return_type, NoneType]():
         __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )
@@ -1062,10 +1051,10 @@ fn _external_call_const[
     var loaded_pack = args.get_loaded_kgen_pack()
 
     return __mlir_op.`pop.external_call`[
-        func = _get_kgen_string[callee](),
-        resAttrs = __mlir_attr.`[{llvm.noundef}]`,
-        funcAttrs = __mlir_attr.`["willreturn"]`,
-        memory = __mlir_attr[
+        func=_get_kgen_string[callee](),
+        resAttrs=__mlir_attr.`[{llvm.noundef}]`,
+        funcAttrs=__mlir_attr.`["willreturn"]`,
+        memory=__mlir_attr[
             `#llvm.memory_effects<other = none, `,
             `argMem = none, `,
             `inaccessibleMem = none, `,

@@ -11,17 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
-from sys.info import CompilationTarget
+from std.math import sqrt
+from std.sys.info import CompilationTarget
 
-from itertools import product
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.itertools import product
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from nn.normalization import *
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn compute_rms[
@@ -127,9 +131,8 @@ fn run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:
     # run_rms_norm_cpu[dtype](Index(1, 5, 6, 10, 128), rtol)
 
 
-def main():
+def main() raises:
     run_rms_norm_tests[DType.float32]()
 
-    @parameter
-    if not CompilationTarget.has_neon():
+    comptime if not CompilationTarget.has_neon():
         run_rms_norm_tests[DType.bfloat16](rtol=1e-2)

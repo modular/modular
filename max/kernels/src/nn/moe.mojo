@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from math import align_up, ceildiv
-from memory import stack_allocation
+from std.math import align_up, ceildiv
+from std.memory import stack_allocation
 
-from os.atomic import Atomic
-from sys.info import simd_width_of
+from std.os.atomic import Atomic
+from std.sys.info import simd_width_of
 
-import gpu.primitives.warp as warp
-from bit import pop_count, log2_floor
-from gpu import (
+import std.gpu.primitives.warp as warp
+from std.bit import pop_count, log2_floor
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -30,16 +30,22 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host.info import is_gpu
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
-from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor, stack_allocation as tensor_alloc
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host.info import is_gpu
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
+from layout.tile_tensor import TileTensor, stack_allocation as tensor_alloc
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel
 
-from utils.index import IndexList, StaticTuple
-from builtin.dtype import _uint_type_of_width
+from std.utils.index import IndexList, StaticTuple
+from std.builtin.dtype import _uint_type_of_width
 
 from nn.topk import TopK_2
 
@@ -331,8 +337,7 @@ fn _count_expert_tokens[
         # Use warp-level voting to efficiently count matching tokens
         # All threads in the warp vote, and we count how many threads
         # before us also voted true to determine our write offset
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             var expert_id = g_vector[i]
             var state = expert_id == Scalar[input_type](bg_params.expert)
 
@@ -440,8 +445,7 @@ fn _copy_tokens_smem_to_gmem[
                 Coord(Idx(0), Idx(smem_idx))
             )
 
-            @parameter
-            for i in range(width):
+            comptime for i in range(width):
                 token_expert_order[
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 ] = source_vector[i]
@@ -505,8 +509,7 @@ fn _copy_tokens_to_gmem[
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             var expert_id = g_vector[i]
             var state = expert_id == Scalar[input_type](bg_params.expert)
 
@@ -642,7 +645,7 @@ fn moe_create_indices_bucket_group_kernel[
 
     # Allocate shared memory for temporary storage of matching token indices
     # alignment=128,
-    var smem = tensor_alloc[DType.uint32, address_space = AddressSpace.SHARED](
+    var smem = tensor_alloc[DType.uint32, address_space=AddressSpace.SHARED](
         row_major[1, expected_count]()
     )
 
@@ -827,12 +830,10 @@ fn _warp_bitonic_sort[
     # Use modulo so merge direction is consistent across all lane groups
     var i = UInt32(lane_id() % UInt(num_lanes))
 
-    @parameter
-    for stage_i in range(1, log2_floor(num_lanes) + 1):
+    comptime for stage_i in range(1, log2_floor(num_lanes) + 1):
         var stage = 1 << stage_i
 
-        @parameter
-        for step_i in reversed(range(stage_i)):
+        comptime for step_i in reversed(range(stage_i)):
             var step = 1 << step_i
             val = bitonic_sort_step(val, UInt32(step), UInt32(stage), i)
 
@@ -917,10 +918,10 @@ fn group_limited_router_kernel[
     var shared_mem = stack_allocation[
         topk_group * n_experts_per_tok,
         TopK_2[scores_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var selected_group = stack_allocation[
-        topk_group, DType.int32, address_space = AddressSpace.SHARED
+        topk_group, DType.int32, address_space=AddressSpace.SHARED
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
@@ -931,8 +932,7 @@ fn group_limited_router_kernel[
     with PDL():
         var thread_expert_score: Scalar[scores_type]
 
-        @parameter
-        if scores_input_fn:
+        comptime if scores_input_fn:
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
@@ -974,8 +974,7 @@ fn group_limited_router_kernel[
         barrier()
         var selected_group_smem_offset: Int32 = -1
 
-        @parameter
-        for i in range(topk_group):
+        comptime for i in range(topk_group):
             if selected_group[i] == Int32(thread_group_id):
                 selected_group_smem_offset = Int32(i * n_experts_per_tok)
 
@@ -996,7 +995,7 @@ fn group_limited_router_kernel[
                 thd_topk2 = TopK_2[scores_type]()
 
             var global_topk_result = _warp_bitonic_sort[
-                num_lanes = topk_group * n_experts_per_tok
+                num_lanes=topk_group * n_experts_per_tok
             ](thd_topk2)
 
             var weights_sum: Scalar[scores_type] = 0
@@ -1016,8 +1015,7 @@ fn group_limited_router_kernel[
                 num_lanes=n_experts_per_tok
             ](original_weight)
 
-            @parameter
-            if norm_weights:
+            comptime if norm_weights:
                 original_weight /= weights_sum
 
             original_weight *= Scalar[scores_type](routed_scaling_factor)

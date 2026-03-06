@@ -38,14 +38,14 @@ Usage:
     )
 """
 
-from collections import Optional
-from math import align_up, ceildiv
-from memory import UnsafePointer
-from sys import size_of
+from std.collections import Optional
+from std.math import align_up, ceildiv
+from std.memory import UnsafePointer
+from std.sys import size_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.info import B200
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout as LegacyLayout,
     LayoutTensor,
@@ -53,10 +53,10 @@ from layout import (
 )
 from layout.tma_async import TMATensorTileArray
 
-from ..structured_kernels.tile_types import create_tma_tile
+from structured_kernels.tile_types import create_tma_tile
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (
     elementwise_compute_lambda_type,
@@ -92,8 +92,7 @@ fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
     """Reshape 2D layout to 3D by prepending batch dimension of 1."""
     comptime rank = len(layout.shape)
 
-    @parameter
-    if rank == 3:
+    comptime if rank == 3:
         return materialize[layout]()
     else:
         return LegacyLayout.row_major(
@@ -113,14 +112,14 @@ fn _convert_input_to_batched_tensor[
     tensor.dtype,
     reshape_layout,
     tensor.origin,
-    address_space = tensor.address_space,
+    address_space=tensor.address_space,
 ]:
     """Convert 2D tensor to 3D batched tensor with batch=1."""
     return LayoutTensor[
         dtype,
         reshape_layout,
         tensor.origin,
-        address_space = tensor.address_space,
+        address_space=tensor.address_space,
     ](
         tensor.ptr,
         RuntimeLayout[reshape_layout].row_major(
@@ -143,8 +142,7 @@ fn _reshape_sf_to_5d[layout: LegacyLayout, is_batched: Bool]() -> LegacyLayout:
                   -> (1, M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K)
     """
 
-    @parameter
-    if is_batched:
+    comptime if is_batched:
         # Input is 6D: (B, M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
         return LegacyLayout.row_major(
             comptime (layout.shape[0].value()),
@@ -447,7 +445,7 @@ fn grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -465,7 +463,7 @@ fn grouped_block_scaled_matmul[
         KernelType.ATmaTile.tile_layout,
         KernelType.ATmaTile.desc_layout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_tensor_batched)
 
     # B matrix TMA
@@ -476,7 +474,7 @@ fn grouped_block_scaled_matmul[
         KernelType.BTmaTile.tile_layout,
         KernelType.BTmaTile.desc_layout,
         b_tma_tile_shape,
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_tensor_batched)
 
     # C matrix TMA
@@ -487,7 +485,7 @@ fn grouped_block_scaled_matmul[
         KernelType.CTmaTile.tile_layout,
         KernelType.CTmaTile.desc_layout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c_tensor_batched)
 
     # Scaling factors TMA - 5D tensors (using converted batched tensors)
@@ -632,8 +630,8 @@ fn grouped_block_scaled_matmul[
     comptime num_threads = 32 * 7
 
     # ===== Create TileTensor wrappers for kernel args =====
-    from layout._layout import row_major as new_row_major
-    from memory import UnsafePointer as NewPtr
+    from layout.tile_layout import row_major as new_row_major
+    from std.memory import UnsafePointer as NewPtr
 
     var a_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
         ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
@@ -675,8 +673,7 @@ fn grouped_block_scaled_matmul[
     # ===== Kernel Launch =====
     # Dispatch to run_2sm() for 2SM mode (cta_group=2), else run() for 1SM
 
-    @parameter
-    if config.cta_group == 2:
+    comptime if config.cta_group == 2:
         # 2SM mode: use CLC-based run_2sm() for proper cluster synchronization
         ctx.enqueue_function[matmul_kernel.run_2sm, matmul_kernel.run_2sm](
             # Template TMA descriptors

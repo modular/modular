@@ -11,23 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
+from std.math import align_up
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
 )
-from sys.info import has_amd_gpu_accelerator
+from std.sys.info import has_amd_gpu_accelerator
 
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -35,7 +41,7 @@ from internal_utils._utils import (
 )
 from linalg.bmm import _batched_matmul_gpu
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
@@ -86,11 +92,8 @@ comptime epilogue_func_type = fn[
 fn _row_major_shapes_to_strides[shapes_dim: DimList]() -> DimList:
     """Compute the strides for a 3D shape. Assuming row-major layout."""
 
-    @parameter
-    if shapes_dim.has_value[2]():
-
-        @parameter
-        if shapes_dim.has_value[1]():
+    comptime if shapes_dim.has_value[2]():
+        comptime if shapes_dim.has_value[1]():
             return DimList(
                 shapes_dim.get[1]() * shapes_dim.get[2](),
                 shapes_dim.get[2](),
@@ -211,7 +214,7 @@ fn bench_bmm[
             Index(idx[0], idx[1], idx[2]), update_val.cast[c_device.type]()
         )
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_device, b, m, n)
@@ -236,11 +239,8 @@ fn bench_bmm[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            @parameter
-            if use_vendor_blas:
-
-                @parameter
-                if has_amd_gpu_accelerator():
+            comptime if use_vendor_blas:
+                comptime if has_amd_gpu_accelerator():
                     var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
                         c_device.data, dynamic_c_shape
                     )
@@ -288,16 +288,13 @@ fn bench_bmm[
                 ctx.synchronize()
 
                 # Epilogue
-                @parameter
-                if lambda_fn:
+                comptime if lambda_fn:
                     elementwise[func, pack_size, target="gpu"](
                         IndexList[3](b, m, Int(N.value())),
                         ctx,
                     )
             else:
-
-                @parameter
-                if lambda_fn:
+                comptime if lambda_fn:
                     _batched_matmul_gpu[
                         transpose_b=transpose_b,
                         elementwise_epilogue_fn=epilogue_fn,
@@ -384,18 +381,18 @@ fn create_bmm_bench[
     )
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var b = Int(arg_parse("B", 1))
     var m = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int["K", 1]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
     comptime transpose_b = False
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
 
     var bench = Bench()
     with DeviceContext() as ctx:
@@ -403,8 +400,8 @@ def main():
             dtype,
             transpose_b=transpose_b,
             use_vendor_blas=use_vendor_blas,
-            N = Int(N),
-            K = Int(K),
+            N=Int(N),
+            K=Int(K),
         ](
             ctx,
             bench,

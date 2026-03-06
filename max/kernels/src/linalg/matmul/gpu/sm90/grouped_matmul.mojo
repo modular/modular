@@ -10,29 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from math import ceildiv
-from sys import simd_width_of, size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import simd_width_of, size_of
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.primitives.cluster import (
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
+from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import (
     block_id_in_cluster,
     block_idx,
     grid_dim,
     thread_idx,
 )
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import external_memory, fence_mbarrier_init
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import external_memory, fence_mbarrier_init
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -45,9 +45,9 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from .matmul_kernels import HopperMatmulSM90Kernel
 from .matmul import _get_c_smem_layout
@@ -92,11 +92,11 @@ fn grouped_matmul_sm90[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -149,7 +149,7 @@ fn grouped_matmul_sm90[
         b_type,
         Layout.row_major(num_experts * N, K),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
         ctx, b_tensor
@@ -187,18 +187,21 @@ fn grouped_matmul_sm90[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        partitioned_multicast = config.partitioned_multicast,
+        partitioned_multicast=config.partitioned_multicast,
         use_tma_store=False,
         promotion_frequency=1,
-        pdl_level = config.pdl_level(),
+        pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
     ].run_grouped[
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
+        type_of(a_tma_op).rank,
+        type_of(b_tma_op).rank,
+        type_of(c_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(b_tma_op).tile_shape,
+        type_of(c_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).desc_shape,
     ]
 
     ctx.enqueue_function[kernel, kernel](

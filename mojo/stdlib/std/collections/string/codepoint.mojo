@@ -18,11 +18,12 @@ values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF` inclusive.
 """
 
 
-from sys.intrinsics import likely
+from std.sys.intrinsics import likely
 
-from bit import count_leading_zeros
-from bit._mask import splat
-from os import abort
+from std.bit import count_leading_zeros
+from std.bit._mask import splat
+import std.format._utils as fmt
+from std.os import abort
 
 
 @always_inline
@@ -40,9 +41,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    Comparable, ImplicitlyCopyable, Intable, Movable, Stringable, Writable
-):
+struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -62,8 +61,8 @@ struct Codepoint(
     Example:
 
     ```mojo
-    from collections.string import Codepoint
-    from testing import assert_true
+    from std.collections.string import Codepoint
+    from std.testing import assert_true
 
     # Create a codepoint from a character
     var c = Codepoint.ord('A')
@@ -161,7 +160,7 @@ struct Codepoint(
             return None
 
     @staticmethod
-    fn ord(string: StringSlice[mut=False]) -> Codepoint:
+    fn ord(string: StringSlice[mut=False, _]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
         string.
 
@@ -293,6 +292,7 @@ struct Codepoint(
         """
         return Int(self._scalar_value)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Formats this `Codepoint` as a single-character string.
@@ -312,7 +312,22 @@ struct Codepoint(
         Args:
             w: The object to write to.
         """
-        w.write(self.__str__())
+        var char_len = self.utf8_byte_length()
+        var result = String(unsafe_uninit_length=char_len)
+        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
+        w.write_string(result)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Codepoint` to a writer.
+
+        Writes the codepoint in the format `Codepoint(N)` where N is the
+        Unicode scalar value.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Codepoint").fields(self._scalar_value)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -408,7 +423,7 @@ struct Codepoint(
         For example, check if a string contains only whitespace:
 
         ```mojo
-        from testing import assert_true, assert_false
+        from std.testing import assert_true, assert_false
 
         # ASCII space characters
         assert_true(Codepoint.ord(" ").is_python_space())
@@ -529,12 +544,10 @@ struct Codepoint(
 
         var num_bytes = self.utf8_byte_length()
 
-        @parameter
-        if not branchless:
+        comptime if not branchless:
             var is_ascii: Bool
 
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 is_ascii = likely(num_bytes == 1)
             else:
                 is_ascii = num_bytes == 1
@@ -563,9 +576,7 @@ struct Codepoint(
                 ptr[2] = Byte(((c >> 6) & cont_mask) | cont_marker)
                 ptr[3] = Byte((c & cont_mask) | cont_marker)
         else:
-
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 if likely(num_bytes == 1):
                     ptr[0] = UInt8(c)
                     return 1

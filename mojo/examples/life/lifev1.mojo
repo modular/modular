@@ -13,10 +13,10 @@
 
 # DOC: mojo/docs/manual/get-started.mdx
 
-import time
+import std.time
 
 from gridv1 import Grid
-from python import Python
+from std.python import Python
 
 
 def run_display(
@@ -26,7 +26,7 @@ def run_display(
     background_color: String = "black",
     cell_color: String = "green",
     pause: Float64 = 0.1,
-) -> None:
+) raises -> None:
     # Import the pygame Python package
     pygame = Python.import_module("pygame")
 
@@ -85,6 +85,6 @@ def run_display(
     pygame.quit()
 
 
-def main():
+def main() raises:
     start = Grid.random(128, 128)
     run_display(start^)

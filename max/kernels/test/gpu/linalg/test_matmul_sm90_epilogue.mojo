@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import align_of, size_of
+from std.collections import Optional
+from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from linalg.utils import elementwise_compute_lambda_type
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
     128, wgmma_n, 128 // size_of[a_dtype]()
@@ -32,7 +32,7 @@ comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_matmul_sm90[
             DType.bfloat16,
@@ -44,8 +44,8 @@ def main():
             num_consumer=2,
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            grid_shape = Index(32, 4),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(32, 4),
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](ctx, dynamic(512), static[2560](), static[8192]())
 
@@ -134,7 +134,7 @@ def main():
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](
             ctx,
@@ -187,7 +187,7 @@ def main():
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn = Optional[
+            elementwise_compute_lambda_fn=Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_fn_square),
             default_epilogue=True,
@@ -216,7 +216,7 @@ def main():
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn = Optional[
+            elementwise_compute_lambda_fn=Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords),
             default_epilogue=True,
@@ -231,7 +231,7 @@ def main():
             wgmma_shape[56, DType.bfloat16],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](
             ctx,
@@ -261,7 +261,7 @@ def main():
             wgmma_shape[256, DType.float32],
             num_consumer=2,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
         ](
             ctx,

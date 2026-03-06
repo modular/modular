@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string._utf8 import _is_valid_utf8
-from collections.string.string_slice import _split
-from os import abort
-from pathlib import _dir_of_current_file
-from random import seed
-from sys import stderr
+from std.collections import Optional
+from std.collections.string._utf8 import _is_valid_utf8
+from std.collections.string.string_slice import _split
+from std.os import abort
+from std.pathlib import _dir_of_current_file
+from std.random import seed
+from std.sys import stderr
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -42,8 +42,7 @@ fn make_string[
         directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
-        @parameter
-        if length > 0:
+        comptime if length > 0:
             var items = f.read_bytes(length)
             i = 0
             while length > len(items):
@@ -107,8 +106,7 @@ fn bench_string_split[
     fn call_fn() unified {read}:
         var res: List[type_of(items)]
 
-        @parameter
-        if sequence:
+        comptime if sequence:
             res = _split[has_maxsplit=False](
                 black_box(items), black_box(sequence.value()), black_box(-1)
             )
@@ -126,8 +124,7 @@ fn bench_string_split[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_join[short: Bool](mut b: Bencher) raises:
-    @parameter
-    if short:
+    comptime if short:
         count = 100
     else:
         count = 1000
@@ -340,8 +337,7 @@ fn bench_string_write[short: Bool](mut b: Bencher) raises:
         for _ in range(1_000_000):
             var res: String
 
-            @parameter
-            if short:  # less than 24 bytes
+            comptime if short:  # less than 24 bytes
                 res = String.write(
                     black_box(0),
                     black_box(" is "),
@@ -393,7 +389,7 @@ fn bench_string_repr[
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
     comptime filenames = (
@@ -440,12 +436,10 @@ def main():
         BenchId(String("bench_string_write_long"))
     )
 
-    @parameter
-    for i in range(len(lengths)):
+    comptime for i in range(len(lengths)):
         comptime length = lengths[i]
 
-        @parameter
-        for j in range(len(filenames)):
+        comptime for j in range(len(filenames)):
             comptime fname = filenames[j]
             comptime old = StaticString(old_chars[j])
             comptime new = new_chars[j]

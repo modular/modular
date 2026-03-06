@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import argv
+from std.math import ceildiv
+from std.sys import argv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import block_dim
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu import block_dim
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn is_benchmark() -> Bool:
@@ -66,7 +66,7 @@ def test_kernel_1[
     transpose_b: Bool = True,
     benchmark: Bool = False,
     prob_shape: IndexList[3] = IndexList[3](1, 1, 1),
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = prob_shape[0]
     comptime N = prob_shape[1]
     comptime K = prob_shape[2]
@@ -86,8 +86,7 @@ def test_kernel_1[
     ) if transpose_b else Layout.row_major(K, N)
     var b_vendor = ManagedLayoutTensor[b_type, b_vendor_layout](ctx)
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         var b_tensor = b.tensor[update=False]()
         var b_vendor_tensor = b_vendor.tensor[update=True]()
         for k in range(K):
@@ -171,14 +170,8 @@ def test_kernel_1[
                 )
         print("TEST PASSED")
 
-    _ = a^
-    _ = b^
-    _ = c^
-    _ = c_ref^
-    _ = b_vendor^
 
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             test_kernel_1[
@@ -186,7 +179,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 transpose_b=True,
-                prob_shape = IndexList[3](4096, 4096, 4096),
+                prob_shape=IndexList[3](4096, 4096, 4096),
                 benchmark=True,
             ](ctx)
             return
@@ -198,5 +191,5 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             transpose_b=True,
-            prob_shape = IndexList[3](4096, 4096, 4096),
+            prob_shape=IndexList[3](4096, 4096, 4096),
         ](ctx)

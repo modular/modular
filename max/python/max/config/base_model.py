@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class MAXBaseModel(BaseModel):
@@ -24,6 +24,8 @@ class MAXBaseModel(BaseModel):
     fields (via `model_dump`) so objects compare equal across config
     roundtrips/pickling and are not sensitive to pydantic internal bookkeeping.
     """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     def __eq__(self, other: object) -> bool:
         """Structural equality based on public model fields."""

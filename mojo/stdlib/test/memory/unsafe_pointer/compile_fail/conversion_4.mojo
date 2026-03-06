@@ -20,7 +20,7 @@ fn test_cannot_cast_between_different_named_origins[
     pass
 
 
-def main():
+def main() raises:
     var x = 42
     var y = 55
 

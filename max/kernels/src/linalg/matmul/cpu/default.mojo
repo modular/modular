@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import prefetch
-from sys.info import align_of
-from sys.intrinsics import PrefetchOptions
+from std.sys import prefetch
+from std.sys.info import align_of
+from std.sys.intrinsics import PrefetchOptions
 
 from layout import Layout, LayoutTensor, RuntimeTuple
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
 from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
@@ -73,12 +73,10 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
-        @parameter
-        if prefetch_distance > 0:
+        comptime if prefetch_distance > 0:
             comptime prefetch_offset = prefetch_distance * kernel_cols
 
-            @parameter
-            for idx in range(kernel_cols // simd_size):
+            comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ](b_ptr + (prefetch_offset + idx * simd_size))
@@ -90,11 +88,8 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         comptime c_type = c_local.dtype
 
         # Loop over local accumulator tiles.
-        @parameter
-        for idx0 in range(kernel_rows):
-
-            @parameter
-            for idx1 in range(kernel_cols // simd_size):
+        comptime for idx0 in range(kernel_rows):
+            comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]

@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal, assert_with_measure
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from collections import OptionalReg
-from memory import LegacyUnsafePointer
+from std.collections import OptionalReg
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig
@@ -70,11 +70,11 @@ fn test_matmul_sm90[
         k.dim, n.dim
     )
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     # Calculate sizes
     var a_size = M * K
@@ -106,10 +106,10 @@ fn test_matmul_sm90[
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_dev_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[mut=False, a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[mut=False, b_type, 2, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = NDBuffer[c_type, 2, _, static_c_shape](
@@ -231,13 +231,10 @@ fn test_matmul_sm90[
         ctx,
     )
 
-    constrained[
-        a_type != DType.float8_e4m3fn or transpose_b,
-        (
-            "Testing is only supported for transposed_b==True when"
-            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-        ),
-    ]()
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        "Testing is only supported for transposed_b==True when"
+        " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+    )
 
     vendor_matmul(
         ctx,
@@ -252,8 +249,7 @@ fn test_matmul_sm90[
     ctx.enqueue_copy(c_host_ref_ptr, c_dev_ref_buffer)
     ctx.synchronize()
 
-    @parameter
-    if elementwise_compute_lambda_fn:
+    comptime if elementwise_compute_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
         comptime compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
@@ -263,8 +259,7 @@ fn test_matmul_sm90[
                     c_host_ref[Index(i, j)],
                 )
 
-    @parameter
-    if measure_threshold:
+    comptime if measure_threshold:
         assert_with_measure[relative_difference](
             c_host.data,
             c_host_ref.data,

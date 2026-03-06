@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from random import rand
-from sys import (
+from std.math import iota
+from std.random import rand
+from std.sys import (
     argv,
     has_amd_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
 )
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -28,9 +28,9 @@ from benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from bit import log2_floor
+from std.bit import log2_floor
 from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
@@ -55,7 +55,7 @@ struct Tensor[
     comptime size = Int(Self.static_spec.shape.product())
 
     var slice: ManagedTensorSlice[
-        io_spec = Self.io_spec, static_spec = Self.static_spec
+        io_spec=Self.io_spec, static_spec=Self.static_spec
     ]
     var buffer: DeviceBuffer[Self.dtype]
 
@@ -63,7 +63,7 @@ struct Tensor[
         self.buffer = ctx.enqueue_create_buffer[Self.dtype](Self.size)
 
         self.slice = ManagedTensorSlice[
-            io_spec = Self.io_spec, static_spec = Self.static_spec
+            io_spec=Self.io_spec, static_spec=Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
             Self.static_spec.shape.into_index_list[Self.rank](),
@@ -104,7 +104,7 @@ struct Tensor[
             return self
 
 
-def top_k():
+def top_k() raises:
     print("Running top-k benchmark...")
     comptime batch_size = 30_000
     comptime K = 32
@@ -129,15 +129,14 @@ def top_k():
     var metrics = [flops, elements]
 
     @parameter
-    def top_k_cpu():
+    def top_k_cpu() raises:
         TopK.execute[K=K, target="cpu"](
             out_vals.slice, out_idxs.slice, in_vals.slice, cpu_ctx
         )
 
     b.bench_function[top_k_cpu](BenchId("top_k_custom", "cpu"), metrics)
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         var gpu_ctx = DeviceContext()
 
         var out_vals_dev = Tensor[Output, val_spec](gpu_ctx).rand()
@@ -145,7 +144,7 @@ def top_k():
         var in_vals_dev = Tensor[Input, val_spec](gpu_ctx).rand()
 
         @parameter
-        def top_k_gpu():
+        def top_k_gpu() raises:
             TopK.execute[K=K, target="gpu"](
                 out_vals_dev.slice,
                 out_idxs_dev.slice,
@@ -158,7 +157,7 @@ def top_k():
     print(b)
 
 
-def matmul():
+def matmul() raises:
     print("Running matmul benchmark...")
     comptime M = 1028
     comptime K = 1028
@@ -185,15 +184,14 @@ def matmul():
     var metrics = [flops, elements]
 
     @parameter
-    def matmul_cpu():
+    def matmul_cpu() raises:
         MatrixMultiplication["naive"].execute[target="cpu"](
             c.slice, a.slice, b.slice, cpu_ctx
         )
 
     bench.bench_function[matmul_cpu](BenchId("cpu", "naive"), metrics)
 
-    @parameter
-    if (
+    comptime if (
         has_amd_gpu_accelerator()
         or has_apple_gpu_accelerator()
         or has_nvidia_gpu_accelerator()
@@ -204,9 +202,9 @@ def matmul():
         var c_dev = Tensor[Output, c_spec](gpu_ctx).rand()
 
         @parameter
-        def bench_matmul_kernel[impl: StaticString]():
+        def bench_matmul_kernel[impl: StaticString]() raises:
             @parameter
-            def bench_gpu():
+            def bench_gpu() raises:
                 MatrixMultiplication[impl].execute[target="gpu"](
                     c_dev.slice, a_dev.slice, b_dev.slice, gpu_ctx
                 )
@@ -222,15 +220,14 @@ def matmul():
         bench_matmul_kernel["block_tiled"]()
         bench_matmul_kernel["block_tiled_vectorized"]()
 
-        @parameter
-        if not has_apple_gpu_accelerator():
+        comptime if not has_apple_gpu_accelerator():
             bench_matmul_kernel["tensor_core"]()
 
     bench.config.verbose_metric_names = False
     print(bench)
 
 
-def tensor_core_mma():
+def tensor_core_mma() raises:
     print("Running tensor core mma benchmark...")
     comptime M = 4096
     comptime N = 4096
@@ -258,24 +255,22 @@ def tensor_core_mma():
 
     comptime perform_validation = False
 
-    @parameter
-    if perform_validation:
+    comptime if perform_validation:
         bench.config.max_iters = 1
         bench.config.max_batch_size = 1
         bench.config.num_repetitions = 1
 
     # TODO: Add NVIDIA GPU support
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()
         var c_dev = Tensor[Output, c_spec](gpu_ctx).rand()
 
         @parameter
-        def bench_matmul_kernel[impl: StaticString]():
+        def bench_matmul_kernel[impl: StaticString]() raises:
             @parameter
-            def bench_gpu():
+            def bench_gpu() raises:
                 TensorCoreMMA[impl].execute[target="gpu", M=M, N=N, K=K](
                     c_dev.slice,
                     a_dev.slice,
@@ -299,7 +294,7 @@ def tensor_core_mma():
     print(bench)
 
 
-def main():
+def main() raises:
     var args = argv()
     if len(args) == 1:
         top_k()

@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import gcd
-from sys.info import _current_target, simd_width_of
+from std.collections import OptionalReg
+from std.math import gcd
+from std.sys.info import _current_target, align_of, simd_width_of
 
-from algorithm.functional import elementwise
-from utils.numerics import get_accum_type
-from complex import ComplexSIMD
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
+from std.algorithm.functional import elementwise
+from std.utils.numerics import get_accum_type
+from std.complex import ComplexSIMD
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
-from layout._coord import (
+from layout.coord import (
     Coord,
     CoordLike,
     Idx,
@@ -29,15 +29,15 @@ from layout._coord import (
     ComptimeInt,
     coord_to_index_list,
 )
-from layout._layout import TensorLayout, RowMajorLayout, Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_layout import TensorLayout, RowMajorLayout, Layout
+from layout import TileTensor, row_major
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
-fn _rope[
+fn rope_value[
     dtype: DType,
     freq_dtype: DType,
     width: Int,
@@ -74,6 +74,7 @@ fn rope_q_proj[
     //,
     *,
     interleaved: Bool,
+    alignment: Int = align_of[SIMD[dtype, width]](),
 ](
     q_proj: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
@@ -93,6 +94,9 @@ fn rope_q_proj[
     pos_re[rank - 1] = indices[0]
     pos_im[rank - 1] = indices[1]
     comptime width_2 = width // 2
+    comptime half_alignment = align_of[
+        SIMD[dtype, width_2]
+    ]() if alignment == align_of[SIMD[dtype, width]]() else alignment
 
     var coord_re = Coord(pos_re)
     var coord_im = Coord(pos_im)
@@ -103,25 +107,25 @@ fn rope_q_proj[
 
     var val: SIMD[dtype, width]
 
-    @parameter
-    if interleaved:
-        val = q_proj.load[width=width](coord)
+    comptime if interleaved:
+        val = q_proj.load[width=width, alignment=alignment](coord)
     else:
         val = rebind[SIMD[dtype, width]](
-            q_proj.load[width=width_2](coord_re).interleave(
-                q_proj.load[width=width_2](coord_im)
+            q_proj.load[width=width_2, alignment=half_alignment](
+                coord_re
+            ).interleave(
+                q_proj.load[width=width_2, alignment=half_alignment](coord_im)
             )
         )
 
-    var res = _rope(val, freq_val)
+    var res = rope_value(val, freq_val)
 
-    @parameter
-    if interleaved:
-        output.store(coord, res)
+    comptime if interleaved:
+        output.store[alignment=alignment](coord, res)
     else:
         output_re, output_im = res.deinterleave()
-        output.store(coord_re, output_re)
-        output.store(coord_im, output_im)
+        output.store[alignment=half_alignment](coord_re, output_re)
+        output.store[alignment=half_alignment](coord_im, output_im)
 
 
 @always_inline
@@ -144,8 +148,7 @@ fn rope_k_cache[
 
     var val: SIMD[accum_type, width]
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         val = k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx).cast[
             accum_type
         ]()
@@ -160,10 +163,9 @@ fn rope_k_cache[
             )
         )
 
-    var res = _rope(val, freq_val).cast[cache_type]()
+    var res = rope_value(val, freq_val).cast[cache_type]()
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
     else:
         output_re, output_im = res.deinterleave()
@@ -224,8 +226,7 @@ fn fused_qk_rope[
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 4, "Invalid rank passed to rope kernel"
 
-        @parameter
-        if width == 1:
+        comptime if width == 1:
             return
         else:
             var idx = rebind[IndexList[4]](idx_arg)
@@ -246,12 +247,15 @@ fn fused_qk_rope[
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
-            var f_c_temp = freqs_cis.load[width=width](
+            comptime _alignment = 1 if is_cpu[target]() else align_of[
+                SIMD[dtype, width]
+            ]()
+            var f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
                 (Idx(post_seq_idx), Idx(head_dim_idx))
             )
 
             if is_q_proj:
-                rope_q_proj[interleaved=interleaved](
+                rope_q_proj[interleaved=interleaved, alignment=_alignment](
                     q_proj, output, idx, f_c_temp, head_size
                 )
             else:
@@ -281,8 +285,7 @@ fn fused_qk_rope[
     )
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape
         )
@@ -375,8 +378,7 @@ fn fused_qk_rope_ragged[
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 3, "Invalid rank passed to rope kernel"
 
-        @parameter
-        if width == 1:
+        comptime if width == 1:
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
@@ -400,12 +402,10 @@ fn fused_qk_rope_ragged[
                 comptime PIdTensor = type_of(position_ids.value())
                 comptime assert PIdTensor.flat_rank == 2
 
-                @parameter
-                if mrope_section:
+                comptime if mrope_section:
                     var section_idx = 0
 
-                    @parameter
-                    for i in range(len(mrope_section.value())):
+                    comptime for i in range(len(mrope_section.value())):
                         comptime val = mrope_section.value()[i].value()
                         if head_dim_idx < val:
                             section_idx = i
@@ -422,30 +422,30 @@ fn fused_qk_rope_ragged[
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
             var is_unroped_region = head_dim_idx < unroped_dim
+            comptime _alignment = 1 if is_cpu[target]() else align_of[
+                SIMD[freq_dtype, width]
+            ]()
 
             var f_c_temp: SIMD[freq_dtype, width]
 
-            @parameter
-            if has_nope:
+            comptime if has_nope:
                 if is_unroped_region:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
-                    f_c_temp = freqs_cis.load[width=width](
-                        (Idx(position_ids_idx), Idx(head_dim_idx - unroped_dim))
-                    )
+                    f_c_temp = freqs_cis.load[
+                        width=width, alignment=_alignment
+                    ]((Idx(position_ids_idx), Idx(head_dim_idx - unroped_dim)))
             else:
-                f_c_temp = freqs_cis.load[width=width](
+                f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
                     (Idx(position_ids_idx), Idx(head_dim_idx))
                 )
 
             if is_q_proj:
-                rope_q_proj[interleaved=interleaved](
+                rope_q_proj[interleaved=interleaved, alignment=_alignment](
                     q_proj, output, idx, f_c_temp, q_head_size
                 )
             else:
-
-                @parameter
-                if has_nope:
+                comptime if has_nope:
                     if is_unroped_region:
                         return
 
@@ -473,19 +473,15 @@ fn fused_qk_rope_ragged[
     comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    @parameter
-    if mrope_section:
-
-        @parameter
-        for i in range(len(mrope_section.value())):
+    comptime if mrope_section:
+        comptime for i in range(len(mrope_section.value())):
             comptime assert (
                 Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape
         )

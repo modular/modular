@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_si64
+from std.math import ceildiv
+from std.random import random_si64
 
-from gpu import WARP_SIZE, barrier, lane_id, thread_idx
-from gpu.host import DeviceContext
-from gpu.compute.mma import ld_matrix, mma
-from gpu.compute.mma_util import store_matrix_d
+from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import ld_matrix, mma
+from std.gpu.compute.mma_util import store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import IndexList
+from std.utils.numerics import get_accum_type
 
 
 fn test_ldmatrix_fp32(
@@ -49,13 +49,13 @@ fn test_ldmatrix_fp32(
         Int(mma_m * mma_k),
         DType.float32,
         alignment=32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
         Int(mma_n * mma_k),
         DType.float32,
         alignment=32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     for i in range(tid, mma_m * mma_k, WARP_SIZE):
@@ -101,10 +101,10 @@ fn test_ldmatrix_transposed[
     var d = SIMD[accum_type, c_frag_size](0)
 
     var a_shared = stack_allocation[
-        M * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
     var b_shared = stack_allocation[
-        N * K, input_type, alignment=32, address_space = AddressSpace.SHARED
+        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
     for i in range(lane, M * K, WARP_SIZE):
@@ -344,7 +344,7 @@ fn check_ldmatrix(
     _ = c_host_ref
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         check_ldmatrix(16, 8, 8, -100, 100, ctx)
         check_ldmatrix_transposed_bf16[DType.bfloat16, DType.bfloat16](ctx)

@@ -24,9 +24,9 @@ import pytest
 import torch
 from max.driver import accelerator_count
 from max.dtype import DType
+from max.experimental.torch import CustomOpLibrary, graph_op
+from max.experimental.torch.torch import max_device_ref
 from max.graph import TensorType, TensorValue, ops
-from max.torch import CustomOpLibrary, graph_op
-from max.torch.torch import max_device_ref
 
 # Select device based on hardware availability
 device = torch.device(

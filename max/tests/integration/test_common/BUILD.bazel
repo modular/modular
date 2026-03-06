@@ -1,5 +1,6 @@
 # Common code shared by different pipeline tests.
 
+load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
 load(
     "//bazel:api.bzl",
     "modular_py_library",
@@ -12,41 +13,6 @@ package(default_visibility = [
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
-
-modular_py_library(
-    name = "test_common",
-    testonly = True,
-    srcs = ["__init__.py"],
-    imports = [".."],
-    tags = ["no-pydeps"],  # This is a meta-target, which sort of goes against the point of the pydeps test
-    deps = [
-        requirement("pytest"),
-        requirement("numpy"),
-        ":context_utils",
-        ":distance_metrics",
-        ":evaluate",
-        ":evaluate_embeddings",
-        ":github_utils",
-        ":graph_utils",
-        ":lora_utils",
-        ":mocks",
-        ":ndarray_from_tensor_type",
-        ":numerics",
-        ":numpy_encoder",
-        ":pipeline_cli_utils",
-        ":pipeline_model_dummy",
-        ":process_isolation",
-        ":registry",
-        ":storage",
-        ":test_data",
-        ":torch_hooks",
-        ":torch_utils",
-        ":verify_utils",
-    ] + select({
-        "//:nvidia_gpu": [":vllm_utils"],
-        "//conditions:default": [],
-    }),
-)
 
 modular_py_library(
     name = "ndarray_from_tensor_type",
@@ -111,6 +77,8 @@ modular_py_library(
         ":model_output",
         ":numerics",
         ":test_data",
+        requirement("numpy"),
+        requirement("pillow"),
         requirement("transformers"),
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -118,6 +86,8 @@ modular_py_library(
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/support",
     ],
 )
 
@@ -177,16 +147,6 @@ modular_py_library(
 )
 
 modular_py_library(
-    name = "pipeline_cli_utils",
-    testonly = True,
-    srcs = ["pipeline_cli_utils.py"],
-    imports = [".."],
-    deps = [
-        "//max/python/max/driver",
-    ],
-)
-
-modular_py_library(
     name = "pipeline_model_dummy",
     testonly = True,
     srcs = ["pipeline_model_dummy.py"],
@@ -217,11 +177,19 @@ modular_py_library(
         ":numerics",
         ":test_data",
         requirement("accelerate"),  # Required to run torch models on GPU.
+        requirement("diffusers"),
+        requirement("numpy"),
         requirement("pillow"),
         requirement("requests"),
         requirement("torch"),
         requirement("transformers"),
+        "//max/python/max/support",
     ],
+)
+
+pycross_wheel_library(
+    name = "transformers_v4",
+    wheel = "@transformers_v4_wheel//file",
 )
 
 modular_py_library(
@@ -238,6 +206,11 @@ modular_py_library(
     ],
     imports = [".."],
     deps = [
+        # HACK:
+        ":transformers_v4",
+        # Don't sort the above dep ^^^, we're forcing a specific version of transformers.
+        # We rely on Python import order to make sure this one gets picked up instead of
+        # the normal one pulled from rules_pycross transitively.
         ":test_data",
         requirement("numpy"),
     ] + select({
@@ -278,7 +251,6 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
@@ -311,6 +283,8 @@ modular_py_library(
         requirement("numpy"),
         requirement("rich"),
         requirement("scipy"),
+        requirement("torch"),
+        requirement("torchmetrics"),
     ],
 )
 
@@ -336,7 +310,7 @@ modular_py_library(
     srcs = ["torch_print_hook.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/nn/legacy/hooks:base_print_hook",
+        "//max/python/max/nn/hooks:base_print_hook",
         requirement("torch"),
     ],
 )
@@ -350,5 +324,21 @@ modular_py_library(
     deps = [
         requirement("boto3"),
         requirement("pillow"),
+    ],
+)
+
+modular_py_library(
+    name = "build_graph_helpers",
+    testonly = True,
+    srcs = ["build_graph_helpers.py"],
+    imports = [".."],
+    deps = [
+        ":mocks",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

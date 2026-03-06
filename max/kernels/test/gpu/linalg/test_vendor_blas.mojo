@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_float64
+from std.math import ceildiv
+from std.random import random_float64
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
-from gpu import block_dim
-from gpu.host import DeviceContext
+from std.gpu import block_dim
+from std.gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 def test_vendor_blas[
     dtype: DType, transpose_b: Bool
-](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
     var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
     var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
@@ -114,16 +114,16 @@ def test_vendor_blas[
 
 def dispatch_test_vendor_blas[
     transpose_b: Bool
-](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
-    test_vendor_blas[dtype = DType.bfloat16, transpose_b=transpose_b](
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
+    test_vendor_blas[dtype=DType.bfloat16, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
-    test_vendor_blas[dtype = DType.float32, transpose_b=transpose_b](
+    test_vendor_blas[dtype=DType.float32, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
 
 
-def test_vendor_blas_multi_gpu():
+def test_vendor_blas_multi_gpu() raises:
     """Test vendor BLAS on multiple GPUs to ensure device contexts work correctly.
     """
 
@@ -172,7 +172,7 @@ def test_vendor_blas_multi_gpu():
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         dispatch_test_vendor_blas[transpose_b=True](M=550, N=2048, K=8, ctx=ctx)
         dispatch_test_vendor_blas[transpose_b=False](M=63, N=65, K=66, ctx=ctx)

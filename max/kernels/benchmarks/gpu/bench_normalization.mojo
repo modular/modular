@@ -11,18 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
-from sys import env_get_dtype
+from std.random import random_float64
+from std.sys import get_defined_dtype
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from gpu.host import DeviceContext
-from internal_utils import env_get_shape, int_list_to_tuple
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.gpu.host import DeviceContext
+from internal_utils import get_defined_shape, int_list_to_tuple
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn bench_layer_norm_gpu[
@@ -194,15 +198,15 @@ fn bench_rms_norm_gpu[
     gamma_h.free()
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
-    comptime shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime shape = int_list_to_tuple[
+        get_defined_shape["shape", "256x256"]()
+    ]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
-
-        @parameter
-        if len(shape) == 2:
+        comptime if len(shape) == 2:
             bench_layer_norm_gpu[dtype, shape](ctx, m, "layer_norm_gpu")
         elif len(shape) == 3:
             bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")

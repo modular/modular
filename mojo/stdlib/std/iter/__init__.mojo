@@ -24,7 +24,7 @@ The iteration protocol consists of two key traits:
 Examples:
 
 ```mojo
-from iter import enumerate, zip, map
+from std.iter import enumerate, zip, map
 
 # Enumerate with index
 var items = ["a", "b", "c"]
@@ -46,7 +46,7 @@ for squared in map[square](values):
 ```
 """
 
-from builtin.constrained import _constrained_conforms_to
+from std.builtin.constrained import _constrained_conforms_to
 
 # ===-----------------------------------------------------------------------===#
 # Iterable
@@ -199,11 +199,11 @@ struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
         self._inner = iterator^
         self._count = start
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
-            Element = Self.InnerIteratorType,
+            Element=Self.InnerIteratorType,
             ParentConformsTo="Copyable",
         ]()
         self._inner = rebind_var[Self.InnerIteratorType](
@@ -277,17 +277,17 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeA,
+            Element=Self.IteratorTypeA,
             ParentConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeB,
+            Element=Self.IteratorTypeB,
             ParentConformsTo="Copyable",
         ]()
         self._inner_a = rebind_var[Self.IteratorTypeA](
@@ -301,14 +301,14 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeA,
+            Element=Self.IteratorTypeA,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeB,
+            Element=Self.IteratorTypeB,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
@@ -348,23 +348,23 @@ struct _Zip3[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeA,
+            Element=Self.IteratorTypeA,
             ParentConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeB,
+            Element=Self.IteratorTypeB,
             ParentConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeC, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeC,
+            Element=Self.IteratorTypeC,
             ParentConformsTo="Copyable",
         ]()
         self._inner_a = rebind_var[Self.IteratorTypeA](
@@ -381,21 +381,21 @@ struct _Zip3[
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeA,
+            Element=Self.IteratorTypeA,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeB,
+            Element=Self.IteratorTypeB,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeC,
+            Element=Self.IteratorTypeC,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
@@ -448,29 +448,29 @@ struct _Zip4[
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeA,
+            Element=Self.IteratorTypeA,
             ParentConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeB,
+            Element=Self.IteratorTypeB,
             ParentConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeC, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeC,
+            Element=Self.IteratorTypeC,
             ParentConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeD, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeD,
+            Element=Self.IteratorTypeD,
             ParentConformsTo="Copyable",
         ]()
         self._inner_a = rebind_var[Self.IteratorTypeA](
@@ -490,28 +490,28 @@ struct _Zip4[
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeA,
+            Element=Self.IteratorTypeA,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeB,
+            Element=Self.IteratorTypeB,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeC,
+            Element=Self.IteratorTypeC,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeD, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.IteratorTypeD,
+            Element=Self.IteratorTypeD,
             ParentConformsTo="Iterator",
             ElementConformsTo="ImplicitlyDestructible",
         ]()
@@ -688,11 +688,11 @@ struct _MapIterator[
 
     var _inner: Self.InnerIteratorType
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
-            Element = Self.InnerIteratorType,
+            Element=Self.InnerIteratorType,
             ParentConformsTo="Copyable",
         ]()
         self._inner = rebind_var[Self.InnerIteratorType](
@@ -775,17 +775,17 @@ struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
         self._inner = inner^
         self._next = None
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         _constrained_conforms_to[
             conforms_to(Self.InnerIterator, Copyable),
             Parent=Self,
-            Element = Self.InnerIterator,
+            Element=Self.InnerIterator,
             ParentConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.Element, Copyable),
             Parent=Self,
-            Element = Self.Element,
+            Element=Self.Element,
             ParentConformsTo="Copyable",
         ]()
 

@@ -13,12 +13,12 @@
 #
 
 
-from reflection import (
+from std.reflection import (
     call_location,
     source_location,
     SourceLocation,
 )
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 fn check_source_loc(line: Int, col: Int, source_loc: SourceLocation) raises:
@@ -234,8 +234,8 @@ fn source_loc_with_debug() -> SourceLocation:
     var col: __mlir_type.index
     var file_name: __mlir_type.`!kgen.string`
     line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount = Int(0)._mlir_value,
-        _type = Tuple[
+        inlineCount=Int(0)._mlir_value,
+        _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
             __mlir_type.`!kgen.string`,
@@ -254,5 +254,5 @@ fn test_source_location_struct() raises:
     assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

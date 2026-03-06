@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the `StringSlice` type and related utilities for efficient string operations."""
 
-from builtin.builtin_slice import ContiguousSlice
-from builtin.format_int import _write_int
-from collections._index_normalization import normalize_index
-from collections.string._unicode import (
+from std.builtin.builtin_slice import ContiguousSlice
+from std.builtin.format_int import _write_int
+from std.collections._index_normalization import normalize_index
+from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
     to_lowercase,
     to_uppercase,
 )
-from collections.string._utf8 import (
+from std.collections.string._utf8 import (
     _count_utf8_continuation_bytes,
     _is_newline_char_utf8,
     _is_valid_utf8,
@@ -30,25 +30,25 @@ from collections.string._utf8 import (
     _is_utf8_continuation_byte,
     _is_utf8_start_byte,
 )
-from collections.string.format import _FormatUtils
-from hashlib.hasher import Hasher
-from format._utils import _TotalWritableBytes, _WriteBufferStack
-from math import align_down
-from os import PathLike, abort
-from sys import is_compile_time, simd_width_of
-from ffi import c_char
-from sys.intrinsics import likely, unlikely
+from std.collections.string.format import _FormatUtils
+from std.hashlib.hasher import Hasher
+from std.format._utils import _TotalWritableBytes, _WriteBufferStack
+from std.math import align_down
+from std.os import PathLike, abort
+from std.sys import is_compile_time, simd_width_of
+from std.ffi import c_char
+from std.sys.intrinsics import likely, unlikely
 
-from bit import count_trailing_zeros
-from bit._mask import is_negative, splat
-from memory import (
+from std.bit import count_trailing_zeros
+from std.bit._mask import is_negative, splat
+from std.memory import (
     Span,
     memcmp,
     memcpy,
     pack_bits,
 )
-from python import ConvertibleToPython, Python, PythonObject
-from format._utils import _write_hex
+from std.python import ConvertibleToPython, Python, PythonObject
+from std.format._utils import _write_hex
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice.
@@ -157,8 +157,7 @@ struct CodepointSliceIter[
         if len(self._slice) <= 0:
             raise StopIteration()
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             return self.next().value()
         else:
             return self.next_back().value()
@@ -195,8 +194,8 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import Codepoint
-        from testing import assert_equal
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
 
         var input = StringSlice("123")
         var iter = input.codepoint_slices()
@@ -238,8 +237,8 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import Codepoint
-        from testing import assert_equal
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
 
         var input = StringSlice("123")
         var iter = input.codepoint_slices()
@@ -411,8 +410,8 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         return the same value:
 
         ```mojo
-        from collections.string import Codepoint
-        from testing import assert_equal
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
 
         var input = StringSlice("123")
         var iter = input.codepoints()
@@ -473,9 +472,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     IntableRaising,
     KeyElement,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -620,10 +617,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -667,10 +664,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         unsafe_from_utf8_ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             c_char,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
     ):
@@ -693,10 +690,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         out self,
         *,
         ptr: UnsafePointer[
-            mut = Self.mut,
+            mut=Self.mut,
             Byte,
-            origin = Self.origin,
-            address_space = AddressSpace.GENERIC,
+            origin=Self.origin,
+            address_space=AddressSpace.GENERIC,
             ...,
         ],
         length: Int,
@@ -738,6 +735,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert this StringSlice to a String.
@@ -756,6 +754,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
         return result^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
 
@@ -786,7 +785,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = StringSlice("ನಮಸ್ಕಾರ")
 
@@ -799,7 +798,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = StringSlice("abc")
 
@@ -884,7 +883,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
           The file system path representation as a string.
         """
-        return self.__str__()
+        return String(self)
 
     @always_inline
     fn __getitem__(self, span: ContiguousSlice) -> Self:
@@ -1141,15 +1140,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices()
 
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    fn __reversed__(self) -> CodepointSliceIter[Self.origin, False]:
-        """Iterate backwards over the string, returning immutable references.
-
-        Returns:
-            A reversed iterator of references to the string elements.
-        """
-        return self.codepoint_slices_reversed()
-
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
@@ -1266,7 +1256,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     ](
         self,
         out result: StringSlice[
-            mut = Self.mut & other_type.origin.mut,
+            mut=Self.mut & other_type.origin.mut,
             origin_of(Self.origin, other_type.origin),
         ],
     ):
@@ -1533,7 +1523,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         var s = StringSlice("abc")
         var iter = s.codepoints()
@@ -1549,7 +1539,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = StringSlice("á")
@@ -1698,7 +1688,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Check if particular byte positions are codepoint boundaries:
 
         ```mojo
-        from testing import assert_equal, assert_true, assert_false
+        from std.testing import assert_equal, assert_true, assert_false
         var abc = StringSlice("abc")
         assert_equal(len(abc), 3)
         assert_true(abc.is_codepoint_boundary(0))
@@ -1743,7 +1733,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         The following program verifies the above diagram:
 
         ```mojo
-        from testing import assert_true, assert_false
+        from std.testing import assert_true, assert_false
 
         var text = StringSlice("a©➇𝄞")
         assert_true(text.is_codepoint_boundary(0))
@@ -2031,8 +2021,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return ptr[0] == 0xE2 and ptr[1] == 0x80 and last_byte
             return False
 
-        @parameter
-        if single_character:
+        comptime if single_character:
             return _is_space_char(self)
         else:
             for s in self.codepoint_slices():
@@ -2155,8 +2144,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var ptr = self.unsafe_ptr()
         var length = self.byte_length()
 
-        @parameter
-        if single_character:
+        comptime if single_character:
             return length != 0 and _is_newline_char_utf8[include_r_n=True](
                 ptr, 0, ptr[0], UInt(length)
             )
@@ -2224,8 +2212,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 # When keep=False it is much faster because the previous
                 # character is stored in a variable instead of having to deref a
                 # pointer
-                @parameter
-                if keep:
+                comptime if keep:
                     var is_r = unlikely(b0 == `\r`)
                     var may_be_r_n = is_r and likely(line_end < UInt(length))
                     var is_r_n = UInt(
@@ -2552,7 +2539,7 @@ fn _get_kgen_string[
 
 @always_inline("nodebug")
 fn _get_kgen_string[
-    string: StaticString, extra: VariadicList[StaticString]
+    string: StaticString, extra: VariadicParamList[StaticString]
 ]() -> __mlir_type.`!kgen.string`:
     """Form a `!kgen.string` from compile-time StringSlice values concatenated.
 
@@ -2664,7 +2651,7 @@ fn _to_string_list[
 
 @always_inline
 fn _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte], max: UInt = UInt.MAX
+    ptr: UnsafePointer[mut=False, Byte, _], max: UInt = UInt.MAX
 ) -> UInt:
     """Get the length of a null-terminated string from a pointer.
 
@@ -2825,7 +2812,7 @@ fn _memmem_impl[
 fn _memrchr[
     dtype: DType
 ](
-    source: UnsafePointer[mut=False, Scalar[dtype]],
+    source: UnsafePointer[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
     len: Int,
 ) -> type_of(source):
@@ -2841,9 +2828,9 @@ fn _memrchr[
 fn _memrmem[
     dtype: DType
 ](
-    haystack: UnsafePointer[mut=False, Scalar[dtype]],
+    haystack: UnsafePointer[mut=False, Scalar[dtype], _],
     haystack_len: Int,
-    needle: UnsafePointer[mut=False, Scalar[dtype]],
+    needle: UnsafePointer[mut=False, Scalar[dtype], _],
     needle_len: Int,
 ) -> type_of(haystack):
     if not needle_len:
@@ -2884,8 +2871,7 @@ fn _split[
     comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
-    @parameter
-    if has_maxsplit:
+    comptime if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
     output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
@@ -2901,8 +2887,7 @@ fn _split[
         # if not found go to the end
         rhs += is_negative(rhs) & (str_byte_len + 1)
 
-        @parameter
-        if has_maxsplit:
+        comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
@@ -2922,8 +2907,7 @@ fn _split[
     comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
-    @parameter
-    if has_maxsplit:
+    comptime if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
     output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
@@ -2953,8 +2937,7 @@ fn _split[
                 break
             rhs += s.byte_length()
 
-        @parameter
-        if has_maxsplit:
+        comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 

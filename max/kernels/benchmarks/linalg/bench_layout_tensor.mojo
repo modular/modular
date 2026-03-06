@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
-from collections.string import StaticString
-from random import rand
-from sys import align_of, simd_width_of
+import std.math
+from std.collections.string import StaticString
+from std.random import rand
+from std.sys import align_of, simd_width_of
 
-import benchmark
-from algorithm import Static2DTileUnitFunc as Tile2DFunc
-from algorithm import sync_parallelize, vectorize
+import std.benchmark
+from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
+from std.algorithm import sync_parallelize, vectorize
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer, memset_zero
+from std.memory import LegacyUnsafePointer, memset_zero
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from python import Python
+from std.python import Python
 
 comptime M = 512  # rows of A and C
 comptime N = 4096  # cols of B and C
@@ -99,8 +99,7 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
             @parameter
             fn calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
-                @parameter
-                for _k in range(tile_y):
+                comptime for _k in range(tile_y):
                     var k = _k + y
                     var A_val = A[m, k]
 
@@ -152,11 +151,8 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                 var dst_view = dst.tile[tile_m, tile_n](m_1, n_1)
                 var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1)
 
-                @parameter
-                for m in range(tile_m):
-
-                    @parameter
-                    for k in range(tile_k):
+                comptime for m in range(tile_m):
+                    comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
@@ -223,11 +219,8 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
 
                 rhs_cache.copy_from(rhs_view)
 
-                @parameter
-                for m in range(tile_m):
-
-                    @parameter
-                    for k in range(tile_k):
+                comptime for m in range(tile_m):
+                    comptime for k in range(tile_k):
                         var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         fn dot[simd_size: Int](n: Int) unified {mut}:
@@ -384,7 +377,7 @@ fn test_all() raises:
     C.data.free()
 
 
-def main():
+def main() raises:
     test_all()
     print("CPU Results\n")
 

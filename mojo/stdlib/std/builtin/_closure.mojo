@@ -21,13 +21,11 @@ struct __ParameterClosureCaptureList[
     @parameter
     @always_inline
     fn __init__(out self):
-        self.value = __mlir_op.`kgen.capture_list.create`[
-            callee = Self.fn_ref
-        ]()
+        self.value = __mlir_op.`kgen.capture_list.create`[callee=Self.fn_ref]()
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
-        self.value = __mlir_op.`kgen.capture_list.copy`[callee = Self.fn_ref](
+    fn __init__(out self, *, copy: Self):
+        self.value = __mlir_op.`kgen.capture_list.copy`[callee=Self.fn_ref](
             copy.value
         )
 
@@ -45,9 +43,9 @@ fn __closure_wrapper_noop_dtor(self: __mlir_type.`!kgen.pointer<none>`, /):
 
 
 fn __closure_wrapper_noop_copy(
-    other: __mlir_type.`!kgen.pointer<none>`, /
+    *, copy: __mlir_type.`!kgen.pointer<none>`
 ) -> __mlir_type.`!kgen.pointer<none>`:
-    return other
+    return copy
 
 
 fn __ownership_keepalive[*Ts: AnyType](*args: *Ts):

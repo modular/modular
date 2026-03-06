@@ -11,18 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randn
-from sys import simd_width_of, size_of
+from std.random import randn
+from std.sys import simd_width_of, size_of
 
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn bench_add[
@@ -86,14 +92,14 @@ fn bench_add[
                 + input1_ptr_host.load[width=nelts](i)
             )
         ).reduce_and():
-            raise Error(String("mismatch at flattened idx ", i))
+            raise Error(t"mismatch at flattened idx {i}")
 
     _ = input0_ptr
     _ = input1_ptr
     _ = output_ptr
 
 
-def main():
+def main() raises:
     var b = Bench()
     with DeviceContext() as ctx:
         bench_add[unroll_by=4](b, IndexList[4](2, 4, 1024, 1024), ctx)

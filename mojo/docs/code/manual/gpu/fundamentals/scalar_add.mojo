@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from sys import exit, has_accelerator
+from std.math import iota
+from std.sys import exit, has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
 
@@ -53,9 +53,8 @@ fn scalar_add(
         vector[idx] += scalar
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:

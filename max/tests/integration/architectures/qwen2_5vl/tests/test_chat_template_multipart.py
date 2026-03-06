@@ -20,6 +20,8 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 from max.interfaces.pipeline_variants.text_generation import (
+    ImageContentPart,
+    TextContentPart,
     TextGenerationRequestMessage,
 )
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
@@ -92,14 +94,8 @@ def test_chat_template_preserves_text_with_image() -> None:
         TextGenerationRequestMessage(
             role="user",
             content=[
-                {
-                    "type": "image",
-                    "image": image_b64,
-                },
-                {
-                    "type": "text",
-                    "text": test_question,
-                },
+                ImageContentPart(),
+                TextContentPart(text=test_question),
             ],
         ),
     ]
@@ -151,18 +147,9 @@ def test_chat_template_multiple_text_parts() -> None:
         TextGenerationRequestMessage(
             role="user",
             content=[
-                {
-                    "type": "text",
-                    "text": text_part_1,
-                },
-                {
-                    "type": "image",
-                    "image": image_b64,
-                },
-                {
-                    "type": "text",
-                    "text": text_part_2,
-                },
+                TextContentPart(text=text_part_1),
+                ImageContentPart(),
+                TextContentPart(text=text_part_2),
             ],
         ),
     ]

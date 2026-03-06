@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
-from testing import assert_false, assert_true, TestSuite
+from std.testing import assert_false, assert_true, TestSuite
 
 
-def test_uint_for():
+def test_uint_for() raises:
     for _i in range(UInt(5)):
         assert_false(_type_is_eq[type_of(_i), Int]())
         assert_true(_type_is_eq[type_of(_i), UInt]())
@@ -30,22 +30,19 @@ def test_uint_for():
         assert_true(_type_is_eq[type_of(_i), UInt]())
 
 
-def test_uint_parameter_for():
-    @parameter
-    for _i in range(UInt(5)):
+def test_uint_parameter_for() raises:
+    comptime for _i in range(UInt(5)):
         assert_false(_type_is_eq[type_of(_i), Int]())
         assert_true(_type_is_eq[type_of(_i), UInt]())
 
-    @parameter
-    for _i in range(UInt(1), UInt(5)):
+    comptime for _i in range(UInt(1), UInt(5)):
         assert_false(_type_is_eq[type_of(_i), Int]())
         assert_true(_type_is_eq[type_of(_i), UInt]())
 
-    @parameter
-    for _i in range(UInt(1), UInt(5), UInt(2)):
+    comptime for _i in range(UInt(1), UInt(5), UInt(2)):
         assert_false(_type_is_eq[type_of(_i), Int]())
         assert_true(_type_is_eq[type_of(_i), UInt]())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

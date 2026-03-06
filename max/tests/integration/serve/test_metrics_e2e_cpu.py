@@ -20,11 +20,15 @@ import requests
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.config import MetricLevel, MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
 
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
+MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL_NAME)
+assert MODEL_REVISION is not None
 
 
 def assert_metrics(
@@ -58,16 +62,16 @@ def assert_metrics(
     "pipeline_config",
     [
         PipelineConfig(
-            model_path=MODEL_NAME,
-            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
-                MODEL_NAME
+            model=MAXModelConfig(
+                model_path=MODEL_NAME,
+                huggingface_model_revision=MODEL_REVISION,
+                device_specs=[DeviceSpec.cpu()],
+                quantization_encoding="float32",
+                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+                kv_cache=KVCacheConfig(),
+                max_length=512,
             ),
-            max_length=512,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy="paged",
-            max_batch_size=16,
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -129,16 +133,16 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     "pipeline_config",
     [
         PipelineConfig(
-            model_path=MODEL_NAME,
-            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
-                MODEL_NAME
+            model=MAXModelConfig(
+                model_path=MODEL_NAME,
+                huggingface_model_revision=MODEL_REVISION,
+                device_specs=[DeviceSpec.cpu()],
+                quantization_encoding="float32",
+                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+                kv_cache=KVCacheConfig(),
+                max_length=512,
             ),
-            max_length=512,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy="paged",
-            max_batch_size=16,
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -199,16 +203,16 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
     "pipeline_config",
     [
         PipelineConfig(
-            model_path=MODEL_NAME,
-            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
-                MODEL_NAME
+            model=MAXModelConfig(
+                model_path=MODEL_NAME,
+                huggingface_model_revision=MODEL_REVISION,
+                device_specs=[DeviceSpec.cpu()],
+                quantization_encoding="float32",
+                allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+                kv_cache=KVCacheConfig(),
+                max_length=512,
             ),
-            max_length=512,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy="paged",
-            max_batch_size=16,
-            allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,

@@ -18,31 +18,29 @@ This test incrementally verifies:
 3. The grouped kernel works for multiple groups
 """
 
-from math import align_up, ceildiv
-from sys import argv, size_of
+from std.math import align_up, ceildiv
+from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer, bitcast
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import assert_almost_equal
-from random import rand, random_ui64, seed
+from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -102,11 +100,11 @@ fn test_existing_kernel_single_group[
     )
     comptime static_c_shape = DimList(m.dim, n.dim)
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     var a_size = m.value * k.value
     var b_size = n.value * k.value
@@ -152,26 +150,26 @@ fn test_existing_kernel_single_group[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -284,11 +282,11 @@ fn test_existing_kernel_single_group[
         transpose_b=transpose_b,
         config=config,
     ](
-        lt_to_tt(c_tensor),
-        lt_to_tt(a_tensor),
-        lt_to_tt(b_tensor),
-        lt_to_tt(a_scales_tensor),
-        lt_to_tt(b_scales_tensor),
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
+        TileTensor(a_scales_device_nd),
+        TileTensor(b_scales_device_nd),
         ctx,
     )
     ctx.synchronize()
@@ -377,11 +375,11 @@ fn test_grouped_kernel_single_group[
     )
     comptime static_c_shape = DimList(m.dim, n.dim)
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     var a_size = m.value * k.value
     var b_size = n.value * k.value
@@ -414,27 +412,27 @@ fn test_grouped_kernel_single_group[
     # Scale factor shapes (5D)
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -770,11 +768,11 @@ fn test_grouped_kernel_multi_group_same_ptr[
     ) if not transpose_b else DimList(n.dim, k.dim)
     comptime static_c_shape = DimList(m.dim, n.dim)
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
         k.value, n.value
-    ) if not transpose_b else DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    ) if not transpose_b else IndexList[2](n.value, k.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
@@ -797,27 +795,27 @@ fn test_grouped_kernel_multi_group_same_ptr[
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -1139,32 +1137,32 @@ fn test_grouped_kernel_two_groups_different_ptrs[
     comptime static_c_shape = DimList(m.dim, n.dim)
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -1509,7 +1507,7 @@ fn test_grouped_kernel_two_groups_different_ptrs[
     sfb_ptrs_host.free()
 
 
-def main():
+def main() raises:
     print("\n" + "=" * 60)
     print("Test: Incremental Grouped Block-Scaled GEMM Execution")
     print("=" * 60)
@@ -1528,13 +1526,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Baseline test passed ---")
@@ -1545,13 +1543,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),  # Same as baseline
-        n = static[256](),  # Same as baseline
-        k = static[128](),
+        m=static[256](),  # Same as baseline
+        n=static[256](),  # Same as baseline
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Additional test cases ---")
@@ -1562,13 +1560,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[256](),
-        k = static[128](),
+        m=static[512](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 4: Larger N dimension (more N tiles)
@@ -1577,13 +1575,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[512](),
-        k = static[128](),
+        m=static[256](),
+        n=static[512](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 5: Larger K dimension (more K iterations)
@@ -1592,13 +1590,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[256](),
+        m=static[256](),
+        n=static[256](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 6: All dimensions larger
@@ -1607,13 +1605,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[256](),
+        m=static[512](),
+        n=static[512](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 7: Minimum tile size (single tile per dimension)
@@ -1622,13 +1620,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[128](),
-        n = static[128](),
-        k = static[128](),
+        m=static[128](),
+        n=static[128](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 8: Many K iterations
@@ -1637,13 +1635,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[512](),
+        m=static[256](),
+        n=static[256](),
+        k=static[512](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Multi-group test (same pointers) ---")
@@ -1655,14 +1653,14 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # Test 10: Four groups with same size and same pointers
@@ -1671,14 +1669,14 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         num_groups=4,
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     print("\n--- Multi-group test (different pointers) ---")
@@ -1690,13 +1688,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=1,
-        mma_shape = Index(128, 128, 32),
-        cluster_shape = Index(1, 1, 1),
+        mma_shape=Index(128, 128, 32),
+        cluster_shape=Index(1, 1, 1),
     ](ctx)
 
     # 2SM tests - using run_2sm() production kernel
@@ -1711,15 +1709,15 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=2,  # 2SM mode
-        mma_shape = Index(
+        mma_shape=Index(
             256, 128, 32
         ),  # mma[0]=256 for BM=128, mma[1]=128 for BN=128
-        cluster_shape = Index(2, 1, 1),  # 2 CTAs per cluster
+        cluster_shape=Index(2, 1, 1),  # 2 CTAs per cluster
     ](ctx)
 
     # Test 13: 2SM with multiple tiles (512x512)
@@ -1728,13 +1726,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[512](),
-        n = static[512](),
-        k = static[256](),
+        m=static[512](),
+        n=static[512](),
+        k=static[256](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 14: 2SM multi-group (same pointers)
@@ -1743,14 +1741,14 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         num_groups=2,
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     # Test 15: 2SM multi-group (different pointers)
@@ -1759,13 +1757,13 @@ def main():
         b_type,
         c_type,
         scales_dtype,
-        m = static[256](),
-        n = static[256](),
-        k = static[128](),
+        m=static[256](),
+        n=static[256](),
+        k=static[128](),
         transpose_b=transpose_b,
         cta_group=2,
-        mma_shape = Index(256, 128, 32),
-        cluster_shape = Index(2, 1, 1),
+        mma_shape=Index(256, 128, 32),
+        cluster_shape=Index(2, 1, 1),
     ](ctx)
 
     print("\n" + "=" * 60)

@@ -14,10 +14,10 @@
 from layout import *
 from layout.int_tuple import product
 from layout.layout_tensor import *
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn test_vectorize_2() raises:
@@ -104,8 +104,8 @@ fn test_vectorize_2() raises:
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,
-        linear_idx_type = DType.int32,
-        layout_int_type = DType.int32,
+        linear_idx_type=DType.int32,
+        layout_int_type=DType.int32,
     ](heap, RuntimeLayout[layout_unknown]({8, 8}, {8, 1}))
     for i in range(64):
         tensor4.ptr[i] = Int32(i)
@@ -116,5 +116,5 @@ fn test_vectorize_2() raises:
     heap.free()
 
 
-def main():
+def main() raises:
     test_vectorize_2()

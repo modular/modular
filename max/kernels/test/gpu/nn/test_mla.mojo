@@ -11,29 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import randn
-from sys import argv, has_nvidia_gpu_accelerator
+from std.math import ceildiv, isclose
+from std.random import randn
+from std.sys import argv, has_nvidia_gpu_accelerator
 
-from gpu import *
-from gpu.host import DeviceContext
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mha_score_mod import IdentityScoreMod
 from nn.mla import flare_mla_decoding, flare_mla_prefill
+from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
-from testing import assert_almost_equal
-from gpu.host.info import B200, GPUInfo
+from std.testing import assert_almost_equal
+from std.gpu.host.info import B200, GPUInfo
 
 
-from utils.index import Index
-from utils.numerics import get_accum_type
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type
 
 
 fn is_benchmark() -> Bool:
@@ -120,8 +120,7 @@ fn test[
                         qkv_type
                     ](i * depth + j)
 
-        @parameter
-        if mask_rank == 3:
+        comptime if mask_rank == 3:
             for i in range(seq_len):
                 for j in range(num_keys):
                     mask_ptr[i * num_keys + j] = Scalar[mask_type](
@@ -175,8 +174,7 @@ fn test[
         ),
     )
 
-    @parameter
-    if not against_gpu_naive:
+    comptime if not against_gpu_naive:
         comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
@@ -239,21 +237,33 @@ fn test[
     comptime q_tile_num_rows = 32
     comptime k_tile_num_rows = 128
 
+    var mla_args = MLADispatchScalarArgs[
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+    ](batch_size, num_keys, seq_len, ctx)
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, mask3d, mask4d, output_device)
+    @__copy_capture(
+        q_device,
+        k_device,
+        mask3d,
+        mask4d,
+        output_device,
+        scalar_args_buf_lt,
+    )
     fn kernel_launch(ctx: DeviceContext) raises:
-        @parameter
-        if use_causal_mask:
+        comptime if use_causal_mask:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
                 output_device.as_any_origin(),
                 q_device,
                 k_device,
                 CausalMask(),
-                IdentityScoreMod(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
         elif mask_rank == 3:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -261,10 +271,10 @@ fn test[
                 q_device,
                 k_device,
                 MaterializedMask(mask3d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
         else:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -272,10 +282,10 @@ fn test[
                 q_device,
                 k_device,
                 MaterializedMask(mask4d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
 
     if is_benchmark():
@@ -297,8 +307,7 @@ fn test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    @parameter
-    if against_gpu_naive:
+    comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         comptime output_ref_layout = Layout.row_major(
             Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
@@ -311,8 +320,7 @@ fn test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        @parameter
-        if use_causal_mask:
+        comptime if use_causal_mask:
             var k_operand = LayoutTensorMHAOperand(k_device)
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE)
@@ -403,6 +411,7 @@ fn test[
                         print(b, h, s, d, actual, expect)
                     assert_almost_equal(actual, expect, atol=1e-1, rtol=rtol)
 
+    _ = mla_args
     _ = q_device_ptr
     _ = k_device_ptr
     _ = mask_device_ptr
@@ -417,6 +426,7 @@ fn test[
 
 fn test_prefill[
     qkv_type: DType,
+    k_rope_type: DType,
     depth: Int,
     num_heads: Int,
     kv_depth: Int,
@@ -435,6 +445,8 @@ fn test_prefill[
         num_keys,
         "qkv_type:",
         qkv_type,
+        "k_rope_type:",
+        k_rope_type,
         "depth:",
         depth,
         "kv_depth:",
@@ -456,14 +468,14 @@ fn test_prefill[
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
     var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
     var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var cache_ptr = UnsafePointer[Scalar[qkv_type]].alloc(cache_size)
+    var cache_ptr = UnsafePointer[Scalar[k_rope_type]].alloc(cache_size)
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
     # Q, K, V, cache are randomly initialized.
     randn[qkv_type](q_ptr, q_size)
     randn[qkv_type](k_ptr, k_size)
     randn[qkv_type](v_ptr, v_size)
-    randn[qkv_type](cache_ptr, cache_size)
+    randn[k_rope_type](cache_ptr, cache_size)
 
     # input row offsets and cache row offsets
     var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
@@ -493,7 +505,7 @@ fn test_prefill[
             Index(batch_size * num_keys, num_heads, kv_depth)
         ),
     )
-    var cache = LayoutTensor[qkv_type, Layout.row_major[4]()](
+    var cache = LayoutTensor[k_rope_type, Layout.row_major[4]()](
         cache_ptr,
         RuntimeLayout[Layout.row_major[4]()].row_major(
             Index(batch_size, num_keys, cache_num_heads, cache_depth)
@@ -510,7 +522,7 @@ fn test_prefill[
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    var cache_device_ptr = ctx.enqueue_create_buffer[qkv_type](cache_size)
+    var cache_device_ptr = ctx.enqueue_create_buffer[k_rope_type](cache_size)
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -552,7 +564,7 @@ fn test_prefill[
     comptime cache_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, cache_num_heads, cache_depth
     )
-    var cache_device = LayoutTensor[qkv_type, cache_layout](
+    var cache_device = LayoutTensor[k_rope_type, cache_layout](
         cache_device_ptr.unsafe_ptr(),
         RuntimeLayout[cache_layout].row_major(
             Index(batch_size, num_keys, cache_num_heads, cache_depth)
@@ -596,14 +608,13 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank, use_fa4=True](
+        flare_mla_prefill[rank=q.rank](
             output_device,
             q_device,
             k_device,
             v_device,
             cache_device,
             CausalMask(),
-            IdentityScoreMod(),
             input_row_offsets_device,
             cache_row_offsets_device,
             scale,
@@ -686,9 +697,9 @@ fn test_prefill[
         for s in range(num_keys):
             for h in range(num_heads):
                 for d in range(depth - kv_depth):
-                    k_ref[b, s, h, d + kv_depth] = cache[
-                        b, s, 0, cache_depth - (depth - kv_depth) + d
-                    ]
+                    k_ref[b, s, h, d + kv_depth] = Scalar[qkv_type](
+                        cache[b, s, 0, cache_depth - (depth - kv_depth) + d][0]
+                    )
                     v_ref[b, s, h, d + kv_depth] = 0
 
     # view q_device as a rank 4 buffer
@@ -791,6 +802,8 @@ fn test_prefill[
                 for d in range(kv_depth):
                     lhs = output_rank4[b, s, h, d]
                     rhs = output_ref[b, s, h, d]
+                    if abs((lhs - rhs)) > 2e-2:
+                        print(b, s, h, d, lhs, rhs)
                     # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
                         lhs,
@@ -825,8 +838,7 @@ fn test_decoding[
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    @parameter
-    if ctx.default_device_info == B200:
+    comptime if ctx.default_device_info == B200:
         if batch_size <= 2:
             test[
                 3,
@@ -1031,9 +1043,12 @@ fn test_decoding[
 
 fn test_mla_prefill[
     batch_size: Int,
+    qkv_type: DType,
+    k_rope_type: DType,
 ](ctx: DeviceContext) raises:
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1042,7 +1057,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](120, 120, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=16,
         kv_depth=128,
@@ -1051,7 +1067,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](1179, 1179, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1060,7 +1077,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](700, 700, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1069,7 +1087,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](701, 701, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1078,7 +1097,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](12, 12, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1087,7 +1107,8 @@ fn test_mla_prefill[
         batch_size=batch_size,
     ](350, 700, ctx)
     test_prefill[
-        DType.bfloat16,
+        qkv_type,
+        k_rope_type,
         depth=192,
         num_heads=128,
         kv_depth=128,
@@ -1097,11 +1118,9 @@ fn test_mla_prefill[
     ](120, 240, ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             # tests with mask tensor
             test_decoding[27, 1, False, False](ctx, False)
             test_decoding[128, 1, False, False](ctx, False)
@@ -1114,7 +1133,11 @@ def main():
         test_decoding[0, 1, False, True](ctx, False)
 
         # test mla prefill
-        test_mla_prefill[2](ctx)
-        test_mla_prefill[4](ctx)
-        # Test with zero batch size
-        test_mla_prefill[0](ctx)
+        test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)
+        test_mla_prefill[4, DType.bfloat16, DType.bfloat16](ctx)
+        test_mla_prefill[0, DType.bfloat16, DType.bfloat16](ctx)
+
+        comptime if ctx.default_device_info == B200:
+            test_mla_prefill[2, DType.bfloat16, DType.float8_e4m3fn](ctx)
+            test_mla_prefill[4, DType.bfloat16, DType.float8_e4m3fn](ctx)
+            test_mla_prefill[0, DType.bfloat16, DType.float8_e4m3fn](ctx)

@@ -19,47 +19,47 @@ which represents a single stream of execution on a given accelerator. You can
 use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
 
-from collections.optional import OptionalReg
-from math import align_up
-from os import abort
-from pathlib import Path
-from ffi import c_char, c_int, c_uint, external_call
-from sys import (
+from std.collections.optional import OptionalReg
+from std.math import align_up
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import c_char, c_int, c_uint, external_call
+from std.sys import (
     bit_width_of,
-    env_get_bool,
-    env_get_string,
+    get_defined_bool,
+    get_defined_string,
     is_defined,
     is_gpu,
     size_of,
 )
-from sys.compile import DebugLevel, OptimizationLevel
-from sys.info import (
+from std.sys.compile import DebugLevel, OptimizationLevel
+from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
     _TargetType,
     is_triple,
 )
-from sys.intrinsics import _type_is_eq
-from sys.param_env import _is_bool_like
+from std.sys.intrinsics import _type_is_eq
+from std.sys.defines import _is_bool_like
 
-from reflection import call_location, SourceLocation
-from builtin.device_passable import DevicePassable
-from builtin.variadics import Variadic
-from compile.compile import CompiledFunctionInfo
-from reflection import get_linkage_name, get_type_name
-from gpu.host.compile import (
+from std.reflection import call_location, SourceLocation
+from std.builtin.device_passable import DevicePassable
+from std.builtin.variadics import Variadic
+from std.compile.compile import CompiledFunctionInfo
+from std.reflection import get_linkage_name, get_type_name
+from std.gpu.host.compile import (
     _compile_code,
     _cross_compilation,
     _ptxas_compile,
     _to_sass,
     get_gpu_target,
 )
-from memory import stack_allocation
-from memory.unsafe import bitcast
-from builtin.rebind import downcast
+from std.memory import stack_allocation
+from std.memory.unsafe import bitcast
+from std.builtin.rebind import downcast
 
-from utils import Variant
-from utils._serialize import _serialize_elements
+from std.utils import Variant
+from std.utils._serialize import _serialize_elements
 
 from .info import GPUInfo
 
@@ -220,7 +220,7 @@ struct _DeviceTimer:
 
 
 @fieldwise_init
-struct StreamPriorityRange(Stringable, TrivialRegisterPassable, Writable):
+struct StreamPriorityRange(TrivialRegisterPassable, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher
@@ -233,6 +233,7 @@ struct StreamPriorityRange(Stringable, TrivialRegisterPassable, Writable):
     var greatest: Int
     """The highest (numerically largest) priority value."""
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the stream priority range.
@@ -269,9 +270,7 @@ struct _DeviceBufferMode(TrivialRegisterPassable):
         return self._mode == other._mode
 
 
-struct HostBuffer[dtype: DType](
-    ImplicitlyCopyable, Sized, Stringable, Writable
-):
+struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
 
@@ -367,7 +366,7 @@ struct HostBuffer[dtype: DType](
         self._host_ptr = host_ptr
         self._handle = cpp_handle
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing host buffer by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying host buffer
@@ -557,7 +556,7 @@ struct HostBuffer[dtype: DType](
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -700,6 +699,7 @@ struct HostBuffer[dtype: DType](
             )
         writer.write(")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of the `HostBuffer`.
 
@@ -765,7 +765,7 @@ struct HostBuffer[dtype: DType](
 
 
 struct DeviceBuffer[dtype: DType](
-    DevicePassable, ImplicitlyCopyable, Sized, Stringable, Writable
+    DevicePassable, ImplicitlyCopyable, Sized, Writable
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
@@ -802,7 +802,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             This dtype's name.
         """
-        return String("DeviceBuffer[", Self.dtype, "]")
+        return t"DeviceBuffer[{Self.dtype}]"
 
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
@@ -959,7 +959,7 @@ struct DeviceBuffer[dtype: DType](
         self._device_ptr = device_ptr
         self._handle = cpp_handle
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing device buffer by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying device buffer
@@ -1153,7 +1153,7 @@ struct DeviceBuffer[dtype: DType](
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -1290,7 +1290,7 @@ struct DeviceBuffer[dtype: DType](
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         var length = 1024
@@ -1340,8 +1340,9 @@ struct DeviceBuffer[dtype: DType](
                     )
                 writer.write(")")
         except e:
-            abort(String("failed to write DeviceBuffer:", e))
+            abort(t"failed to write DeviceBuffer:{e}")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of the `DeviceBuffer`.
 
@@ -1370,7 +1371,7 @@ struct DeviceStream(ImplicitlyCopyable):
     Example:
 
     ```mojo
-    from gpu.host import DeviceContext, DeviceStream
+    from std.gpu.host import DeviceContext, DeviceStream
     var ctx = DeviceContext(0)  # Select first GPU
     var stream = DeviceStream(ctx)
 
@@ -1419,7 +1420,7 @@ struct DeviceStream(ImplicitlyCopyable):
         self._handle = result
 
     @doc_private
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing stream by incrementing its reference count.
 
         Args:
@@ -1517,7 +1518,7 @@ struct DeviceStream(ImplicitlyCopyable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
 
@@ -1708,7 +1709,7 @@ struct DeviceEvent(ImplicitlyCopyable):
     Example:
 
     ```mojo
-    from gpu.host import DeviceContext
+    from std.gpu.host import DeviceContext
 
     var ctx = DeviceContext()
 
@@ -1767,7 +1768,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         self._handle = existing
 
     @doc_private
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing event by incrementing its reference count.
 
         Args:
@@ -1842,7 +1843,7 @@ struct DeviceFunction[
     Example:
 
     ```mojo
-    from gpu.host import DeviceContext, DeviceFunction
+    from std.gpu.host import DeviceContext, DeviceFunction
 
     fn my_kernel(x: Int, y: Int):
         # Kernel implementation
@@ -1867,7 +1868,7 @@ struct DeviceFunction[
     var _context: DeviceContext
     """The device context backing the function."""
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing DeviceFunction.
 
         This increases the reference count of the underlying device function handle.
@@ -1942,9 +1943,9 @@ struct DeviceFunction[
         var result: _DeviceFunctionPtr = {}
         self._func_impl = _compile_code[
             Self.func,
-            emission_kind = self._emission_kind,
-            target = Self.target,
-            compile_options = Self.compile_options,
+            emission_kind=self._emission_kind,
+            target=Self.target,
+            compile_options=Self.compile_options,
         ]()
         var debug_level = String(DebugLevel)
         _checked(
@@ -2003,19 +2004,16 @@ struct DeviceFunction[
     fn _dump_q[name: String, val: _DumpPath]() -> Tuple[Bool, _DumpPath]:
         comptime env_var = "DUMP_GPU_" + name.upper()
 
-        @parameter
-        if is_defined[env_var]():
-            comptime env_val = env_get_string[env_var]()
+        comptime if is_defined[env_var]():
+            comptime env_val = get_defined_string[env_var]()
 
-            @parameter
-            if _is_bool_like[env_val]():
-                comptime env_bool_val = env_get_bool[env_var]()
+            comptime if _is_bool_like[env_val]():
+                comptime env_bool_val = get_defined_bool[env_var]()
                 return env_bool_val, _DumpPath(env_bool_val)
             elif _is_path_like(env_val):
                 return True, _DumpPath(Path(env_val))
             else:
-                constrained[
-                    False,
+                comptime assert False, String(
                     "the environment variable '",
                     env_var,
                     (
@@ -2024,8 +2022,7 @@ struct DeviceFunction[
                     ),
                     env_val,
                     "'",
-                ]()
-                return False, val
+                )
 
         elif val.isa[Bool]():
             return val.unsafe_get[Bool](), val
@@ -2095,30 +2092,26 @@ struct DeviceFunction[
         # Get ASM - either from the pre-compiled func_impl or by compiling now
         @parameter
         fn get_asm() -> StaticString:
-            @parameter
-            if Self._emission_kind == "asm":
+            comptime if Self._emission_kind == "asm":
                 return self._func_impl.asm
             return _compile_code[
                 Self.func,
                 emission_kind="asm",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
-        @parameter
-        if Self._ptxas_info_verbose:
+        comptime if Self._ptxas_info_verbose:
             print(_ptxas_compile[Self.target](String(get_asm()), options="-v"))
 
         comptime dump_asm_tup = Self._dump_q["asm", dump_asm]()
         comptime do_dump_asm = dump_asm_tup[0]
         comptime dump_asm_val = dump_asm_tup[1]
 
-        @parameter
-        if do_dump_asm:
+        comptime if do_dump_asm:
             var asm = self._cleanup_asm(get_asm())
 
-            @parameter
-            if dump_asm_val.isa[fn() capturing -> Path]():
+            comptime if dump_asm_val.isa[fn() capturing -> Path]():
                 comptime dump_asm_fn = dump_asm_val.unsafe_get[
                     fn() capturing -> Path
                 ]()
@@ -2138,13 +2131,11 @@ struct DeviceFunction[
         comptime do_dump_sass = dump_sass_tup[0]
         comptime dump_sass_val = dump_sass_tup[1]
 
-        @parameter
-        if do_dump_sass:
+        comptime if do_dump_sass:
             var ptx = Self._cleanup_asm(get_asm())
             var sass = _to_sass[Self.target](ptx)
 
-            @parameter
-            if dump_sass_val.isa[fn() capturing -> Path]():
+            comptime if dump_sass_val.isa[fn() capturing -> Path]():
                 comptime _dump_sass_fn = dump_sass_val.unsafe_get[
                     fn() capturing -> Path
                 ]()
@@ -2164,17 +2155,15 @@ struct DeviceFunction[
         comptime do_dump_llvm = dump_llvm_tup[0]
         comptime dump_llvm_val = dump_llvm_tup[1]
 
-        @parameter
-        if do_dump_llvm:
+        comptime if do_dump_llvm:
             var llvm = _compile_code[
                 Self.func,
                 emission_kind="llvm-opt",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
-            @parameter
-            if dump_llvm_val.isa[fn() capturing -> Path]():
+            comptime if dump_llvm_val.isa[fn() capturing -> Path]():
                 comptime dump_llvm_fn = dump_llvm_val.unsafe_get[
                     fn() capturing -> Path
                 ]()
@@ -2236,8 +2225,7 @@ struct DeviceFunction[
             for i in range(num_captures_static + num_args):
                 dense_args_sizes[i] = 0
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -2249,8 +2237,7 @@ struct DeviceFunction[
         fn _populate_arg_sizes[i: Int]():
             dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
         for i in range(num_captures):
@@ -2396,8 +2383,7 @@ struct DeviceFunction[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -2501,14 +2487,12 @@ struct DeviceFunction[
         )
         var num_translated_args = 0
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             comptime declared_arg_type = Self.declared_arg_types.value()[i]
             comptime actual_arg_type = Ts[i]
 
             fn declared_arg_type_name() -> String:
-                @parameter
-                if conforms_to(declared_arg_type, DevicePassable):
+                comptime if conforms_to(declared_arg_type, DevicePassable):
                     return downcast[
                         declared_arg_type, DevicePassable
                     ].get_type_name()
@@ -2525,8 +2509,9 @@ struct DeviceFunction[
                 declared_arg_type
             ]()
 
-            @parameter
-            if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
+            comptime if _type_is_eq[
+                actual_arg_type, actual_arg_type.device_type
+            ]():
                 # Now check if they handed in the *correct* device dtype.
                 comptime assert is_convertible, String(
                     "argument #",
@@ -2583,8 +2568,7 @@ struct DeviceFunction[
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
 
-        @parameter
-        if Self.declared_arg_types:
+        comptime if Self.declared_arg_types:
             _ = Self._validate_arguments[*Ts, num_args=num_args]()
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2602,8 +2586,7 @@ struct DeviceFunction[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -2711,8 +2694,7 @@ struct DeviceFunction[
 
         # Validate that all actual arguments do remap to the declared device
         # dtype in the kernel.
-        @parameter
-        if Self.declared_arg_types:
+        comptime if Self.declared_arg_types:
             var validated_args = Self._validate_arguments[
                 *Ts, num_args=num_passed_args
             ]()
@@ -2730,8 +2712,7 @@ struct DeviceFunction[
         fn calculate_args_size() -> Int:
             var tmp_args_size = 8  # always reserve 8 extra bytes for alignment.
 
-            @parameter
-            for i in range(num_passed_args):
+            comptime for i in range(num_passed_args):
                 comptime actual_arg_type = Ts[i]
                 tmp_args_size += align_up(
                     size_of[actual_arg_type.device_type](), 8
@@ -2774,8 +2755,7 @@ struct DeviceFunction[
         # we need to know the current count arguments pushed.
         var translated_arg_idx = 0
 
-        @parameter
-        for i in range(num_passed_args):
+        comptime for i in range(num_passed_args):
             # If the arg offset is negative then the corresponding declared
             # dtype is zero sized and we do not push the argument to the kernel.
             var translated_arg_offset = translated_arg_offsets[i]
@@ -2885,7 +2865,7 @@ struct DeviceFunction[
         Example:
 
         ```mojo
-        from gpu.host import Attribute, DeviceFunction
+        from std.gpu.host import Attribute, DeviceFunction
 
         var device_function = DeviceFunction(...)
 
@@ -2962,7 +2942,7 @@ struct DeviceExternalFunction:
     var _handle: _DeviceFunctionPtr
     """Internal handle to the native device function object."""
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing device function by incrementing its reference count.
 
         Args:
@@ -3164,8 +3144,7 @@ struct DeviceExternalFunction:
             OpaquePointer[MutAnyOrigin], num_args
         ](uninitialized=True)
 
-        @parameter
-        for i in range(num_args):
+        comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 UnsafePointer(to=args[i])
@@ -3264,10 +3243,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     [context manager](/mojo/manual/errors#use-a-context-manager). For example:
 
     ```mojo
-    from gpu.host import DeviceContext
-    from gpu import thread_idx
+    from std.gpu.host import DeviceContext
+    from std.gpu import thread_idx
 
     fn kernel():
+        # `print()` does not work on Apple Silicon from GPU kernels
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
     with DeviceContext() as ctx:
@@ -3279,7 +3259,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     a `get_device_context()` method to retrieve the device context:
 
     ```mojo
-    from runtime.asyncrt import DeviceContextPtr
+    from std.runtime.asyncrt import DeviceContextPtr
 
     @register("custom_op")
     struct CustomOp:
@@ -3322,7 +3302,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         # Create a context for the default GPU
         var ctx = DeviceContext()
@@ -3360,7 +3340,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ](self._handle)
 
     @doc_private
-    fn __init__(out self, handle: OpaquePointer[mut=True]):
+    fn __init__(out self, handle: OpaquePointer[mut=True, _]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
@@ -3373,7 +3353,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         self._handle = ctx_ptr
         self._owning = False
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of an existing device context by incrementing its reference count.
 
         This copy constructor creates a new reference to the same underlying device context
@@ -3419,7 +3399,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         # Using DeviceContext as a context manager
         with DeviceContext() as ctx:
@@ -3443,7 +3423,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         print("Running on device:", ctx.name())
@@ -3478,7 +3458,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         var api_name = ctx.api()
@@ -3631,7 +3611,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
             # Allocate host memory accessible by the device
@@ -3663,7 +3643,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             Optional[Variadic.TypesOfTrait[AnyType]](None),
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3822,7 +3802,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3897,7 +3877,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3974,7 +3954,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -4064,8 +4044,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
-        from gpu.host.device_context import DeviceExternalFunction
+        from std.gpu.host import DeviceContext
+        from std.gpu.host.device_context import DeviceExternalFunction
 
         fn func_signature(
             # Arguments being passed to the assembly code
@@ -4148,9 +4128,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         without compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4246,9 +4227,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         without compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4261,7 +4243,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         the function first to remove the overhead:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_unchecked[kernel]()
@@ -4343,9 +4325,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             location: Source location for the function call.
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel(x: Int):
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("Value:", x)
 
         with DeviceContext() as ctx:
@@ -4418,7 +4401,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn vec_add_sig(
             in0: UnsafePointer[Float32],
@@ -4533,7 +4516,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         need to pass the kernel function twice (as both `func` and `signature_func`):
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
         from layout import Layout, LayoutTensor
 
         fn vector_add(
@@ -4653,9 +4636,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         without compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4783,7 +4767,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         your kernel captures variables from its surrounding scope:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
         from layout import Layout, LayoutTensor
 
         fn main():
@@ -4904,9 +4888,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         without compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -5013,9 +4998,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -5028,7 +5014,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         the function first to remove the overhead:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_experimental[kernel]()
@@ -5171,7 +5157,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn gpu_operation(ctx: DeviceContext) raises capturing [_] -> None:
             # Perform some GPU operation using ctx
@@ -5252,7 +5238,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
         var ctx = DeviceContext(device_id=1)
         ctx.set_as_current()
         ```
@@ -5292,7 +5278,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn some_gpu_operation() raises capturing [_] -> None:
             # Perform some GPU operation
@@ -5363,7 +5349,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var my_kernel = DeviceFunction(...)
 
@@ -5761,8 +5747,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        @parameter
-        if bitwidth == 8:
+        comptime if bitwidth == 8:
             value = UInt64(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
             value = UInt64(Int(bitcast[DType.uint16, 1](val)))
@@ -5810,8 +5795,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        @parameter
-        if bitwidth == 8:
+        comptime if bitwidth == 8:
             value = UInt64(Int(bitcast[DType.uint8, 1](val)))
         elif bitwidth == 16:
             value = UInt64(Int(bitcast[DType.uint16, 1](val)))
@@ -5873,7 +5857,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
 
@@ -5894,16 +5878,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         var result = _DeviceEventPtr()
         var flags = EventFlags.default
 
-        @parameter
-        if blocking_sync:
+        comptime if blocking_sync:
             flags |= EventFlags.blocking_sync
 
-        @parameter
-        if disable_timing:
+        comptime if disable_timing:
             flags |= EventFlags.disable_timing
 
-        @parameter
-        if interprocess:
+        comptime if interprocess:
             flags |= EventFlags.interprocess
 
         # const char *AsyncRT_DeviceContext_eventCreate(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
@@ -5948,7 +5929,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         To create a stream with the highest priority, use:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
         var ctx = DeviceContext()
         var priority = ctx.stream_priority_range().largest
         var stream = ctx.create_stream(priority=priority)
@@ -6014,7 +5995,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         # Create two device contexts
         var ctx1 = DeviceContext(0)  # First GPU
@@ -6058,7 +6039,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
             # Get the API version
@@ -6091,9 +6072,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         to specify attributes. For example:
 
         ```mojo
-        from gpu.host import DeviceAttribute, DeviceContext
+        from std.gpu.host import DeviceAttribute, DeviceContext
 
-        def main():
+        def main() raises:
             var ctx = DeviceContext()
             var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
             var max_blocks = ctx.get_attribute(attr)
@@ -6141,7 +6122,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         print("Device is compatible with MAX:", ctx.is_compatible())
@@ -6267,7 +6248,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx = DeviceContext()
         try:
@@ -6319,7 +6300,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
         var ctx1 = DeviceContext(0)  # First GPU
         var ctx2 = DeviceContext(1)  # Second GPU
 
@@ -6375,7 +6356,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         var ctx1 = DeviceContext(0)  # First GPU
         var ctx2 = DeviceContext(1)  # Second GPU
@@ -6456,7 +6437,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         # Get number of CUDA devices
         var num_cuda_devices = DeviceContext.number_of_devices(api="cuda")
@@ -6500,7 +6481,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         # Enable P2P access between all GPUs
         DeviceContext.enable_all_peer_access()
@@ -6515,6 +6496,48 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
                 _ConstCharPtr,
             ]()
         )
+
+    @staticmethod
+    @always_inline
+    fn all_peer_access_enabled() raises -> Bool:
+        """Check whether peer-to-peer memory access is enabled between all GPU pairs.
+
+        This function queries whether P2P access has been successfully enabled
+        between all pairs of GPUs in the system. It returns True only if every
+        GPU can directly access every other GPU's memory.
+
+        Returns:
+            True if P2P access is enabled between all GPU pairs, False otherwise.
+            Returns False if there are fewer than 2 GPUs or if P2P is not
+            supported between any pair.
+
+        Raises:
+            If there's an error querying the P2P access status.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        # P2P access is automatically enabled when devices are constructed.
+        # Check if it was successful for all pairs.
+        if DeviceContext.all_peer_access_enabled():
+            print("P2P access enabled between all GPUs")
+        else:
+            print("P2P access not available for all GPU pairs")
+        ```
+        """
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_allPeerAccessEnabled(bool *result)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_allPeerAccessEnabled",
+                _ConstCharPtr,
+                UnsafePointer[Bool, origin_of(result)],
+            ](UnsafePointer(to=result)),
+            location=call_location(),
+        )
+        return result
 
 
 struct DeviceMulticastBuffer[dtype: DType]:

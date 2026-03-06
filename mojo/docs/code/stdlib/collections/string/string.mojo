@@ -13,16 +13,16 @@
 
 
 @fieldwise_init
-struct Person(Stringable):
+struct Person(Writable):
     var name: String
     var age: Int
 
-    fn __str__(self) -> String:
-        return self.name + " (" + String(self.age) + ")"
+    fn write_to(self, mut writer: Some[Writer]):
+        t"{self.name} ({self.age})".write_to(writer)
 
 
 def string_summary():
-    from testing import assert_equal, assert_raises
+    from std.testing import assert_equal, assert_raises
 
     var person = Person("Alice", 30)
     print(String(person))  # => Alice (30)
@@ -37,7 +37,7 @@ def string_summary():
     # String properties and indexing
     print(len(text))  # 5
     print(text[byte=1])  # e
-    print(text[byte= -1])  # o
+    print(text[byte=-1])  # o
 
     # In-place concatenation
     text += " World"
@@ -68,5 +68,5 @@ def string_summary():
     # --------
 
 
-def main():
+def main() raises:
     string_summary()

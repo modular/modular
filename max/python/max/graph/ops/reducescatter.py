@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from max._core.dialects import mo
+from max._core.dialects.builtin import IntegerAttr, IntegerType
 
 from ..graph import Graph
 from ..type import _ChainType
@@ -38,7 +39,7 @@ def sum(
     Args:
         inputs: The input tensors to reduce and scatter.
         signal_buffers: Device buffer values used for synchronization.
-        axis: The axis along which to scatter the reduced result. Defaults to 0.
+        axis: The axis along which to scatter the reduced result. Defaults to -1.
 
     Returns:
         An iterable of outputs where each device receives its portion of the
@@ -67,7 +68,8 @@ def sum(
             f"input tensors. Got: {devices=}"
         )
 
-    # Compute output shape: input shape with scatter axis divided by num_devices
+    # Resolve negative axis before passing to MLIR. The kernel treats axis=-1
+    # as a distinct flat-1D codepath, so we must always pass a non-negative value.
     input_shape = inputs[0].shape
     input_dtype = inputs[0].dtype
     if axis < 0:
@@ -77,22 +79,11 @@ def sum(
             f"axis {axis} is out of bounds for tensor with rank {input_shape.rank}"
         )
 
-    # TODO(KERN-2337): Support axis != -1 in the kernel.
-    if axis != input_shape.rank - 1:
-        raise NotImplementedError(
-            f"reducescatter.sum only supports axis=-1, got axis={axis}"
-        )
-
-    # Per-device execution model:
-    # Create one reducescatter op per device, each threading the destination
-    # device's chain independently.
-    # Do not merge device chains.
-    results = []
     graph = Graph.current
-    for dev_idx, device in enumerate(devices):
-        in_chain = graph.device_chains[device]
 
-        # Compute output shape for this device's portion
+    # Compute output types for each device's portion.
+    output_types = []
+    for dev_idx, device in enumerate(devices):
         output_shape_list = list(input_shape)
         scatter_dim = input_shape[axis]
         if scatter_dim is not None:
@@ -102,27 +93,34 @@ def sum(
             )
         else:
             output_shape_list[axis] = None
-        output_type = TensorType(
-            dtype=input_dtype,
-            shape=output_shape_list,
-            device=device,
+        output_types.append(
+            TensorType(
+                dtype=input_dtype,
+                shape=output_shape_list,
+                device=device,
+            )
         )
 
-        # Each op takes all inputs but only produces output for its device.
-        result, out_chain = Graph.current._add_op_generated(
-            mo.DistributedReducescatterSumOp,
-            # Single output tensor type.
-            output_type,
-            # Output chain type.
-            _ChainType(),
-            inputs,
-            signal_buffers,
-            in_chain,
-            device,
-        )
+    # Merge all device chains into one input chain.
+    in_chain = graph._merge_chains(
+        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+    )
 
-        results.append(result.tensor)
-        # Advance only this device's chain.
+    # Stage a single reducescatter op across all devices.
+    axis_attr = IntegerAttr(IntegerType(64), axis)
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedReducescatterSumOp,
+        output_types,
+        _ChainType(),
+        inputs,
+        signal_buffers,
+        in_chain,
+        axis_attr,
+    )
+
+    # Update all chains.
+    graph._update_chain(out_chain)
+    for device in devices:
         graph.device_chains[device] = out_chain
 
-    return results
+    return [res.tensor for res in results]

@@ -13,8 +13,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 import numpy as np
 import pytest
 import torch
@@ -24,15 +22,15 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.multi_latent_attention import (
+from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
+    KVCacheInputs,
     KVCacheParams,
-    PagedCacheValues,
-    RaggedKVCacheInputs,
+    unflatten_ragged_attention_inputs,
 )
-from max.nn.legacy.rotary_embedding import (
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -80,10 +78,10 @@ def _single_gpu_baseline(
         num_layers=config.num_hidden_layers,
         n_kv_heads=1,
         head_dim=576,
-        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     attn = DataParallelLatentAttentionWithRope(
@@ -128,12 +126,10 @@ def _single_gpu_baseline(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = PagedCacheValues(
-                kv_blocks=graph.inputs[2].buffer,
-                cache_lengths=graph.inputs[3].tensor,
-                lookup_table=graph.inputs[4].tensor,
-                max_lengths=graph.inputs[5].tensor,
-            )
+            kv_collection = unflatten_ragged_attention_inputs(
+                graph.inputs[2:],
+                n_devices=1,
+            )[0]
             out_list = attn(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],
@@ -165,7 +161,7 @@ def _single_gpu_baseline(
     row_off[1] = prompt_lens[0]
 
     if use_prefill:
-        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+        kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
         inp = (
             Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
             .view(DType.bfloat16)
@@ -179,7 +175,7 @@ def _single_gpu_baseline(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+        kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
         tok = (
             Buffer.from_numpy(
                 input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -227,11 +223,11 @@ def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
-        cache_strategy="paged",
         devices=[DeviceRef.GPU(i) for i in range(dp_degree)],
         page_size=128,
         data_parallel_degree=dp_degree,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
 
@@ -302,18 +298,9 @@ def _build_graph_and_compile(
                 input_row_offsets_list.append(graph.inputs[idx + 1].tensor)
                 idx += 2
 
-            kv_collections = []
-            # Each device contributes 4 KV inputs: blocks, lengths, lookup, max_lengths
-            for i in range(n):
-                base = 2 * n + 4 * i
-                kv_collections.append(
-                    PagedCacheValues(
-                        kv_blocks=graph.inputs[base + 0].buffer,
-                        cache_lengths=graph.inputs[base + 1].tensor,
-                        lookup_table=graph.inputs[base + 2].tensor,
-                        max_lengths=graph.inputs[base + 3].tensor,
-                    )
-                )
+            kv_collections = unflatten_ragged_attention_inputs(
+                graph.inputs[2 * n :], n_devices=n
+            )
 
             outs = attn(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -332,10 +319,10 @@ def _build_graph_and_compile(
     return compiled, g
 
 
-def _flatten_kv_kv_inputs(fetch_list: Sequence[RaggedKVCacheInputs]) -> list:
+def _flatten_kv_kv_inputs(kv_cache_inputs: KVCacheInputs) -> list:
     flat: list = []
-    for f in fetch_list:
-        flat.extend([f.blocks, f.cache_lengths, f.lookup_table, f.max_lengths])
+    for f in kv_cache_inputs.inputs:
+        flat.extend(f)
     return flat
 
 
@@ -391,7 +378,7 @@ def _run_distributed_dp(
 
     if use_prefill:
         # Single execute covering full prompt lengths (identical prompt on each replica).
-        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
+        fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         # Per-device inputs: full sequence + [0, T] row offsets (built on host)
@@ -418,7 +405,7 @@ def _run_distributed_dp(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
-        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
+        fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         step_args = []

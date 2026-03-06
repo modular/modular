@@ -13,11 +13,11 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_ndbuffer_indexing
-def test_ndbuffer_indexing():
+def test_ndbuffer_indexing() raises:
     print("== test_ndbuffer_indexing")
 
     # The total amount of data to allocate
@@ -100,5 +100,5 @@ def test_ndbuffer_indexing():
     print(bufferView5D[1, 2, 3, 4, 5])
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

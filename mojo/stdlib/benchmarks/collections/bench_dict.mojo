@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.dict import DictEntry
-from hashlib import Hasher
-from random.random import random_si64, seed
-from sys import size_of
+from std.collections.dict import DictEntry
+from std.hashlib import Hasher
+from std.random.random import random_si64, seed
+from std.sys import size_of
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -25,9 +25,7 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 fn make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
     var d = Dict[Int, Int]()
     for i in range(0, size):
-
-        @parameter
-        if random:
+        comptime if random:
             d[i] = Int(random_si64(0, Int64(size)))
         else:
             d[i] = i
@@ -187,14 +185,13 @@ fn total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=5))
     m.bench_function[bench_dict_init](BenchId("bench_dict_init"))
     comptime sizes = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
 
-    @parameter
-    for i in range(len(sizes)):
+    comptime for i in range(len(sizes)):
         comptime size = sizes[i]
         m.bench_function[bench_dict_insert[size]](
             BenchId(String("bench_dict_insert[", size, "]"))
@@ -228,8 +225,7 @@ def main():
     for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=",")
 
-    @parameter
-    for i in range(len(sizes)):
+    comptime for i in range(len(sizes)):
         comptime size = sizes[i]
         var mem_s = total_bytes_used(make_dict[size]())
         print("dict_memory_size[", size, "]: ", mem_s, sep="")

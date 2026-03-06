@@ -13,22 +13,24 @@
 
 from buffer.dimlist import DimList
 from internal_utils._utils import ValOrDim, dynamic, static
-from itertools import product
+from std.itertools import product
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import blocked_product
 from layout._fillers import arange
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-def test_runtime_and_compile_time_dim_and_stride(m: ValOrDim, k: ValOrDim):
+def test_runtime_and_compile_time_dim_and_stride(
+    m: ValOrDim, k: ValOrDim
+) raises:
     comptime static_shape = DimList(k.dim, m.dim)
     var dynamic_shape = IndexList[2](k.value, m.value)
-    comptime layout = Layout.row_major[2](static_shape)
+    comptime layout = Layout.row_major[dims=static_shape]()
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -49,7 +51,7 @@ def test_runtime_and_compile_time_dim_and_stride(m: ValOrDim, k: ValOrDim):
     assert_equal(tensor.stride[1](), 1)
 
 
-def test_nested_layout_shape():
+def test_nested_layout_shape() raises:
     """Test that shape[idx]() works correctly for nested layouts."""
     # Test case 1: blocked_product creates nested layout
     comptime tiler_layout = Layout.row_major(2, 4)
@@ -94,7 +96,7 @@ fn _create_tensor_2x2[
         dtype,
         Layout.row_major(2, 2),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ].stack_allocation()
 
 
@@ -109,7 +111,7 @@ fn _copy_transpose[
         dst[j, i] = src[i, j]
 
 
-def test_transpose_arithmetic():
+def test_transpose_arithmetic() raises:
     """Test all arithmetic operations with transposed tensors.
 
     This test verifies that arithmetic operations (+, -, *, /) work correctly
@@ -161,7 +163,7 @@ def test_transpose_arithmetic():
     assert_equal(div_result[1, 1], 1.0)
 
 
-def test_different_layouts_arithmetic():
+def test_different_layouts_arithmetic() raises:
     """Test arithmetic between row-major and column-major tensors.
 
     This verifies that tensors with different memory layouts can still
@@ -175,7 +177,7 @@ def test_different_layouts_arithmetic():
         DType.float32,
         Layout.col_major(2, 2),
         MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ].stack_allocation()
     for i, j in product(range(2), range(2)):
         b[i, j] = a[i, j]
@@ -188,7 +190,7 @@ def test_different_layouts_arithmetic():
     assert_equal(result[1, 1], 0.0)
 
 
-def test_flatten():
+def test_flatten() raises:
     var stack = InlineArray[Int8, 16]()
     var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](
         stack
@@ -198,14 +200,14 @@ def test_flatten():
     assert_equal(tensor.stride[0](), 1)
 
 
-def test_get_shape():
+def test_get_shape() raises:
     var stack = InlineArray[Int8, 16]()
     var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](stack)
     assert_equal(4, tensor.get_shape()[0])
     assert_equal(4, tensor.get_shape()[1])
 
 
-def test_reshape():
+def test_reshape() raises:
     var stack = InlineArray[Int8, 16]()
     var tensor = LayoutTensor[DType.int8, Layout(16)](stack).reshape[
         Layout.row_major[2]()
@@ -215,7 +217,7 @@ def test_reshape():
     assert_equal(tensor.get_shape()[1], 4)
 
 
-def test_aligned_load():
+def test_aligned_load() raises:
     """Tests aligned_load with both index types."""
     # Use a 4x7 tensor so we can load 4 elements starting at columns 0,1,2,3
     # without going out of bounds (column 3 + width 4 = 7)
@@ -253,7 +255,7 @@ def test_aligned_load():
     assert_equal(a3, b3)
 
 
-def main():
+def main() raises:
     test_runtime_and_compile_time_dim_and_stride(dynamic(120), static[512]())
     test_nested_layout_shape()
     test_transpose_arithmetic()

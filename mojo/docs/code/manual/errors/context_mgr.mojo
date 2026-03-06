@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-import sys
-import time
+import std.sys
+import std.time
 
 
 @fieldwise_init
@@ -33,7 +33,7 @@ struct Timer(ImplicitlyCopyable):
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
 
-def main():
+def main() raises:
     with Timer():
         print("Beginning execution")
         time.sleep(1.0)

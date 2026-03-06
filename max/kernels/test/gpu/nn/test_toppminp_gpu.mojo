@@ -11,26 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import iota
-from random import random_float64
+from std.math import iota
+from std.random import random_float64
 
-from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId
+from std.algorithm.functional import parallelize_over_rows
+from std.benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -79,7 +83,7 @@ fn time_kernel[
 @parameter
 fn fill_random[
     rank: Int, dtype: DType
-](mut buffer: NDBuffer[mut=True, dtype, rank]):
+](mut buffer: NDBuffer[mut=True, dtype, rank, ...]):
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
@@ -89,13 +93,20 @@ fn fill_random[
 
 
 @parameter
-fn fill_iota[rank: Int, dtype: DType](mut buf: NDBuffer[mut=True, dtype, rank]):
+fn fill_iota[
+    rank: Int, dtype: DType
+](mut buf: NDBuffer[mut=True, dtype, rank, ...]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
 fn merge[
     dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, dtype, rank], start: Int, mid: Int, end: Int):
+](
+    mut buf: NDBuffer[mut=True, dtype, rank, ...],
+    start: Int,
+    mid: Int,
+    end: Int,
+):
     """Merge two sorted subarrays into one sorted array."""
     var left_size = mid - start
     var right_size = end - mid
@@ -142,7 +153,7 @@ fn merge[
 
 fn merge_sort_recursive[
     dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, dtype, rank], start: Int, end: Int):
+](mut buf: NDBuffer[mut=True, dtype, rank, ...], start: Int, end: Int):
     """Recursive merge sort implementation."""
     if end - start > 1:
         var mid = start + (end - start) // 2
@@ -153,7 +164,7 @@ fn merge_sort_recursive[
 
 fn sort_buf_descending[
     dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int):
+](mut buf: NDBuffer[mut=True, dtype, rank, ...], vocab_size: Int):
     """Sort each batch separately in descending order using parallel merge sort.
     """
     comptime assert rank == 2, "rank must be 2"
@@ -167,7 +178,7 @@ fn sort_buf_descending[
 
 fn test_is_sorted_descending[
     dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int) -> Bool:
+](mut buf: NDBuffer[mut=True, dtype, rank, ...], vocab_size: Int) -> Bool:
     comptime assert rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
@@ -235,7 +246,7 @@ fn print_test_case(test_case: TestCase):
 
 fn test_case_sampling[
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank]
+        mut NDBuffer[mut=True, dtype, rank, ...]
     ) capturing -> None,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     print_test_case(test_case)
@@ -250,25 +261,26 @@ fn test_case_sampling[
 
     var m: Bench
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m = Bench()
 
     # Create input tensors
     var in_logits_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var in_logits = NDBuffer[dtype, rank](
-        in_logits_ptr, DimList(batch_size, vocab_size)
+    var in_logits = NDBuffer[dtype, rank, ...](
+        in_logits_ptr, IndexList[2](batch_size, vocab_size)
     )
     var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
         batch_size * 1
     )
-    var token_ids = NDBuffer[out_idx_type, rank](
-        token_ids_ptr, DimList(batch_size, 1)
+    var token_ids = NDBuffer[out_idx_type, rank, ...](
+        token_ids_ptr, IndexList[2](batch_size, 1)
     )
     var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
-    var p_thresholds = NDBuffer[dtype, 1](p_thresholds_ptr, DimList(batch_size))
+    var p_thresholds = NDBuffer[dtype, 1, ...](
+        p_thresholds_ptr, IndexList[1](batch_size)
+    )
 
     # Fill tensors
     fill_fn(in_logits)
@@ -292,39 +304,21 @@ fn test_case_sampling[
     var in_logits_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var in_logits_cpu_test = NDBuffer[dtype, rank](
-        in_logits_cpu_test_ptr, DimList(batch_size, vocab_size)
+    var in_logits_cpu_test = NDBuffer[dtype, rank, ...](
+        in_logits_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
     var probs_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var probs_cpu_test = NDBuffer[dtype, rank](
-        probs_cpu_test_ptr, DimList(batch_size, vocab_size)
+    var probs_cpu_test = NDBuffer[dtype, rank, ...](
+        probs_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.data[i] = in_logits.data[i] / temperature
 
     softmax[simd_width=1, rank=rank](
-        LayoutTensor[
-            in_logits_cpu_test.type,
-            Layout.row_major[in_logits_cpu_test.rank](in_logits_cpu_test.shape),
-        ](
-            in_logits_cpu_test.data,
-            RuntimeLayout[
-                Layout.row_major[in_logits_cpu_test.rank](
-                    in_logits_cpu_test.shape
-                )
-            ].row_major(in_logits_cpu_test.get_shape().canonicalize()),
-        ),
-        LayoutTensor[
-            probs_cpu_test.type,
-            Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape),
-        ](
-            probs_cpu_test.data,
-            RuntimeLayout[
-                Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape)
-            ].row_major(probs_cpu_test.get_shape().canonicalize()),
-        ),
+        TileTensor(in_logits_cpu_test),
+        TileTensor(probs_cpu_test),
         axis=1,
     )
     in_logits_cpu_test_ptr.free()
@@ -343,8 +337,7 @@ fn test_case_sampling[
         row_major((Idx(batch_size),)),
     )
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
 
         @always_inline
         @parameter
@@ -374,8 +367,7 @@ fn test_case_sampling[
         )
 
     # Run sampling
-    @parameter
-    if is_top_p:
+    comptime if is_top_p:
         top_p_sampling_gpu[_test_sort=True](
             ctx,
             device_p_thresholds_tensor,
@@ -417,12 +409,10 @@ fn test_case_sampling[
             )
             raise e^
 
-    @parameter
-    if PRINT_OUTPUT:
+    comptime if PRINT_OUTPUT:
         print("Sampled token indices:", token_ids)
 
-    @parameter
-    if DEBUG_BENCH:
+    comptime if DEBUG_BENCH:
         m.dump_report()
     _ = device_token_ids_buf^
     _ = device_in_buf^
@@ -438,7 +428,7 @@ fn test_toppminp_gpu[
     dtype: DType,
     out_idx_type: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank]
+        mut NDBuffer[mut=True, dtype, rank, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
@@ -462,7 +452,7 @@ fn test_toppminp_gpu[
 fn test_all_out_idx_types[
     dtype: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank]
+        mut NDBuffer[mut=True, dtype, rank, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     test_toppminp_gpu[dtype, DType.int32, fill_fn](ctx)
@@ -472,7 +462,7 @@ fn test_all_out_idx_types[
 
 fn test_all_types[
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank]
+        mut NDBuffer[mut=True, dtype, rank, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     print("\n=== Testing Float32 ===")
@@ -481,7 +471,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.bfloat16, fill_fn](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("\n====== Testing Fill Iota ======\n")
         test_all_types[fill_iota](ctx)

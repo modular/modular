@@ -25,10 +25,14 @@ description: {% if decl.overloads[0].summary
 {% endmacro -%}
 {# Print each declaration #}
 {% macro process_decl_body(decl) %}
+{# For values that could contain IR (signatures, types, values), use #}
+{# double backticks to preserve literal backticks. #}
+{# Spaces between the double-backticks and content need to be balanced, #}
+{# so we either add them manually or use pad_backticks filter. #}
 {% if decl.signature %}
 <div class="mojo-function-sig">
 
-`{% if decl.isStatic %}static {% endif %}{{ decl.signature }}`
+{% if decl.isStatic %}`static` {% endif %}``{{ decl.signature | pad_backticks }}``
 
 </div>
 {% endif %}
@@ -55,6 +59,7 @@ description: {% if decl.overloads[0].summary
 {% for param in decl.parameters -%}
 *   ​<b>{{ param.name }}</b> ({% if param.traits -%}
         {%- for trait in param.traits -%}
+            {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
                 [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
             {%- else -%}
@@ -64,9 +69,9 @@ description: {% if decl.overloads[0].summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
         {%- else -%}
-            `{{ param.type }}`
+            ``{{ param.type | pad_backticks }}``
         {%- endif -%}
     {%- endif %}): {{ param.description }}
 {% endfor %}
@@ -77,8 +82,8 @@ description: {% if decl.overloads[0].summary
 
 {% for arg in decl.args -%}
 *   ​<b>{{ arg.name }}</b> ({% if arg.path
-        %}[`{{ arg.type }}`]({{ api_path }}{{ arg.path }}){% else
-        %}`{{ arg.type }}`{% endif %}): {{ arg.description }}
+        %}[``{{ arg.type | pad_backticks }}``]({{ api_path }}{{ arg.path }}){% else
+        %}``{{ arg.type | pad_backticks }}``{% endif %}): {{ arg.description }}
 {% endfor %}
 {% endif %}
 {% if (decl.returns and decl.returns.type != 'Self') or (decl.returns and decl.returns.doc) %}
@@ -87,8 +92,8 @@ description: {% if decl.overloads[0].summary
 **Returns:**
 
 {% if decl.returns.path
-  %}[`{{ decl.returns.type }}`]({{ api_path }}{{ decl.returns.path }}){% else
-  %}`{{ decl.returns.type }}`{% endif %}{% if decl.returns.doc
+  %}[``{{ decl.returns.type | pad_backticks }}``]({{ api_path }}{{ decl.returns.path }}){% else
+  %}``{{ decl.returns.type | pad_backticks }}``{% endif %}{% if decl.returns.doc
     %}: {{ decl.returns.doc }}{% endif %}
 {% endif %}
 {% if decl.raisesDoc %}

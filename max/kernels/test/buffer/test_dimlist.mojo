@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer.dimlist import Dim, DimList
 from internal_utils._utils import ValOrDim, dynamic, static
-from testing import TestSuite, assert_equal, assert_false, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 # CHECK-LABEL: test_dim_list
-def test_dim_list():
+def test_dim_list() raises:
     print("== test_dim_list")
 
-    var lst0 = DimList(1, 2, 3, 4)
-    var lst1 = DimList(Dim(), 2, 3, 4)
+    comptime lst0 = DimList(1, 2, 3, 4)
+    comptime lst1 = DimList(Dim(), 2, 3, 4)
 
     # CHECK: [1, 2, 3, 4]
     print(lst0)
@@ -54,7 +54,7 @@ def test_dim_list():
 
 
 # CHECK-LABEL: test_dim
-def test_dim():
+def test_dim() raises:
     print("== test_dim")
 
     var dim0 = Dim(8)
@@ -76,40 +76,50 @@ def test_dim():
     print(dim3.has_value())
 
 
-def test_dim_to_string():
+def test_dim_to_string() raises:
     assert_equal(String(Dim()), "?")
     assert_equal(String(Dim(33)), "33")
-    assert_equal(String(DimList(2, Dim(), 3)), "[2, ?, 3]")
-    assert_equal(String(DimList.create_unknown[5]()), "[?, ?, ?, ?, ?]")
+    assert_equal(String(comptime (DimList(2, Dim(), 3))), "[2, ?, 3]")
+    assert_equal(
+        String(comptime (DimList.create_unknown[5]())), "[?, ?, ?, ?, ?]"
+    )
 
 
-def test_dimlist_repr():
-    assert_equal(repr(DimList(2, Dim(), 3)), "DimList([2, ?, 3])")
-    assert_equal(repr(DimList.create_unknown[5]()), "DimList([?, ?, ?, ?, ?])")
+def test_dimlist_repr() raises:
+    assert_equal(comptime (repr(DimList(2, Dim(), 3))), "DimList([2, ?, 3])")
+    assert_equal(
+        comptime (repr(DimList.create_unknown[5]())), "DimList([?, ?, ?, ?, ?])"
+    )
 
 
-def test_dimlist_eq():
-    assert_true(DimList(Dim(), 42, Dim()) == DimList(Dim(), 42, Dim()))
-    assert_true(DimList(Dim(), Dim()) == DimList(Dim(), Dim()))
-    assert_true(DimList() == DimList())
-    assert_true(DimList(1, 2, 3) == DimList(1, 2, 3))
+def test_dimlist_eq() raises:
+    assert_true(
+        comptime (DimList(Dim(), 42, Dim()) == DimList(Dim(), 42, Dim()))
+    )
+    assert_true(comptime (DimList(Dim(), Dim()) == DimList(Dim(), Dim())))
+    assert_true(comptime (DimList() == DimList()))
+    assert_true(comptime (DimList(1, 2, 3) == DimList(1, 2, 3)))
 
-    assert_false(DimList(Dim(), 42, 41) == DimList(Dim(), 42, Dim()))
-    assert_false(DimList(Dim()) == DimList())
-    assert_false(DimList(1, 2, Dim()) == DimList(1, 2, 3))
+    assert_false(comptime (DimList(Dim(), 42, 41) == DimList(Dim(), 42, Dim())))
+    assert_false(comptime (DimList(Dim()) == DimList()))
+    assert_false(comptime (DimList(1, 2, Dim()) == DimList(1, 2, 3)))
     assert_false(
-        DimList(1, 2, Dim())
-        == DimList(
-            1,
-            2,
+        comptime (
+            DimList(1, 2, Dim())
+            == DimList(
+                1,
+                2,
+            )
         )
     )
     assert_false(
-        DimList(
-            1,
-            2,
+        comptime (
+            DimList(
+                1,
+                2,
+            )
+            == DimList(1, 2, Dim())
         )
-        == DimList(1, 2, Dim())
     )
 
 
@@ -122,5 +132,5 @@ fn test_dim_ceildiv() raises:
     assert_equal(String(test_dim_ceildiv(static[120]())), "1")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

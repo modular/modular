@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import NDBuffer
-from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.host import DeviceContext
-from memory import stack_allocation
+from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import stack_allocation
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime BLOCK_DIM = 8
 
@@ -59,7 +59,7 @@ fn stencil1d_smem(
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
     var a_shared = stack_allocation[
-        BLOCK_DIM + 2, DType.float32, address_space = AddressSpace.SHARED
+        BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
     a_shared[lindex] = a[tid]
@@ -144,7 +144,7 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     _ = b_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_stencil1d[False](ctx)
         run_stencil1d[True](ctx)

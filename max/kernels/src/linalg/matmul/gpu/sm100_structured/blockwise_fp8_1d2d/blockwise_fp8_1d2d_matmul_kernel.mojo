@@ -26,47 +26,47 @@ Architecture:
   with bounds checking
 """
 
-from math import ceildiv
-from memory import Pointer
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 
-from gpu import WARP_SIZE, block_idx, grid_dim, lane_id, thread_idx, warp_id
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, thread_idx
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.sync import named_barrier, syncwarp
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout._layout import RowMajorLayout, TensorLayout
-from layout._coord import ComptimeInt, RuntimeInt
-from layout._tile_tensor import TileTensor
-from layout.tma_async import SharedMemBarrier, TMATensorTile
-from ..structured_kernels.tile_types import (
-    GMEMTile,
+from std.gpu.sync import named_barrier, syncwarp
+from layout.tile_layout import TensorLayout
+from layout import TileTensor
+from structured_kernels.tile_types import (
     TMATile,
-    TmaOpType,
     static_row_major,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.utils import elementwise_compute_lambda_type
 
-from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
+from structured_kernels.kernel_common import (
+    WarpRole1D1D,
+    compute_tma_tile_dims,
+    compute_accum_barrier_counts,
+    compute_input_consumer_count,
+    init_core_barriers,
+)
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
-    InputProducerStage,
+    ProducerTiles,
     InputConsumerStage,
     OutputTilePipeline,
+    BlockwiseFP8TilePayload,
 )
-from ..structured_kernels.tile_types import BlockwiseFP8TilePayload
-from ..structured_kernels.tmem import TmemAllocation
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.tmem import TmemAllocation, TmemDeallocBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
@@ -75,9 +75,6 @@ from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from ..grouped_block_scaled_1d1d.grouped_1d1d_tile_scheduler import (
     GroupedWorkIterator1D1D,
     GroupedWorkContext1D1D,
-)
-from ..grouped_block_scaled_1d1d.grouped_1d1d_matmul_kernel import (
-    WarpRole1D1D,
 )
 
 # Blockwise FP8 specific components
@@ -156,16 +153,24 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
-    # TMEM configuration
+    # TMEM configuration — stride matches MMA output width (1D2D variant).
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.MMA_N
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = (
-        Self.cta_group * WarpRole1D1D.NUM_EPILOGUE_THREADS
-    )
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        WarpRole1D1D.NUM_EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Type ==========
 
@@ -175,7 +180,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.c_type,
         Self.a_scales_type,
         Self.transpose_b,
-        config = Self.config,
+        config=Self.config,
     ]
 
     # ========== MMA Operation Type ==========
@@ -186,12 +191,12 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.b_type,
         Self.config.block_tile_shape,
         Self.config.mma_shape,
-        accum_type = Self.accum_type,
-        cta_group = Self.cta_group,
-        cluster_shape = Self.config.cluster_shape,
-        a_swizzle = Self.config.a_swizzle,
-        b_swizzle = Self.config.b_swizzle,
-        transpose_b = Self.transpose_b,
+        accum_type=Self.accum_type,
+        cta_group=Self.cta_group,
+        cluster_shape=Self.config.cluster_shape,
+        a_swizzle=Self.config.a_swizzle,
+        b_swizzle=Self.config.b_swizzle,
+        transpose_b=Self.transpose_b,
     ]
 
     # ========== Tile Pipeline Types ==========
@@ -199,33 +204,27 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # A-scales dimensions (1 x BM)
-        1,
-        Self.SmemType.BM,
-        Self.SmemType.num_pipeline_stages,
+        IndexList[2](
+            Self.SmemType.Core.BM, Self.SmemType.Core.BK
+        ),  # A tile shape
+        IndexList[2](
+            Self.SmemType.Core.BN, Self.SmemType.Core.BK
+        ),  # B tile shape
+        IndexList[2](1, Self.SmemType.Core.BM),  # A-scales shape
+        Self.SmemType.Core.num_pipeline_stages,
     ]
 
     comptime InputTilePipelineType = InputTilePipeline[
         Self.TilePayload,
-        Self.SmemType.num_group_pipeline_stages,
+        Self.SmemType.Core.num_group_pipeline_stages,
         Self.config.k_group_size,
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
     # ========== Warp Context Types ==========
     comptime MmaEpilogueSync = WarpGroupBarrier[
@@ -233,29 +232,25 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]
 
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         WarpRole1D1D.NUM_MMA_THREADS,
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         WarpRole1D1D.NUM_MMA_THREADS,
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
 
     # ========== TMA Load Size Constants ==========
-    comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
+    comptime a_expected_bytes = Self.SmemType.Core.a_smem_layout.size() * size_of[
         Self.a_type
     ]()
-    comptime b_expected_bytes = Self.SmemType.b_smem_layout.size() * size_of[
+    comptime b_expected_bytes = Self.SmemType.Core.b_smem_layout.size() * size_of[
         Self.b_type
     ]()
-    comptime a_scales_expected_bytes = Self.SmemType.a_scales_smem_layout.size() * size_of[
+    comptime a_scales_expected_bytes = Self.SmemType.Core.a_scales_smem_layout.size() * size_of[
         Self.a_scales_type
     ]()
     comptime input_expected_bytes = Self.cta_group * (
@@ -266,8 +261,17 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
 
-    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -307,10 +311,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]()
 
     comptime accum_dims = get_accumulator_dims[
-        c_smem_dim1 = Self.OutputN,
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
+        c_smem_dim1=Self.OutputN,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        cta_group=Self.cta_group,
     ]()
 
     comptime Accumulator = BlockwiseFP8Accumulator[
@@ -331,21 +335,21 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.accum_type,
         Self.accum_dims[0],
         Self.accum_dims[1],
-        block_tile_shape = Self.config.block_tile_shape,
-        mma_shape = Self.config.mma_shape,
-        is_lower_frag_required = Self.is_lower_required,
-        cta_group = Self.cta_group,
-        num_output_stages = Self.num_output_stages,
-        num_output_warps = Self.num_output_warps,
-        c_swizzle = Self.config.c_swizzle,
+        block_tile_shape=Self.config.block_tile_shape,
+        mma_shape=Self.config.mma_shape,
+        is_lower_frag_required=Self.is_lower_required,
+        cta_group=Self.cta_group,
+        num_output_stages=Self.num_output_stages,
+        num_output_warps=Self.num_output_warps,
+        c_swizzle=Self.config.c_swizzle,
     ]
 
     # ========== Work Iterator Type ==========
     comptime WorkIterator = GroupedWorkIterator1D1D[
-        static_N = Self.static_N,
-        tile_shape = Self.config.block_tile_shape,
-        cluster = Self.config.cluster_shape,
-        cta_group = Self.cta_group,
+        static_N=Self.static_N,
+        tile_shape=Self.config.block_tile_shape,
+        cluster=Self.config.cluster_shape,
+        cta_group=Self.cta_group,
     ]
 
     # ========== Validation ==========
@@ -353,16 +357,15 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     @staticmethod
     fn validate_config():
         """Compile-time validation of kernel configuration."""
-        constrained[Self.transpose_b, "Only support transposed B"]()
-        constrained[
-            Self.a_scales_type == Self.b_scales_type,
-            "a_scales_type and b_scales_type must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[Self.BK == 128, "Only support BK = 128"]()
+        comptime assert Self.transpose_b, "Only support transposed B"
+        comptime assert (
+            Self.a_scales_type == Self.b_scales_type
+        ), "a_scales_type and b_scales_type must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert Self.BK == 128, "Only support BK = 128"
 
     # ========== Computed Layouts (single source of truth) ==========
 
@@ -375,6 +378,51 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime CDeviceTile = TileTensor[
         Self.c_type, Self.c_device_layout, MutAnyOrigin
     ]
+
+    # ========== Static Helper Methods ==========
+
+    @staticmethod
+    @always_inline
+    fn init_barriers(
+        elect_one_warp: Bool,
+        elect_one_thread: Bool,
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        a_scales_tma_op: Self.AScalesTmaOp,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
+    ):
+        """Initialize barriers and prefetch TMA descriptors."""
+        if elect_one_warp and elect_one_thread:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+            a_scales_tma_op.prefetch_descriptor()
+
+            # Epilogue warps also consume A-scales from input pipeline.
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
+                input_barriers.ptr,
+                Int32(
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M,
+                        Self.CLUSTER_N,
+                        Self.cta_group,
+                        CLUSTER_SIZE=Self.CLUSTER_SIZE,
+                        epilogue_threads=WarpRole1D1D.NUM_EPILOGUE_THREADS,
+                    ]()
+                ),
+                accum_barriers.ptr,
+                Int32(Self.accum_pipeline_producer_arv_count),
+                Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group),
+            )
+
+        fence_mbarrier_init()
+        cluster_sync()
 
     # ========== Kernel Entry Point ==========
 
@@ -412,7 +460,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -459,39 +507,16 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         var num_k_iters = Int(ceildiv(Int(K), Self.BK))
 
         # ===== Barrier Initialization =====
-        if elect_one_warp and elect_one_thread:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-            a_scales_tma_op.prefetch_descriptor()
-
-            # Initialize input pipeline barriers
-            # Include epilogue warps in consumer count (they also consume A-scales)
-            Self.InputTilePipelineType.init_barriers(
-                input_barriers.ptr,
-                Int32(1),
-                Int32(
-                    Self.config.cluster_shape[0] // Self.cta_group
-                    + Self.config.cluster_shape[1]
-                    - 1
-                    + Self.CLUSTER_SIZE
-                    * (WarpRole1D1D.NUM_EPILOGUE_THREADS // 32)
-                ),
-            )
-
-            # Initialize output pipeline barriers
-            Self.OutputPipeline.init_barriers(
-                accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
-                Int32(Self.accum_pipeline_consumer_arv_count),
-            )
-
-            # Initialize TMEM deallocation barrier
-            smem.pipelines.tmem_dealloc().ptr[].init(
-                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group)
-            )
-
-        fence_mbarrier_init()
-        cluster_sync()
+        Self.init_barriers(
+            elect_one_warp,
+            elect_one_thread,
+            a_tma_op,
+            b_tma_op,
+            a_scales_tma_op,
+            input_barriers,
+            accum_barriers,
+            smem.pipelines.tmem_dealloc(),
+        )
 
         var mma_op = Self.MmaOp()
 
@@ -541,7 +566,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
-                Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
+                Self.OutputPipeline(
+                    accum_barriers.ptr, tmem, mma_complete_mask
+                ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
@@ -562,10 +589,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                                 )
 
                                 var input_tiles = (
-                                    input_pipeline.acquire_consumer_linear()
+                                    input_pipeline.acquire_consumer()
                                 )
                                 Self.mma(input_tiles, mma_op, tmem_offset)
-                                input_tiles.release()
+                                input_tiles^.release()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole1D1D.is_epilogue():
@@ -574,7 +601,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
-                Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
+                Self.OutputPipeline(
+                    accum_barriers.ptr, tmem, mma_complete_mask
+                ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
@@ -652,10 +681,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         a_scales_tma_op: Self.AScalesTmaOp,
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -664,9 +693,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         elect_one_cta: Bool,
     ):
         """Load A, B, and A-scales tiles using TMA."""
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
@@ -674,12 +703,12 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         var expert_id = work_ctx.expert_id()
 
         # UInt required at TMA coord boundary
-        var a_gmem_m_coord = peer_m_rank * UInt(Self.a_tma_rows) + UInt(m_coord)
+        var a_gmem_m_coord = peer_m_rank * Self.a_tma_rows + Int(m_coord)
         var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + UInt(n_coord)
-            + UInt(expert_id) * UInt(Self.static_N)
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + Int(n_coord)
+            + Int(expert_id) * Self.static_N
         )
 
         if elect_one_sync():
@@ -696,15 +725,15 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                 b_tile.layout,
             )
 
-            var k_coord = UInt(iter_idx * Self.BK)
+            var k_coord = iter_idx * Self.BK
 
             # Load A and B using TileTensor overload
             a_tma_op.async_multicast_load[Self.cta_group](
@@ -738,7 +767,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         tiles: InputConsumerStage[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,

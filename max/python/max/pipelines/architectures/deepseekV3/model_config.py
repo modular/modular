@@ -19,11 +19,15 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheQuantizationConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.comm.ep import EPConfig
+from max.nn.float8_config import Float8Config
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheQuantizationConfig,
+)
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
@@ -36,7 +40,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     # MAX specific fields
     dtype: DType
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     devices: list[DeviceRef]
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
@@ -117,7 +121,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
                 "DP attention requires DP degree to match device count."
             )
 
-    def get_kv_params(self) -> KVCacheParams:
+    def get_kv_params(self) -> KVCacheParamInterface:
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
@@ -130,9 +134,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-
         kvcache_quant_config = None
         if kv_cache_config.cache_dtype in (
             DType.float8_e4m3fn,
@@ -142,6 +145,12 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             kvcache_quant_config = KVCacheQuantizationConfig(
                 scale_dtype=DType.float32, quantization_granularity=32
             )
+        # Determine q_max_seq_len from speculative decoding config (MTP).
+        q_max_seq_len = 1
+        spec_cfg = pipeline_config.speculative
+        if spec_cfg is not None and spec_cfg.is_mtp():
+            q_max_seq_len = spec_cfg.num_speculative_tokens + 1
+
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
@@ -153,6 +162,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
+            q_max_seq_len=q_max_seq_len,
             kvcache_quant_config=kvcache_quant_config,
         )
 
@@ -187,7 +198,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [
@@ -205,13 +216,14 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         max_seq_len = upper_bounded_default(
             upper_bound=config.max_position_embeddings,
-            default=pipeline_config.max_length,
+            default=pipeline_config.model.max_length,
         )
 
         return cls(
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
             use_subgraphs=pipeline_config.model.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,

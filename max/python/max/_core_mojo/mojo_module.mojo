@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
-from sys import size_of
+from std.os import abort
+from std.sys import size_of
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
-from python._cpython import PyObjectPtr
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.python._cpython import PyObjectPtr
 
 
 @export
@@ -35,7 +35,7 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return b.finalize()
     except e:
-        abort(String("failed to create Python module: ", e))
+        abort(t"failed to create Python module: {e}")
 
 
 @fieldwise_init

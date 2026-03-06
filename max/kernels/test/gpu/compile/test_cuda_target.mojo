@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
-from math import erf
-from sys.info import is_nvidia_gpu, simd_width_of
+from std.io.io import _printf
+from std.math import erf
+from std.sys.info import is_nvidia_gpu, simd_width_of
 
-import gpu.primitives.warp as warp
-from algorithm.functional import elementwise
-from bit import log2_floor
-from gpu import (
+import std.gpu.primitives.warp as warp
+from std.algorithm.functional import elementwise
+from std.bit import log2_floor
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
@@ -28,14 +28,14 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer, memset_zero, stack_allocation
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.memory import LegacyUnsafePointer, memset_zero, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import *
+from std.testing import *
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Check parameterization
@@ -48,8 +48,7 @@ from utils.index import IndexList
 
 
 fn parameterized_on_cuda() -> Int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return 42
     else:
         return -1
@@ -70,16 +69,16 @@ fn _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
     assert_true("42" in instruction_str)
 
 
-def test_parameterized_on_cuda_sm80():
+def test_parameterized_on_cuda_sm80() raises:
     var asm = _compile_code[
-        parameterized_on_cuda, target = get_gpu_target["sm_80"]()
+        parameterized_on_cuda, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_parameterized_on_cuda(asm)
 
 
-def test_parameterized_on_cuda_sm90():
+def test_parameterized_on_cuda_sm90() raises:
     var asm = _compile_code[
-        parameterized_on_cuda, target = get_gpu_target["sm_90"]()
+        parameterized_on_cuda, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_parameterized_on_cuda(asm)
 
@@ -99,17 +98,13 @@ fn _verify_hello(asm: StringSlice) raises -> None:
     assert_true("vprintf" in asm)
 
 
-def test_hello_mojo_sm80():
-    var asm = _compile_code[
-        hello_mojo, target = get_gpu_target["sm_80"]()
-    ]().asm
+def test_hello_mojo_sm80() raises:
+    var asm = _compile_code[hello_mojo, target=get_gpu_target["sm_80"]()]().asm
     _verify_hello(asm)
 
 
-def test_hello_mojo_sm90():
-    var asm = _compile_code[
-        hello_mojo, target = get_gpu_target["sm_90"]()
-    ]().asm
+def test_hello_mojo_sm90() raises:
+    var asm = _compile_code[hello_mojo, target=get_gpu_target["sm_90"]()]().asm
     _verify_hello(asm)
 
 
@@ -136,28 +131,28 @@ fn erf_elementwise(
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[
-        func, simd_width = simd_width_of[DType.float32](), target="gpu"
-    ](granularity, ctx)
+    elementwise[func, simd_width=simd_width_of[DType.float32](), target="gpu"](
+        granularity, ctx
+    )
 
 
-def _verify_erf_elementwise(asm: StringSlice):
+def _verify_erf_elementwise(asm: StringSlice) raises:
     assert_true("test_cuda_target_erf_elementwis" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.x" in asm)
     assert_true("ctaid.x" in asm)
 
 
-def test_erf_elementwise_sm80():
+def test_erf_elementwise_sm80() raises:
     var asm = _compile_code[
-        erf_elementwise, target = get_gpu_target["sm_80"]()
+        erf_elementwise, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
 
-def test_erf_elementwise_sm90():
+def test_erf_elementwise_sm90() raises:
     var asm = _compile_code[
-        erf_elementwise, target = get_gpu_target["sm_90"]()
+        erf_elementwise, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
@@ -184,17 +179,13 @@ fn _verify_erf_kernel(asm: StringSlice) raises -> None:
     assert_true("ctaid.y" in asm)
 
 
-def test_erf_kernel_sm80():
-    var asm = _compile_code[
-        erf_kernel, target = get_gpu_target["sm_80"]()
-    ]().asm
+def test_erf_kernel_sm80() raises:
+    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_80"]()]().asm
     _verify_erf_kernel(asm)
 
 
-def test_erf_kernel_sm90():
-    var asm = _compile_code[
-        erf_kernel, target = get_gpu_target["sm_90"]()
-    ]().asm
+def test_erf_kernel_sm90() raises:
+    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_90"]()]().asm
     _verify_erf_kernel(asm)
 
 
@@ -204,10 +195,10 @@ def test_erf_kernel_sm90():
 
 
 fn test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, address_space = AddressSpace.SHARED]
+    UnsafePointer[Int8, address_space=AddressSpace.SHARED]
 ):
     return stack_allocation[
-        999, DType.int8, 8, address_space = AddressSpace.SHARED
+        999, DType.int8, 8, address_space=AddressSpace.SHARED
     ]()
 
 
@@ -217,16 +208,16 @@ fn _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
     assert_true(".shared .align 8 .b8" in asm)
 
 
-def test_shared_stack_allocation_sm80():
+def test_shared_stack_allocation_sm80() raises:
     var asm = _compile_code[
-        test_shared_stack_allocation, target = get_gpu_target["sm_80"]()
+        test_shared_stack_allocation, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_shared_stack_allocation(asm)
 
 
-def test_shared_stack_allocation_sm90():
+def test_shared_stack_allocation_sm90() raises:
     var asm = _compile_code[
-        test_shared_stack_allocation, target = get_gpu_target["sm_90"]()
+        test_shared_stack_allocation, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_shared_stack_allocation(asm)
 
@@ -246,16 +237,16 @@ fn _verify_barrier(asm: StringSlice) raises -> None:
     assert_true("bar.sync 	0" in asm)
 
 
-def test_barrier_sm80():
+def test_barrier_sm80() raises:
     var asm = _compile_code[
-        test_barrier, target = get_gpu_target["sm_80"]()
+        test_barrier, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_barrier(asm)
 
 
-def test_barrier_sm90():
+def test_barrier_sm90() raises:
     var asm = _compile_code[
-        test_barrier, target = get_gpu_target["sm_90"]()
+        test_barrier, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_barrier(asm)
 
@@ -306,7 +297,7 @@ fn gemm(
     var b_shared = stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.float32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.
@@ -335,8 +326,7 @@ fn gemm(
         barrier()
 
         # Loop within the tile.
-        @parameter
-        for idx in range(TILE_SZ_RATIO):
+        comptime for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Float32
             if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
@@ -357,20 +347,20 @@ fn gemm(
             set_c(Int(row), Int(col + UInt(out_idx)), c_reg.load(out_idx))
 
 
-def _verify_gemm(asm: StringSlice):
+def _verify_gemm(asm: StringSlice) raises:
     assert_true("gemm" in asm)
     assert_true(".shared .align 4 .b8" in asm)
     assert_true("st.shared.b32" in asm)
     assert_true("ld.shared.b32" in asm)
 
 
-def test_gemm_sm80():
-    var asm = _compile_code[gemm, target = get_gpu_target["sm_80"]()]().asm
+def test_gemm_sm80() raises:
+    var asm = _compile_code[gemm, target=get_gpu_target["sm_80"]()]().asm
     _verify_gemm(asm)
 
 
-def test_gemm_sm90():
-    var asm = _compile_code[gemm, target = get_gpu_target["sm_90"]()]().asm
+def test_gemm_sm90() raises:
+    var asm = _compile_code[gemm, target=get_gpu_target["sm_90"]()]().asm
     _verify_gemm(asm)
 
 
@@ -384,8 +374,7 @@ fn test_warp_shuffle_up(val: Float32) -> Float32:
 
     comptime limit = log2_floor(WARP_SIZE)
 
-    @parameter
-    for mask in reversed(range(limit)):
+    comptime for mask in reversed(range(limit)):
         res += warp.shuffle_up(res, UInt32(1 << mask))
     return res
 
@@ -396,16 +385,16 @@ fn _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
     assert_true("shfl.sync.up.b32" in asm)
 
 
-def test_warp_shuffle_up_sm80():
+def test_warp_shuffle_up_sm80() raises:
     var asm = _compile_code[
-        test_warp_shuffle_up, target = get_gpu_target["sm_80"]()
+        test_warp_shuffle_up, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_shuffle_up(asm)
 
 
-def test_warp_shuffle_up_sm90():
+def test_warp_shuffle_up_sm90() raises:
     var asm = _compile_code[
-        test_warp_shuffle_up, target = get_gpu_target["sm_90"]()
+        test_warp_shuffle_up, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_warp_shuffle_up(asm)
 
@@ -415,8 +404,7 @@ fn test_warp_shuffle_down(val: Int32) -> Int32:
 
     comptime limit = log2_floor(WARP_SIZE)
 
-    @parameter
-    for mask in reversed(range(limit)):
+    comptime for mask in reversed(range(limit)):
         res += warp.shuffle_down(res, UInt32(1 << mask))
     return res
 
@@ -427,16 +415,16 @@ fn _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
     assert_true("shfl.sync.down.b32" in asm)
 
 
-def test_warp_shuffle_down_sm80():
+def test_warp_shuffle_down_sm80() raises:
     var asm = _compile_code[
-        test_warp_shuffle_down, target = get_gpu_target["sm_80"]()
+        test_warp_shuffle_down, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_shuffle_down(asm)
 
 
-def test_warp_shuffle_down_sm90():
+def test_warp_shuffle_down_sm90() raises:
     var asm = _compile_code[
-        test_warp_shuffle_down, target = get_gpu_target["sm_90"]()
+        test_warp_shuffle_down, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_warp_shuffle_down(asm)
 
@@ -451,8 +439,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
     comptime limit = log2_floor(WARP_SIZE)
 
-    @parameter
-    for mask in reversed(range(limit)):
+    comptime for mask in reversed(range(limit)):
         res += warp.shuffle_xor(res, UInt32(1 << mask))
     return res
 
@@ -463,23 +450,23 @@ fn _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
     assert_true("shfl.sync.bfly.b32" in asm)
 
 
-def test_warp_sum_reduce_sm80():
+def test_warp_sum_reduce_sm80() raises:
     var asm = _compile_code[
-        warp_sum_reduce, target = get_gpu_target["sm_80"]()
+        warp_sum_reduce, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_sum_reduce(asm)
 
 
-def test_warp_sum_reduce_sm90():
+def test_warp_sum_reduce_sm90() raises:
     var asm = _compile_code[
-        warp_sum_reduce, target = get_gpu_target["sm_90"]()
+        warp_sum_reduce, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_warp_sum_reduce(asm)
 
 
 fn block_reduce(val: Float32) -> Float32:
     var shared = stack_allocation[
-        WARP_SIZE, DType.float32, address_space = AddressSpace.SHARED
+        WARP_SIZE, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
     comptime warp_shift = log2_floor(WARP_SIZE)
@@ -506,21 +493,21 @@ fn _verify_block_reduce(asm: StringSlice) raises -> None:
     assert_true("mov.u32" in asm)
 
 
-def test_block_reduce_sm80():
+def test_block_reduce_sm80() raises:
     var asm = _compile_code[
-        block_reduce, target = get_gpu_target["sm_80"]()
+        block_reduce, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_block_reduce(asm)
 
 
-def test_block_reduce_sm90():
+def test_block_reduce_sm90() raises:
     var asm = _compile_code[
-        block_reduce, target = get_gpu_target["sm_90"]()
+        block_reduce, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_block_reduce(asm)
 
 
-def main():
+def main() raises:
     test_parameterized_on_cuda_sm80()
     test_parameterized_on_cuda_sm90()
     test_hello_mojo_sm80()

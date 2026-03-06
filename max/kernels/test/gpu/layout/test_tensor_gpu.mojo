@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import block_idx, grid_dim
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import (
+from std.gpu import block_idx, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import Layout, LayoutTensor
-from testing import assert_true
+from std.testing import assert_true
 
 
-def test_copy_dram_to_sram_async(ctx: DeviceContext):
+def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
     print("== test_copy_dram_to_sram_async")
     comptime tensor_layout = Layout.row_major(4, 16)
     var tensor = ManagedLayoutTensor[DType.float32, tensor_layout](ctx)
@@ -46,7 +46,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
             DType.float32,
             Layout.row_major(4, 4),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
         sram_tensor.copy_from_async(dram_tile)
 
@@ -76,6 +76,6 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
     assert_true(check_state, "Inconsistent values in shared memory")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_copy_dram_to_sram_async(ctx)

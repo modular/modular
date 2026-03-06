@@ -17,14 +17,14 @@ You can import these APIs from the `collections` package.
 Examples:
 
 ```mojo
-from collections import Deque
+from std.collections import Deque
 ```
 """
 
 
-from bit import next_power_of_two
-from builtin.constrained import _constrained_conforms_to
-import format._utils as fmt
+from std.bit import next_power_of_two
+from std.builtin.constrained import _constrained_conforms_to
+import std.format._utils as fmt
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -35,9 +35,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """Implements a double-ended queue.
@@ -159,9 +157,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         self = Self(elements=values^)
 
-    fn __init__(
-        out self, *, var elements: VariadicListMem[Self.ElementType, _]
-    ):
+    fn __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
         """Constructs a deque from the given values.
 
         Args:
@@ -186,7 +182,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # Remember how many elements we have.
         self._tail = args_length
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of the given deque.
 
         Args:
@@ -429,7 +425,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -444,12 +440,13 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "Deque").params(
             fmt.TypeNames[Self.ElementType](),
         ).fields[FieldsFn=write_fields]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of a `Deque`.
@@ -461,6 +458,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `Deque`.
@@ -1015,8 +1013,7 @@ struct _DequeIter[
     fn __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             if self.index >= len(self.src[]):
                 raise StopIteration()
 
@@ -1033,8 +1030,7 @@ struct _DequeIter[
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index

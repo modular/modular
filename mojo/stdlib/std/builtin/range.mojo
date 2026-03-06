@@ -16,13 +16,13 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from math import ceildiv
-from sys.info import size_of
-from sys.intrinsics import unlikely
+from std.math import ceildiv
+from std.sys.info import size_of
+from std.sys.intrinsics import unlikely
 
-from python import PythonObject
+from std.python import PythonObject
 
-from utils._select import _select_register_value as select
+from std.utils._select import _select_register_value as select
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -382,8 +382,7 @@ fn range[
 fn _scalar_range_bounds[
     dtype: DType
 ](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
-    @parameter
-    if size_of[Scalar[dtype]]() >= size_of[Int]():
+    comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
         if unlikely(UInt(len) > UInt(Int.MAX)):
             return (Int.MAX, None)
 
@@ -519,8 +518,7 @@ struct _StridedScalarRange[dtype: DType](
     @always_inline
     fn __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         # If the type is unsigned, then 'step' cannot be negative.
-        @parameter
-        if Self.dtype.is_unsigned():
+        comptime if Self.dtype.is_unsigned():
             if self.start >= self.end:
                 raise StopIteration()
         else:
@@ -538,8 +536,7 @@ struct _StridedScalarRange[dtype: DType](
     fn __len__(self) -> Scalar[Self.dtype]:
         comptime assert Self.dtype.is_integral(), "dtype must be integral"
 
-        @parameter
-        if Self.dtype.is_unsigned():
+        comptime if Self.dtype.is_unsigned():
             return Scalar[Self.dtype](
                 select(
                     self.start < self.end,

@@ -11,19 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
+from test_utils import check_write_to
 
 
-def test_str():
-    assert_equal(NoneType().__str__(), "None")
-
-
-def test_repr():
-    assert_equal(NoneType().__repr__(), "None")
-
-
-def test_format_to():
-    assert_equal(String.write(NoneType()), "None")
+def test_write_to() raises:
+    check_write_to(NoneType(), expected="None", is_repr=False)
+    check_write_to(NoneType(), expected="None", is_repr=True)
 
 
 struct FromNone:
@@ -44,7 +38,7 @@ struct FromNone:
         self.value = value
 
 
-def test_type_from_none():
+def test_type_from_none() raises:
     _ = FromNone(5)
 
     _ = FromNone(None)
@@ -66,5 +60,5 @@ def test_type_from_none():
     var _obj2: FromNone = None
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

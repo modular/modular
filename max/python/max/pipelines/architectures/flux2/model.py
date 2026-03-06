@@ -14,12 +14,12 @@
 from collections.abc import Callable
 from typing import Any
 
-from max import functional as F
 from max.driver import Device
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
-from max.tensor import Tensor
 
 from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
@@ -48,6 +48,19 @@ class Flux2TransformerModel(ComponentModel):
 
     def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
+        # Klein/distilled checkpoints can omit guidance embedder weights.
+        has_guidance_embedder = any(
+            "time_guidance_embed.guidance_embedder." in k for k in state_dict
+        )
+        if not has_guidance_embedder and getattr(
+            self.config, "guidance_embeds", True
+        ):
+            if hasattr(self.config, "model_copy"):
+                self.config = self.config.model_copy(
+                    update={"guidance_embeds": False}
+                )
+            else:
+                self.config.guidance_embeds = False
         with F.lazy():
             flux = Flux2Transformer2DModel(self.config)
             flux.to(self.devices[0])

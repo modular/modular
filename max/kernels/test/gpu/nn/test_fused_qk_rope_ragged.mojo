@@ -11,29 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
-from layout._coord import Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from std.memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import freqs_cis_table_input
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 def execute_fused_qk_rope_ragged(
     ctx: DeviceContext,
-):
+) raises:
     comptime num_q_heads = 32
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     comptime dtype = DType.float32
@@ -617,7 +622,7 @@ def execute_fused_qk_rope_ragged(
 # and the first 128 elements in each head are simply copied from the input Q tensor.
 # For KV cache, we confirm that the only the last 64 elements in each head are correctly roped,
 # and the first 512 elements are left unchanged.
-def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
+def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     comptime num_q_heads = 16
     comptime q_head_size = 192
     comptime kv_params = KVCacheStaticParams(num_heads=1, head_size=576)
@@ -1105,7 +1110,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     _ = cache_lengths_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_fused_qk_rope_ragged(ctx)
         execute_fused_qk_rope_ragged_mla(ctx)

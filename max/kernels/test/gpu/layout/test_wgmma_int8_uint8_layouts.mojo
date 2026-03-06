@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier, warp_id, lane_id
-from gpu.host import DeviceContext
-from gpu import thread_idx
-from gpu.intrinsics import threadfence
-from gpu.compute.mma import (
+from std.gpu import barrier, warp_id, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.intrinsics import threadfence
+from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -26,7 +26,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout import print_layout
-from memory import bitcast
+from std.memory import bitcast
 
 
 fn wgmma_kernel[
@@ -49,14 +49,14 @@ fn wgmma_kernel[
         a_type,
         smem_operand_a_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var smem_operand_b = LayoutTensor[
         b_type,
         smem_operand_b_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.uint32, 4](0)
@@ -172,7 +172,7 @@ fn wgmma_kernel[
 # CHECK: 269 267 280 243 271 269 267 280
 # CHECK: 219 236 268 225 272 219 236 268
 # CHECK: 286 259 292 270 273 286 259 292
-def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_s8_s8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -293,7 +293,7 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 255 246 242 248 269 255 246 242
 # CHECK: 273 256 264 262 275 273 256 264
 # CHECK: 237 239 241 258 245 237 239 241
-def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_u8_u8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -414,7 +414,7 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 273 256 264 262 275 273 256 264
 # CHECK: 237 239 241 258 245 237 239 241
 # CHECK: 282 285 263 281 269 282 285 263
-def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_s8_u8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -537,7 +537,7 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 220 271 247 243 279 220 271 247
 # CHECK: 269 267 280 243 271 269 267 280
 # CHECK: 219 236 268 225 272 219 236 268
-def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_u8_s8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -595,7 +595,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
     _ = res^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         wgmma_s8_s8_s32_64x8x32(ctx)
         wgmma_u8_u8_s32_64x8x32(ctx)

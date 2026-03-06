@@ -13,20 +13,19 @@
 
 """Mojo kernel wrappers for softmax MO interpreter operations."""
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator, simd_width_of
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator, simd_width_of
 
-from math import exp, log
-from algorithm.functional import IndexList
-from memory import OpaquePointer
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
+from std.math import exp, log
+from std.algorithm.functional import IndexList
+from std.memory import OpaquePointer
+from layout import Idx, TileTensor, row_major
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from _common import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
+from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 # =============================================================================
@@ -49,7 +48,7 @@ fn PyInit_softmax_ops() -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(String("failed to create softmax op bindings module: ", e))
+        abort(t"failed to create softmax op bindings module: {e}")
 
 
 # =============================================================================
@@ -101,8 +100,7 @@ fn _softmax_cpu[
             sum_val += exp_val
 
         # Pass 3: normalize
-        @parameter
-        if is_logsoftmax:
+        comptime if is_logsoftmax:
             var log_sum = log(sum_val)
             for i in range(axis_dim):
                 out_ptr[offset + i] = in_ptr[offset + i] - max_val - log_sum
@@ -144,13 +142,9 @@ fn softmax_op[
         # available in the interpreter context)
         _softmax_cpu[dtype, is_logsoftmax](out_ptr, in_ptr, batch_dim, axis_dim)
     else:
-
-        @parameter
-        if has_accelerator():
-
-            @parameter
-            if dtype in (DType.float32, DType.float16, DType.bfloat16):
-                # GPU path: use nn.softmax kernel via input_fn + LayoutTensor
+        comptime if has_accelerator():
+            comptime if dtype in (DType.float32, DType.float16, DType.bfloat16):
+                # GPU path: use nn.softmax kernel via input_fn + TileTensor
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, axis_dim)
@@ -161,20 +155,14 @@ fn softmax_op[
                     var flat_idx = c[0] * axis_dim + c[1]
                     return in_ptr.load[width=width](flat_idx)
 
-                comptime out_layout = Layout.row_major(
-                    UNKNOWN_VALUE, UNKNOWN_VALUE
+                var output_tensor = TileTensor(
+                    out_ptr,
+                    row_major((Idx(batch_dim), Idx(axis_dim))),
                 )
-                var rt = RuntimeLayout[out_layout].row_major(shape)
-                var output_tensor = LayoutTensor[
-                    dtype,
-                    out_layout,
-                    MutExternalOrigin,
-                ](out_ptr, rt)
 
                 var device_ctx = DeviceContextPtr(ctx)
 
-                @parameter
-                if is_logsoftmax:
+                comptime if is_logsoftmax:
                     nn_logsoftmax[
                         dtype,
                         simd_width_of[dtype](),

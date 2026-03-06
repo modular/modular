@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import align_of, simd_width_of, size_of
+from std.collections import Optional
+from std.sys import align_of, simd_width_of, size_of
 
-from gpu.intrinsics import AMDBufferResource
-from gpu.memory import external_memory
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout.layout import coalesce
 from layout._utils import _get_bounds, make_amd_buffer_resource
@@ -66,7 +66,7 @@ struct ScatterGatherAmd[
     fn copy(
         self,
         dst_reg_tile: LayoutTensor[
-            mut=True, address_space = AddressSpace.LOCAL, ...
+            mut=True, address_space=AddressSpace.LOCAL, ...
         ],
         src_gmem_tile: LayoutTensor,
         offset: Optional[UInt] = None,
@@ -89,7 +89,7 @@ struct ScatterGatherAmd[
     fn copy(
         self,
         dst_gmem_tile: LayoutTensor[mut=True, ...],
-        src_reg_tile: LayoutTensor[address_space = AddressSpace.LOCAL, ...],
+        src_reg_tile: LayoutTensor[address_space=AddressSpace.LOCAL, ...],
     ):
         """Copy registers to DRAM.
 
@@ -152,245 +152,21 @@ struct IteratorScatterGatherAmd[
         ](dst_reg_tile, src_gmem_tile_iter, self.buffer)
 
 
-# Shared Memory and Register tiles type declarations, shared by TileOps and Tile Buffer objects
-
-comptime SMemTile[
-    _dtype: DType,
-    layout: Layout,
-    /,
-    *,
-    element_layout: Layout = Layout(1, 1),
-    layout_int_type: DType = _get_layout_type(layout, AddressSpace.SHARED),
-    linear_idx_type: DType = _get_index_type(layout, AddressSpace.SHARED),
-    masked: Bool = False,
-    alignment: Int = align_of[_dtype](),
-] = LayoutTensor[
-    _dtype,
-    layout,
-    MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
-    element_layout=element_layout,
-    layout_int_type=layout_int_type,
-    linear_idx_type=linear_idx_type,
-    masked=masked,
-    alignment=alignment,
-]
-"""Type alias for shared memory tile tensors."""
-
-comptime RegTile[
-    _dtype: DType,
-    layout: Layout,
-    /,
-    *,
-    element_layout: Layout = Layout(1, 1),
-    layout_int_type: DType = _get_layout_type(layout, AddressSpace.LOCAL),
-    linear_idx_type: DType = _get_index_type(layout, AddressSpace.LOCAL),
-    masked: Bool = False,
-    alignment: Int = align_of[_dtype](),
-] = LayoutTensor[
-    _dtype,
-    layout,
-    MutAnyOrigin,
-    address_space = AddressSpace.LOCAL,
-    element_layout=element_layout,
-    layout_int_type=layout_int_type,
-    linear_idx_type=linear_idx_type,
-    masked=masked,
-    alignment=alignment,
-]
-"""Type alias for register (local memory) tile tensors."""
-
-comptime SMemBarrier = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
-]
-"""Type alias for shared memory barrier pointer."""
-
-comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArray[
-    SharedMemBarrier, num_pipeline_stages
-]
-"""Type alias for shared memory pipeline barrier array."""
-
-comptime SMemTileIter[
-    dtype: DType,
-    layout: Layout,
-] = LayoutTensorIter[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
-    alignment=128,
-]
-
-
-struct SMemTileArray[
-    dtype: DType,
-    layout: Layout,
-    num_tiles: Int,
-    alignment: Int,
-](TrivialRegisterPassable):
-    """Array of tiles in shared memory.
-
-    Parameters:
-        dtype: Tile data type.
-        layout: Tile layout configuration.
-        num_tiles: Number of tiles.
-        alignment: Memory alignment.
-    """
-
-    comptime Tile = SMemTile[
-        Self.dtype,
-        Self.layout,
-        alignment = Self.alignment,
-    ]
-
-    comptime num_elements = Self.layout.size() * Self.num_tiles
-
-    comptime storage_size = Self.num_elements * size_of[Self.dtype]()
-
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
-
-    var ptr: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
-    ]
-
-    fn __init__(
-        ref[AddressSpace.SHARED] storage: Self.Storage,
-    ) -> Self:
-        """Initialize with Storage.
-
-        Args:
-            storage: Storage.
-        """
-        return Self(storage.unsafe_ptr())
-
-    fn __init__[
-        mut: Bool, //, origin: Origin[mut=mut]
-    ](
-        out self,
-        unsafe_ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
-            origin=origin,
-        ],
-    ):
-        """Initialize with shared memory pointer.
-
-        Args:
-            unsafe_ptr: Shared memory pointer.
-        """
-        comptime assert (
-            Self.layout.all_dims_known()
-        ), "Layout must be known at compile time."
-
-        self.ptr = unsafe_ptr
-
-    @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.Tile:
-        """Get tile at index.
-
-        Args:
-            index: Tile index.
-
-        Returns:
-            Tile at index.
-        """
-        return Self.Tile(self.ptr + eval[Self.layout.size()] * Int(index))
-
-    fn slice[
-        length: Int
-    ](
-        self,
-        start: Int,
-        out result: SMemTileArray[
-            Self.dtype, Self.layout, length, Self.alignment
-        ],
-    ):
-        return type_of(result)(self.ptr + eval[Self.layout.size()] * start)
-
-    @always_inline
-    @staticmethod
-    fn stack_allocation() -> Self:
-        var ptr = stack_allocation[
-            Self.storage_size,
-            Self.dtype,
-            alignment = Self.alignment,
-            address_space = AddressSpace.SHARED,
-        ]()
-        return Self(ptr)
-
-
-struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterPassable):
-    """Shared memory array of fixed size.
-
-    Parameters:
-        type: Element type.
-        size: Number of elements.
-    """
-
-    comptime ptr_type = UnsafePointer[
-        Self.type, address_space = AddressSpace.SHARED
-    ]
-    comptime storage_size = Self.size * size_of[Self.type]()
-    comptime Storage = InlineArray[Self.type, Self.size]
-
-    var ptr: Self.ptr_type
-
-    @always_inline
-    fn __init__(
-        out self,
-        unsafe_ptr: Self.ptr_type,
-    ):
-        """Initialize with shared memory pointer.
-
-        Args:
-            unsafe_ptr: Shared memory pointer.
-        """
-        self.ptr = unsafe_ptr
-
-    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
-        """Initialize from Storage."""
-        return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
-
-    @always_inline
-    fn __getitem__[T: Intable](self, index: T) -> Self.ptr_type:
-        """Get a pointer to the element at index.
-
-        Args:
-            index: Element index.
-
-        Returns:
-            Pointer to element.
-        """
-        return self.ptr + Int(index)
-
-    @always_inline
-    @staticmethod
-    fn len() -> Int:
-        """Get array length in bytes.
-
-        Returns:
-            Total size in bytes.
-        """
-        return Self.size * size_of[Self.type]()
-
-    @always_inline
-    @staticmethod
-    fn stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
-        var ptr = stack_allocation[
-            Self.len(),
-            Self.type,
-            alignment=alignment,
-            address_space = AddressSpace.SHARED,
-        ]()
-        return Self(ptr)
-
-
-comptime eval[T: AnyType, //, val: T] = val
-"""Helper alias to force evaluation of expressions at compile time."""
-
-comptime SMemPtr[type: AnyType] = UnsafePointer[
-    type, address_space = AddressSpace.SHARED
-]
+# Shared Memory and Register tiles type declarations.
+# Canonical definitions live in structured_kernels.smem_types; re-exported
+# here for backward compatibility so existing
+# `from linalg.structuring import ...` statements continue to work.
+from structured_kernels.smem_types import (
+    SMemTile,
+    RegTile,
+    SMemBarrier,
+    PipelineBarrier,
+    SMemTileIter,
+    SMemTileArray,
+    SMemArray,
+    SMemPtr,
+    eval,
+)
 
 
 trait SharedMemoryBasePtr:
@@ -398,7 +174,7 @@ trait SharedMemoryBasePtr:
 
     @always_inline
     @staticmethod
-    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+    fn ptr() -> UnsafePointer[Int8, address_space=AddressSpace.SHARED]:
         ...
 
 
@@ -410,18 +186,18 @@ struct NVIDIASharedMemoryBasePtr[
 
     @always_inline
     @staticmethod
-    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+    fn ptr() -> UnsafePointer[Int8, address_space=AddressSpace.SHARED]:
         return external_memory[
             Int8,
-            address_space = AddressSpace.SHARED,
-            alignment = Self.memory_alignment,
-            name = Self.name,
+            address_space=AddressSpace.SHARED,
+            alignment=Self.memory_alignment,
+            name=Self.name,
         ]()
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     comptime Tile[dtype: DType, layout: Layout] = SMemTile[
-        dtype, layout, alignment = Self.SMBP.alignment
+        dtype, layout, alignment=Self.SMBP.alignment
     ]
 
     comptime TileArray[
@@ -430,7 +206,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
     comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArray[type, size]
 
-    var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
+    var base_ptr: UnsafePointer[Int8, address_space=AddressSpace.SHARED]
     var offset: Int
 
     @always_inline

@@ -14,7 +14,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheQuantizationConfig
+from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
 
 
 def test_single_device_compatible() -> None:
@@ -269,6 +269,7 @@ def test_copy_as_dp_1_preserves_all_parameters() -> None:
         host_kvcache_swap_space_gb=10.5,
         page_size=32,
         is_mla=True,
+        num_q_heads=128,
         devices=[DeviceRef.GPU(i) for i in range(8)],
         data_parallel_degree=8,
     )
@@ -396,6 +397,7 @@ def test_mla_bypasses_divisibility_check() -> None:
         data_parallel_degree=1,
         page_size=128,
         is_mla=True,
+        num_q_heads=128,
     )
     assert params.n_kv_heads == 1
     assert params.n_kv_heads_per_device == 1
@@ -412,6 +414,7 @@ def test_mla_with_data_parallel_compatible() -> None:
         data_parallel_degree=4,
         page_size=128,
         is_mla=True,
+        num_q_heads=128,
     )
     # In DP mode, all heads are on each device
     assert params.n_kv_heads_per_device == 1

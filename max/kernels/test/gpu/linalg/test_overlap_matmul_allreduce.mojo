@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime overlap_with_dpl = True
 
@@ -99,8 +99,7 @@ fn overlap_matmul_allreduce_test[
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * temp_length
 
     # Initialize buffers for each GPU
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         # Allocate A. B, C on device for matmul.
         A_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mk))
         B_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](nk))
@@ -136,10 +135,10 @@ fn overlap_matmul_allreduce_test[
     comptime B_static_shape = DimList(n.dim, k.dim)
     comptime C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
-        NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape], ngpus
+        NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape], ngpus
     ](fill={})
     var Bs = InlineArray[
-        NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape], ngpus
+        NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape], ngpus
     ](fill={})
     var Cs = InlineArray[
         NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape], ngpus
@@ -149,19 +148,18 @@ fn overlap_matmul_allreduce_test[
     ](fill={})
 
     # Setup the kernel NDBuffers
-    @parameter
-    for i in range(ngpus):
-        As[i] = NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape](
-            A_list[i].unsafe_ptr(), DimList(m.value, k.value)
+    comptime for i in range(ngpus):
+        As[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape](
+            A_list[i].unsafe_ptr(), IndexList[2](m.value, k.value)
         )
-        Bs[i] = NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape](
-            B_list[i].unsafe_ptr(), DimList(n.value, k.value)
+        Bs[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape](
+            B_list[i].unsafe_ptr(), IndexList[2](n.value, k.value)
         )
         Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
         out_bufs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Copy-capture in registers since the lambda will be used on GPU.
@@ -169,10 +167,9 @@ fn overlap_matmul_allreduce_test[
         NDBuffer[dtype, 2, MutAnyOrigin]()
     )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Prepare the output lambda
@@ -193,9 +190,7 @@ fn overlap_matmul_allreduce_test[
 
     # Call the split matmul + AllReduce implementation
     for _ in range(10):
-
-        @parameter
-        for i in range(ngpus):
+        comptime for i in range(ngpus):
             list_of_ctx[i].synchronize()
 
         matmul_allreduce[
@@ -213,25 +208,21 @@ fn overlap_matmul_allreduce_test[
             static[num_partitions](),
         )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Last allreduce
     var expected_sum = Scalar[dtype](0)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         expected_sum += Scalar[dtype](i * k.value)
         list_of_ctx[i].enqueue_copy(C_reduced_host_list[i], C_reduced_list[i])
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Verify results
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         for j in range(mn):
             try:
                 assert_almost_equal(C_reduced_host_list[i][j], expected_sum)
@@ -255,14 +246,13 @@ fn overlap_matmul_allreduce_test[
     _ = C_reduced_list^
 
 
-def main():
+def main() raises:
     # Test hyperparameters.
     comptime test_dtypes = (DType.bfloat16,)
     comptime test_gpu_counts = (4, 8)
 
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:
             break
@@ -273,8 +263,7 @@ def main():
             ctx.append(DeviceContext(device_id=i))
 
         # Test all cases for this configuration.
-        @parameter
-        for dtype_idx in range(len(test_dtypes)):
+        comptime for dtype_idx in range(len(test_dtypes)):
             comptime dtype = test_dtypes[dtype_idx]
 
             overlap_matmul_allreduce_test[

@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from pathlib import Path
-from ffi import _find_dylib
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
-from gpu.host._nvidia_cuda import _CUstream_st
+from std.gpu.host._nvidia_cuda import _CUstream_st
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 from .cublas import ComputeType
 from .dtype import DataType, Property
 from .result import Result
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
@@ -1187,7 +1187,7 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable):
 
     Used together with ALPHA_DEVICE_VECTOR_BETA_HOST when matrix D's
     BATCH_COUNT > 1. If ALPHA_DEVICE_VECTOR_BETA_ZERO is set then
-    CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE must be set to 0 as this mode doesnt supported batched alpha vector.
+    CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE must be set to 0 as this mode doesn't support batched alpha vector.
 
     int64_t, default: 0.
     """

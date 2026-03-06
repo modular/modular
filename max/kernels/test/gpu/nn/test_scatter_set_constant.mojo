@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_set_constant
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 
 fn test_scatter_set_constant(ctx: DeviceContext) raises:
@@ -77,6 +76,6 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
                 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_scatter_set_constant(ctx)

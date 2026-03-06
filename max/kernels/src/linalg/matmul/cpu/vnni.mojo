@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down
-from memory import LegacyUnsafePointer
+from std.math import align_down
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import prefetch
-from sys.info import CompilationTarget, align_of
-from sys.intrinsics import PrefetchOptions
+from std.sys import prefetch
+from std.sys.info import CompilationTarget, align_of
+from std.sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import partial_simd_load
 from layout import Layout, LayoutTensor, RuntimeTuple
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
 from ...arch.cpu.neon_intrinsics import _neon_dotprod
@@ -85,17 +85,14 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         )
         var b_ptr = (b_packed.ptr + b_offset).bitcast[Scalar[c_type]]()
 
-        @parameter
-        if not is_tail:
+        comptime if not is_tail:
             # Prefetch B matrix.
             comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
-            @parameter
-            if prefetch_distance > 0:
+            comptime if prefetch_distance > 0:
                 comptime prefetch_offset = prefetch_distance * kernel_cols
 
-                @parameter
-                for idx in range(kernel_cols // simd_size):
+                comptime for idx in range(kernel_cols // simd_size):
                     prefetch[
                         PrefetchOptions()
                         .for_read()
@@ -111,7 +108,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             a.dtype,
             Layout.row_major(kernel_rows * 4),
             MutAnyOrigin,
-            address_space = a.address_space,
+            address_space=a.address_space,
         ].stack_allocation()
         var a_base_ptr = a.ptr + (global_offset.M * K + global_k)
         var a_ptr = a_local.ptr if (
@@ -129,18 +126,14 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var tail_length = tile_n_k[1] - kl
 
         # pack A if (tile_n_k_idx[1] - kl) is 1, 2, or 3
-        @parameter
-        if is_tail and not CompilationTarget.has_avx512f():
+        comptime if is_tail and not CompilationTarget.has_avx512f():
             for idx0 in range(kernel_rows):
                 for idx_k in range(tail_length):
                     a_local[4 * idx0 + idx_k] = a_base_ptr[idx0 * K + idx_k]
 
         # Loop over local accumulator tiles.
-        @parameter
-        for idx0 in range(kernel_rows):
-
-            @parameter
-            for idx1 in range(kernel_cols // simd_size):
+        comptime for idx0 in range(kernel_rows):
+            comptime for idx1 in range(kernel_cols // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
                 var a_val = (
                     bitcast[c_type, 1](
@@ -161,8 +154,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     width=simd_size, alignment=alignment
                 ]()
 
-                @parameter
-                if CompilationTarget.has_neon_int8_dotprod():
+                comptime if CompilationTarget.has_neon_int8_dotprod():
                     var a_val2 = SIMD[c_type, simd_size](a_val)
                     c_val = _neon_dotprod(
                         c_val,
@@ -196,9 +188,6 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         (kernel_rows, TileN, TileK) tile.
         """
         comptime assert b_packed.rank == 3, "b_packed must be rank 3"
-        debug_assert(
-            tile_n_k[1] % 0 == 0, "K dimension must be a multiple of 4"
-        )
 
         var c_stride = c.dim[1]()
 

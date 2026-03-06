@@ -15,12 +15,12 @@
 You can import these APIs from the `utils` package. For example:
 
 ```mojo
-from utils import StaticTuple
+from std.utils import StaticTuple
 ```
 """
 
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -101,7 +101,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         _static_tuple_construction_checks[Self.size]()
         self._mlir_value = __mlir_op.`pop.array.repeat`[
-            _type = __mlir_type[
+            _type=__mlir_type[
                 `!pop.array<`,
                 Self.size._mlir_value,
                 `, `,
@@ -121,7 +121,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self = Self(values=elems)
 
     @always_inline
-    fn __init__(out self, values: VariadicList[Self.element_type]):
+    fn __init__(out self, values: VariadicParamList[Self.element_type]):
         """Creates a tuple constant using the specified values.
 
         Args:
@@ -138,8 +138,30 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
 
         self = Self()
 
-        @parameter
-        for idx in range(Self.size):
+        comptime for idx in range(Self.size):
+            self.__setitem__[idx](values[idx])
+
+    @always_inline
+    fn __init__(
+        out self, values: VariadicList[Self.element_type, is_owned=False]
+    ):
+        """Creates a tuple constant using the specified values.
+
+        Args:
+            values: The list of values.
+        """
+        _static_tuple_construction_checks[Self.size]()
+
+        if len(values) == 1:
+            return Self(fill=values[0])
+
+        debug_assert(
+            Self.size == len(values), "mismatch in the number of elements"
+        )
+
+        self = Self()
+
+        comptime for idx in range(Self.size):
             self.__setitem__[idx](values[idx])
 
     @always_inline("nodebug")
@@ -163,8 +185,8 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         """
         comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
-            _type = Self.element_type,
-            index = index._mlir_value,
+            _type=Self.element_type,
+            index=index._mlir_value,
         ](self._mlir_value)
         return val
 
@@ -217,7 +239,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
-        return UnsafePointer[origin = origin_of(self)](ptr)[]
+        return UnsafePointer[origin=origin_of(self)](ptr)[]
 
     @always_inline("nodebug")
     fn _replace[idx: Int](self, val: Self.element_type) -> Self:
@@ -235,14 +257,14 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         comptime assert idx < Self.size
 
         var array = __mlir_op.`pop.array.replace`[
-            _type = __mlir_type[
+            _type=__mlir_type[
                 `!pop.array<`,
                 Self.size._mlir_value,
                 `, `,
                 Self.element_type,
                 `>`,
             ],
-            index = idx._mlir_value,
+            index=idx._mlir_value,
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)

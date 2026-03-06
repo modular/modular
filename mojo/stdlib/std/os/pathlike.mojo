@@ -15,7 +15,7 @@
 You can import the trait from the `os` package. For example:
 
 ```mojo
-from os import PathLike
+from std.os import PathLike
 ```
 """
 

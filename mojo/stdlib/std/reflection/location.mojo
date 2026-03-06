@@ -24,7 +24,7 @@ custom assertion functions that report meaningful locations to users.
 Example using `source_location()` to get the current location:
 
 ```mojo
-from reflection import source_location
+from std.reflection import source_location
 
 fn main():
     var loc = source_location()
@@ -38,14 +38,14 @@ to work - the function must be inlined so the compiler can capture the caller's
 location:
 
 ```mojo
-from reflection import call_location
+from std.reflection import call_location
 
 @always_inline  # Required for call_location() to work
 fn my_assert(cond: Bool, msg: String = "assertion failed") raises:
     if not cond:
         raise Error(call_location().prefix(msg))
 
-def main():
+def main() raises:
     var x = 5
     my_assert(x > 10, "x must be > 10")  # Error points to THIS line
 ```
@@ -53,7 +53,7 @@ def main():
 
 
 @fieldwise_init
-struct SourceLocation(Stringable, TrivialRegisterPassable, Writable):
+struct SourceLocation(TrivialRegisterPassable, Writable):
     """Type to carry file name, line, and column information.
 
     This struct stores source location data and provides utilities for formatting
@@ -62,7 +62,7 @@ struct SourceLocation(Stringable, TrivialRegisterPassable, Writable):
     Example:
 
     ```mojo
-    from reflection import source_location, SourceLocation
+    from std.reflection import source_location, SourceLocation
 
     fn main():
         # Get current location
@@ -87,6 +87,7 @@ struct SourceLocation(Stringable, TrivialRegisterPassable, Writable):
     var file_name: StaticString
     """The file name."""
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the source location.
@@ -109,7 +110,7 @@ struct SourceLocation(Stringable, TrivialRegisterPassable, Writable):
         Returns:
             A string in the format "At file:line:col: msg".
         """
-        return String("At ", self, ": ", msg)
+        return t"At {self}: {msg}"
 
     fn write_to(self, mut writer: Some[Writer]):
         """
@@ -133,7 +134,7 @@ fn source_location() -> SourceLocation:
     Example:
 
     ```mojo
-    from reflection import source_location
+    from std.reflection import source_location
 
     fn log_message(msg: String):
         var loc = source_location()
@@ -144,8 +145,8 @@ fn source_location() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount = Int(0)._mlir_value,
-        _type = Tuple[
+        inlineCount=Int(0)._mlir_value,
+        _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
             __mlir_type.`!kgen.string`,
@@ -191,7 +192,7 @@ fn call_location[*, inline_count: Int = 1]() -> SourceLocation:
     Example:
 
     ```mojo
-    from reflection import call_location
+    from std.reflection import call_location
 
     @always_inline  # Required for call_location() to work
     fn assert_positive(value: Int) raises:
@@ -208,8 +209,8 @@ fn call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount = inline_count._mlir_value,
-        _type = Tuple[
+        inlineCount=inline_count._mlir_value,
+        _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
             __mlir_type.`!kgen.string`,

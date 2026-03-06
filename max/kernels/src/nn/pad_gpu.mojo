@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout._coord import Coord, Idx
-from layout._layout import TensorLayout, Layout
-from layout._tile_tensor import TileTensor
-from math import ceildiv
-from sys.info import align_of
-from utils.index import IndexList
+from std.gpu import block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
+from layout import Coord, Idx, TileTensor
+from layout.tile_layout import TensorLayout, Layout
+from std.math import ceildiv
+from std.sys.info import align_of
+from std.utils.index import IndexList
 
 
 fn _fill_strides_indexlist[
@@ -33,8 +32,7 @@ fn _fill_strides_indexlist[
     comptime assert rank > 0
     strides[rank - 1] = 1
 
-    @parameter
-    for idx in range(rank - 1):
+    comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = input_shape[axis + 1]
@@ -60,8 +58,8 @@ fn get_row_offset[
 fn scalar_copy_row[
     dtype: DType,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    input_ptr: UnsafePointer[Scalar[dtype], _],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     row_length: Int,
     threads_per_row: Int,
 ):
@@ -75,8 +73,8 @@ fn vector_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    input_ptr: UnsafePointer[Scalar[dtype], _],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     scaled_row_length: Int,
     row_length: Int,
     threads_per_row: Int,
@@ -155,9 +153,9 @@ fn _pad_constant_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_tensor: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     output_tensor: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -182,10 +180,10 @@ fn _pad_constant_impl[
     var scaled_row_length = (row_length // simd_width) * simd_width
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[
-        input_origin = ImmutOrigin(input_tensor.origin),
-        InputLayoutType = input_tensor.LayoutType,
-        output_origin = output_tensor.origin,
-        OutputLayoutType = output_tensor.LayoutType,
+        input_origin=ImmutOrigin(input_tensor.origin),
+        InputLayoutType=input_tensor.LayoutType,
+        output_origin=output_tensor.origin,
+        OutputLayoutType=output_tensor.LayoutType,
         dtype=dtype,
         simd_width=simd_width,
     ]
@@ -205,11 +203,11 @@ fn _pad_constant_impl[
 fn pad_constant[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[Scalar[padding_type]],
+    paddings: UnsafePointer[Scalar[padding_type], _],
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
@@ -244,8 +242,7 @@ fn pad_constant[
 
     var output_size: Int = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_size *= output_shape[i]
 
     var output_buffer = DeviceBuffer[dtype](
