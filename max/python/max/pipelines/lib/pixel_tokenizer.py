@@ -65,6 +65,8 @@ async def run_with_default_executor(
 
 
 class PipelineClassName(str, Enum):
+    """Enum for pipeline class names."""
+
     FLUX = "FluxPipeline"
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
