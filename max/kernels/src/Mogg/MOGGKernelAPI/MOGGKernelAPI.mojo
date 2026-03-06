@@ -11002,8 +11002,8 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
         var scale_loaded = scale.cast[DType.float32]()
         quantize_static_scaled_fp8[scale_is_inverted=Self.scale_is_inverted](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(input),
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
             scale_loaded,
             ctx.get_device_context(),
         )

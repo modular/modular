@@ -72,11 +72,14 @@ fn quantize_static_scaled_fp8[
     in_dtype: DType,
     scale_is_inverted: Bool = True,
 ](
-    out_buffer: NDBuffer[mut=True, out_dtype, 2, _, _, _],
-    in_buffer: NDBuffer[in_dtype, 2, _, _, _],
+    out_tensor: TileTensor[mut=True, dtype=out_dtype, ...],
+    in_tensor: TileTensor[dtype=in_dtype, ...],
     scale: Float32,
     context: DeviceContext,
 ) raises:
+    """TileTensor implementation of static scaled FP8 quantization."""
+    comptime assert out_tensor.rank == 2, "expected rank-2 output"
+    comptime assert in_tensor.rank == 2, "expected rank-2 input"
     comptime assert in_dtype in (
         DType.float32,
         DType.float16,
@@ -89,16 +92,15 @@ fn quantize_static_scaled_fp8[
 
     @always_inline
     @parameter
-    @__copy_capture(out_buffer, in_buffer, scale)
+    @__copy_capture(out_tensor, in_tensor, scale)
     fn scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    ](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
 
-        var idx = rebind[IndexList[2]](idx_arg)
-        var in_vec_f32 = in_buffer.load[width=width](idx).cast[DType.float32]()
+        var in_vec_f32 = in_tensor.load_linear[width](idx).cast[DType.float32]()
         var inversed_scale: Float32 = 1.0 / scale
-        out_buffer.store(
+        out_tensor.store_linear(
             idx,
             fp8_quantize[out_dtype, use_clamp=True](in_vec_f32, inversed_scale),
         )
@@ -109,7 +111,10 @@ fn quantize_static_scaled_fp8[
 
     _elementwise_impl_gpu[
         func=scaled_fp8_quant, simd_width=UInt(target_simd_width)
-    ](IndexList[2](in_buffer.dim[0](), in_buffer.dim[1]()), context)
+    ](
+        IndexList[2](Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
+        context,
+    )
 
 
 ########################################################

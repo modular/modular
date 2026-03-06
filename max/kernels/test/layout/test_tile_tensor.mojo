@@ -710,3 +710,71 @@ fn test_to_nd_buffer_fully_static() raises:
     assert_equal(buffer.shape.at[1](), Dim(1))
     assert_equal(buffer.dynamic_shape[0], 16)
     assert_equal(buffer.dynamic_shape[1], 1)
+
+
+def test_load_store_linear_row_major() raises:
+    # 3x4 row-major: strides are (4, 1)
+    var data = InlineArray[Int32, 12](fill=0)
+    for i in range(12):
+        data[i] = Int32(i * 10)
+
+    var tensor = TileTensor(data, row_major((Idx[3](), Idx[4]())))
+
+    # Verify load_linear at known positions.
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 0))), 0)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 3))), 30)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 0))), 40)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 3))), 110)
+
+    # Verify vectorized load (width=2).
+    var vec = tensor.load_linear[2](IndexList[2](1, 0))
+    assert_equal(Int(vec[0]), 40)
+    assert_equal(Int(vec[1]), 50)
+
+    # Verify store_linear.
+    tensor.store_linear(IndexList[2](0, 1), SIMD[DType.int32, 1](999))
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 1))), 999)
+
+    # Verify vectorized store (width=2).
+    tensor.store_linear(IndexList[2](2, 0), SIMD[DType.int32, 2](77, 88))
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 0))), 77)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 1))), 88)
+
+
+def test_load_store_linear_non_trivial_stride() raises:
+    # 2x3 column-major: shape (2,3), strides (1,2) — non-contiguous access
+    var data = InlineArray[Int32, 6](fill=0)
+    for i in range(6):
+        data[i] = Int32(i)
+
+    # Column-major layout: stride[0]=1, stride[1]=2
+    comptime col_major_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
+    comptime col_major_stride = Coord[ComptimeInt[1], ComptimeInt[2]]
+    var tensor = TileTensor(
+        ptr=data.unsafe_ptr(),
+        layout=Layout(
+            shape=col_major_shape(Idx[2](), Idx[3]()),
+            stride=col_major_stride(Idx[1](), Idx[2]()),
+        ),
+    )
+
+    # In column-major with strides (1,2), linear offset = row*1 + col*2
+    # data[0]=0, data[1]=1, data[2]=2, data[3]=3, data[4]=4, data[5]=5
+    # (0,0) -> offset 0 -> data[0] = 0
+    # (1,0) -> offset 1 -> data[1] = 1
+    # (0,1) -> offset 2 -> data[2] = 2
+    # (1,1) -> offset 3 -> data[3] = 3
+    # (0,2) -> offset 4 -> data[4] = 4
+    # (1,2) -> offset 5 -> data[5] = 5
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 0))), 0)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 0))), 1)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 1))), 2)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 1))), 3)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 2))), 4)
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 2))), 5)
+
+    # Store and verify.
+    tensor.store_linear(IndexList[2](1, 1), SIMD[DType.int32, 1](42))
+    assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 1))), 42)
+    # Verify underlying data: offset 3 should be 42.
+    assert_equal(Int(data[3]), 42)

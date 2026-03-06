@@ -556,6 +556,85 @@ struct TileTensor[
             self.layout[linear_idx_type=Self.linear_idx_type](coord), value
         )
 
+    @always_inline("nodebug")
+    fn _linear_offset(
+        self, idx: IndexList[_, ...]
+    ) -> Scalar[Self.linear_idx_type]:
+        """Compute a linear memory offset from an IndexList using the layout
+        strides.
+
+        This is for flat (non-nested) layouts where rank == flat_rank. It
+        computes the inner product of the index and stride vectors.
+
+        Args:
+            idx: The multi-dimensional index.
+
+        Returns:
+            The linear memory offset.
+        """
+        comptime assert (
+            idx.size == Self.rank
+        ), "IndexList rank must match tensor rank"
+        comptime assert (
+            Self.rank == Self.flat_rank
+        ), "load_linear/store_linear only support flat layouts"
+        var offset = Scalar[Self.linear_idx_type](0)
+        var stride_coord = self.layout.stride_coord()
+
+        comptime for i in range(idx.size):
+            offset += Scalar[Self.linear_idx_type](idx[i]) * Scalar[
+                Self.linear_idx_type
+            ](stride_coord[i].value())
+        return offset
+
+    @always_inline("nodebug")
+    fn load_linear[
+        width: Int = Self.element_size,
+        alignment: Int = align_of[SIMD[Self.dtype, width]](),
+        invariant: Bool = False,
+    ](self, idx: IndexList[_, ...]) -> SIMD[Self.dtype, width]:
+        """Load elements using an IndexList index (for flat layouts).
+
+        This enables TileTensor to be used directly with `_elementwise_impl_gpu`
+        callbacks which pass IndexList coordinates.
+
+        Parameters:
+            width: Number of elements to load.
+            alignment: Memory alignment for the load.
+            invariant: If True, enables load hoisting.
+
+        Args:
+            idx: The multi-dimensional index.
+
+        Returns:
+            A SIMD vector containing the loaded elements.
+        """
+        return self.ptr.load[
+            width=width, alignment=alignment, invariant=invariant
+        ](self._linear_offset(idx))
+
+    @always_inline("nodebug")
+    fn store_linear[
+        width: Int = Self.element_size,
+        alignment: Int = align_of[SIMD[Self.dtype, width]](),
+    ](
+        self, idx: IndexList[_, ...], value: SIMD[Self.dtype, width]
+    ) where Self.mut:
+        """Store elements using an IndexList index (for flat layouts).
+
+        This enables TileTensor to be used directly with `_elementwise_impl_gpu`
+        callbacks which pass IndexList coordinates.
+
+        Parameters:
+            width: Number of elements to store.
+            alignment: Memory alignment for the store.
+
+        Args:
+            idx: The multi-dimensional index.
+            value: The SIMD vector to store.
+        """
+        self.ptr.store[alignment=alignment](self._linear_offset(idx), value)
+
     @always_inline
     fn ptr_at_offset(
         self, coords: Coord[...]
