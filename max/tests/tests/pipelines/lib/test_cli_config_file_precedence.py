@@ -20,7 +20,7 @@ from typing import Any
 import click
 from click.testing import CliRunner
 from max.config import ConfigFileModel
-from max.entrypoints.cli.config import config_to_flag
+from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
 from pydantic import Field
 
 
@@ -35,6 +35,18 @@ def _make_cli() -> click.Command:
     def cli(**config_kwargs: Any) -> None:
         config = _TestConfig(**config_kwargs)
         click.echo(f"{config.model_path}|{config.device_graph_capture}")
+
+    return cli
+
+
+def _make_pipeline_sources_cli() -> click.Command:
+    @click.command()
+    @pipeline_config_options
+    def cli(**config_kwargs: Any) -> None:
+        sources = config_kwargs.get("__cli_param_sources__", {})
+        click.echo(
+            f"{sources.get('ep_size')}|{sources.get('data_parallel_degree')}"
+        )
 
     return cli
 
@@ -80,3 +92,19 @@ def test_cli_args_override_config_file(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.output.strip() == "from-cli|True"
+
+
+def test_pipeline_config_options_injects_default_sources() -> None:
+    """Click defaults are preserved in source metadata."""
+    result = CliRunner().invoke(_make_pipeline_sources_cli(), [])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "DEFAULT|DEFAULT"
+
+
+def test_pipeline_config_options_marks_commandline_sources() -> None:
+    """Explicit flags are marked as COMMANDLINE in source metadata."""
+    result = CliRunner().invoke(
+        _make_pipeline_sources_cli(), ["--ep-size", "1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "COMMANDLINE|DEFAULT"
