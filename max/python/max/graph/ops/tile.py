@@ -30,6 +30,13 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
     The input is copied ``N_i`` times on the i-th dimension, where ``N_i = repeats[i]``.
     The i-th dimension of output shape will be the i-th dimension of input shape
     multiplied by ``N_i``.
+
+    .. warning::
+        This operation is CPU-only. When used in a GPU-compiled graph, the
+        runtime will silently transfer the tensor to CPU, execute the tile, then
+        transfer the result back to GPU. In performance-sensitive paths (e.g.
+        inside a repeated attention layer), prefer :func:`concat` or
+        :func:`broadcast_to` as GPU-native alternatives.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     shape = x.shape
