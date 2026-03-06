@@ -1141,6 +1141,18 @@ fn tanh[
                 instruction="tanh.approx.f32", constraints="=f,f"
             ](x)
 
+    comptime if dtype == DType.float64 and not is_gpu():
+        # For float64 on CPU, use the expm1-based identity for full accuracy:
+        #   tanh(x) = -expm1(-2|x|) / (expm1(-2|x|) + 2)
+        # expm1 computes e^y - 1 accurately even for small |y|, avoiding the
+        # catastrophic cancellation that occurs in (e^y - 1) computed naively.
+        # This matches the accuracy of FreeBSD/Cephes libm tanh for float64.
+        # Clamp at ±20: tanh(±20) rounds to exactly ±1 in float64.
+        var xc64 = x.clamp(-20, 20)
+        var x_abs = abs(xc64)
+        var e = expm1((-2) * x_abs)
+        return copysign((-e) / (e + 2), xc64)
+
     var xc = x.clamp(-9, 9)
     var x_squared = xc * xc
 

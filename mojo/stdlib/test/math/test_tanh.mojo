@@ -191,5 +191,42 @@ def test_tanh_libm() raises:
     _test_tanh_libm[]()
 
 
+def _test_tanh_libm_f64[N: Int = 8192]() raises:
+    seed(0)
+    comptime test_dtype = DType.float64
+    var x64 = alloc[Scalar[test_dtype]](N)
+    randn[test_dtype](x64, N, 0, 9.0)
+    print("For N=", N, " randomly generated float64 vals; mean=0.0, var=9.0")
+
+    var y64 = alloc[Scalar[test_dtype]](N)
+    for i in range(N):
+        y64[i] = tanh(x64[i])
+
+    var libm_out = alloc[Scalar[test_dtype]](N)
+    for i in range(N):
+        libm_out[i] = tanh_libm(x64[i])
+
+    # Expect near machine-epsilon accuracy after float64 fix.
+    # Allow up to 1e-14 absolute and relative error as a conservative bound.
+    var abs_rel_err = SIMD[test_dtype, 4](
+        0.0, 1e-14, 0.0, 1e-14
+    )
+
+    var err = compare[test_dtype](
+        y64, libm_out, N, msg="Compare Mojo float64 vs. LibM tanh"
+    )
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
+
+    x64.free()
+    y64.free()
+    libm_out.free()
+
+
+def test_tanh_libm_f64() raises:
+    _test_tanh_libm_f64[]()
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
