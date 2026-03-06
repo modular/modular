@@ -169,7 +169,7 @@ def _test_rope_ragged_gpu_impl[
     )
     var position_ids_device_tensor = TileTensor[
         DType.uint32,
-        _,
+        type_of(position_ids_device_tensor_static).LayoutType,
         ImmutAnyOrigin,
     ](
         position_ids_device_tensor_static.ptr.as_immutable().unsafe_origin_cast[

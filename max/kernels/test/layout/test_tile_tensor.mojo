@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer, Dim, DimList
+from std.gpu.memory import AddressSpace
 from std.utils.index import IndexList
-from layout.tile_layout import Layout
+from layout.tile_layout import Layout, RowMajorLayout
 from layout import (
     ComptimeInt,
     Coord,
@@ -21,6 +22,7 @@ from layout import (
     RuntimeInt,
     TileTensor,
     row_major,
+    stack_allocation,
 )
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
@@ -778,3 +780,74 @@ def test_load_store_linear_non_trivial_stride() raises:
     assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 1))), 42)
     # Verify underlying data: offset 3 should be 42.
     assert_equal(Int(data[3]), 42)
+
+
+fn test_linear_idx_type_small_static_layout() raises:
+    """Small fully-static layouts use int32 for linear_idx_type."""
+    # Cosize = (4-1)*4 + (4-1)*1 + 1 = 16, fits in int32
+    comptime TensorType = TileTensor[
+        DType.float32,
+        RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
+        MutAnyOrigin,
+    ]
+    comptime assert TensorType.linear_idx_type == DType.int32
+
+
+fn test_linear_idx_type_dynamic_layout_generic() raises:
+    """Dynamic layouts in GENERIC address space use int64."""
+    comptime TensorType = TileTensor[
+        DType.float32,
+        RowMajorLayout[RuntimeInt[DType.int], ComptimeInt[4]],
+        MutAnyOrigin,
+    ]
+    # Not all dims known -> falls through to address_space check -> GENERIC -> int64
+    comptime assert TensorType.linear_idx_type == DType.int64
+
+
+fn test_linear_idx_type_shared_address_space() raises:
+    """Shared memory address space always uses int32."""
+    comptime TensorType = TileTensor[
+        DType.float32,
+        RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
+    comptime assert TensorType.linear_idx_type == DType.int32
+
+
+fn test_linear_idx_type_recomputed_after_tile() raises:
+    """After tile(), linear_idx_type is recomputed from the new layout."""
+    var stack = InlineArray[Int32, 256](fill=0)
+    var tensor = TileTensor(stack, row_major[16, 16]())
+    # Original: cosize=256, int32
+    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+
+    # After tiling: new layout has smaller cosize, still int32
+    var tiled = tensor.tile[4, 4]((Idx(0), Idx(0)))
+    assert_equal(type_of(tiled).linear_idx_type, DType.int32)
+    _ = tiled
+
+
+fn test_linear_idx_type_recomputed_after_distribute() raises:
+    """After distribute(), linear_idx_type is recomputed from the new layout."""
+    var stack = InlineArray[Int32, 16](fill=0)
+    var tensor = TileTensor(stack, row_major[4, 4]())
+    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+
+    comptime thread_layout = row_major((Idx[2](), Idx[2]()))
+    var frag = tensor.distribute[thread_layout=thread_layout](0)
+    # Distributed fragment: shape [2,2], strides [8,2] -> cosize = (2-1)*8 + (2-1)*2 + 1 = 11
+    assert_equal(type_of(frag).linear_idx_type, DType.int32)
+    _ = frag
+
+
+fn test_linear_idx_type_recomputed_after_vectorize() raises:
+    """After vectorize(), linear_idx_type is recomputed from the new layout."""
+    var stack = InlineArray[Int32, 256](fill=0)
+    var tensor = TileTensor(stack, row_major[16, 16]())
+    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+
+    var vectorized = tensor.vectorize[4, 4]()
+    # Vectorized: shape [4,4], strides [64,4] -> cosize = (4-1)*64 + (4-1)*4 + 1 = 205
+    assert_equal(type_of(vectorized).linear_idx_type, DType.int32)
+    _ = vectorized

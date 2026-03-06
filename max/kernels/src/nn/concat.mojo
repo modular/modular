@@ -1059,10 +1059,11 @@ fn _fused_concat_gpu[
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size: Int,
+    output_layout: TensorLayout,
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype, _, _],
+    output: TileTensor[mut=True, dtype, output_layout, _],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1124,11 +1125,12 @@ fn fused_concat[
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
+    output_layout: TensorLayout,
     target: StaticString = "cpu",
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: TileTensor[mut=True, dtype, _, _],
+    output: TileTensor[mut=True, dtype, output_layout, _],
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"

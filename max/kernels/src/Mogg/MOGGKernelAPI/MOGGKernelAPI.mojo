@@ -4550,7 +4550,7 @@ struct Concat:
             False,
             inputs_lambda,
             epilogue_wrapper,
-            target,
+            target=target,
         ](
             normalize_neg_index(Int(axis), rank),
             input_shapes,

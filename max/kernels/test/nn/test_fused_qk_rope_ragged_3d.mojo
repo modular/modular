@@ -172,14 +172,16 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     )
     var position_ids = TileTensor[
         DType.uint32,
-        _,
+        type_of(position_ids_static).LayoutType,
         ImmutAnyOrigin,
     ](
         position_ids_static.ptr.as_immutable().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_static.layout,
-    ).make_dynamic[DType.int64]()
+    ).make_dynamic[
+        DType.int64
+    ]()
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()

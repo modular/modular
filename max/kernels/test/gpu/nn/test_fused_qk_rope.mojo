@@ -240,12 +240,14 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
     var valid_lengths_tensor = TileTensor[
         DType.uint32,
-        _,
+        type_of(valid_lengths_static).LayoutType,
         MutAnyOrigin,
     ](
         valid_lengths_static.ptr.unsafe_origin_cast[MutAnyOrigin](),
         valid_lengths_static.layout,
-    ).make_dynamic[DType.int64]()
+    ).make_dynamic[
+        DType.int64
+    ]()
 
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
         q_proj=q_tensor,

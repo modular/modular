@@ -74,7 +74,7 @@ struct TileTensor[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    linear_idx_type: DType = _get_index_type(address_space),
+    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
     element_size: Int = 1,
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     """A tensor type with trait-based layouts supporting nested and hierarchical
@@ -770,7 +770,6 @@ struct TileTensor[
             stride_types=Self.LayoutType._stride_types,
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ]:
         """Extract a tile (sub-tensor) with the specified shape at the given
@@ -798,7 +797,6 @@ struct TileTensor[
             stride_types=stride_layout._shape_types,
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ]:
         """Tile with explicit static strides.
@@ -837,7 +835,6 @@ struct TileTensor[
                 stride_types=Self.LayoutType._stride_types,
             ],
             address_space=Self.address_space,
-            linear_idx_type=Self.linear_idx_type,
             element_size=Self.element_size,
         ],
         IndexList[Variadic.size(coordinates.element_types)],
@@ -868,7 +865,6 @@ struct TileTensor[
                 stride_types=stride_layout._shape_types,
             ],
             address_space=Self.address_space,
-            linear_idx_type=Self.linear_idx_type,
             element_size=Self.element_size,
         ],
         IndexList[Variadic.size(coordinates.element_types)],
@@ -898,7 +894,6 @@ struct TileTensor[
         LayoutType=new_layout,
         origin=Self.origin,
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ]
     """A TileTensor type with the same data properties but a different layout.
@@ -948,7 +943,6 @@ struct TileTensor[
             stride_types=Self.LayoutType._stride_types,
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ]:
         """Extract a tile (sub-tensor) from this tensor with specified
@@ -1008,7 +1002,6 @@ struct TileTensor[
             ],
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ] where Self.all_dims_known:
         """Distribute tensor workload across multiple threads in a structured
@@ -1052,7 +1045,6 @@ struct TileTensor[
                 ],
             ],
             address_space=Self.address_space,
-            linear_idx_type=Self.linear_idx_type,
             element_size=Self.element_size,
         ],
         IndexList[Variadic.size(thread_layout.shape_types)],
@@ -1228,7 +1220,6 @@ struct TileTensor[
         ],
         Self.origin,
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ] where (Variadic.size(slices) == Self.flat_rank and Self.all_dims_known):
         """Extract a slice from the tensor using slice objects.
@@ -1320,7 +1311,6 @@ struct TileTensor[
             ],
             Self.origin,
             address_space=Self.address_space,
-            linear_idx_type=Self.linear_idx_type,
             element_size=Self.element_size,
         ](self.ptr + offset, new_layout)
 
@@ -1338,7 +1328,6 @@ struct TileTensor[
         ],
         Self.origin,
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ]:
         """Slice tensor with runtime start/end indices.
@@ -1394,7 +1383,6 @@ struct TileTensor[
             ],
             Self.origin,
             address_space=Self.address_space,
-            linear_idx_type=Self.linear_idx_type,
             element_size=Self.element_size,
         ](self.ptr + offset, new_layout)
 
@@ -1414,7 +1402,6 @@ struct TileTensor[
             ],
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Coord[*_IntToComptimeInt[*vector_shape]].static_product,
     ]
     """Type alias for vectorized tensor types.
@@ -1498,7 +1485,6 @@ struct TileTensor[
             stride_types=Variadic.types[ComptimeInt[1]],
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ]
     """Type alias for coalesced (flattened to rank-1) tensor types.
@@ -1527,7 +1513,6 @@ struct TileTensor[
             stride_types=_RowMajor[*new_shape_types],
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
         element_size=Self.element_size,
     ]
     """Type alias for reshaped tensor types.
@@ -1709,7 +1694,6 @@ struct TileTensor[
             ],
         ],
         address_space=Self.address_space,
-        linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for dynamic tensor types.
 
@@ -1988,7 +1972,6 @@ fn _distribute[
     ],
     data_layout_tensor.origin,
     address_space=data_layout_tensor.address_space,
-    linear_idx_type=data_layout_tensor.linear_idx_type,
     element_size=data_layout_tensor.element_size,
 ]:
     """A simplified implementation of LayoutTensor.distribute on TileTensor.
@@ -2047,12 +2030,21 @@ fn _distribute[
 
     var layout = Layout(shape, stride)
 
+    comptime ResultLayout = Layout[
+        shape_types=_Divide[
+            data_layout_tensor.LayoutType._shape_types,
+            thread_layout.shape_types,
+        ],
+        stride_types=_Multiply[
+            data_layout_tensor.LayoutType._stride_types,
+            thread_layout.shape_types,
+        ],
+    ]
     return TileTensor[
         data_layout_tensor.dtype,
-        _,
+        ResultLayout,
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=data_layout_tensor.element_size,
     ](
         UnsafePointer(to=data_layout_tensor.ptr[swizzled_offset]),
@@ -2082,7 +2074,6 @@ fn _distribute_with_offset[
         ],
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=data_layout_tensor.element_size,
     ],
     IndexList[Variadic.size(thread_layout.shape_types)],
@@ -2138,13 +2129,22 @@ fn _distribute_with_offset[
 
     var layout = Layout(shape, stride)
 
+    comptime ResultLayout = Layout[
+        shape_types=_Divide[
+            data_layout_tensor.LayoutType._shape_types,
+            thread_layout.shape_types,
+        ],
+        stride_types=_Multiply[
+            data_layout_tensor.LayoutType._stride_types,
+            thread_layout.shape_types,
+        ],
+    ]
     return (
         TileTensor[
             data_layout_tensor.dtype,
-            _,
+            ResultLayout,
             data_layout_tensor.origin,
             address_space=data_layout_tensor.address_space,
-            linear_idx_type=data_layout_tensor.linear_idx_type,
             element_size=data_layout_tensor.element_size,
         ](
             UnsafePointer(to=data_layout_tensor.ptr[swizzled_offset]),
@@ -2176,7 +2176,6 @@ fn _tile[
     ],
     data_layout_tensor.origin,
     address_space=data_layout_tensor.address_space,
-    linear_idx_type=data_layout_tensor.linear_idx_type,
     element_size=data_layout_tensor.element_size,
 ]:
     """Extract a tile (sub-tensor) from a TileTensor at specified coordinates.
@@ -2231,7 +2230,6 @@ fn _tile[
         ],
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=data_layout_tensor.element_size,
     ](
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
@@ -2261,7 +2259,6 @@ fn _tile_with_offset[
         ],
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=data_layout_tensor.element_size,
     ],
     IndexList[Variadic.size(coord_types)],
@@ -2300,7 +2297,6 @@ fn _tile_with_offset[
             ],
             data_layout_tensor.origin,
             address_space=data_layout_tensor.address_space,
-            linear_idx_type=data_layout_tensor.linear_idx_type,
             element_size=data_layout_tensor.element_size,
         ](
             UnsafePointer(to=data_layout_tensor.ptr[offset]),
@@ -2334,7 +2330,6 @@ fn _tile[
     ],
     data_layout_tensor.origin,
     address_space=data_layout_tensor.address_space,
-    linear_idx_type=data_layout_tensor.linear_idx_type,
     element_size=data_layout_tensor.element_size,
 ]:
     """Like _tile, but with explicit static strides.
@@ -2367,7 +2362,6 @@ fn _tile[
         ],
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=data_layout_tensor.element_size,
     ](
         UnsafePointer(to=data_layout_tensor.ptr[offset]),
@@ -2399,7 +2393,6 @@ fn _tile_with_offset[
         ],
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=data_layout_tensor.element_size,
     ],
     IndexList[Variadic.size(coord_types)],
@@ -2432,7 +2425,6 @@ fn _tile_with_offset[
             ],
             data_layout_tensor.origin,
             address_space=data_layout_tensor.address_space,
-            linear_idx_type=data_layout_tensor.linear_idx_type,
             element_size=data_layout_tensor.element_size,
         ](
             UnsafePointer(to=data_layout_tensor.ptr[offset]),
@@ -2464,7 +2456,6 @@ fn _vectorize[
     ],
     data_layout_tensor.origin,
     address_space=data_layout_tensor.address_space,
-    linear_idx_type=data_layout_tensor.linear_idx_type,
     element_size=Coord[*vector_shape_types].static_product,
 ]:
     """Create a vectorized view of a TileTensor.
@@ -2503,21 +2494,34 @@ fn _vectorize[
 
     var new_layout = Layout(new_shape, new_stride)
 
+    comptime ResultLayout = Layout[
+        shape_types=_CeilDiv[
+            data_layout_tensor.LayoutType._shape_types, vector_shape_types
+        ],
+        stride_types=_Multiply[
+            data_layout_tensor.LayoutType._stride_types,
+            vector_shape_types,
+        ],
+    ]
     return TileTensor[
         dtype,
-        Layout[
-            shape_types=NewShapeTypes,
-            stride_types=NewStrideTypes,
-        ],
+        ResultLayout,
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
-        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=Coord[*vector_shape_types].static_product,
     ](data_layout_tensor.ptr, new_layout)
 
 
-fn _get_index_type(address_space: AddressSpace) -> DType:
-    """Returns int32 for shared/constant GPU memory, index otherwise."""
+fn _get_index_type[
+    LayoutType: TensorLayout
+](address_space: AddressSpace) -> DType:
+    """Returns int32 for shared/constant GPU memory or small known layouts,
+    int64 otherwise."""
+    comptime if LayoutType.all_dims_known and LayoutType.static_cosize <= Int(
+        max_finite[DType.int32]()
+    ):
+        return DType.int32
+
     if address_space in (
         AddressSpace.SHARED,
         AddressSpace.CONSTANT,

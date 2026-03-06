@@ -142,11 +142,14 @@ fn tpool_patch_merger_kernel[
 
 
 fn tpool_patch_merger[
-    dtype: DType = DType.bfloat16,
+    dtype: DType,
+    output_layout: TensorLayout,
+    x_layout: TensorLayout,
+    bounds_layout: TensorLayout,
 ](
-    output: TileTensor[dtype, _, MutAnyOrigin],
-    x: TileTensor[dtype, _, ImmutAnyOrigin],
-    bounds: TileTensor[DType.int64, _, ImmutAnyOrigin],
+    output: TileTensor[dtype, output_layout, MutAnyOrigin],
+    x: TileTensor[dtype, x_layout, ImmutAnyOrigin],
+    bounds: TileTensor[DType.int64, bounds_layout, ImmutAnyOrigin],
     kH: Int,
     kW: Int,
     max_h: Int,
