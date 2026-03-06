@@ -303,6 +303,9 @@ what we publish.
 
 ### Library changes
 
+- `InlineArray` now has a `fill()` method that sets all elements to a given
+  value, delegating to `Span.fill()`.
+
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
