@@ -75,7 +75,7 @@ trait IntervalElement(Comparable, Copyable, Intable, Writable):
 
 struct Interval[T: IntervalElement](
     Boolable,
-    Equatable,
+    Comparable,
     ImplicitlyCopyable,
     Sized,
     Writable,
@@ -210,51 +210,20 @@ struct Interval[T: IntervalElement](
         """
         return self.start <= other.start and self.end >= other.end
 
-    fn __le__(self, other: Self) -> Bool:
-        """Returns whether this interval is less than or equal to another
-        interval.
-
-        Args:
-            other: The interval to compare with.
-
-        Returns:
-            True if this interval's start is less than or equal to the other interval's start.
-        """
-        return self.start <= other.start
-
-    fn __ge__(self, other: Self) -> Bool:
-        """Returns whether this interval is greater than or equal to another
-        interval.
-
-        Args:
-            other: The interval to compare with.
-
-        Returns:
-            True if this interval's end is greater than or equal to the other interval's end.
-        """
-        return self.end >= other.end
-
     fn __lt__(self, other: Self) -> Bool:
-        """Returns whether this interval is less than another interval.
+        """Returns whether this interval is less than another interval using
+        lexicographic ordering: compares by start first, then by end as
+        tiebreaker.
 
         Args:
             other: The interval to compare with.
 
         Returns:
-            True if this interval's start is less than the other interval's start.
+            True if this interval is lexicographically less than the other.
         """
-        return self.start < other.start
-
-    fn __gt__(self, other: Self) -> Bool:
-        """Returns whether this interval is greater than another interval.
-
-        Args:
-            other: The interval to compare with.
-
-        Returns:
-            True if this interval's end is greater than the other interval's end.
-        """
-        return self.end > other.end
+        if self.start != other.start:
+            return self.start < other.start
+        return self.end < other.end
 
     fn __len__(self) -> Int:
         """Returns the length of this interval.

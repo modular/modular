@@ -41,17 +41,26 @@ def test_interval() raises:
     assert_equal(interval, Interval(1, 10))
     assert_not_equal(interval, Interval(1, 11))
 
-    # Test less than comparisons
+    # Test less than comparisons (lexicographic: start first, then end)
     assert_true(
         interval < Interval(2, 11), msg=String(interval, " < Interval(2, 11)")
     )
-    assert_false(
+    assert_true(
         interval < Interval(1, 11), msg=String(interval, " < Interval(1, 11)")
     )
+    assert_false(
+        interval < Interval(1, 10), msg=String(interval, " < Interval(1, 10)")
+    )
+    assert_false(
+        interval < Interval(0, 20), msg=String(interval, " < Interval(0, 20)")
+    )
 
-    # Test greater than comparisons
+    # Test greater than comparisons (lexicographic: start first, then end)
     assert_true(
         interval > Interval(0, 9), msg=String(interval, " > Interval(0, 9)")
+    )
+    assert_true(
+        interval > Interval(1, 9), msg=String(interval, " > Interval(1, 9)")
     )
     assert_false(
         interval > Interval(1, 11), msg=String(interval, " > Interval(1, 11)")
@@ -72,7 +81,7 @@ def test_interval() raises:
     assert_true(
         interval >= Interval(1, 10), msg=String(interval, " >= Interval(1, 10)")
     )
-    assert_true(
+    assert_false(
         interval >= Interval(2, 9), msg=String(interval, " >= Interval(2, 9)")
     )
     assert_false(
