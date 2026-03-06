@@ -200,7 +200,7 @@ fn kernel_4[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -343,9 +343,19 @@ fn kernel_4[
     comptime for tma_n in range(BN // TMA_BN):
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range(TMA_BN // 16):
-                var d_reg = c_frag.slice[
-                    8, offset=(i + tma_n * (TMA_BN // 16)) * 8
-                ]().cast[DType.bfloat16]()
+                var d_reg = SIMD[DType.bfloat16, 8]()
+
+                comptime for _ei in range(4):
+                    comptime _src_offset = (
+                        i + tma_n * (TMA_BN // 16)
+                    ) * 8 + 2 * _ei
+                    var pair = SIMD[DType.float32, 2](
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset]),
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset + 1]),
+                    )
+                    var casted = pair.cast[DType.bfloat16]()
+                    d_reg[2 * _ei] = casted[0]
+                    d_reg[2 * _ei + 1] = casted[1]
 
                 var st_matrix_args = RuntimeTuple[
                     IntTuple(

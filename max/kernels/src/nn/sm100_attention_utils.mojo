@@ -355,9 +355,12 @@ struct TMemTile[
                         m_mma=m_mma,
                     ]()
                     tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    frag = ptr.load[width=offsets.local_frag_size_b32](
-                        offsets.ptr_offset
-                    )
+                    var frag = InlineArray[
+                        Scalar[DType.uint32], offsets.local_frag_size_b32
+                    ](uninitialized=True)
+
+                    comptime for _i in range(offsets.local_frag_size_b32):
+                        frag[_i] = ptr.load(offsets.ptr_offset + _i)
                     # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
                     tcgen05_st[
                         datapaths=16,  # first dimension of the shape
@@ -469,7 +472,9 @@ struct TMemTile[
                         pack=False,
                         width=offsets.local_frag_size_b32,
                     ](tmem)
-                    ptr.store(offsets.ptr_offset, frag)
+
+                    comptime for _i in range(offsets.local_frag_size_b32):
+                        ptr.store(offsets.ptr_offset + _i, frag[_i])
 
         comptime max_value = 64 if st_mat_layout.bits == 128 else 32
         break_into_powers_of_two[
@@ -479,11 +484,15 @@ struct TMemTile[
     @always_inline
     fn load_async(
         self,
-        out dst: LocalTensor[Self.dtype, row_major[Self.BN]()],
+        out dst: InlineArray[Scalar[Self.dtype], Self.BN],
     ):
-        dst = tt_stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
-        ](row_major[Self.BN]())
+        dst = InlineArray[Scalar[Self.dtype], Self.BN](uninitialized=True)
+        # The uint32 bitcast path below assumes dtype_size == 4.
+        # Sub-32-bit types (bf16, f16) pack multiple elements per uint32
+        # and would need unpacking logic not yet implemented.
+        comptime assert (
+            Self.dtype_size == 4
+        ), "load_async only supports 32-bit dtypes"
         comptime repeat = Self.dtype_size * Self.BN // 4
         comptime dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
 
@@ -500,7 +509,9 @@ struct TMemTile[
                         pack=False,
                         width=pow_two,
                     ](self.tmem_addr + UInt32(offset))
-                    dst.ptr.store(offset, frag0)
+
+                    comptime for _i in range(pow_two):
+                        dst[offset + _i] = frag0[_i]
                 else:
                     frag1 = tcgen05_ld[
                         datapaths=32,  # first dimension of the shape
@@ -510,9 +521,9 @@ struct TMemTile[
                         pack=False,
                         width=pow_two,
                     ](self.tmem_addr + UInt32(offset))
-                    dst.ptr.bitcast[UInt32]().store[width=pow_two](
-                        offset, frag1
-                    )
+
+                    comptime for _i in range(pow_two):
+                        dst[offset + _i] = bitcast[Self.dtype](frag1[_i])
 
         break_into_powers_of_two[func=load_fn, N=repeat, max_value=128]()
 
@@ -524,25 +535,111 @@ struct TMemTile[
         @always_inline
         fn store_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
-                var frag: SIMD[DType.uint32, pow_two * Self.dtype_size // 4]
+                comptime frag_width = pow_two * Self.dtype_size // 4
+                var frag = InlineArray[Scalar[DType.uint32], frag_width](
+                    uninitialized=True
+                )
 
                 comptime if src_type == Self.dtype:
-                    frag = src.ptr.bitcast[UInt32]().load[
-                        width=pow_two * Self.dtype_size // 4
-                    ](offset)
-                else:
-                    comptime src_offset = offset
-                    comptime src_frag = pow_two
-                    frag = bitcast[
-                        DType.uint32, pow_two * Self.dtype_size // 4
-                    ](
-                        src.ptr.load[width=src_frag](src_offset).cast[
-                            Self.dtype
-                        ]()
+                    comptime for _i in range(frag_width):
+                        frag[_i] = src.ptr.bitcast[UInt32]().load(offset + _i)
+                elif pow_two > 1:
+                    comptime size_ratio = size_of[src_type]() // Self.dtype_size
+                    comptime cast_width = min(
+                        4 if size_ratio
+                        >= 4 else (2 if size_ratio >= 2 else pow_two),
+                        pow_two,
                     )
+                    comptime u32_per_cast = cast_width * Self.dtype_size // 4
+                    comptime num_casts = pow_two // cast_width
+
+                    comptime if u32_per_cast >= 1:
+                        comptime for _i in range(num_casts):
+                            var src_vec = src.ptr.load[width=cast_width](
+                                offset + _i * cast_width
+                            )
+                            var dst_vec = src_vec.cast[Self.dtype]()
+                            var packed_chunk = bitcast[
+                                DType.uint32, u32_per_cast
+                            ](dst_vec)
+                            comptime for _j in range(u32_per_cast):
+                                frag[_i * u32_per_cast + _j] = packed_chunk[_j]
+                    else:
+                        var packed = bitcast[DType.uint32, frag_width](
+                            src.ptr.load[width=pow_two](offset).cast[
+                                Self.dtype
+                            ]()
+                        )
+                        comptime for _i in range(frag_width):
+                            frag[_i] = packed[_i]
+                else:
+                    frag[0] = bitcast[DType.uint32](src[0].cast[Self.dtype]())
+
                 tcgen05_st[
                     datapaths=32,  # first dimension of the shape
                     bits=32,  # second dimension of the shape
+                    repeat=pow_two * Self.dtype_size // 4,
+                    pack=False,
+                ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
+
+        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
+
+    @always_inline
+    fn store_async[
+        src_type: DType,
+        src_len: Int,
+        src_offset: Int = 0,
+    ](self, src: InlineArray[Scalar[src_type], src_len]):
+        @parameter
+        @always_inline
+        fn store_fn[pow_two: Int, offset: Int]():
+            comptime if pow_two > 0:
+                comptime frag_width = pow_two * Self.dtype_size // 4
+                var frag = InlineArray[Scalar[DType.uint32], frag_width](
+                    uninitialized=True
+                )
+
+                comptime if src_type == Self.dtype:
+                    comptime for _i in range(frag_width):
+                        frag[_i] = bitcast[DType.uint32](
+                            src[src_offset + offset + _i]
+                        )
+                else:
+                    comptime sub_elements = 4 // Self.dtype_size
+                    comptime size_ratio = size_of[src_type]() // Self.dtype_size
+                    comptime cast_width = 4 if size_ratio >= 4 else (
+                        2 if size_ratio >= 2 else 1
+                    )
+
+                    comptime for _i in range(frag_width):
+                        var x: SIMD[Self.dtype, sub_elements] = {}
+                        comptime if cast_width >= 2:
+                            comptime for _j in range(
+                                0, sub_elements, cast_width
+                            ):
+                                var src_vec: SIMD[src_type, cast_width] = {}
+                                comptime for _k in range(cast_width):
+                                    comptime idx = (
+                                        src_offset
+                                        + offset
+                                        + _i * sub_elements
+                                        + _j
+                                        + _k
+                                    )
+                                    src_vec[_k] = src[idx]
+                                var dst_vec = src_vec.cast[Self.dtype]()
+                                comptime for _k in range(cast_width):
+                                    x[_j + _k] = dst_vec[_k]
+                        else:
+                            comptime for _j in range(sub_elements):
+                                comptime idx = (
+                                    src_offset + offset + _i * sub_elements + _j
+                                )
+                                x[_j] = src[idx].cast[Self.dtype]()
+                        frag[_i] = bitcast[DType.uint32, 1](x)
+                tcgen05_st[
+                    datapaths=32,
+                    bits=32,
                     repeat=pow_two * Self.dtype_size // 4,
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
@@ -1182,16 +1279,16 @@ fn elect_mma_arrive[
 fn maximum[
     BN: Int, //, *, width: Int = 4
 ](
-    x: LocalTensor[DType.float32, row_major[BN]()],
+    x: InlineArray[Scalar[DType.float32], BN],
     out res: StaticTuple[Float32, width],
 ):
     res = {}
 
     comptime for w in range(width):
         res[w] = max_ftz(
-            rebind[Float32](x[3 * w]),
-            rebind[Float32](x[3 * w + 1]),
-            rebind[Float32](x[3 * w + 2]),
+            x[3 * w],
+            x[3 * w + 1],
+            x[3 * w + 2],
         )
 
     # max idx = 3 * (width-1) + 2 = 3*width - 1
@@ -1204,8 +1301,8 @@ fn maximum[
         comptime for w in range(width):
             res[w] = max_ftz(
                 res[w],
-                rebind[Float32](x[col + 2 * w]),
-                rebind[Float32](x[col + 2 * w + 1]),
+                x[col + 2 * w],
+                x[col + 2 * w + 1],
             )
 
     comptime remainder_base = 3 * width + 2 * width * num_iters
@@ -1214,19 +1311,19 @@ fn maximum[
     comptime for w in range(end_iters):
         res[w] = max_ftz(
             res[w],
-            rebind[Float32](x[remainder_base + 2 * w]),
-            rebind[Float32](x[remainder_base + 2 * w + 1]),
+            x[remainder_base + 2 * w],
+            x[remainder_base + 2 * w + 1],
         )
 
     comptime if (BN - remainder_base) % 2 == 1:
-        res[end_iters] = max_ftz(res[end_iters], rebind[Float32](x[BN - 1]))
+        res[end_iters] = max_ftz(res[end_iters], x[BN - 1])
 
 
 @always_inline
 fn maximum[
     BN: Int, //, *, width: Int = 4
 ](
-    x: LocalTensor[DType.float32, row_major[BN]()],
+    x: InlineArray[Scalar[DType.float32], BN],
     init: StaticTuple[Float32, width],
     out res: StaticTuple[Float32, width],
 ):
@@ -1238,9 +1335,7 @@ fn maximum[
     comptime for i in range(num_iters):
         comptime for w in range(width):
             comptime j = i * 2 * width + 2 * w
-            res[w] = max_ftz(
-                res[w], rebind[Float32](x[j]), rebind[Float32](x[j + 1])
-            )
+            res[w] = max_ftz(res[w], x[j], x[j + 1])
 
     comptime remainder_base = 2 * width * num_iters
     comptime end_iters = (BN - remainder_base) // 2
@@ -1248,12 +1343,12 @@ fn maximum[
     comptime for w in range(end_iters):
         res[w] = max_ftz(
             res[w],
-            rebind[Float32](x[remainder_base + 2 * w]),
-            rebind[Float32](x[remainder_base + 2 * w + 1]),
+            x[remainder_base + 2 * w],
+            x[remainder_base + 2 * w + 1],
         )
 
     comptime if (BN - remainder_base) % 2 == 1:
-        res[end_iters] = max_ftz(res[end_iters], rebind[Float32](x[BN - 1]))
+        res[end_iters] = max_ftz(res[end_iters], x[BN - 1])
 
 
 @always_inline
@@ -1857,7 +1952,7 @@ fn apply_mask[
     mask_strategy: MaskStrategy,
     skip_scale: Bool = False,
 ](
-    srow: LocalTensor[DType.float32, row_major[BN]()],
+    mut srow: InlineArray[Scalar[DType.float32], BN],
     mask: MaskType,
     scale_log2e: Float32,
     *,
@@ -1870,7 +1965,6 @@ fn apply_mask[
 ):
     comptime simd_size = 2
     comptime F32x2 = SIMD[DType.float32, simd_size]
-    vs = srow.vectorize[simd_size]()
 
     comptime if (
         MaskStrategy.LOWER_TRIANGULAR in mask_strategy
@@ -1924,9 +2018,11 @@ fn apply_mask[
                 var s: F32x2
 
                 comptime if skip_scale:
-                    s = rebind[F32x2](vs[frag_col_simd])
+                    s = F32x2(srow[frag_col], srow[frag_col + 1])
                 else:
-                    s = mul_ftz(rebind[F32x2](vs[frag_col_simd]), scale_log2e)
+                    s = mul_ftz(
+                        F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
+                    )
 
                 comptime for i in range(simd_size):
                     comptime midx = n * simd_size + i
@@ -1936,21 +2032,21 @@ fn apply_mask[
                     s[i] = val if in_bound else MASK_VALUE
 
                 var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
-                vs[frag_col_simd] = rebind[vs.ElementType](
-                    apply_oob_mask[
-                        mask_strategy=mask_strategy,
-                        apply_log2e_after_mask=MaskType.apply_log2e_after_mask,
-                    ](
-                        s,
-                        prompt_idx=prompt_idx,
-                        q_head_idx=q_head_idx,
-                        kv_tile_start_row=kv_tile_start_row,
-                        max_seq_len=max_seq_len,
-                        num_keys=num_keys,
-                        score_row=score_row,
-                        score_col=score_col,
-                    )
+                var result = apply_oob_mask[
+                    mask_strategy=mask_strategy,
+                    apply_log2e_after_mask=MaskType.apply_log2e_after_mask,
+                ](
+                    s,
+                    prompt_idx=prompt_idx,
+                    q_head_idx=q_head_idx,
+                    kv_tile_start_row=kv_tile_start_row,
+                    max_seq_len=max_seq_len,
+                    num_keys=num_keys,
+                    score_row=score_row,
+                    score_col=score_col,
                 )
+                srow[frag_col] = result[0]
+                srow[frag_col + 1] = result[1]
             n_valid = max(n_valid - 32, 0)
 
     else:
@@ -1958,13 +2054,15 @@ fn apply_mask[
 
         comptime for n in range(block_size):
             # score_col = mask_frag_col + j * 8
+            comptime frag_col = simd_size * n
             var s: F32x2
 
             comptime if skip_scale:
-                s = rebind[F32x2](vs[n])
+                s = F32x2(srow[frag_col], srow[frag_col + 1])
             else:
-                s = mul_ftz(rebind[F32x2](vs[n]), scale_log2e)
-            comptime frag_col = simd_size * n
+                s = mul_ftz(
+                    F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
+                )
             var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
 
             comptime if MaskStrategy.COMPUTED in mask_strategy:
@@ -1978,21 +2076,21 @@ fn apply_mask[
                     s,
                 )
 
-            vs[n] = rebind[vs.ElementType](
-                apply_oob_mask[
-                    mask_strategy=mask_strategy,
-                    apply_log2e_after_mask=MaskType.apply_log2e_after_mask,
-                ](
-                    s,
-                    prompt_idx=prompt_idx,
-                    q_head_idx=q_head_idx,
-                    kv_tile_start_row=kv_tile_start_row,
-                    max_seq_len=max_seq_len,
-                    num_keys=num_keys,
-                    score_row=score_row,
-                    score_col=score_col,
-                )
+            var result = apply_oob_mask[
+                mask_strategy=mask_strategy,
+                apply_log2e_after_mask=MaskType.apply_log2e_after_mask,
+            ](
+                s,
+                prompt_idx=prompt_idx,
+                q_head_idx=q_head_idx,
+                kv_tile_start_row=kv_tile_start_row,
+                max_seq_len=max_seq_len,
+                num_keys=num_keys,
+                score_row=score_row,
+                score_col=score_col,
             )
+            srow[frag_col] = result[0]
+            srow[frag_col + 1] = result[1]
 
 
 struct FA4MiscMBars[

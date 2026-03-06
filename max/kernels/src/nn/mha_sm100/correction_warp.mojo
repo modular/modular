@@ -29,6 +29,7 @@ from nn.fa4_config import FA4Config, EnableForcedOrdering
 from nn.sm100_attention_utils import (
     SharedMemPointer,
     FA4MiscMBars,
+    mul_ftz,
 )
 from nn.mha_mask import MHAMask
 
@@ -122,6 +123,7 @@ fn fa4_correction[
             if change:
                 # TODO: experiment with different batch sizes.
                 # The idea here is to both pipeline, and reduce peak register use.
+                var c_pair = SIMD[DType.float32, 2](c_scalar, c_scalar)
 
                 var o_tmem: TmemAddress
 
@@ -130,8 +132,8 @@ fn fa4_correction[
                 else:
                     o_tmem = o1_tmem
 
-                var o_b0: SIMD[accum_type, batch_size]
-                var o_b1: SIMD[accum_type, batch_size]
+                var o_b0: InlineArray[Scalar[accum_type], batch_size]
+                var o_b1: InlineArray[Scalar[accum_type], batch_size]
                 o_b0 = tcgen05_ld[
                     datapaths=32,
                     bits=32,
@@ -162,12 +164,26 @@ fn fa4_correction[
                         pack=False,
                         width=batch_size,
                     ]((o_tmem + b1_offset).addr)
+                    var o_b0_scaled = InlineArray[
+                        Scalar[accum_type], batch_size
+                    ](uninitialized=True)
+
+                    comptime for _i in range(0, batch_size, 2):
+                        var pair = mul_ftz(
+                            SIMD[DType.float32, 2](
+                                rebind[Scalar[DType.float32]](o_b0[_i]),
+                                rebind[Scalar[DType.float32]](o_b0[_i + 1]),
+                            ),
+                            c_pair,
+                        )
+                        o_b0_scaled[_i] = pair[0]
+                        o_b0_scaled[_i + 1] = pair[1]
                     tcgen05_st[  # 0b0*c_scalar store
                         datapaths=32,
                         bits=32,
                         repeat=batch_size,
                         pack=False,
-                    ]((o_tmem + b0_offset0).addr, o_b0 * c_scalar)
+                    ]((o_tmem + b0_offset0).addr, o_b0_scaled)
 
                     comptime if b0_offset1 + batch_size <= config.depth:
                         o_b0 = tcgen05_ld[  # 0b0 start
@@ -178,21 +194,49 @@ fn fa4_correction[
                             pack=False,
                             width=batch_size,
                         ]((o_tmem + b0_offset1).addr)
+                    var o_b1_scaled = InlineArray[
+                        Scalar[accum_type], batch_size
+                    ](uninitialized=True)
+
+                    comptime for _i in range(0, batch_size, 2):
+                        var pair = mul_ftz(
+                            SIMD[DType.float32, 2](
+                                rebind[Scalar[DType.float32]](o_b1[_i]),
+                                rebind[Scalar[DType.float32]](o_b1[_i + 1]),
+                            ),
+                            c_pair,
+                        )
+                        o_b1_scaled[_i] = pair[0]
+                        o_b1_scaled[_i + 1] = pair[1]
                     tcgen05_st[  # 0b0*c_scalar store
                         datapaths=32,
                         bits=32,
                         repeat=batch_size,
                         pack=False,
-                    ]((o_tmem + b1_offset).addr, o_b1 * c_scalar)
+                    ]((o_tmem + b1_offset).addr, o_b1_scaled)
 
                 comptime if load_remainder > 0:
                     comptime offset = 2 * batch_size * load_iters
+                    var o_b0_scaled_rem = InlineArray[
+                        Scalar[accum_type], load_remainder
+                    ](uninitialized=True)
+
+                    comptime for _i in range(0, load_remainder, 2):
+                        var pair = mul_ftz(
+                            SIMD[DType.float32, 2](
+                                rebind[Scalar[DType.float32]](o_b0[_i]),
+                                rebind[Scalar[DType.float32]](o_b0[_i + 1]),
+                            ),
+                            c_pair,
+                        )
+                        o_b0_scaled_rem[_i] = pair[0]
+                        o_b0_scaled_rem[_i + 1] = pair[1]
                     tcgen05_st[  # 0b0*c_scalar store
                         datapaths=32,
                         bits=32,
                         repeat=load_remainder,
                         pack=False,
-                    ]((o_tmem + offset).addr, o_b0 * c_scalar)
+                    ]((o_tmem + offset).addr, o_b0_scaled_rem)
                 tcgen05_store_wait()
                 tcgen05_fence_before()
 

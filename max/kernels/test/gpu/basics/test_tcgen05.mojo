@@ -120,7 +120,7 @@ fn st_test_fn():
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     var tmem_addr = ptr_tmem_addr[0]
-    var data = SIMD[DType.float32, 64](0)
+    var data = InlineArray[Scalar[DType.float32], 64](uninitialized=True)
     tcgen05_st[
         datapaths=32,
         bits=32,

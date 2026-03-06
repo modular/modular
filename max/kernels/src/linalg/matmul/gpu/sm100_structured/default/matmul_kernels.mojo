@@ -1573,7 +1573,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         # Shared memory pointer to hold tensor memory address
         var ptr_tmem_addr = (b_smem + Self.b_size).bitcast[UInt32]()
 
-        var c_frag = SIMD[Self.accum_type, Self.c_frag_size]()
+        var c_frag: InlineArray[Scalar[Self.accum_type], Self.c_frag_size]
 
         comptime a_expected_bytes = Self.a_size * size_of[Self.a_type]()
         comptime b_expected_bytes = Self.b_size * size_of[Self.b_type]()

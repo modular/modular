@@ -389,22 +389,21 @@ fn store_C[
     # Load c_frag_upper
     # Load once if MMA_N is power of 2, otherwise load twice
 
-    var c_upper_pow_2_main: SIMD[
-        accum_type, main_repetition * num_regs_per_thread
-    ]
-
-    var c_lower_pow_2_main: SIMD[
-        accum_type, main_repetition * num_regs_per_thread
-    ]
-
-    # dummy registers in case there's no remainder. We still need to
-    # satisfy power-of-2 when using SIMD.
-    comptime remainder_reg_size = max(
-        2, remainder_repetitions * num_regs_per_thread
+    comptime main_frag_size = main_repetition * num_regs_per_thread
+    comptime remainder_frag_size = max(
+        1, remainder_repetitions * num_regs_per_thread
     )
 
-    var c_upper_pow_2_rem = SIMD[accum_type, remainder_reg_size](0)
-    var c_lower_pow_2_rem = SIMD[accum_type, remainder_reg_size](0)
+    var c_upper_pow_2_main: InlineArray[Scalar[accum_type], main_frag_size]
+
+    var c_lower_pow_2_main: InlineArray[Scalar[accum_type], main_frag_size]
+
+    var c_upper_pow_2_rem = InlineArray[
+        Scalar[accum_type], remainder_frag_size
+    ](uninitialized=True)
+    var c_lower_pow_2_rem = InlineArray[
+        Scalar[accum_type], remainder_frag_size
+    ](uninitialized=True)
 
     # Primary Load
     c_upper_pow_2_main = tcgen05_ld[
@@ -413,7 +412,7 @@ fn store_C[
         repeat=main_repetition,
         dtype=accum_type,
         pack=False,
-        width=c_upper_pow_2_main.size,
+        width=main_frag_size,
     ](tmem_addr | UInt32((warp_id * 32) << 16))
 
     # Load c_frag_lower
@@ -424,7 +423,7 @@ fn store_C[
         repeat=main_repetition,
         dtype=accum_type,
         pack=False,
-        width=c_lower_pow_2_main.size,
+        width=main_frag_size,
     ](tmem_addr | UInt32((warp_id * 32 + 16) << 16))
 
     comptime if MMA_N != prev_power_of_two(MMA_N):
@@ -437,7 +436,7 @@ fn store_C[
             repeat=remainder_repetitions,
             dtype=accum_type,
             pack=False,
-            width=c_upper_pow_2_rem.size,
+            width=remainder_frag_size,
         ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE)) << 16))
 
         c_lower_pow_2_rem = tcgen05_ld[
@@ -446,7 +445,7 @@ fn store_C[
             repeat=remainder_repetitions,
             dtype=accum_type,
             pack=False,
-            width=c_lower_pow_2_rem.size,
+            width=remainder_frag_size,
         ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE) + 16) << 16))
 
     # Remainder load happens later, only if needed
@@ -484,8 +483,8 @@ fn store_C[
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
-        var d_reg_upper: SIMD[DType.bfloat16, 8]
-        var d_reg_lower: SIMD[DType.bfloat16, 8]
+        var d_reg_upper = SIMD[DType.bfloat16, 8]()
+        var d_reg_lower = SIMD[DType.bfloat16, 8]()
 
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range((TMA_BN // 16)):
@@ -501,8 +500,8 @@ fn store_C[
                 ](Int(lane_id()), i, m_mma, 0)
                 # i,0,0
 
-                var d_reg_upper: SIMD[DType.bfloat16, 8]
-                var d_reg_lower: SIMD[DType.bfloat16, 8]
+                var d_reg_upper = SIMD[DType.bfloat16, 8]()
+                var d_reg_lower = SIMD[DType.bfloat16, 8]()
 
                 # if MMA_N is a power of 2, then just use the main load for all iterations
                 # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists
@@ -513,19 +512,57 @@ fn store_C[
                 ):
                     # every iteration of tma_n is a motion across BM * 32 elements
                     # and we agree that each of those has 2 rows * 8 elements in the register
-                    d_reg_upper = c_upper_pow_2_main.slice[
-                        8, offset=(i * 8) + tma_n * (TMA_BN // 16) * 8
-                    ]().cast[DType.bfloat16]()
-                    d_reg_lower = c_lower_pow_2_main.slice[
-                        8, offset=(i * 8) + tma_n * (TMA_BN // 16) * 8
-                    ]().cast[DType.bfloat16]()
+                    comptime for _ei in range(4):
+                        comptime _src_offset = (i * 8) + tma_n * (
+                            TMA_BN // 16
+                        ) * 8 + 2 * _ei
+                        var upper_pair = SIMD[accum_type, 2](
+                            rebind[Scalar[accum_type]](
+                                c_upper_pow_2_main[_src_offset]
+                            ),
+                            rebind[Scalar[accum_type]](
+                                c_upper_pow_2_main[_src_offset + 1]
+                            ),
+                        )
+                        var lower_pair = SIMD[accum_type, 2](
+                            rebind[Scalar[accum_type]](
+                                c_lower_pow_2_main[_src_offset]
+                            ),
+                            rebind[Scalar[accum_type]](
+                                c_lower_pow_2_main[_src_offset + 1]
+                            ),
+                        )
+                        var upper_casted = upper_pair.cast[DType.bfloat16]()
+                        var lower_casted = lower_pair.cast[DType.bfloat16]()
+                        d_reg_upper[2 * _ei] = upper_casted[0]
+                        d_reg_upper[2 * _ei + 1] = upper_casted[1]
+                        d_reg_lower[2 * _ei] = lower_casted[0]
+                        d_reg_lower[2 * _ei + 1] = lower_casted[1]
                 else:
-                    d_reg_upper = c_upper_pow_2_rem.slice[
-                        8, offset=(i * 8)
-                    ]().cast[DType.bfloat16]()
-                    d_reg_lower = c_lower_pow_2_rem.slice[
-                        8, offset=(i * 8)
-                    ]().cast[DType.bfloat16]()
+                    comptime for _ei in range(4):
+                        comptime _src_offset = (i * 8) + 2 * _ei
+                        var upper_pair = SIMD[accum_type, 2](
+                            rebind[Scalar[accum_type]](
+                                c_upper_pow_2_rem[_src_offset]
+                            ),
+                            rebind[Scalar[accum_type]](
+                                c_upper_pow_2_rem[_src_offset + 1]
+                            ),
+                        )
+                        var lower_pair = SIMD[accum_type, 2](
+                            rebind[Scalar[accum_type]](
+                                c_lower_pow_2_rem[_src_offset]
+                            ),
+                            rebind[Scalar[accum_type]](
+                                c_lower_pow_2_rem[_src_offset + 1]
+                            ),
+                        )
+                        var upper_casted = upper_pair.cast[DType.bfloat16]()
+                        var lower_casted = lower_pair.cast[DType.bfloat16]()
+                        d_reg_upper[2 * _ei] = upper_casted[0]
+                        d_reg_upper[2 * _ei + 1] = upper_casted[1]
+                        d_reg_lower[2 * _ei] = lower_casted[0]
+                        d_reg_lower[2 * _ei + 1] = lower_casted[1]
 
                 var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
                 var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)

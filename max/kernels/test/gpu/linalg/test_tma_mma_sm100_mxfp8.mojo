@@ -233,7 +233,7 @@ fn block_scaled_mxfp8_kernel[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()

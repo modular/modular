@@ -309,7 +309,9 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
     # final results accumulator regs for C
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag = InlineArray[Scalar[accum_type], c_frag_size](
+        fill=Scalar[accum_type](0)
+    )
 
     # temporary accumulators for TMEM loads
     comptime total_repeat = BN // 8
@@ -319,7 +321,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     comptime assert (
         total_repeat % repeat == 0
     ), "total_repeat must be divisible by repeat"
-    var c_frag_temp = SIMD[accum_type, temp_cfrags_size]()
+    var c_frag_temp: InlineArray[Scalar[accum_type], temp_cfrags_size]
 
     for k_iter in range(num_iters):
         if elect_one_thread:
@@ -403,14 +405,17 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                     accum_type
                 ]()
 
-                var scale = a_scale * b_scale
+                var scale = rebind[Scalar[accum_type]](a_scale * b_scale)
+                var scale_pair = SIMD[accum_type, 2](scale)
 
-                c_frag[ld_iter * temp_cfrags_size + 2 * j] += c_frag_temp[
-                    2 * j
-                ] * rebind[Scalar[accum_type]](scale)
-                c_frag[ld_iter * temp_cfrags_size + 2 * j + 1] += c_frag_temp[
-                    2 * j + 1
-                ] * rebind[Scalar[accum_type]](scale)
+                comptime idx = ld_iter * temp_cfrags_size + 2 * j
+                var c_pair = SIMD[accum_type, 2](c_frag[idx], c_frag[idx + 1])
+                var t_pair = SIMD[accum_type, 2](
+                    c_frag_temp[2 * j], c_frag_temp[2 * j + 1]
+                )
+                var result = c_pair + t_pair * scale_pair
+                c_frag[idx] = result[0]
+                c_frag[idx + 1] = result[1]
 
         barrier()
 
@@ -924,8 +929,21 @@ fn multi_stage_reg_epilogue[
         var c_smem_warp_tile_upper = c_smem_warp_tile.tile[data_paths, stageN](
             0, 0
         )
+        var upper_st = InlineArray[Scalar[c_type], fragments_per_stage](
+            uninitialized=True
+        )
+
+        comptime cast_width = 4 // size_of[Scalar[c_type]]()
+        comptime for _i in range(fragments_per_stage // cast_width):
+            comptime offset = _i * cast_width
+            var src = SIMD[accum_type, cast_width]()
+            comptime for _j in range(cast_width):
+                src[_j] = upper_frag[offset + _j]
+            var casted = src.cast[c_type]()
+            comptime for _j in range(cast_width):
+                upper_st[offset + _j] = casted[_j]
         stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
-            upper_frag, c_smem_warp_tile_upper
+            upper_st, c_smem_warp_tile_upper
         )
 
         var c_smem_warp_tile_lower = c_smem_warp_tile.tile[data_paths, stageN](
@@ -933,8 +951,20 @@ fn multi_stage_reg_epilogue[
         )
 
         comptime if is_lower_frag_required:
+            var lower_st = InlineArray[Scalar[c_type], fragments_per_stage](
+                uninitialized=True
+            )
+
+            comptime for _i in range(fragments_per_stage // cast_width):
+                comptime offset = _i * cast_width
+                var src = SIMD[accum_type, cast_width]()
+                comptime for _j in range(cast_width):
+                    src[_j] = lower_frag[offset + _j]
+                var casted = src.cast[c_type]()
+                comptime for _j in range(cast_width):
+                    lower_st[offset + _j] = casted[_j]
             stsm_helper[swizzle, UInt(stageN), swizzle_mode=c_swizzle](
-                lower_frag, c_smem_warp_tile_lower
+                lower_st, c_smem_warp_tile_lower
             )
 
         # Guard the write to shared memory is done.
@@ -1311,8 +1341,10 @@ fn promote_accumulators[
     syncwarp()
 
     comptime rep_frag_size = repeats * fragment_size
-    var upper_frag: SIMD[accum_type, rep_frag_size]
-    var lower_frag = SIMD[accum_type, rep_frag_size]()
+    var upper_frag: InlineArray[Scalar[accum_type], rep_frag_size]
+    var lower_frag = InlineArray[Scalar[accum_type], rep_frag_size](
+        uninitialized=True
+    )
 
     comptime for stage in range(num_stages):
         var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
@@ -1362,9 +1394,6 @@ fn promote_accumulators[
             comptime for j in range(fragment_size // 2):
                 comptime offset = ld_iter * fragment_size + j * 2
 
-                var upper_elems = upper_frag.slice[2, offset=offset]()
-                var lower_elems = lower_frag.slice[2, offset=offset]()
-
                 var upper_a_scale = (
                     upper_sfa0_smem if j == 0 else upper_sfa1_smem
                 )
@@ -1376,19 +1405,25 @@ fn promote_accumulators[
                 var lower_scale = lower_a_scale * b_scale
 
                 c_upper_main_tile[stage, offset] += rebind[Scalar[accum_type]](
-                    upper_elems[0]
+                    upper_frag[offset]
                 ) * rebind[Scalar[accum_type]](upper_scale)
                 c_upper_main_tile[stage, offset + 1] += rebind[
                     Scalar[accum_type]
-                ](upper_elems[1]) * rebind[Scalar[accum_type]](upper_scale)
+                ](upper_frag[offset + 1]) * rebind[Scalar[accum_type]](
+                    upper_scale
+                )
 
                 comptime if is_lower_frag_required:
                     c_lower_main_tile[stage, offset] += rebind[
                         Scalar[accum_type]
-                    ](lower_elems[0]) * rebind[Scalar[accum_type]](lower_scale)
+                    ](lower_frag[offset]) * rebind[Scalar[accum_type]](
+                        lower_scale
+                    )
                     c_lower_main_tile[stage, offset + 1] += rebind[
                         Scalar[accum_type]
-                    ](lower_elems[1]) * rebind[Scalar[accum_type]](lower_scale)
+                    ](lower_frag[offset + 1]) * rebind[Scalar[accum_type]](
+                        lower_scale
+                    )
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
