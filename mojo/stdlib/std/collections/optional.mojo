@@ -312,6 +312,81 @@ struct Optional[T: Movable](
         """
         return not (self == rhs)
 
+    fn __lt__[
+        _T: Comparable & Copyable
+    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
+        """Return `True` if this `Optional` is less than `rhs`.
+
+        Uses the total order: `None < Some(x)` for all `x`, and
+        `Some(a) < Some(b)` when `a < b`.
+
+        Parameters:
+            _T: The type of the elements. Must implement the traits
+                `Copyable` and `Comparable`.
+
+        Args:
+            rhs: The value to compare to.
+
+        Returns:
+            True if this `Optional` is less than `rhs`.
+        """
+        if self:
+            if rhs:
+                return self.value() < rhs.value()
+            return False  # Some(x) is not less than None
+        return Bool(rhs)  # None < Some(x) is True; None < None is False
+
+    fn __le__[
+        _T: Comparable & Copyable
+    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
+        """Return `True` if this `Optional` is less than or equal to `rhs`.
+
+        Parameters:
+            _T: The type of the elements. Must implement the traits
+                `Copyable` and `Comparable`.
+
+        Args:
+            rhs: The value to compare to.
+
+        Returns:
+            True if this `Optional` is less than or equal to `rhs`.
+        """
+        return not (rhs < self)
+
+    fn __gt__[
+        _T: Comparable & Copyable
+    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
+        """Return `True` if this `Optional` is greater than `rhs`.
+
+        Parameters:
+            _T: The type of the elements. Must implement the traits
+                `Copyable` and `Comparable`.
+
+        Args:
+            rhs: The value to compare to.
+
+        Returns:
+            True if this `Optional` is greater than `rhs`.
+        """
+        return rhs < self
+
+    fn __ge__[
+        _T: Comparable & Copyable
+    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
+        """Return `True` if this `Optional` is greater than or equal to `rhs`.
+
+        Parameters:
+            _T: The type of the elements. Must implement the traits
+                `Copyable` and `Comparable`.
+
+        Args:
+            rhs: The value to compare to.
+
+        Returns:
+            True if this `Optional` is greater than or equal to `rhs`.
+        """
+        return not (self < rhs)
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#

@@ -252,6 +252,50 @@ def test_optional_of_move_only_type() raises:
     assert_equal(val.data, 10)
 
 
+def test_optional_comparison() raises:
+    var a = Optional(1)
+    var b = Optional(2)
+    var c = Optional(1)
+    var none1 = Optional[Int]()
+    var none2 = Optional[Int]()
+
+    # None < Some(x) for all x.
+    assert_true(none1 < a)
+    assert_true(none1 < b)
+
+    # Some(x) is not less than None.
+    assert_false(a < none1)
+    assert_false(b < none1)
+
+    # None is not less than None.
+    assert_false(none1 < none2)
+
+    # Some(a) < Some(b) when a < b.
+    assert_true(a < b)
+    assert_false(b < a)
+    assert_false(a < c)
+
+    # Less than or equal.
+    assert_true(a <= c)
+    assert_true(a <= b)
+    assert_false(b <= a)
+    assert_true(none1 <= none2)
+    assert_true(none1 <= a)
+
+    # Greater than.
+    assert_true(b > a)
+    assert_false(a > b)
+    assert_true(a > none1)
+    assert_false(none1 > a)
+
+    # Greater than or equal.
+    assert_true(a >= c)
+    assert_true(b >= a)
+    assert_false(a >= b)
+    assert_true(none1 >= none2)
+    assert_false(none1 >= a)
+
+
 def test_nicheable_size() raises:
     comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]
 
