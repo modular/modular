@@ -323,7 +323,9 @@ what we publish.
 - `BitSet` now supports operator overloads for set algebra: `|`/`|=` (union),
   `&`/`&=` (intersection), `-`/`-=` (difference), and `^`/`^=` (symmetric
   difference). A new `symmetric_difference()` method has also been added. These
-  match the operator interface already provided by `Set`.
+  match the operator interface already provided by `Set`. `BitSet` also now
+  supports `in` membership testing via `__contains__` (e.g.
+  `if idx in bitset:`).
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
