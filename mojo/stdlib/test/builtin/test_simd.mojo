@@ -1703,6 +1703,46 @@ def test_reduce_bit_count() raises:
     assert_equal(bool_true16.reduce_bit_count(), 16)
 
 
+def test_first_true() raises:
+    # All false — returns -1.
+    assert_equal(
+        SIMD[DType.bool, 4](False, False, False, False).first_true(), -1
+    )
+
+    # First lane true.
+    assert_equal(SIMD[DType.bool, 4](True, False, False, False).first_true(), 0)
+
+    # Middle lane true.
+    assert_equal(SIMD[DType.bool, 4](False, False, True, False).first_true(), 2)
+
+    # Last lane true.
+    assert_equal(SIMD[DType.bool, 4](False, False, False, True).first_true(), 3)
+
+    # Multiple true — returns the first.
+    assert_equal(SIMD[DType.bool, 4](False, True, True, True).first_true(), 1)
+
+    # Scalar true / false.
+    assert_equal(Scalar[DType.bool](True).first_true(), 0)
+    assert_equal(Scalar[DType.bool](False).first_true(), -1)
+
+
+def test_count_true() raises:
+    # All false.
+    assert_equal(
+        SIMD[DType.bool, 4](False, False, False, False).count_true(), 0
+    )
+
+    # All true.
+    assert_equal(SIMD[DType.bool, 4](True, True, True, True).count_true(), 4)
+
+    # Mixed.
+    assert_equal(SIMD[DType.bool, 4](True, False, True, True).count_true(), 3)
+
+    # Scalar.
+    assert_equal(Scalar[DType.bool](True).count_true(), 1)
+    assert_equal(Scalar[DType.bool](False).count_true(), 0)
+
+
 def test_pow() raises:
     comptime nan = FloatLiteral.nan
     comptime neg_zero = FloatLiteral.negative_zero

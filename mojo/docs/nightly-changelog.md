@@ -58,6 +58,13 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- `SIMD[DType.bool, N]` now has two new methods:
+  - `first_true()` -- returns the index of the first `True` lane, or `-1` if
+    all lanes are `False`. Replaces the manual `pack_bits` +
+    `count_trailing_zeros` pattern.
+  - `count_true()` -- returns the number of `True` lanes. A bool-specific
+    alias for `reduce_bit_count()`.
+
 ## Tooling changes
 
 ## ❌ Removed
