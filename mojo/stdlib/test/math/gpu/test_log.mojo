@@ -84,6 +84,14 @@ def test_log() raises:
         run_elementwise[DType.bfloat16, log10](ctx)
         run_elementwise[DType.bfloat16, log2](ctx)
 
+def test_log10_comptime():
+    comptime v1 = log10(1.0)
+    comptime v2 = log10(10.0)
+    comptime v3 = log10(100.0)
+
+    assert_almost_equal(v1, 0.0)
+    assert_almost_equal(v2, 1.0)
+    assert_almost_equal(v3, 2.0)
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
