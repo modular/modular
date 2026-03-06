@@ -20,6 +20,7 @@ from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
+from .ltx2_connectors import LTX2TextConnectors
 from .model_config import LTX2TextConnectorsConfig, LTX2TextConnectorsConfigBase
 from .weight_adapters import convert_safetensor_state_dict
 
@@ -46,9 +47,9 @@ class LTX2TextConnectorsModel(ComponentModel):
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():
-            t5 = T5EncoderModel(self.config)  # type: ignore[arg-type]
-            t5.to(self.devices[0])
-        self.model: Model = t5.compile(*t5.input_types(), weights=state_dict)  # type: ignore[assignment]
+            connectors = LTX2TextConnectors(self.config)  # type: ignore[arg-type]
+            connectors.to(self.devices[0])
+        self.model: Model = connectors.compile(*connectors.input_types(), weights=state_dict)  # type: ignore[assignment]
         return self.model
 
     def __call__(self, *args, **kwargs):
