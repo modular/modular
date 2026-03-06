@@ -699,6 +699,34 @@ void ClosureEmitter::processClosureTraits(
   }
 }
 
+bool ClosureEmitter::isClosureType(SharedState &shared, Type type) {
+  auto definesClosure = [&](TraitType traitType) {
+    for (auto sym : traitType.getSymbols()) {
+      ASTDecl &decl = shared.getDeclResolver().getDeclForTypeSymbol(sym);
+      if (auto traitOp =
+              dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation())) {
+        if (traitOp.getDefinesClosure())
+          return true;
+      }
+    }
+    return false;
+  };
+  if (auto traitType = dyn_cast<TraitType>(type))
+    return definesClosure(traitType);
+  if (auto structType = dyn_cast<LIT::StructType>(type)) {
+    ASTDecl &structDecl =
+        shared.getDeclResolver().getDeclForTypeSymbol(structType.getSymbol());
+    auto structDeclOp =
+        dyn_cast_if_present<LIT::StructDeclOp>(structDecl.getIfOperation());
+    if (!structDeclOp)
+      return false;
+    return definesClosure(structDeclOp.getCanonicalTrait());
+  }
+  if (auto refType = dyn_cast<RefType>(type))
+    return isClosureType(shared, refType.getElementType());
+  return false;
+}
+
 void ClosureEmitter::collectClosureExternalRefs(
     ParamDeclAttr closureParam, SmallVectorImpl<ClosureExternalRef> &refs) {
 

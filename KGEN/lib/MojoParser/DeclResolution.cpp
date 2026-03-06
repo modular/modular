@@ -1336,6 +1336,21 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
   auto [capturedRefs, _] = DeclResolver::createSelfContainedSignature(
       nestedFn.getFuncTypeGenerator());
+
+  // Register captured external parameter references so that call sites can
+  // pre-seed auxiliary parameters during overload fitness evaluation.
+  if (!capturedRefs.empty()) {
+    ASTDecl *enclosingDecl = nestedFnDecl.getParentDecl();
+    if (enclosingDecl) {
+      SmallVector<ClosureParamCapture> paramCaptures;
+      for (ParamDeclRefAttr ref : capturedRefs)
+        paramCaptures.push_back({ref.getName(), ref.getType()});
+      shared.addClosureParamCaptures(*enclosingDecl,
+                                     nestedFn.getSourceNameAttr(),
+                                     std::move(paramCaptures));
+    }
+  }
+
   ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
       loc, *moduleDecl, nestedFn.getFuncTypeGenerator(),
       nestedFn.getInlineLevel());

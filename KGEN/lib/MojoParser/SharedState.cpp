@@ -330,7 +330,7 @@ struct SharedState::Impl {
   /// the key ASTDecl wraps.
   DenseMap<ASTDecl *, llvm::MapVector<StringRef, Capture>> capturesInScope;
   DenseMap<ASTDecl *, CaptureConvention> captureConventionForScope;
-  DenseMap<ASTDecl *, ClosureParamCaptures> closureParamCaptures;
+  DenseMap<Operation *, ClosureParamCaptures> closureParamCaptures;
 
   /// Function type conversion thunks in each module.
   // The key is an ArrayAttr containing two elements:
@@ -2185,9 +2185,8 @@ bool SharedState::captureInstanceExistsInScope(ASTDecl &scope,
   return capturePtr != ptr->second.end();
 }
 
-ClosureParamCaptures *
-SharedState::getClosureParamCapturesForFunction(ASTDecl &functionDecl) {
-  auto ptr = getImpl().closureParamCaptures.find(&functionDecl);
+ClosureParamCaptures *SharedState::getClosureParamCapturesForOp(Operation *op) {
+  auto ptr = getImpl().closureParamCaptures.find(op);
   if (ptr == getImpl().closureParamCaptures.end())
     return nullptr;
   return &ptr->second;
@@ -2195,8 +2194,15 @@ SharedState::getClosureParamCapturesForFunction(ASTDecl &functionDecl) {
 
 void SharedState::setClosureParamCaptures(
     ASTDecl &functionDecl, ClosureParamCaptures closureParamCaptures) {
-  getImpl().closureParamCaptures[&functionDecl] =
+  getImpl().closureParamCaptures[functionDecl.getIfOperation()] =
       std::move(closureParamCaptures);
+}
+
+void SharedState::addClosureParamCaptures(
+    ASTDecl &functionDecl, StringAttr closureName,
+    SmallVector<ClosureParamCapture> captures) {
+  getImpl().closureParamCaptures[functionDecl.getIfOperation()][closureName] =
+      std::move(captures);
 }
 
 //===----------------------------------------------------------------------===//

@@ -10,6 +10,7 @@
 
 #include "OverloadFitness.h"
 #include "CallEmission.h"
+#include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -558,14 +559,30 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   return OverloadFitness(bindings);
 }
 
-static StringAttr paramNameOfTypeIfApplicable(CValue selfCValue) {
+/// Extract the closure name from a self operand. This handles two cases:
+/// (1) Closure parameters: the type is a ParamType wrapping a ParamDeclRefAttr,
+///     and the name is the parameter name (e.g. "C").
+/// (2) Closure instances: the value is defined by a VarDeclOp (a nested
+///     function materialized as a closure), and the name is the variable name
+///     (e.g. "kernel").
+static StringAttr closureNameFromSelfOperand(SharedState &shared,
+                                             CValue selfCValue) {
   auto paramType = sugarDynCast<ParamType>(selfCValue.getRValueType().mlirType);
-  if (!paramType)
-    return {};
-  auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam());
-  if (!paramRef)
-    return {};
-  return paramRef.getName();
+  if (paramType) {
+    auto paramRef = dyn_cast<ParamDeclRefAttr>(paramType.getParam());
+    if (paramRef) {
+      if (ClosureEmitter::isClosureType(shared, paramRef.getType()))
+        return paramRef.getName();
+    }
+  }
+  Value mlirValue = selfCValue.getMlirValue();
+  if (mlirValue) {
+    if (auto varDecl = mlirValue.getDefiningOp<VarDeclOp>()) {
+      if (ClosureEmitter::isClosureType(shared, varDecl.getType()))
+        return varDecl.getNameAttr();
+    }
+  }
+  return {};
 }
 
 static SmallVectorImpl<ClosureParamCapture> *
@@ -576,22 +593,29 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
     return nullptr;
   if (operands.empty())
     return nullptr;
-  ASTDecl &declScope = callable.paramBindings.declScope;
-  ClosureParamCaptures *closureParamCaptures =
-      funcIfDirect->getShared().getClosureParamCapturesForFunction(declScope);
-  if (!closureParamCaptures)
-    return nullptr;
-
   auto selfCValue = operands[0].ir.getIfCValue();
   if (!selfCValue)
     return nullptr;
-  StringAttr closureParamName = paramNameOfTypeIfApplicable(selfCValue);
-  if (closureParamName) {
-    auto ptr = closureParamCaptures->find(closureParamName);
-    if (ptr == closureParamCaptures->end())
-      return nullptr;
+  StringAttr closureName =
+      closureNameFromSelfOperand(funcIfDirect->getShared(), selfCValue);
+  if (!closureName)
+    return nullptr;
+
+  // Look up the captures on the operation that owns the closure definition.
+  // For block arguments (closure parameters), this is the parent op of the
+  // block. For VarDeclOps (closure instances), this is the parent op of the
+  // block containing the VarDeclOp.
+  Value mlirValue = selfCValue.getMlirValue();
+  if (!mlirValue)
+    return nullptr;
+  Operation *ownerOp = mlirValue.getParentBlock()->getParentOp();
+  ClosureParamCaptures *captures =
+      funcIfDirect->getShared().getClosureParamCapturesForOp(ownerOp);
+  if (!captures)
+    return nullptr;
+  auto ptr = captures->find(closureName);
+  if (ptr != captures->end())
     return &ptr->second;
-  }
   return nullptr;
 }
 
@@ -687,9 +711,18 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                      signature.getParamListAttrs(), allowImplicitConversions,
                      getDiag, funcIfDirect);
   // Check if we're calling a closure's __call__ method and need to set
-  // captured closure parameters.
-  SmallVectorImpl<ClosureParamCapture> *implicitParams =
-      closureParamCapturesIfClosure(funcIfDirect, operands, callable);
+  // captured closure parameters. Only applies to method call syntax on a
+  // __call__ method — not direct calls that happen to pass a closure as an
+  // argument.
+  SmallVectorImpl<ClosureParamCapture> *implicitParams = nullptr;
+  if (funcIfDirect) {
+    if (auto fnOp = dyn_cast_or_null<FnOp>(funcIfDirect->getIfOperation())) {
+      if (fnOp.getSourceNameAttr() &&
+          fnOp.getSourceNameAttr().getValue() == "__call__")
+        implicitParams =
+            closureParamCapturesIfClosure(funcIfDirect, operands, callable);
+    }
+  }
   if (implicitParams) {
     size_t paramIdx =
         signature.getInputParamTypes().size() - implicitParams->size();
