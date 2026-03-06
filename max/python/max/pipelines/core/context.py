@@ -44,16 +44,6 @@ CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
 
 
-@dataclass
-class SpecDecodingState:
-    """Per-request state for speculative decoding."""
-
-    draft_kv_start_idx: int = 0
-    saved_draft_tokens: npt.NDArray[np.int64] = field(
-        default_factory=lambda: np.array([], dtype=np.int64)
-    )
-
-
 @dataclass(kw_only=True)
 class TextContext:
     """A base class for model context, specifically for Text model variants.
@@ -78,7 +68,6 @@ class TextContext:
         _log_probabilities_data: Token log probabilities data
         _is_initial_prompt: Whether this is the initial prompt encoding
         _draft_offset: Offset for draft decoding
-        _spec_decoding_state: Optional per-request speculative decoding state
     """
 
     max_length: int
@@ -100,7 +89,6 @@ class TextContext:
 
     _is_initial_prompt: bool = field(default=True)
     _draft_offset: int = field(default=0)
-    _spec_decoding_state: SpecDecodingState | None = field(default=None)
 
     target_endpoint: str | None = field(default=None)
 
@@ -136,13 +124,6 @@ class TextContext:
     def min_tokens(self) -> int:
         """The minimum number of new tokens to generate."""
         return self.sampling_params.min_new_tokens
-
-    @property
-    def spec_decoding_state(self) -> SpecDecodingState:
-        """Gets or creates the per-request speculative decoding state."""
-        if self._spec_decoding_state is None:
-            self._spec_decoding_state = SpecDecodingState()
-        return self._spec_decoding_state
 
     def apply_processing_offset(self, offset: int) -> None:
         """Applies a processing offset to the token buffer."""
@@ -371,7 +352,6 @@ class TextContext:
         """Resets the context's state by combining all tokens into a new prompt."""
         self.tokens.reset_as_new_prompt()
         self._is_initial_prompt = True
-        self._spec_decoding_state = None
 
     def compute_num_available_steps(
         self,
@@ -673,8 +653,10 @@ class PixelContext:
         width: Width of the generated image/video in pixels.
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
-        num_images_per_prompt: Number of images/videos to generate per prompt.
         input_image: Optional input image for image-to-image generation (PIL.Image.Image).
+        num_visuals_per_prompt: Number of images/videos to generate per prompt.
+        num_frames: Number of frames for video generation.
+        frame_rate: Frame rate for video generation.
         model_name: Name of the model being used.
     """
 
@@ -724,13 +706,18 @@ class PixelContext:
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
+    guidance: float = field(default=3.5)
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
-    num_images_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
-    image: npt.NDArray[np.uint8] | None = field(default=None)
-    """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
+    num_visuals_per_prompt: int = field(default=1)
+    num_frames: int | None = field(default=None)
+    frame_rate: int | None = field(default=None)
+
+    extra_params: dict[str, npt.NDArray[Any]] | None = field(default=None)
+    """Optional pipeline-specific extra arrays (e.g. LTX2 video/audio latents)."""
+
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
@@ -749,20 +736,16 @@ class PixelContext:
         """Resets the context's state."""
         self.status = GenerationStatus.ACTIVE
 
-    def update(self, image: npt.NDArray[np.uint8]) -> None:
-        """Update the context with the decoded uint8 image output."""
-        self.image = image
+    def update(self, latents: npt.NDArray[Any]) -> None:
+        """Update the context with newly generated latents/image data."""
+        self.latents = latents
 
     def to_generation_output(self) -> GenerationOutput:
         """Convert this context to a GenerationOutput object."""
-        if self.image is None:
-            raise ValueError(
-                "No decoded image available; generation may not have completed."
-            )
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[OutputImageContent.from_numpy(self.image, format="png")],
+            output=[OutputImageContent.from_numpy(self.latents, format="png")],
         )
 
 
