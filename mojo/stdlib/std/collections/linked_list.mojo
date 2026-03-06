@@ -611,17 +611,20 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         ```
         """
         var n = len(self)
-        var start_norm = start if start >= 0 else max(start + n, 0)
-        var stop_norm = (
-            n if stop is None else (stop.value() if stop.value() >= 0 else max(stop.value() + n, 0))
-        )
-        start_norm = min(start_norm, n)
-        stop_norm = min(stop_norm, n)
+        var start_norm = max(start if start >= 0 else start + n, 0)
+        var stop_val = stop.value() if stop else n
+        var stop_norm = min(max(stop_val if stop_val >= 0 else stop_val + n, 0), n)
 
+        # Advance to start_norm without unnecessary comparisons in the hot loop
         var current = self._head
-        var idx = 0
+        for _ in range(start_norm):
+            if not current:
+                break
+            current = current[].next
+
+        var idx = start_norm
         while current and idx < stop_norm:
-            if idx >= start_norm and current[].value == value:
+            if current[].value == value:
                 return idx
             current = current[].next
             idx += 1
