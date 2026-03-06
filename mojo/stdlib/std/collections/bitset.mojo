@@ -394,6 +394,108 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
         return Self._vectorize_apply[_difference](self, other)
 
+    fn symmetric_difference(self, other: Self) -> Self:
+        """Returns a new bitset that is the symmetric difference of `self`
+        and `other`.
+
+        Args:
+            other: The bitset to compute the symmetric difference with.
+
+        Returns:
+            A new bitset containing elements that are in exactly one of the
+            two sets.
+        """
+
+        @parameter
+        @always_inline
+        fn _xor[
+            simd_width: Int
+        ](
+            left: SIMD[DType.int64, simd_width],
+            right: SIMD[DType.int64, simd_width],
+        ) -> SIMD[DType.int64, simd_width]:
+            return left ^ right
+
+        return Self._vectorize_apply[_xor](self, other)
+
+    fn __or__(self, other: Self) -> Self:
+        """Returns the union of `self` and `other`.
+
+        Args:
+            other: The bitset to union with.
+
+        Returns:
+            A new bitset containing all elements from both sets.
+        """
+        return self.union(other)
+
+    fn __ior__(mut self, other: Self):
+        """Updates `self` to be the union of `self` and `other`.
+
+        Args:
+            other: The bitset to union with.
+        """
+        self = self.union(other)
+
+    fn __and__(self, other: Self) -> Self:
+        """Returns the intersection of `self` and `other`.
+
+        Args:
+            other: The bitset to intersect with.
+
+        Returns:
+            A new bitset containing only the elements present in both sets.
+        """
+        return self.intersection(other)
+
+    fn __iand__(mut self, other: Self):
+        """Updates `self` to be the intersection of `self` and `other`.
+
+        Args:
+            other: The bitset to intersect with.
+        """
+        self = self.intersection(other)
+
+    fn __sub__(self, other: Self) -> Self:
+        """Returns the difference of `self` and `other`.
+
+        Args:
+            other: The bitset to subtract from `self`.
+
+        Returns:
+            A new bitset containing elements from `self` that are not in
+            `other`.
+        """
+        return self.difference(other)
+
+    fn __isub__(mut self, other: Self):
+        """Updates `self` to be the difference of `self` and `other`.
+
+        Args:
+            other: The bitset to subtract from `self`.
+        """
+        self = self.difference(other)
+
+    fn __xor__(self, other: Self) -> Self:
+        """Returns the symmetric difference of `self` and `other`.
+
+        Args:
+            other: The bitset to compute the symmetric difference with.
+
+        Returns:
+            A new bitset containing elements that are in exactly one of the
+            two sets.
+        """
+        return self.symmetric_difference(other)
+
+    fn __ixor__(mut self, other: Self):
+        """Updates `self` to be the symmetric difference of `self` and `other`.
+
+        Args:
+            other: The bitset to compute the symmetric difference with.
+        """
+        self = self.symmetric_difference(other)
+
     # --------------------------------------------------------------------- #
     # Representation helpers
     # --------------------------------------------------------------------- #
