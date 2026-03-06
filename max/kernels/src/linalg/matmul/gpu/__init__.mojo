@@ -32,10 +32,11 @@ from std.gpu import barrier, block_dim, global_idx, thread_idx
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from layout import LayoutTensor, RuntimeLayout, TileTensor
+from layout import LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
+from layout.tile_tensor import TileTensor
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
 from std.utils import Index, IndexList
@@ -762,25 +763,25 @@ fn _matmul_gpu[
             comptime _NUM_WARPS = 4
             comptime _WARP_SIZE = 32
 
-            var c_lt = from_ndbuffer_row_major(c)
-            var a_lt = from_ndbuffer_row_major(a)
-            var b_lt = from_ndbuffer_row_major(b)
+            var c_tt = TileTensor(c)
+            var a_tt = TileTensor(a)
+            var b_tt = TileTensor(b)
 
             comptime rdna_kernel = gemm_kernel_rdna[
                 c_type,
                 a_type,
                 b_type,
-                c_lt.layout,
-                a_lt.layout,
-                b_lt.layout,
+                type_of(c_tt).LayoutType,
+                type_of(a_tt).LayoutType,
+                type_of(b_tt).LayoutType,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[rdna_kernel, rdna_kernel](
-                c_lt,
-                a_lt,
-                b_lt,
+                c_tt,
+                a_tt,
+                b_tt,
                 m,
                 n,
                 k,
