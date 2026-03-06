@@ -32,7 +32,7 @@ from std.gpu import barrier, block_dim, global_idx, thread_idx
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from layout import LayoutTensor, RuntimeLayout
+from layout import LayoutTensor, RuntimeLayout, TileTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
@@ -889,9 +889,9 @@ fn multistage_gemm[
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
     comptime if (
         has_amd_gpu_accelerator()
@@ -983,9 +983,9 @@ fn multistage_gemm[
     logger.info(config)
     logger.info("K partitions:", runtime_config.num_k_partitions)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
     if runtime_config.num_k_partitions > 1:
         logger.info(
