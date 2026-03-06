@@ -91,7 +91,7 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
 
 
 def main() raises:
-    target_paths = sys.argv()
+    target_paths = std.sys.argv()
 
     fix = False
     for arg in target_paths:
@@ -130,4 +130,4 @@ def main() raises:
                 print(file)
             print("Please add the license to each file before committing.")
             print("You can run `./bazelw run format` to do this automatically.")
-            sys.exit(1)
+            std.sys.exit(1)
