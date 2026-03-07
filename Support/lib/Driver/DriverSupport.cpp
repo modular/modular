@@ -40,10 +40,20 @@ using namespace M;
 
 ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
 M::openMojoInputFile(StringRef path) {
-  if (!path.ends_with(".mojo") && !path.ends_with(".🔥"))
+  if (path.ends_with("🔥")) {
+    return Error(
+        llvm::formatv("'{0}'. Extension no longer supported (`.🔥`).\n\n"
+                      "A Mojo file glowed with a `.🔥`\n"
+                      "But the devs said, \"In UTF-8 that is mired...\"\n"
+                      "    They ditched the cute flame,\n"
+                      "    Made the extension a name,\n"
+                      "And now `.mojo` is all that's required.\n",
+                      path));
+  }
+  if (!path.ends_with(".mojo"))
     return Error(llvm::formatv(
         "cannot open '{0}', since it does not appear to be a Mojo file "
-        "(it does not end in '.mojo' or '.🔥')",
+        "(it does not end in '.mojo')",
         path));
 
   std::error_code ec;
@@ -75,11 +85,11 @@ M::resolveMojoInputFileOrPackage(StringRef path) {
   }
 
   std::string ext = fullPath.extension().string();
-  if (!llvm::is_contained({".mojo", ".🔥", ".mojopkg", ".📦"}, ext) &&
+  if (!llvm::is_contained({".mojo", ".mojopkg"}, ext) &&
       !Filesystem::isMojoSourcePackagePath(fullPath)) {
     return Error(llvm::formatv(
         "cannot open '{0}', since it does not appear to be a Mojo file "
-        "(it does not end in '.mojo', '.🔥', '.mojopkg', or '.📦') or a Mojo "
+        "(it does not end in '.mojo' or '.mojopkg') or a Mojo "
         "source package",
         path));
   }

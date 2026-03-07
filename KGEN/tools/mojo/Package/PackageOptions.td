@@ -40,7 +40,7 @@ def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
   MetaVarName<"PATH">, HelpText<
     "Sets the path and filename for the output package. The filename must end "
-    "with either `.mojopkg` or `.📦`. The filename given here defines the "
+    "with `.mojopkg`. The filename given here defines the "
     "package name you can then use to import the code (minus the file "
     "extension). If you don't specify this option, a `.mojopkg` file is "
     "generated in the current working directory, with a name based on the name "

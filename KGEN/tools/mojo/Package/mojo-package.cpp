@@ -253,9 +253,8 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
         pkgArgs.outputPath = outputPath;
       }
 
-      if (!pkgArgs.exportKgenModule && (outputPath.extension() != ".mojopkg" &&
-                                        outputPath.extension() != ".📦"))
-        return Error("output path must have a '.mojopkg' or '.📦' extension");
+      if (!pkgArgs.exportKgenModule && outputPath.extension() != ".mojopkg")
+        return Error("output path must have a '.mojopkg' extension");
       if (pkgArgs.exportKgenModule && outputPath.extension() != ".mlirbc")
         return Error("output path must have a '.mlirbc' extension.");
 

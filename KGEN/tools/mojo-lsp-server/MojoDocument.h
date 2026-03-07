@@ -536,7 +536,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// This class represents all of the information pertaining to a specific Mojo
-/// text document, i.e. a .mojo or .🔥 file.
+/// text document, i.e. a .mojo file.
 struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const llvm::lsp::URIForFile &uri, std::string &&contents,

@@ -13,8 +13,8 @@ definition, refactoring utilities, etc.
 
 Just run the `vscode-init` or `cursor-init` command on your terminal, which will
 install and configure the **Mojo** extension on VSCode. The Language Server is
-part of this extension and will be automatically launched whenever a `.mojo` or
-`.🔥` file is opened.
+part of this extension and will be automatically launched whenever a `.mojo`
+file is opened.
 
 ## Development
 

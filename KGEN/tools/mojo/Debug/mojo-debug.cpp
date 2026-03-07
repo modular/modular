@@ -61,9 +61,7 @@ auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
                              options::OPT_DiagnosticOptionGroup);
 }
 
-static bool isMojoFile(StringRef file) {
-  return file.ends_with(".mojo") || file.ends_with(".🔥");
-}
+static bool isMojoFile(StringRef file) { return file.ends_with(".mojo"); }
 
 // Given a path, resolve it to an actual full path without dots. If the input is
 // a program name, it will be searched in the PATH.

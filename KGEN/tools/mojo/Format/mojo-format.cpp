@@ -113,10 +113,9 @@ static int format(const State &state) {
     if (ec)
       return state.reportError(ec.message());
 
-    if (!llvm::is_contained(ArrayRef<StringRef>{".mojo", ".🔥"},
-                            inputPath.extension().string())) {
+    if (inputPath.extension().string() != ".mojo") {
       return state.reportError(
-          llvm::formatv("invalid input '{0}', expected a source .mojo/.🔥 "
+          llvm::formatv("invalid input '{0}', expected a source .mojo "
                         "file, or a directory",
                         input));
     }

@@ -234,7 +234,7 @@ is a potential foot-gun that devs should be aware of.
 ## Debugging Compiler Issues
 
 Debugging compiler issues within the REPL environment is much different from
-debugging issues with a single .mojo or .🔥 module. Given that the REPL executes
+debugging issues with a single .mojo module. Given that the REPL executes
 expressions across multiple invocations, it requires a different kind of mindset
 when debugging a crash or miscompilation. This section contains useful tips and
 tricks to make debugging issues within the REPL a bit easier.

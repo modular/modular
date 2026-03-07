@@ -318,7 +318,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // dependency file.
   SmallVector<std::string> includedFiles;
 
-  if (inputFileName.ends_with(".mojo") || inputFileName.ends_with(".🔥")) {
+  if (inputFileName.ends_with(".mojo")) {
     TimingScope litScope = timing.nest("Import Mojo source");
     LIT::ParserConfig config(ctx, options);
     config.stripFilePrefix = clOptions.stripFilePrefix;

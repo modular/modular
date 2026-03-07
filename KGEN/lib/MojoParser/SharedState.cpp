@@ -951,8 +951,7 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
 
   // Find a path in `includeDir` that is a mojo package for `moduleName`. This
   // is either a directory with an `__init__.mojo` file inside it, a
-  // `moduleName.mojo` file, or a `moduleName.mojopkg` file. Of course, the
-  // emoji extensions are supported as well, but a conflict is not allowed. Make
+  // `moduleName.mojo` file, or a `moduleName.mojopkg` file. Make
   // sure to ignore other `moduleName.*` files that are definitely not mojo
   // packages.
   std::error_code ec;
@@ -964,36 +963,20 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
   // sensitive systems we cannot just do `path / moduleName` since the
   // constructed path will not adhere to case sensitivity.
   std::optional<path> nameOr;
-  path source, emoji;
-  auto emitConflictError = [&] {
-    shared.emitError(includeLoc, "ambiguous import, both ")
-        << source.string() << " and " << emoji.string()
-        << " exist in the file system.";
-  };
   for (const auto &entry : iter) {
     if (entry.path().filename().stem().string() != moduleName)
       continue;
 
     // If we found a package path, we can return immediately.
     if (Filesystem::isMojoSourcePackagePath(entry.path())) {
-      if (exists(source = entry.path() / "__init__.mojo", ec) &&
-          exists(emoji = entry.path() / "__init__.🔥", ec))
-        emitConflictError();
       return std::filesystem::absolute(entry.path());
     }
 
     path ext = entry.path().filename().extension();
-    if (!ignorePrebuilt && (ext == ".mojopkg" || ext == ".📦")) {
-      if (exists(source = path(entry.path()).replace_extension("mojopkg"),
-                 ec) &&
-          exists(emoji = path(entry.path()).replace_extension("📦"), ec))
-        emitConflictError();
+    if (!ignorePrebuilt && ext == ".mojopkg") {
       return std::filesystem::absolute(entry.path());
     }
-    if (ext == ".mojo" || ext == ".🔥") {
-      if (exists(source = path(entry.path()).replace_extension("mojo"), ec) &&
-          exists(emoji = path(entry.path()).replace_extension("🔥"), ec))
-        emitConflictError();
+    if (ext == ".mojo") {
       return std::filesystem::absolute(entry.path());
     }
   }
@@ -1029,10 +1012,6 @@ std::optional<std::string> SharedState::resolveModulePath(StringRef moduleName,
 /// Given a path to a mojo source package, return the path of its __init__ file.
 static std::string
 getPackageInitPath(const std::filesystem::path &packagePathStr) {
-  std::filesystem::path initPath = packagePathStr / "__init__.🔥";
-  std::error_code ec;
-  if (std::filesystem::exists(initPath, ec))
-    return initPath.string();
   return (packagePathStr / "__init__.mojo").string();
 }
 
@@ -1134,7 +1113,7 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
 
   // Check if the path is a binary package.
   StringRef pathRef(*modulePath);
-  if (pathRef.ends_with(".mojopkg") || pathRef.ends_with(".📦"))
+  if (pathRef.ends_with(".mojopkg"))
     return createBinaryPackageState(loc, declName, *modulePath, *parentState);
 
   // Open the module file within the source manager. Reuse an existing file if

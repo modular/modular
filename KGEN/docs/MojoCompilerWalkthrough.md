@@ -568,7 +568,7 @@ After lowering to `llvm` dialect:
 ### What is a Mojo Package?
 
 A Mojo **source package** is a directory containing Mojo source files with an
-`__init__.mojo` (or `__init__.🔥`) file that marks it as a package:
+`__init__.mojo` file that marks it as a package:
 
 ```text
 my_package/

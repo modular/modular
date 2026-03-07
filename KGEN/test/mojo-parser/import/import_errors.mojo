@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# FIXME(#26472): Mojo on windows doesn't support emoji file extensions.
-
 # Test the various error cases of imports. The run line also checks that we
 # properly handle the case of an invalid import directory.
 
@@ -114,9 +112,6 @@ fn already_defined_fn():
 
 # expected-error @below {{invalid redefinition of 'already_defined_fn'}}
 from imported_module import imported_fn as already_defined_fn
-
-# expected-error @below {{ambiguous import}}
-from test_bad_package.extension_dup import getExtension
 
 # // -----
 

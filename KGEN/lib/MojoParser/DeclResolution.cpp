@@ -2334,7 +2334,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
 
 static bool isModuleOrPackagePath(const std::filesystem::path &path) {
   // Handle source files.
-  if (path.extension() == ".mojo" || path.extension() == ".🔥")
+  if (path.extension() == ".mojo")
     return true;
   // Handle source packages.
   return Filesystem::isMojoSourcePackagePath(path);

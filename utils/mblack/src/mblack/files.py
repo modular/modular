@@ -307,7 +307,6 @@ def gen_python_files(
             include_match = (
                 include_match  # type: ignore
                 or normalized_path.endswith(".mojo")
-                or normalized_path.endswith(".🔥")
             )
             if include_match:
                 yield child
