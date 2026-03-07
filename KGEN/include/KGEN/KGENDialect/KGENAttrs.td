@@ -230,6 +230,43 @@ def KGEN_VariadicSplatAttr : KGEN_ExprAttr<"VariadicSplat", "variadic.splat"> {
   let skipDefaultBuilders = 1;
 }
 
+def KGEN_VariadicTabulateAttr : KGEN_ExprAttr<"VariadicTabulate", "variadic.tabulate",
+  [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                               ["evaluateWithContext"]>]> {
+  let summary = "Create a variadic by applying a function to each index 0..count-1";
+  let description = [{
+    The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values
+    by invoking the provided generator function N times with indices 0, 1, ...,
+    N-1, where N is the integer count. The generator is a function from index to
+    (element type); each result is collected into the result variadic.
+
+    Example:
+    ```mlir
+    #kgen.variadic.tabulate<:!kgen.variadic<f32> 3, fn(i: index) -> f32> : !kgen.variadic<f32>
+    // ->
+    #kgen.variadic<0, 1, 2> : !kgen.variadic<f32>
+    ```
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "VariadicType">:$type,
+    "TypedAttr":$count,
+    "TypedAttr":$generator
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+       "VariadicType":$type, "TypedAttr":$count, "TypedAttr":$generator), "", "TypedAttr">,
+    AttrBuilder<(ins "VariadicType":$type, "TypedAttr":$count, "TypedAttr":$generator), [{
+      return get(type, count, generator);
+    }], "TypedAttr">,
+  ];
+
+  let assemblyFormat = "`<` $count `,` $generator `>`";
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
 def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size",
     [ContextuallyEvaluatedAttrInterface]> {
   let summary = "return the size of a variadic";

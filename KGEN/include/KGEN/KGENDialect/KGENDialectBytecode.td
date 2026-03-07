@@ -152,6 +152,12 @@ def VariadicSplatAttr : DialectAttribute<(attr
   TypedAttr:$count
 )>;
 
+def VariadicTabulateAttr : DialectAttribute<(attr
+  ConcreteType<"VariadicType">:$type,
+  TypedAttr:$count,
+  TypedAttr:$generator
+)>;
+
 def VariadicSizeAttr : DialectAttribute<(attr
   ConcreteType<"IndexType">:$type,
   TypedAttr:$variadic
@@ -354,6 +360,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     VariadicReduceAttr,
     VariadicZipAttr,
     VariadicSplatAttr,
+    VariadicTabulateAttr,
     VariadicSizeAttr,
     VariadicConcatAttr,
     UnknownAttr,

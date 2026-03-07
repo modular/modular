@@ -893,6 +893,14 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
+  if (auto actualTab = dyn_cast<VariadicTabulateAttr>(actualAttr)) {
+    if (auto expectedTab = dyn_cast<VariadicTabulateAttr>(expectedAttr)) {
+      PROP(matchParams(actualTab.getCount(), expectedTab.getCount()));
+      PROP(matchParams(actualTab.getGenerator(), expectedTab.getGenerator()));
+      return success();
+    }
+  }
+
   // We look through non-builtin-apply sugar always.  For builtin apply's, we
   // want to do inference on the sugar itself, because we want to treat x+y
   // as unequal to y+x unless canonically equal.
