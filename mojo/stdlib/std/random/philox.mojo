@@ -45,13 +45,15 @@ from std.memory import bitcast
 
 from std.gpu.intrinsics import mulwide
 
+from std.format._utils import FormatStruct, Named
+
 
 fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
     var res = mulwide(a, b)
     return bitcast[DType.uint32, 2](res)
 
 
-struct Random[rounds: Int = 10](Copyable):
+struct Random[rounds: Int = 10](Copyable, Writable):
     """A high-performance random number generator using the Philox algorithm.
 
     The Philox algorithm is a counter-based random number generator designed for parallel
@@ -84,6 +86,38 @@ struct Random[rounds: Int = 10](Copyable):
         self._counter = bitcast[DType.uint32, 4](
             SIMD[DType.uint64, 2](offset, subsequence)
         )
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write a human-readable representation of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write_string("Random[")
+        writer.write(Self.rounds)
+        writer.write_string("](key=")
+        writer.write(self._key)
+        writer.write_string(", counter=")
+        writer.write(self._counter)
+        writer.write_string(")")
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the detailed representation of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            w.write_string("key=")
+            w.write(self._key)
+            w.write_string(", counter=")
+            w.write(self._counter)
+
+        FormatStruct(writer, "Random").params(
+            Named("rounds", Self.rounds)
+        ).fields[FieldsFn=fields]()
 
     @always_inline
     fn step(mut self) -> SIMD[DType.uint32, 4]:
@@ -166,7 +200,7 @@ struct Random[rounds: Int = 10](Copyable):
         )
 
 
-struct NormalRandom[rounds: Int = 10](Copyable):
+struct NormalRandom[rounds: Int = 10](Copyable, Writable):
     """A high-performance random number generator using the Box-Muller transform.
 
     The Box-Muller transform is a method for generating pairs of independent standard normal
@@ -197,6 +231,38 @@ struct NormalRandom[rounds: Int = 10](Copyable):
         self._rng = Random[Self.rounds](
             seed=seed, subsequence=subsequence, offset=offset
         )
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write a human-readable representation of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write_string("NormalRandom[")
+        writer.write(Self.rounds)
+        writer.write_string("](key=")
+        writer.write(self._rng._key)
+        writer.write_string(", counter=")
+        writer.write(self._rng._counter)
+        writer.write_string(")")
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the detailed representation of this RNG state.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            w.write_string("key=")
+            w.write(self._rng._key)
+            w.write_string(", counter=")
+            w.write(self._rng._counter)
+
+        FormatStruct(writer, "NormalRandom").params(
+            Named("rounds", Self.rounds)
+        ).fields[FieldsFn=fields]()
 
     fn step_normal(
         mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
