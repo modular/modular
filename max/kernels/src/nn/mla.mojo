@@ -13,6 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, recip
+from std.math.uutils import ufloordiv
 from nn.mha_utils import DynamicInt
 from std.math.constants import log2e
 from std.sys import (
@@ -43,7 +44,7 @@ from std.gpu import (
     block_idx,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import (
     DeviceContext,
@@ -783,7 +784,7 @@ fn mla_decoding_single_batch[
     ), "mla_decoding doesn't support warp split-k."
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp.broadcast(UInt(ufloordiv(tid, WARP_SIZE)))
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -2146,7 +2147,7 @@ fn mla_prefill_single_batch[
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    var tid: Int = Int(thread_idx.x)
+    var tid: Int = thread_idx.x
     var warp_id = UInt32(warp.broadcast(tid // WARP_SIZE))
     var lane = UInt32(lane_id())
 

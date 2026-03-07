@@ -106,7 +106,7 @@ from linalg.matmul.gpu.sm100.matmul import (
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
-from internal_utils import ufloordiv
+from std.math.uutils import ufloordiv
 
 # Use WarpRole without scheduler warp for grouped matmul
 comptime WarpRole = _WarpRole[has_scheduler=False]
