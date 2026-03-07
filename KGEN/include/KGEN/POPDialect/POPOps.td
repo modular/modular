@@ -937,6 +937,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        OptionalAttr<AttrOfType<I1>>:$isVolatile,
                        OptionalAttr<AttrOfType<I1>>:$isInvariant,
+                       OptionalAttr<AttrOfType<I1>>:$isNonTemporal,
                        DefaultValuedAttr<
                         POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering,
                        OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope);
@@ -944,6 +945,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   let assemblyFormat = [{
     (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
     (`invariant` `<` custom<I1ParamValue>($isInvariant)^ `>`)?
+    (`nontemporal` `<` custom<I1ParamValue>($isNonTemporal)^ `>`)?
     (`atomic` (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? $ordering^)?
     $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
@@ -955,6 +957,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
                    CArg<"std::optional<unsigned>", "{}">:$alignment,
                    CArg<"bool", "false">:$isVolatile,
                    CArg<"bool", "false">:$isInvariant,
+                   CArg<"bool", "false">:$isNonTemporal,
                    CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering,
                    CArg<"std::optional<StringAttr>", "{}">:$syncscope)>,
   ];
@@ -997,10 +1000,12 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
                        Arg<PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
                        OptionalAttr<AttrOfType<I1>>:$isVolatile,
+                       OptionalAttr<AttrOfType<I1>>:$isNonTemporal,
                        DefaultValuedAttr<
                         POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering);
   let assemblyFormat = [{
     (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
+    (`nontemporal` `<` custom<I1ParamValue>($isNonTemporal)^ `>`)?
     (`atomic` $ordering^)?
     $arg `,` $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
@@ -1011,6 +1016,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     OpBuilder<(ins "Value":$arg, "Value":$ptr,
                    CArg<"std::optional<unsigned>", "{}">:$alignment,
                    CArg<"bool", "false">:$isVolatile,
+                   CArg<"bool", "false">:$isNonTemporal,
                    CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering)>
   ];
 
