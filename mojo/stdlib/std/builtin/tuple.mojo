@@ -196,7 +196,14 @@ struct Tuple[*element_types: Movable](Hashable, ImplicitlyCopyable, Sized, Writa
         """
         _constrained_elements_hashable[*Self.element_types, Parent=Self]()
         comptime for i in range(Self.__len__()):
-            hasher.update(trait_downcast[Hashable](self[i]))
+            # Hash each element into its own sub-hasher to get a fixed-size
+            # digest, then feed that into the main hasher. This avoids
+            # concatenation ambiguity where variable-length element hashes
+            # (e.g. StringSlice) could make ("a", "bc") and ("ab", "c")
+            # produce identical byte streams.
+            var element_hasher = H()
+            element_hasher.update(trait_downcast[Hashable](self[i]))
+            hasher.update(element_hasher^.finish())
 
     @always_inline("nodebug")
     fn __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:

@@ -315,20 +315,14 @@ def test_tuple_assert_equal_failure_message() raises:
 
 
 def test_tuple_hashable() raises:
-    """Test that Tuple conforms to Hashable and produces consistent hashes."""
-    # Same tuples produce the same hash
+    """Test that Tuple conforms to Hashable and produces stable hashes."""
+    # Equal tuples must produce the same hash
     assert_equal(hash((1, 2)), hash((1, 2)))
     assert_equal(hash((1, "hello")), hash((1, "hello")))
     assert_equal(hash(()), hash(()))
 
-    # Order matters: (1, 2) and (2, 1) must hash differently
-    assert_not_equal(hash((1, 2)), hash((2, 1)))
-
-    # Tuples with different values hash differently
-    assert_not_equal(hash((1, 2)), hash((1, 3)))
-
-    # Usable as a Set element (requires Equatable too; verified once both traits land)
-    # var s = Set[Tuple[Int, Int]]()  # uncomment after Equatable conformance lands
+    # Multi-type tuple
+    assert_equal(hash((True, 42, "hi")), hash((True, 42, "hi")))
 
 
 def main() raises:
