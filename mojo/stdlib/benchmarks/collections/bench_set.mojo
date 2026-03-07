@@ -191,6 +191,37 @@ fn bench_set_difference[size: Int](mut b: Bencher) raises:
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark Set.intersection_update (50% overlap, destructive)
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_set_intersection_update[size: Int](mut b: Bencher) raises:
+    """Benchmark in-place intersection with 50% overlap.
+
+    Uses iter_preproc to reset s1 between iterations since
+    intersection_update is destructive.
+    """
+    var half = size // 2
+    var s1 = make_int_set[size]()
+    var s1_orig = make_int_set[size]()
+    var s2 = Set[Int]()
+    for i in range(half, half + size):
+        s2.add(i)
+
+    @always_inline
+    @parameter
+    fn reset():
+        s1 = s1_orig.copy()
+
+    @always_inline
+    @parameter
+    fn call_fn():
+        black_box(s1).intersection_update(black_box(s2))
+        keep(len(s1))
+
+    b.iter_preproc[call_fn, reset]()
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
 def main() raises:
@@ -231,6 +262,9 @@ def main() raises:
         )
         m.bench_function[bench_set_difference[size]](
             BenchId(String("bench_set_difference[", size, "]"))
+        )
+        m.bench_function[bench_set_intersection_update[size]](
+            BenchId(String("bench_set_intersection_update[", size, "]"))
         )
 
     print(m)
