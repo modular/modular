@@ -540,6 +540,99 @@ fn _assert_cmp_error[
     return _assert_error(err, loc)
 
 
+@always_inline
+fn assert_in[
+    T: Equatable & Copyable & Writable, //
+](
+    value: T,
+    container: List[T, ...],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that `value` is a member of `container`. If not, raises an Error.
+
+    Parameters:
+        T: The element type. Must be `Equatable`, `Copyable`, and `Writable`.
+
+    Args:
+        value: The value to search for.
+        container: The list to search in.
+        msg: An optional message to include if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error if `value` is not in `container`.
+
+    Example:
+
+    ```mojo
+    from std.testing import assert_in
+    assert_in(2, [1, 2, 3])         # passes
+    assert_in("b", ["a", "b", "c"]) # passes
+    assert_in(99, [1, 2, 3])        # raises AssertionError
+    ```
+    """
+    if value not in container:
+        raise _assert_error(
+            String(
+                "`value in container` assertion failed",
+                "\n  value: ",
+                value,
+                "\n  container: ",
+                container,
+                ("\n  reason: " + msg) if msg else "",
+            ),
+            location.or_else(call_location()),
+        )
+
+
+@always_inline
+fn assert_not_in[
+    T: Equatable & Copyable & Writable, //
+](
+    value: T,
+    container: List[T, ...],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that `value` is not a member of `container`. If it is, raises an Error.
+
+    Parameters:
+        T: The element type. Must be `Equatable`, `Copyable`, and `Writable`.
+
+    Args:
+        value: The value to search for.
+        container: The list to search in.
+        msg: An optional message to include if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error if `value` is in `container`.
+
+    Example:
+
+    ```mojo
+    from std.testing import assert_not_in
+    assert_not_in(99, [1, 2, 3])        # passes
+    assert_not_in(2, [1, 2, 3])         # raises AssertionError
+    ```
+    """
+    if value in container:
+        raise _assert_error(
+            String(
+                "`value not in container` assertion failed",
+                "\n  value: ",
+                value,
+                "\n  container: ",
+                container,
+                ("\n  reason: " + msg) if msg else "",
+            ),
+            location.or_else(call_location()),
+        )
+
+
 struct assert_raises:
     """Context manager that asserts that the block raises an exception.
 

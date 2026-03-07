@@ -343,6 +343,16 @@ what we publish.
   `lane_group_sum_and_broadcast()`, `lane_group_max_and_broadcast()` functions
   are deprecated — use the short names instead.
 
+- Added `assert_in(value, container)` and `assert_not_in(value, container)` to
+  the `testing` module. Both produce rich error messages showing the value and
+  container, unlike `assert_true(x in container)` which only shows `False`:
+
+  ```mojo
+  assert_in(2, [1, 2, 3])   # passes
+  assert_in(99, [1, 2, 3])  # AssertionError: value 99 not found in [1, 2, 3]
+  assert_not_in(99, [1, 2, 3])  # passes
+  ```
+
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly

@@ -27,9 +27,11 @@ from .testing import (
     assert_equal,
     assert_equal_pyobj,
     assert_false,
+    assert_in,
     assert_is,
     assert_is_not,
     assert_not_equal,
+    assert_not_in,
     assert_raises,
     assert_true,
 )
