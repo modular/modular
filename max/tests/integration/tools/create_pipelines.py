@@ -38,8 +38,12 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
-from max.pipelines.architectures.flux2.pipeline_flux2 import Flux2Pipeline
+from max.pipelines.architectures.flux1_modulev3.pipeline_flux import (
+    FluxPipeline,
+)
+from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
+    Flux2Pipeline,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import (

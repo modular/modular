@@ -21,7 +21,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.pipelines.architectures.flux1.layers.flux_attention import (
+from max.pipelines.architectures.flux1_modulev3.layers.flux_attention import (
     FluxAttention as MaxFluxAttention,
 )
 from torch.utils.dlpack import from_dlpack

@@ -43,8 +43,8 @@ class Flux2ArchConfig(ArchConfig):
         return cls(pipeline_config=pipeline_config)
 
 
-flux2_arch = SupportedArchitecture(
-    name="Flux2Pipeline",
+flux2_modulev3_arch = SupportedArchitecture(
+    name="Flux2Pipeline_ModuleV3",
     task=PipelineTask.PIXEL_GENERATION,
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
@@ -58,8 +58,8 @@ flux2_arch = SupportedArchitecture(
     config=Flux2ArchConfig,
 )
 
-flux2_klein_arch = SupportedArchitecture(
-    name="Flux2KleinPipeline",
+flux2_klein_modulev3_arch = SupportedArchitecture(
+    name="Flux2KleinPipeline_ModuleV3",
     task=PipelineTask.PIXEL_GENERATION,
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
