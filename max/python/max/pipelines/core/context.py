@@ -673,8 +673,8 @@ class PixelContext:
         width: Width of the generated image/video in pixels.
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
-        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
         num_visuals_per_prompt: Number of images/videos to generate per prompt.
+        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
         num_frames: Number of frames for video generation.
         frame_rate: Frame rate for video generation.
         model_name: Name of the model being used.
@@ -727,6 +727,7 @@ class PixelContext:
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
     true_cfg_scale: float = field(default=1.0)
+    num_warmup_steps: int = field(default=0)
     num_visuals_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""

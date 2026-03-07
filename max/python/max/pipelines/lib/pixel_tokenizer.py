@@ -125,9 +125,11 @@ class PixelGenerationTokenizer(
         secondary_max_length: int | None = None,
         trust_remote_code: bool = False,
         context_validators: list[Callable[[PixelContext], None]] | None = None,
+        default_num_inference_steps: int = 50,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
+        self._default_num_inference_steps = default_num_inference_steps
 
         if max_length is None:
             raise ValueError(
@@ -577,7 +579,6 @@ class PixelGenerationTokenizer(
         negative_token_ids: npt.NDArray[np.int64] | None = None
         negative_attn_mask: npt.NDArray[np.bool_] | None = None
         negative_token_ids_2: npt.NDArray[np.int64] | None = None
-        attn_mask_neg: npt.NDArray[np.bool_] | None = None
         if do_true_cfg:
             negative_token_ids, negative_attn_mask = await self.encode(
                 negative_prompt or ""
@@ -591,7 +592,6 @@ class PixelGenerationTokenizer(
         return (
             token_ids,
             attn_mask,
-            attn_mask_neg,
             token_ids_2,
             attn_mask_2,
             negative_token_ids,
@@ -1021,7 +1021,6 @@ class PixelGenerationTokenizer(
         (
             token_ids,
             attn_mask,
-            attn_mask_neg,
             token_ids_2,
             _attn_mask_2,
             negative_token_ids,
