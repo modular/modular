@@ -568,22 +568,27 @@ fn _amd_gemv_config[
 
     Thread count: pick from {64, 128, 256} to balance wave parallelism
     vs K-iteration count (tile_k = num_threads × simd_width). Single warp
-    (64T) for small K to avoid LDS sync. 256T when K provides ≥2 clean
-    iterations or exactly 1 clean iteration. 128T for mid-K with bad
-    fractional iterations at 256T.
+    (64T) for K≤2048 (both BF16 and FP8) to avoid LDS sync. 256T when K
+    provides ≥2 clean iterations or exactly 1 clean iteration. 128T for
+    mid-K with bad fractional iterations at 256T.
 
-    tile_n: when there are enough K-iterations (≥4), pick the largest
-    tile_n from {4,2,1} that gives ≥ min_waves_per_simd waves/SIMD.
-    Otherwise default to tile_n=2 (grid parallelism > loads-per-iter).
+    tile_n: when there are enough K-iterations (≥3 for BF16, ≥4 for FP8),
+    pick the largest tile_n from {4,2,1} that gives ≥ min_waves_per_simd
+    waves/SIMD. Otherwise default to tile_n=2 (grid parallelism >
+    loads-per-iter).
     """
     comptime tile_k_256 = 256 * simd_width
-    comptime min_waves_per_simd = 10
+    # BF16 (sw=8) has 2× more K-iterations than FP8 (sw=16) for the same K,
+    # so each wave keeps the SIMD busy longer and fewer waves/SIMD suffice.
+    # FP8 needs ≥10 waves/SIMD (Exp Q showed tile_n=1 optimal for small N).
+    # BF16 needs ≥5 waves/SIMD to hide L2 latency on K=16384 shapes.
+    comptime min_waves_per_simd = 5 if simd_width <= 8 else 10
 
     # --- Thread count ---
-    # Single warp threshold scales with simd_width:
-    # BF16: K≤1024 (2×8×64), FP8: K≤2048 (2×16×64).
+    # Single warp (64T) avoids LDS cross-warp reduction overhead.
+    # BF16: K≤1024 (tile_k=512, 2 iters), FP8: K≤2048 (tile_k=1024, 2 iters).
     var num_threads: Int
-    if static_K <= 2 * simd_width * WARP_SIZE:
+    if static_K <= 2 * WARP_SIZE * simd_width:
         num_threads = 64
     elif static_K >= 2 * tile_k_256 or static_K % tile_k_256 == 0:
         # ≥2 clean iterations, or exactly 1 clean iteration at 256T.
@@ -599,7 +604,10 @@ fn _amd_gemv_config[
     # With <4 iterations, grid parallelism matters more — keep tile_n=2.
     var tile_n = 2
     var k_iters = static_K // (num_threads * simd_width)
-    if k_iters >= 4 and has_N:
+    # BF16 has NT loads + fdot2 doing more work per iteration, so tile_n=4
+    # is profitable at fewer K-iterations (≥3 vs ≥4 for FP8).
+    comptime min_k_iters_for_tile_n = 3 if simd_width <= 8 else 4
+    if k_iters >= min_k_iters_for_tile_n and has_N:
         var wavefront_capacity = static_N * (num_threads // WARP_SIZE)
         if wavefront_capacity >= min_waves_per_simd * max_thread_block_size * 4:
             tile_n = 4
@@ -608,9 +616,14 @@ fn _amd_gemv_config[
         ):
             tile_n = 2
         else:
-            tile_n = 1
+            # tile_n=1 only benefits FP8 (more grid parallelism needed).
+            # BF16 has more work per iteration, so tile_n=2 is the floor.
+            tile_n = 1 if simd_width > 8 else 2
 
-    return IndexList[3](num_threads, tile_n, 2)
+    # unroll=4 when there are enough K-iterations and tile_n is small enough
+    # to avoid register pressure (tile_n=4 + unroll=4 hurts large-N shapes).
+    var unroll = 4 if k_iters >= 8 and tile_n <= 2 else 2
+    return IndexList[3](num_threads, tile_n, unroll)
 
 
 @always_inline
