@@ -13,8 +13,9 @@
 """Module implementation using eager tensors."""
 
 from .conv import Conv2d
+from .dropout import Dropout
 from .embedding import Embedding
-from .linear import Linear
+from .linear import Identity, Linear
 from .module import Module, module_dataclass
 from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
@@ -22,9 +23,11 @@ from .sequential import ModuleList, Sequential
 
 __all__ = [
     "Conv2d",
+    "Dropout",
     "Embedding",
     "GemmaRMSNorm",
     "GroupNorm",
+    "Identity",
     "LayerNorm",
     "Linear",
     "Module",
