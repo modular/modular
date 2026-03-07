@@ -314,5 +314,16 @@ def test_tuple_assert_equal_failure_message() raises:
         assert_equal((1, 2), (1, 3))
 
 
+def test_tuple_hashable() raises:
+    """Test that Tuple conforms to Hashable and produces stable hashes."""
+    # Equal tuples must produce the same hash
+    assert_equal(hash((1, 2)), hash((1, 2)))
+    assert_equal(hash((1, "hello")), hash((1, "hello")))
+    assert_equal(hash(()), hash(()))
+
+    # Multi-type tuple
+    assert_equal(hash((True, 42, "hi")), hash((True, 42, "hi")))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

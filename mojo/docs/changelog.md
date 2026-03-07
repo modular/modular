@@ -320,6 +320,12 @@ what we publish.
 
 ### Library changes
 
+- `Tuple` now conforms to the `Hashable` trait when all element types are
+  `Hashable`. Each element is hashed independently (order-sensitive), so
+  `hash((1, 2)) == hash((1, 2))` and `hash((1, 2)) != hash((2, 1))` in
+  practice. This enables `Tuple` as a `Dict`/`Set` key once `Equatable`
+  conformance also lands.
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,
