@@ -20,7 +20,6 @@ on-the-fly during memory loads.
 """
 
 from std.gpu.memory import AddressSpace
-from layout import Layout, LayoutTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
 from layout.tile_tensor import TileTensor, TensorLayout
 from std.utils.index import IndexList
@@ -64,39 +63,6 @@ struct TileLoaderTMAIm2col[
     fn __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
         self.tma_op = tma_op
         self.multicast_mask = multicast_mask
-
-    @always_inline
-    fn load[
-        tile_layout: Layout,
-        /,
-        alignment: Int = 128,
-    ](
-        self,
-        dest: LayoutTensor[
-            Self.dtype,
-            tile_layout,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-            alignment=alignment,
-        ],
-        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
-        k_coord: UInt,
-        m_coord: UInt,
-    ):
-        """Load an activation tile using im2col TMA.
-
-        Note: Uses non-multicast TMA because CUTLASS disables multicast im2col
-        on SM100/SM120 (SM90_TMA_LOAD_IM2COL_MULTICAST has CUTE_INVALID_CONTROL_PATH).
-
-        Args:
-            dest: Destination SMEM tile.
-            barrier: Memory barrier for TMA completion signaling.
-            k_coord: K dimension coordinate (C * R * S indexing).
-            m_coord: M dimension coordinate (batch * H_out * W_out indexing).
-        """
-        self.tma_op[].async_copy[Self.cta_group](
-            dest, barrier, (k_coord, m_coord)
-        )
 
     @always_inline
     fn load[
