@@ -15,6 +15,10 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std.builtin.comparable import (
+    _constrained_elements_comparable,
+    _constrained_elements_equatable,
+)
 from std.builtin.constrained import _constrained_conforms_to
 from std.format._utils import (
     write_sequence_to,
@@ -34,7 +38,9 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
+struct Tuple[*element_types: Movable](
+    Comparable, ImplicitlyCopyable, Sized, Writable
+):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
@@ -243,6 +249,114 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
 
         comptime for i in range(type_of(self).__len__()):
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+
+    # ===-------------------------------------------------------------------===#
+    # Comparable / Equatable trait conformance (other: Self overloads)
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        """Compare this tuple to another tuple of the same type for equality.
+
+        Constraints:
+            All element types must conform to `Equatable`.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is equal to the other tuple, False otherwise.
+        """
+        _constrained_elements_equatable[*Self.element_types, Parent=Self]()
+        comptime for i in range(Self.__len__()):
+            ref lhs = trait_downcast[Equatable](self[i])
+            ref rhs = trait_downcast[Equatable](other[i])
+            if lhs != rhs:
+                return False
+        return True
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        """Compare this tuple to another tuple of the same type for inequality.
+
+        Constraints:
+            All element types must conform to `Equatable`.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is not equal to the other tuple, False otherwise.
+        """
+        return not self.__eq__(other)
+
+    @always_inline
+    fn __lt__(self, other: Self) -> Bool:
+        """Compare this tuple to another tuple using lexicographic less-than.
+
+        Constraints:
+            All element types must conform to `Comparable`.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically less than the other, False otherwise.
+        """
+        _constrained_elements_comparable[*Self.element_types, Parent=Self]()
+        comptime for i in range(Self.__len__()):
+            ref lhs = trait_downcast[Comparable](self[i])
+            ref rhs = trait_downcast[Comparable](other[i])
+            if lhs < rhs:
+                return True
+            if rhs < lhs:
+                return False
+        return False  # equal
+
+    @always_inline
+    fn __le__(self, other: Self) -> Bool:
+        """Compare this tuple to another tuple using lexicographic less-than-or-equal.
+
+        Constraints:
+            All element types must conform to `Comparable`.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically <= the other, False otherwise.
+        """
+        return not other.__lt__(self)
+
+    @always_inline
+    fn __gt__(self, other: Self) -> Bool:
+        """Compare this tuple to another tuple using lexicographic greater-than.
+
+        Constraints:
+            All element types must conform to `Comparable`.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically greater than the other, False otherwise.
+        """
+        return other.__lt__(self)
+
+    @always_inline
+    fn __ge__(self, other: Self) -> Bool:
+        """Compare this tuple to another tuple using lexicographic greater-than-or-equal.
+
+        Constraints:
+            All element types must conform to `Comparable`.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically >= the other, False otherwise.
+        """
+        return not self.__lt__(other)
 
     @always_inline
     fn __eq__[

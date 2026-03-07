@@ -320,6 +320,20 @@ what we publish.
 
 ### Library changes
 
+- `Tuple` now conforms to the `Comparable` trait, enabling its use in generic
+  algorithms that require ordered comparisons:
+
+  ```mojo
+  fn min_val[T: Comparable & ImplicitlyCopyable](a: T, b: T) -> T:
+      return a if a < b else b
+
+  min_val((1, 2), (1, 3))  # returns (1, 2)
+  ```
+
+  The existing parametric overloads (for cross-length tuple comparisons like
+  `(1,) < (1, 2)`) are unchanged. The new conforming overloads satisfy the
+  `Comparable` trait interface for use in generic code.
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,

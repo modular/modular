@@ -310,8 +310,19 @@ def test_tuple_assert_not_equal() raises:
 
 
 def test_tuple_assert_equal_failure_message() raises:
-    with assert_raises(contains="Tuple[Int, Int](Int(1), Int(2))"):
+    with assert_raises(contains="(1, 2)"):
         assert_equal((1, 2), (1, 3))
+
+
+def test_tuple_comparable_trait_conformance() raises:
+    """Verify Tuple conforms to Comparable so it can be used as a Comparable."""
+
+    fn min_comparable[T: Comparable & ImplicitlyCopyable](a: T, b: T) -> T:
+        return a if a < b else b
+
+    assert_equal(min_comparable((1, 2), (1, 3)), (1, 2))
+    assert_equal(min_comparable((2, 0), (1, 9)), (1, 9))
+    assert_equal(min_comparable((1, 1), (1, 1)), (1, 1))
 
 
 def main() raises:
