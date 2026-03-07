@@ -364,12 +364,6 @@ kgen.generator @eq_compare_sub_elements<a: !kgen.variadic<index>, b: !kgen.varia
     eq(:index #kgen.variadic.size<#kgen.param.decl.ref<"b"> :!kgen.variadic<index>>, 2)
   )>
 
-  // CHECK-NEXT: <eq(:variadic<index> #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"x"> : index>, #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"y"> : index>)>
-  kgen.param.constant: i1 = <eq(:!kgen.variadic<index>
-    #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"x"> : index>,
-    #kgen.variadic.splat<:index 2, #kgen.param.decl.ref<"y"> : index>
-  )>
-
   kgen.return
 }
 

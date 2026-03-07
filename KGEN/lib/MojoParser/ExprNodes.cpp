@@ -1381,8 +1381,9 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
     if (!value)
       return {};
     if (!sugarIsa<VariadicType>(value.getType())) {
-      emitter.emitError(unpackExpr->getLoc(), "only variadics can be unpacked")
-          << unpackExpr->getRange();
+      emitter.emitError(unpackExpr->getLoc(),
+                        "cannot unpack non-variadic type ")
+          << value.getType() << unpackExpr->getRange();
       return {};
     }
     return UnpackedAttr::get(value, /*kwOnly=*/false,

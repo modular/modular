@@ -56,23 +56,15 @@ struct Variadic:
     ] = _MapVariadicAndIdxToType[
         To=T, VariadicType=element_types, Mapper=_ReversedVariadic[T, ...]
     ]
-    comptime splat[type: AnyType, count: Int] = __mlir_attr[
-        `#kgen.variadic.splat<`,
-        type,
-        `,`,
-        count._mlir_value,
-        `> : `,
-        Variadic.TypesOfTrait[type_of(type)],
+    comptime splat_type[
+        Trait: type_of(AnyType), //, count: Int, type: Trait
+    ]: Variadic.TypesOfTrait[Trait] = Self.tabulate_type[
+        Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
     ]
-    comptime splat_value[T: AnyType, //, value: T, count: Int] = __mlir_attr[
-        `#kgen.variadic.splat<:`,
-        +T,
-        ` `,
-        +value,
-        `,`,
-        count._mlir_value,
-        `> : `,
-        Variadic.ValuesOfType[T],
+    comptime splat_value[
+        T: AnyType, //, count: Int, value: T
+    ]: Variadic.ValuesOfType[T] = Self.tabulate[
+        count, _SplatValueTabulator[value, _]
     ]
 
     # ===-----------------------------------------------------------------------===#
@@ -85,13 +77,28 @@ struct Variadic:
         //,
         count: Int,
         Mapper: _TabulateIntToValueGeneratorType[ToT],
-    ] = __mlir_attr[
+    ]: Variadic.ValuesOfType[ToT] = __mlir_attr[
         `#kgen.variadic.tabulate<`,
         count._mlir_value,
         `,`,
-        _IndexToIntTabulateWrap[ToT, Mapper, ...],
+        _IndexToIntTabulateWrap[Mapper, ...],
         `> : `,
         Variadic.ValuesOfType[ToT],
+    ]
+
+    comptime tabulate_type[
+        Trait: type_of(AnyType),
+        ToT: Trait,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
+    ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
+        `#kgen.variadic.tabulate<`,
+        count._mlir_value,
+        `,`,
+        _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+        `> : `,
+        Variadic.TypesOfTrait[Trait],
     ]
 
     # ===-----------------------------------------------------------------------===#
@@ -192,6 +199,7 @@ struct Variadic:
 # Tabulate Helpers
 # ===-----------------------------------------------------------------------===#
 
+
 comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
     `!lit.generator<<"Idx":`,
     Int,
@@ -200,11 +208,37 @@ comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
     `>`,
 ]
 
+comptime _TabulateIntToTypeGeneratorType[
+    Trait: type_of(AnyType), ToT: Trait
+] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `> `,
+    Trait,
+    `>`,
+]
+
+
 comptime _IndexToIntTabulateWrap[
     ToT: AnyType,
+    //,
     ToWrap: _TabulateIntToValueGeneratorType[ToT],
     idx: __mlir_type.index,
+]: ToT = ToWrap[Int(mlir_value=idx)]
+
+comptime _IndexToIntTypeTabulateWrap[
+    Trait: type_of(AnyType),
+    ToT: Trait,
+    //,
+    ToWrap: _TabulateIntToTypeGeneratorType[Trait, ToT],
+    idx: __mlir_type.index,
 ] = ToWrap[Int(mlir_value=idx)]
+
+
+comptime _SplatValueTabulator[T: AnyType, //, value: T, index: Int] = value
+comptime _SplatTypeTabulator[
+    Trait: type_of(AnyType), T: Trait, index: Int
+]: Trait = T
 
 
 # ===-----------------------------------------------------------------------===#
