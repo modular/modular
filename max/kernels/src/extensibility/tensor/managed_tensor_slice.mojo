@@ -944,9 +944,9 @@ struct ManagedTensorSlice[
         out result: ManagedTensorSlice[
             rank=new_rank,
             io_spec=Self.io_spec,
-            static_spec=Self.static_spec.with_layout[new_rank](
-                new_static_shape, new_static_strides
-            ),
+            static_spec=Self.static_spec.with_layout[
+                new_rank, new_static_shape, new_static_strides
+            ](),
         ],
     ):
         comptime assert (

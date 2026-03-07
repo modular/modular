@@ -1835,12 +1835,13 @@ struct StaticBroadcastTo:
         x: InputTensor[dtype=dtype, rank=in_rank, ...],
         output_shape: IndexList[out_rank],
         out result: InputTensor[
-            static_spec=x.static_spec.with_layout[out_rank](
+            static_spec=x.static_spec.with_layout[
+                out_rank,
                 output_static_shape,
                 Self.get_view_strides[out_rank, x.rank](
                     x._static_shape, x._static_strides
                 ),
-            )
+            ]()
         ],
     ):
         var x_runtime_strides = Self.build_view[out_rank](x)
@@ -1902,10 +1903,11 @@ struct StaticReshape:
         input: InputTensor[dtype=dtype, ...],
         shape: IndexList[output_rank],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout[output_rank](
+            static_spec=input.static_spec.with_layout[
+                output_rank,
                 output_static_shape,
                 Self.get_view_strides[output_rank](output_static_shape),
-            )
+            ]()
         ],
     ):
         var view_buffer = reshape(
@@ -2016,12 +2018,13 @@ struct Transpose:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         permutations: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout[rank](
+            static_spec=input.static_spec.with_layout[
+                rank,
                 output_static_shape,
                 Self.get_view_strides[static_permutations, rank](
                     input._static_strides
                 ),
-            )
+            ]()
         ],
     ):
         shape, strides = Self.transpose_in_place(input, permutations)
@@ -2110,11 +2113,13 @@ struct Slice:
         stops: InputTensor[rank=1, ...],
         steps: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout_and_alignment[rank](
+            static_spec=input.static_spec.with_layout_and_alignment[
+                rank,
                 output_static_shape,
                 Self.get_view_strides[rank](
                     input._static_strides, static_steps
                 ),
+            ](
                 1,
             )
         ],
@@ -2294,12 +2299,14 @@ struct SliceDim:
         stops: Scalar,
         steps: Scalar,
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout_and_alignment[rank](
+            static_spec=input.static_spec.with_layout_and_alignment[
+                rank,
                 output_static_shape,
                 Self.get_view_strides[rank, axis](
                     input._static_strides,
                     static_step.at[0](),
                 ),
+            ](
                 Self.get_view_alignment[rank, dtype](
                     input._static_strides,
                     axis,
