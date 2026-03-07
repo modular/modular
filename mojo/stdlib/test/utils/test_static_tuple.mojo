@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal, assert_true, assert_false
 
 from std.utils import StaticTuple
 
@@ -49,6 +49,56 @@ def test_setitem() raises:
     comptime idx: Int = 0
     t.__setitem__[idx](400)
     assert_equal(t[0], 400)
+
+
+def test_equality() raises:
+    var a = StaticTuple[Int, 3](1, 2, 3)
+    var b = StaticTuple[Int, 3](1, 2, 3)
+    var c = StaticTuple[Int, 3](1, 2, 4)
+
+    assert_true(a == b)
+    assert_false(a == c)
+    assert_false(a != b)
+    assert_true(a != c)
+
+
+def test_comparison() raises:
+    var a = StaticTuple[Int, 3](1, 2, 3)
+    var b = StaticTuple[Int, 3](1, 2, 4)
+    var c = StaticTuple[Int, 3](1, 2, 3)
+    var d = StaticTuple[Int, 3](2, 0, 0)
+
+    # Less than
+    assert_true(a < b)
+    assert_false(b < a)
+    assert_false(a < c)
+
+    # First element dominates
+    assert_true(a < d)
+    assert_false(d < a)
+
+    # Less than or equal
+    assert_true(a <= c)
+    assert_true(a <= b)
+    assert_false(b <= a)
+
+    # Greater than
+    assert_true(b > a)
+    assert_false(a > b)
+    assert_false(a > c)
+
+    # Greater than or equal
+    assert_true(a >= c)
+    assert_true(b >= a)
+    assert_false(a >= b)
+
+    # Empty tuple
+    var e1 = StaticTuple[Int, 0]()
+    var e2 = StaticTuple[Int, 0]()
+    assert_true(e1 == e2)
+    assert_false(e1 < e2)
+    assert_true(e1 <= e2)
+    assert_true(e1 >= e2)
 
 
 def main() raises:

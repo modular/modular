@@ -264,3 +264,134 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)
+
+    @always_inline
+    fn __eq__[
+        _E: Equatable & TrivialRegisterPassable, //
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
+        """Returns `True` if all elements are equal.
+
+        Parameters:
+            _E: The element type, must be `Equatable` and
+                `TrivialRegisterPassable`.
+
+        Args:
+            other: The tuple to compare with.
+
+        Returns:
+            True if all corresponding elements are equal.
+        """
+        comptime for i in range(Self.size):
+            if self[i] != other[i]:
+                return False
+        return True
+
+    @always_inline
+    fn __ne__[
+        _E: Equatable & TrivialRegisterPassable, //
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
+        """Returns `True` if any element differs.
+
+        Parameters:
+            _E: The element type, must be `Equatable` and
+                `TrivialRegisterPassable`.
+
+        Args:
+            other: The tuple to compare with.
+
+        Returns:
+            True if any corresponding elements differ.
+        """
+        return not (self == other)
+
+    @always_inline
+    fn __lt__[
+        _E: Comparable & TrivialRegisterPassable, //
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
+        """Returns `True` if `self` is lexicographically less than `other`.
+
+        Parameters:
+            _E: The element type, must be `Comparable` and
+                `TrivialRegisterPassable`.
+
+        Args:
+            other: The tuple to compare with.
+
+        Returns:
+            True if `self` is lexicographically less than `other`.
+        """
+        comptime for i in range(Self.size):
+            if self[i] < other[i]:
+                return True
+            if self[i] != other[i]:
+                return False
+        return False
+
+    @always_inline
+    fn __le__[
+        _E: Comparable & TrivialRegisterPassable, //
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
+        """Returns `True` if `self` is lexicographically less than or equal to
+        `other`.
+
+        Parameters:
+            _E: The element type, must be `Comparable` and
+                `TrivialRegisterPassable`.
+
+        Args:
+            other: The tuple to compare with.
+
+        Returns:
+            True if `self` is lexicographically less than or equal to `other`.
+        """
+        return not (other < self)
+
+    @always_inline
+    fn __gt__[
+        _E: Comparable & TrivialRegisterPassable, //
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
+        """Returns `True` if `self` is lexicographically greater than `other`.
+
+        Parameters:
+            _E: The element type, must be `Comparable` and
+                `TrivialRegisterPassable`.
+
+        Args:
+            other: The tuple to compare with.
+
+        Returns:
+            True if `self` is lexicographically greater than `other`.
+        """
+        return other < self
+
+    @always_inline
+    fn __ge__[
+        _E: Comparable & TrivialRegisterPassable, //
+    ](
+        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
+    ) -> Bool:
+        """Returns `True` if `self` is lexicographically greater than or equal
+        to `other`.
+
+        Parameters:
+            _E: The element type, must be `Comparable` and
+                `TrivialRegisterPassable`.
+
+        Args:
+            other: The tuple to compare with.
+
+        Returns:
+            True if `self` is lexicographically greater than or equal to
+            `other`.
+        """
+        return not (self < other)

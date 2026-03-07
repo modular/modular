@@ -342,6 +342,15 @@ what we publish.
 
 ### Library changes
 
+- `StaticTuple` now supports comparison operators. `__eq__`/`__ne__` are
+  available when `element_type: Equatable`, and `__lt__`/`__le__`/`__gt__`/
+  `__ge__` are available when `element_type: Comparable`. All use
+  lexicographic ordering with compile-time unrolled loops.
+
+- `Dict` now uses real conditional conformances for `Writable`. The `Dict` type
+  only conforms to `Writable` when both its key and value types do, enforced at
+  compile time via `where` clauses.
+
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `Dict`: `Writable`
