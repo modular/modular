@@ -90,8 +90,7 @@ from buffer import NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from buffer import DimList, NDBuffer
 from std.utils import IndexList
@@ -360,9 +359,9 @@ fn matmul[
     Matmul using the vendor BLAS library. With a global handle.
     """
 
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = TileTensor(c).to_layout_tensor()
+    var a_tensor = TileTensor(a).to_layout_tensor()
+    var b_tensor = TileTensor(b).to_layout_tensor()
 
     # Push the device context to ensure correct CUDA context is current for all
     # vendor BLAS calls.
@@ -574,9 +573,9 @@ fn matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = TileTensor(c).to_layout_tensor()
+    var a_tensor = TileTensor(a).to_layout_tensor()
+    var b_tensor = TileTensor(b).to_layout_tensor()
 
     matmul[use_tf32=use_tf32](
         ctx,
