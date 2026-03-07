@@ -61,10 +61,10 @@ def test_image_provider_options_minimal() -> None:
 
 def test_image_provider_options_with_param() -> None:
     """Test creating ImageProviderOptions with parameters."""
-    opts = ImageProviderOptions(width=1024, height=768, num_images=2)
+    opts = ImageProviderOptions(width=1024, height=768, num_visuals=2)
     assert opts.width == 1024
     assert opts.height == 768
-    assert opts.num_images == 2
+    assert opts.num_visuals == 2
 
 
 def test_image_provider_options_frozen() -> None:
