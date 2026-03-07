@@ -348,6 +348,10 @@ what we publish.
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
   convert a `Bool` to an index.
 
+- `BenchConfig` and `Mode` in `std.benchmark.bencher` now conform to `Writable`,
+  enabling use with `String()`, `print()`, and any `Writer`-based formatting.
+  `Mode` also conforms to `Equatable`, supporting `==` and `!=` comparisons.
+
 - The `Stringable` and `Representable` traits are now deprecated. Use `Writable`
   instead to make your types formattable as strings.
   `Writable` provides a default implementation, so in many cases simply adding

@@ -323,7 +323,7 @@ struct Format(ImplicitlyCopyable, Writable):
 
 
 @fieldwise_init
-struct BenchConfig(Copyable):
+struct BenchConfig(Copyable, Writable):
     """Defines a benchmark configuration struct to control
     execution times and frequency.
     """
@@ -453,6 +453,36 @@ struct BenchConfig(Copyable):
 
         argparse()
 
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the benchmark configuration to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            "BenchConfig(min_runtime_secs=",
+            self.min_runtime_secs,
+            ", max_runtime_secs=",
+            self.max_runtime_secs,
+            ", max_iters=",
+            self.max_iters,
+            ")",
+        )
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `BenchConfig` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+
+        fmt.FormatStruct(writer, "BenchConfig").fields(
+            fmt.Named("min_runtime_secs", self.min_runtime_secs),
+            fmt.Named("max_runtime_secs", self.max_runtime_secs),
+            fmt.Named("max_iters", self.max_iters),
+        )
+
 
 @fieldwise_init
 struct BenchId:
@@ -533,7 +563,7 @@ struct BenchmarkInfo(Copyable):
 
 
 @fieldwise_init
-struct Mode(ImplicitlyCopyable):
+struct Mode(Equatable, ImplicitlyCopyable, Writable):
     """Defines a Benchmark Mode to distinguish between test runs and actual benchmarks.
     """
 
@@ -557,6 +587,27 @@ struct Mode(ImplicitlyCopyable):
         """
 
         return self.value == other.value
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the mode name to a writer.
+
+        Args:
+            writer: The writer to write the `Mode` to.
+        """
+        if self.value == Self.Benchmark.value:
+            writer.write_string("Benchmark")
+        else:
+            writer.write_string("Test")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `Mode` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string("Mode.")
+        self.write_to(writer)
 
 
 struct Bench(Writable):
