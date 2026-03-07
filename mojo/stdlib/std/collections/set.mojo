@@ -83,9 +83,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             ts: Variadic of elements to add to the set.
             __set_literal__: Tell Mojo to use this method for set literals.
         """
-        # TODO: Reserve space in this set. Also, take the elements as 'owned'
-        # and transfer them into the set to eliminate copyability.
-        self._data = Dict[Self.T, NoneType, Self.H]()
+        self._data = Dict[Self.T, NoneType, Self.H](capacity=len(ts))
         for t in ts:
             self.add(t)
 
@@ -96,7 +94,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             elements: A vector of elements to add to the set.
         """
-        self = Self()
+        self._data = Dict[Self.T, NoneType, Self.H](capacity=len(elements))
         for e in elements:
             self.add(e)
 
