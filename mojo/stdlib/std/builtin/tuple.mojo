@@ -23,12 +23,14 @@ from std.format._utils import (
 )
 from std.hashlib.hasher import Hasher
 from std.reflection.traits import (
+    AllComparable,
     AllCopyable,
     AllEquatable,
     AllHashable,
     AllImplicitlyCopyable,
     AllWritable,
 )
+from std.reflection.traits import AllEquatable
 from std.sys.intrinsics import _type_is_eq
 
 from std.reflection.type_info import _unqualified_type_name
@@ -42,6 +44,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
+    Comparable where AllComparable[*element_types],
     Copyable where AllCopyable[*element_types],
     Equatable where AllEquatable[*element_types],
     Hashable where AllHashable[*element_types],
@@ -263,6 +266,94 @@ struct Tuple[*element_types: Movable](
 
         comptime for i in range(type_of(self).__len__()):
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+
+    # ===-------------------------------------------------------------------===#
+    # Comparable / Equatable trait conformance (other: Self overloads)
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool where AllComparable[*element_types]:
+        """Compare this tuple to another tuple of the same type for equality.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is equal to the other tuple, False otherwise.
+        """
+        comptime for i in range(Self.__len__()):
+            ref lhs = trait_downcast[Equatable](self[i])
+            ref rhs = trait_downcast[Equatable](other[i])
+            if lhs != rhs:
+                return False
+        return True
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool where AllComparable[*element_types]:
+        """Compare this tuple to another tuple of the same type for inequality.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is not equal to the other tuple, False otherwise.
+        """
+        return not self.__eq__(other)
+
+    @always_inline
+    fn __lt__(self, other: Self) -> Bool where AllComparable[*element_types]:
+        """Compare this tuple to another tuple using lexicographic less-than.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically less than the other, False otherwise.
+        """
+        comptime for i in range(Self.__len__()):
+            ref lhs = trait_downcast[Comparable](self[i])
+            ref rhs = trait_downcast[Comparable](other[i])
+            if lhs < rhs:
+                return True
+            if rhs < lhs:
+                return False
+        return False  # equal
+
+    @always_inline
+    fn __le__(self, other: Self) -> Bool where AllComparable[*element_types]:
+        """Compare this tuple to another tuple using lexicographic less-than-or-equal.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically <= the other, False otherwise.
+        """
+        return not other.__lt__(self)
+
+    @always_inline
+    fn __gt__(self, other: Self) -> Bool where AllComparable[*element_types]:
+        """Compare this tuple to another tuple using lexicographic greater-than.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically greater than the other, False otherwise.
+        """
+        return other.__lt__(self)
+
+    @always_inline
+    fn __ge__(self, other: Self) -> Bool where AllComparable[*element_types]:
+        """Compare this tuple to another tuple using lexicographic greater-than-or-equal.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if this tuple is lexicographically >= the other, False otherwise.
+        """
+        return not self.__lt__(other)
 
     @always_inline
     def __eq__(
