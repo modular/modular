@@ -61,11 +61,10 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import row_major
+from layout import TileTensor, RowMajorLayout, ComptimeInt
 from layout.layout import Layout
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
-from layout.layout_tensor import LayoutTensor
 from nn.mha_fa3_utils import (
     OptionalPointer,
     KVTMATile,
@@ -228,8 +227,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             SplitAccumType=Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        scalar_args: LayoutTensor[
-            DType.int64, Layout.row_major(4), MutAnyOrigin
+        scalar_args: TileTensor[
+            DType.int64, RowMajorLayout[ComptimeInt[4]], MutAnyOrigin
         ],
     ):
         # Extract scalar launch args from the stable device buffer.

@@ -40,8 +40,7 @@ from layout.tma_async import (
     SharedMemBarrier,
 )
 from std.memory import bitcast
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import TileTensor, RowMajorLayout, ComptimeInt
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )
@@ -266,8 +265,8 @@ struct MLA_SM100_Decode_KV_FP8[
             SplitAccumType=Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        scalar_args: LayoutTensor[
-            DType.int64, Layout.row_major(4), MutAnyOrigin
+        scalar_args: TileTensor[
+            DType.int64, RowMajorLayout[ComptimeInt[4]], MutAnyOrigin
         ],
     ):
         # Softmax now includes the epilogue, so it needs more registers
