@@ -752,24 +752,24 @@ class OverlapTextGenerationPipeline(
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Executes a batch of requests asynchronously on the GPU.
 
-        This method will return before the outputs for the current batch are ready.
-        The caller may need to call `.execute()` again (possibly with an empty batch)
-        to retrieve these outputs. For example:
+        This method returns before the outputs for the current batch are
+        ready. The caller may need to call ``execute()`` again (possibly
+        with an empty batch) to retrieve these outputs. For example:
 
-        ```python
-        output_a = pipeline.execute(inputs)
-        assert len(outputs) == 0
+        .. code-block:: python
 
-        output_b = pipeline.execute(empty_inputs)
-        assert len(outputs) == len(inputs.flat_batch)
-        ```
+            output_a = pipeline.execute(inputs)
+            assert len(outputs) == 0
+
+            output_b = pipeline.execute(empty_inputs)
+            assert len(outputs) == len(inputs.flat_batch)
 
         Args:
             inputs: The inputs for the batch.
 
         Returns:
-            A dictionary of request IDs to outputs. The outputs will not correspond
-            to the requests in the input batch. Instead they are of the previous batch.
+            A dictionary of request IDs to outputs. The outputs do not correspond
+            to the requests in the input batch. Instead they are from the previous batch.
         """
         if inputs.enable_log_probs:
             raise ValueError(

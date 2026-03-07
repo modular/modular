@@ -875,12 +875,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
-        """Execute EAGLE speculative decoding.
+        """Executes EAGLE speculative decoding.
 
         EAGLE verify-then-draft flow:
-        1. Prefill: target forward + draft KV warmup + sample 1 draft token
+
+        1. Prefill: target forward + draft KV warmup + sample one draft token.
         2. Decode: verify saved drafts + draft new tokens using verification
-           hidden states
+           hidden states.
         """
         # TODO: The sampled draft token during prefill is only for having something to verify in the first call to decode
         context_batch = inputs.flat_batch
