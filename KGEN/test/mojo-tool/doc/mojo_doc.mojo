@@ -115,6 +115,18 @@ fn fn_hidden() -> Int:
     return 33
 
 
+# CHECK-NOT: _private_name
+
+
+comptime _private_member = ""
+
+
+# CHECK-NOT: __double_underscore_private_member
+
+
+comptime __double_underscore_private_member = ""
+
+
 # CHECK-LABEL:  "name": "fn_that_async",
 # CHECK:  "overloads":
 # CHECK:      "async": true
