@@ -374,6 +374,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             The number of elements in the deque.
         """
+        assert (
+            self._capacity > 0 and self._capacity & (self._capacity - 1) == 0
+        ), "Deque._capacity must be a positive power of two"
         return (self._tail - self._head) & (self._capacity - 1)
 
     fn __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
