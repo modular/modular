@@ -51,8 +51,8 @@ napoleon_custom_sections = [("Configuration", "params_style")]
 
 # Link to other libraries for API links such as "pathlib.Path"
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/", None),
-    "numpy": ("https://numpy.org/doc/stable/", None)
+    "python": ("https://docs.python.org/", "../PYTHON_OBJECTS_INV"),
+    "numpy": ("https://numpy.org/doc/stable/", "../NUMPY_OBJECTS_INV")
 }
 
 # templates_path = ["_templates"]

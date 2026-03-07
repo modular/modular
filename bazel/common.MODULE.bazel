@@ -547,3 +547,29 @@ http_file(
         "https://files.pythonhosted.org/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl",
     ],
 )
+
+# Intersphinx oject inventory for Python
+http_archive(
+    name = "python-objects-inv",
+    build_file_content = """
+filegroup(
+    name = "python-objects-inv",
+    srcs = ["max/python/docs/inventories/python/objects.inv"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/python-objects-inv/3.14/e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5/python-objects-inv.tar.gz",
+)
+
+# Intersphinx oject inventory for Numpy
+http_archive(
+    name = "numpy-objects-inv",
+    build_file_content = """
+filegroup(
+    name = "numpy-objects-inv",
+    srcs = ["max/python/docs/inventories/numpy/objects.inv"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
+)
