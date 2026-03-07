@@ -81,7 +81,7 @@ class PixelGenerationRequest:
     """
     Number of denoising steps. More steps = higher quality but slower.
     """
-    num_images_per_prompt: int = 1
+    num_visuals_per_prompt: int = 1
     """
     Number of images/videos to generate per prompt.
     """
@@ -106,8 +106,8 @@ class PixelGenerationRequest:
         if self.num_inference_steps <= 0:
             raise ValueError("Number of inference steps must be positive.")
 
-        if self.num_images_per_prompt <= 0:
-            raise ValueError("Number of images per prompt must be positive.")
+        if self.num_visuals_per_prompt <= 0:
+            raise ValueError("Number of visuals per prompt must be positive.")
 
 
 @runtime_checkable
@@ -149,8 +149,8 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def num_images_per_prompt(self) -> int:
-        """Number of images to generate."""
+    def num_visuals_per_prompt(self) -> int:
+        """Number of visuals to generate."""
         ...
 
 

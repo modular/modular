@@ -673,8 +673,10 @@ class PixelContext:
         width: Width of the generated image/video in pixels.
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
-        num_images_per_prompt: Number of images/videos to generate per prompt.
-        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
+        num_visuals_per_prompt: Number of images/videos to generate per prompt.
+        input_image: Optional input image for image-to-image generation (NumPy uint8 array).
+        num_frames: Number of frames for video generation.
+        frame_rate: Frame rate for video generation.
         model_name: Name of the model being used.
     """
 
@@ -726,11 +728,17 @@ class PixelContext:
     guidance_scale: float = field(default=3.5)
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
-    num_images_per_prompt: int = field(default=1)
+    num_visuals_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
     image: npt.NDArray[np.uint8] | None = field(default=None)
     """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
+    num_frames: int | None = field(default=None)
+    frame_rate: int | None = field(default=None)
+
+    extra_params: dict[str, npt.NDArray[Any]] | None = field(default=None)
+    """Optional pipeline-specific extra arrays (e.g. LTX2 video/audio latents)."""
+
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

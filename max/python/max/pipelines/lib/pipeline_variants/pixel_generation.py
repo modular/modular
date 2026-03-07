@@ -105,10 +105,10 @@ class PixelGenerationPipeline(
             batch_size = len(flat_batch)
             logger.error(
                 "Encountered an exception while executing pixel batch: "
-                "batch_size=%d, num_images_per_prompt=%s, height=%s, width=%s, "
+                "batch_size=%d, num_visuals_per_prompt=%s, height=%s, width=%s, "
                 "num_inference_steps=%s",
                 batch_size,
-                model_inputs.num_images_per_prompt,
+                model_inputs.num_visuals_per_prompt,
                 model_inputs.height,
                 model_inputs.width,
                 model_inputs.num_inference_steps,
@@ -116,8 +116,8 @@ class PixelGenerationPipeline(
             raise
 
         images = model_outputs.images
-        num_images_per_prompt = model_inputs.num_images_per_prompt
-        expected_images = len(flat_batch) * num_images_per_prompt
+        num_visuals_per_prompt = model_inputs.num_visuals_per_prompt
+        expected_images = len(flat_batch) * num_visuals_per_prompt
 
         # Handle both numpy array (NHWC) and list of images
         if isinstance(images, np.ndarray):
@@ -156,10 +156,10 @@ class PixelGenerationPipeline(
 
         responses: dict[RequestID, GenerationOutput] = {}
         for index, (request_id, _context) in enumerate(flat_batch):
-            offset = index * num_images_per_prompt
+            offset = index * num_visuals_per_prompt
             # Select images for this request (already in NHWC format)
             pixel_data = np.stack(
-                image_list[offset : offset + num_images_per_prompt], axis=0
+                image_list[offset : offset + num_visuals_per_prompt], axis=0
             )
 
             responses[request_id] = GenerationOutput(

@@ -120,7 +120,7 @@ class TestPixelGenerationTokenizer:
         )
 
         # Verify cached values
-        assert tokenizer._vae_scale_factor == 8
+        assert tokenizer._vae_spatial_compression_ratio == 8
         assert tokenizer._default_sample_size == 128
         assert (
             tokenizer._num_channels_latents == 32
@@ -267,7 +267,7 @@ class TestPixelGenerationTokenizer:
 
         context = await tokenizer.new_context(request)
 
-        # Default: 128 * vae_scale_factor (8) = 1024
+        # Default: 128 * vae_spatial_compression_ratio (8) = 1024
         assert context.height == 1024
         assert context.width == 1024
 
