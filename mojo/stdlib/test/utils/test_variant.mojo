@@ -355,5 +355,12 @@ def test_niched_variant_correctly_handles_lifecycle() raises:
     assert_equal(dels, 2)
 
 
+def test_variant_conditional_conformances() raises:
+    assert_true(conforms_to(Variant[Int, String], Writable))
+    assert_true(conforms_to(Variant[Int], Writable))
+    # TODO(MOCO-3413): Enable negative test cases
+    # assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

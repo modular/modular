@@ -343,6 +343,7 @@ This version is still a work in progress.
   - `List`: `Equatable`, `Writable`
   - `Optional`: `Writable`
   - `Tuple`: `Writable`
+  - `Variant`: `Writable`
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
