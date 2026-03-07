@@ -137,7 +137,7 @@ void ParamInf::dump() const {
 /// will have UnboundAttr parameters, instead of fully bound ones like a normal
 /// argument.
 LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
-  DeclResolver::DeclScopeChanger x(declIfKnown);
+  DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
 
   ASTType returnedType =
       evaluator.getReboundType(signature.getUserResultType());
@@ -241,7 +241,7 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
                                         CallSyntax syntax) {
   // Make sure the diagnostic machinery knows about our getDeclScope() so
   // parameter names get emitted correctly.
-  DeclResolver::DeclScopeChanger x(declIfKnown);
+  DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getDiag(operand.expr->getLoc());
@@ -530,7 +530,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
                                         CallSyntax syntax) {
   // Make sure the diagnostic machinery knows about our getDeclScope() so
   // parameter names get emitted correctly.
-  DeclResolver::DeclScopeChanger x(declIfKnown);
+  DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
 
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getDiag(operand.expr->getLoc());
@@ -839,7 +839,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
 
   // Otherwise, the parameter is simply the wrong type, emit an error about this
   // problem.
-  DeclResolver::DeclScopeChanger x(&(getDeclScope()));
+  DeclResolver::DiagnosticDeclContextChanger x(&(getDeclScope()));
   MojoInflightDiag &diag = getDiag({});
   if (declIfKnown) // Why only structs? Seems arbitrary, push higher?
     diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
@@ -1628,7 +1628,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 
     {
       // The parameter name is scoped to 'declScope'.
-      DeclResolver::DeclScopeChanger x(&paramBindings.declScope);
+      DeclResolver::DiagnosticDeclContextChanger x(&paramBindings.declScope);
       diag << "failed to infer parameter "
            << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
                                     declaredParamTypes[paramIdx]);

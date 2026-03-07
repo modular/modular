@@ -30,24 +30,22 @@ using namespace KGEN;
 using namespace LIT;
 
 //===----------------------------------------------------------------------===//
-// DeclScopeChanger
+// DiagnosticDeclContextChanger
 //===----------------------------------------------------------------------===//
 
-DeclResolver::DeclScopeChanger::DeclScopeChanger(ASTDecl *declToUse) {
+DeclResolver::DiagnosticDeclContextChanger::DiagnosticDeclContextChanger(
+    ASTDecl *declToUse) {
   if (!declToUse)
     return;
   auto &shared = declToUse->getShared();
   resolver = &*shared.declResolver;
-  map = std::move(resolver->declsCurrentlyProcessing.map);
-  stack = std::move(resolver->declsCurrentlyProcessing.stack);
-  (void)resolver->declsCurrentlyProcessing.insert(declToUse,
-                                                  declToUse->getLoc());
+  prevDiagnosticDeclContext = resolver->diagnosticDeclContext;
+  resolver->diagnosticDeclContext = declToUse;
 }
-DeclResolver::DeclScopeChanger::~DeclScopeChanger() {
+DeclResolver::DiagnosticDeclContextChanger::~DiagnosticDeclContextChanger() {
   if (!resolver)
     return;
-  resolver->declsCurrentlyProcessing.map = std::move(map);
-  resolver->declsCurrentlyProcessing.stack = std::move(stack);
+  resolver->diagnosticDeclContext = prevDiagnosticDeclContext;
 }
 
 //===----------------------------------------------------------------------===//
