@@ -85,7 +85,11 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             ts: Variadic of elements to add to the set.
             __set_literal__: Tell Mojo to use this method for set literals.
         """
-        self._data = Dict[Self.T, NoneType, Self.H](capacity=len(ts))
+        # Request ceil(8n/7) slots so that Dict's 7/8 load factor yields
+        # at least len(ts) usable entries without triggering a rehash.
+        self._data = Dict[Self.T, NoneType, Self.H](
+            capacity=(len(ts) * 8 + 6) // 7
+        )
         for t in ts:
             self.add(t)
 
@@ -96,7 +100,11 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             elements: A vector of elements to add to the set.
         """
-        self._data = Dict[Self.T, NoneType, Self.H](capacity=len(elements))
+        # Request ceil(8n/7) slots so that Dict's 7/8 load factor yields
+        # at least len(elements) usable entries without triggering a rehash.
+        self._data = Dict[Self.T, NoneType, Self.H](
+            capacity=(len(elements) * 8 + 6) // 7
+        )
         for e in elements:
             self.add(e)
 
