@@ -79,7 +79,7 @@ class ImageProviderOptions(BaseModel):
         gt=0,
     )
 
-    num_images: int = Field(
+    num_visuals: int = Field(
         1,
         description="The number of images to generate. Defaults to 1.",
         ge=1,

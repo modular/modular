@@ -343,7 +343,7 @@ class PixelModelInputs:
     - Must be >= 0.
     """
 
-    num_images_per_prompt: int = 1
+    num_visuals_per_prompt: int = 1
     """
     Number of images/videos to generate per prompt.
 
@@ -387,11 +387,11 @@ class PixelModelInputs:
                 f"num_warmup_steps must be >= 0. Got {self.num_warmup_steps!r}"
             )
         if (
-            not isinstance(self.num_images_per_prompt, int)
-            or self.num_images_per_prompt <= 0
+            not isinstance(self.num_visuals_per_prompt, int)
+            or self.num_visuals_per_prompt <= 0
         ):
             raise ValueError(
-                f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
+                f"num_visuals_per_prompt must be > 0. Got {self.num_visuals_per_prompt!r}"
             )
 
         required_arrays = {
