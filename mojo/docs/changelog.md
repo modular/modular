@@ -334,6 +334,12 @@ what we publish.
   `from pkg import foo` and `from pkg import *` now correctly resolve to the
   function rather than the module.
 
+- `is_compile_time()` has been renamed to `is_run_in_comptime_interpreter()` to
+  provide a mechanism for supporting different code execution path in comptime
+  interpreter from runtime generated code. The check should be used as
+  condition for runtime `if`. Compiler now warns if it is used as condition
+  for `comptime if`.
+
 ### Library changes
 
 - Standard library types now use conditional conformances, replacing previous
