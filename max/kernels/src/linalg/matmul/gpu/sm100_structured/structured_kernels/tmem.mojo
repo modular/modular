@@ -250,7 +250,7 @@ struct TmemTensor[
 ](TrivialRegisterPassable):
     """Typed tensor view over Tensor Memory (TMEM) for MMA accumulators.
 
-    Provides a LayoutTensor-like abstraction for TMEM with:
+    Provides a typed abstraction for TMEM with:
     - Type safety: dtype and layout known at compile time
     - Fragment access: upper (rows 0-15) and lower (rows 16-31)
     - MMA integration: offset() returns raw address for MMA operations
