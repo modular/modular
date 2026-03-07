@@ -13,8 +13,7 @@
 
 from std.time import sleep, time_function
 
-from std.benchmark import Report, clobber_memory, keep, run
-from std.benchmark.benchmark import Batch
+from std.benchmark import Batch, Report, clobber_memory, keep, run
 from std.benchmark.bencher import BenchMetric, Format, ThroughputMeasure
 from std.testing import TestSuite, assert_equal, assert_true
 from test_utils import check_write_to
