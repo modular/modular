@@ -1077,6 +1077,11 @@ class PixelGenerationTokenizer(
             )
 
         # 3. Resolve image dimensions using cached static values
+        num_inference_steps = (
+            visual_options.steps
+            if "steps" in visual_options.model_fields_set
+            else self._default_num_inference_steps
+        )
         latent_height = 2 * (
             int(height) // (self._vae_spatial_compression_ratio * 2)
         )
@@ -1087,20 +1092,22 @@ class PixelGenerationTokenizer(
             (latent_height // 2)
             * (latent_width // 2)
             * (
-                (visual_options.num_frames - 1)
-                // self._vae_temporal_compression_ratio
-                + 1
+                (
+                    (visual_options.num_frames - 1)
+                    // self._vae_temporal_compression_ratio
+                    + 1
+                )
                 if getattr(visual_options, "num_frames", None) is not None
                 else 1
             )
         )
 
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-            visual_seq_len, visual_options.steps
+            visual_seq_len, num_inference_steps
         )
 
         num_warmup_steps: int = max(
-            len(timesteps) - visual_options.steps * self._scheduler.order, 0
+            len(timesteps) - num_inference_steps * self._scheduler.order, 0
         )
 
         latents, latent_image_ids = self._prepare_latents(
@@ -1181,11 +1188,11 @@ class PixelGenerationTokenizer(
             latent_image_ids=latent_image_ids,
             height=height,
             width=width,
-            num_inference_steps=visual_options.steps,
+            num_inference_steps=num_inference_steps,
             guidance_scale=visual_options.guidance_scale,
             num_visuals_per_prompt=visual_options.num_visuals,
-            num_frames=visual_options.num_frames,
-            frame_rate=visual_options.frames_per_second,
+            num_frames=getattr(visual_options, "num_frames", None),
+            frame_rate=getattr(visual_options, "frames_per_second", None),
             true_cfg_scale=visual_options.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
