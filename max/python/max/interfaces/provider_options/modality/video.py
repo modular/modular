@@ -50,7 +50,7 @@ class VideoProviderOptions(BaseModel):
     )
 
     frames_per_second: int | None = Field(
-        24.0,
+        24,
         description=(
             "The frame rate for video generation in frames per second (fps). "
             "Common values are 24, 30, or 60 fps."

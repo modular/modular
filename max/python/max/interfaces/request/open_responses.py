@@ -340,7 +340,7 @@ class OutputVideoContent(BaseModel):
 
         if format == "mp4":
             try:
-                import av
+                import av  # type: ignore[import-not-found]
                 import numpy as _np
 
                 # Expected shape: [frames, height, width, channels] float32 in [0, 1]
