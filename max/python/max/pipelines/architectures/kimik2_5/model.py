@@ -274,18 +274,6 @@ class KimiK2_5Model(
         # Initialize config with parameters from pipeline_config
         model_config = KimiK2_5TextConfig.initialize(self.pipeline_config)
 
-        # Kimi-VL
-        if model_config.rope_scaling is None:
-            model_config.rope_scaling = {
-                "beta_fast": 32.0,
-                "beta_slow": 1.0,
-                "factor": 64.0,
-                "mscale": 1.0,
-                "mscale_all_dim": 1.0,
-                "original_max_position_embeddings": 4096,
-                "type": "yarn",
-            }
-
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
         model_config.correction_bias_dtype = correction_bias_dtype
