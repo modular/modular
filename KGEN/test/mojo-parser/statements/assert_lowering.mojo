@@ -8,10 +8,10 @@
 # and that the lowered IR contains a conditional check with a trap.
 #
 # Verify parser output: assert produces a call to debug_assert (no lit.assert op).
-# RUN: kgen-translate -import-mojo -mojo-enable-prebuilt-packages -D ASSERT=all %s | FileCheck %s --check-prefix=PARSE
+# RUN: %parse-mojo-isolated -D ASSERT=all %s | FileCheck %s --check-prefix=PARSE
 #
 # Verify lowered output: the debug_assert call lowers to a conditional with a trap.
-# RUN: kgen-translate -import-mojo -mojo-enable-prebuilt-packages -D ASSERT=all %s | kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit | FileCheck %s --check-prefix=LOWER
+# RUN: %parse-mojo-isolated -D ASSERT=all %s | kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit | FileCheck %s --check-prefix=LOWER
 
 
 # PARSE-LABEL: lit.fn @"test_assert_basic
