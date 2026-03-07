@@ -272,20 +272,24 @@ class PixelGenerationTokenizer(
         grid_w = np.arange(0, width, self._patch_size, dtype=np.float32)
 
         # 2. Broadcast to 3-D grid [N_F, N_H, N_W] then stack → [3, N_F, N_H, N_W].
-        grid = np.meshgrid(grid_f, grid_h, grid_w, indexing="ij")
-        grid = np.stack(grid, axis=0)  # [3, N_F, N_H, N_W]
+        grid_list: tuple[npt.NDArray[np.float32], ...] = np.meshgrid(
+            grid_f, grid_h, grid_w, indexing="ij"
+        )
+        grid = np.stack(list(grid_list), axis=0)  # [3, N_F, N_H, N_W]
 
         # 2. Get the patch boundaries with respect to the latent video grid
-        patch_size = (self.patch_size_t, self.patch_size, self.patch_size)
+        patch_size = (self._patch_size_t, self._patch_size, self._patch_size)
         patch_size_delta = np.array(patch_size, dtype=grid.dtype)
-        patch_ends = grid + patch_size_delta.view(3, 1, 1, 1)
+        patch_ends = grid + patch_size_delta[:, None, None, None]
 
         # Combine the start (grid) and end (patch_ends) coordinates along new trailing dimension
         latent_coords = np.stack(
             [grid, patch_ends], axis=-1
         )  # [3, N_F, N_H, N_W, 2]
         # Reshape to (batch_size, 3, num_patches, 2)
-        latent_coords = latent_coords.flatten(1, 3)
+        latent_coords = latent_coords.reshape(
+            latent_coords.shape[0], -1, latent_coords.shape[-1]
+        )
         latent_coords = np.expand_dims(latent_coords, axis=0).repeat(
             batch_size, axis=0
         )
@@ -326,10 +330,10 @@ class PixelGenerationTokenizer(
     ) -> npt.NDArray[np.float32]:
         # 1. Generate coordinates in the frame (time) dimension.
         # Always compute rope in fp32
-        grid_f = np.arange(
-            start=shift,
-            stop=num_frames + shift,
-            step=self._patch_size_t,
+        grid_f: npt.NDArray[np.float32] = np.arange(
+            float(shift),
+            float(num_frames + shift),
+            float(self._patch_size_t),
             dtype=np.float32,
         )
 
@@ -502,7 +506,12 @@ class PixelGenerationTokenizer(
         seed: int | None,
         num_frames: int | None = None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
-        shape = (batch_size, num_channels_latents, latent_height, latent_width)
+        shape: tuple[int, ...] = (
+            batch_size,
+            num_channels_latents,
+            latent_height,
+            latent_width,
+        )
         if num_frames is not None:
             num_latent_frames = (
                 num_frames - 1
@@ -1087,7 +1096,7 @@ class PixelGenerationTokenizer(
             * (latent_width // 2)
             * (
                 (
-                    (visual_options.num_frames - 1)
+                    (getattr(visual_options, "num_frames", 1) - 1)
                     // self._vae_temporal_compression_ratio
                     + 1
                 )
@@ -1116,9 +1125,11 @@ class PixelGenerationTokenizer(
         extra_params: dict[str, npt.NDArray[Any]] = {}
         if self._pipeline_class_name == PipelineClassName.LTX2:
             latent_mel_bins = self._mel_bins // self._mel_compression_ratio
-            duration_s = (
-                visual_options.num_frames / visual_options.frames_per_second
+            num_frames = getattr(visual_options, "num_frames", 1)
+            frames_per_second = getattr(
+                visual_options, "frames_per_second", 1.0
             )
+            duration_s = num_frames / frames_per_second
             audio_latents_per_second = (
                 self._audio_sampling_rate
                 / self._audio_hop_length
@@ -1134,7 +1145,7 @@ class PixelGenerationTokenizer(
             audio_latents = self._randn_tensor(audio_shape, request.body.seed)
             extra_params["audio_latents"] = audio_latents
             latent_num_frames = (
-                visual_options.num_frames - 1
+                num_frames - 1
             ) // self._vae_temporal_compression_ratio + 1
             extra_params["latent_mel_bins"] = np.array(
                 latent_mel_bins, dtype=np.int64
@@ -1145,7 +1156,7 @@ class PixelGenerationTokenizer(
                 latent_num_frames,
                 latent_height,
                 latent_width,
-                visual_options.frames_per_second,
+                frames_per_second,
             )
             audio_coords = self._prepare_audio_coords(
                 visual_options.num_visuals,
@@ -1157,16 +1168,6 @@ class PixelGenerationTokenizer(
                 audio_coords = np.concatenate([audio_coords, audio_coords])
             extra_params["video_coords"] = video_coords
             extra_params["audio_coords"] = audio_coords
-
-            valid_length = np.atleast_2d(
-                np.array(attn_mask.sum(axis=-1), dtype=np.int32)
-            )
-            if visual_options.guidance_scale > 1.0:
-                valid_length_neg = np.atleast_2d(
-                    np.array(attn_mask_neg.sum(axis=-1), dtype=np.int32)
-                )
-                valid_length = np.concatenate([valid_length_neg, valid_length])
-            extra_params["valid_length"] = valid_length
 
         # 5. Build the context
         context = PixelContext(
