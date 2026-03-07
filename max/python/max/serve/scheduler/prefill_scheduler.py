@@ -333,10 +333,24 @@ def load_prefill_scheduler(
         pipeline_config
     )
 
+    kv_managers = getattr(pipeline, "kv_managers", None)
+    if kv_managers is not None and not kv_managers:
+        raise ValueError(
+            "PrefillScheduler requires a pipeline with a KV cache manager. "
+            "SSM-based models (e.g. Mamba) should use PipelineRole.PrefillAndDecode."
+        )
+
+    kv_cache: PagedKVCacheManager
+    if kv_managers:
+        kv_cache = kv_managers[0]
+    else:
+        assert pipeline.kv_manager is not None
+        kv_cache = pipeline.kv_manager
+
     return PrefillScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        kv_cache=pipeline.kv_manager,
+        kv_cache=kv_cache,
         dispatcher=PrefillDispatcherServerV2(
             bind_addr=settings.di_bind_address
         ),

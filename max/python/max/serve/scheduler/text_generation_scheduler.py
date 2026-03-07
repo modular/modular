@@ -46,6 +46,20 @@ from .utils import SchedulerLogger, get_cancelled_reqs
 logger = logging.getLogger("max.serve")
 
 
+def _get_kv_cache(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> PagedKVCacheManager | None:
+    """Extract the KV cache manager from a pipeline.
+
+    Supports both the ``kv_managers`` list API (for pipelines that optionally
+    omit KV cache, e.g. Mamba SSM) and the singular ``kv_manager`` property.
+    """
+    kv_managers = getattr(pipeline, "kv_managers", None)
+    if kv_managers is not None:
+        return kv_managers[0] if kv_managers else None
+    return getattr(pipeline, "kv_manager", None)
+
+
 class TokenGenerationScheduler(Scheduler):
     def __init__(
         self,
@@ -59,7 +73,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager | None,
         support_empty_batches: bool = False,
         dp_padder: DPBatchPadder | None = None,
     ) -> None:
@@ -233,6 +247,9 @@ def load_text_generation_scheduler(
         scheduler_config.data_parallel_degree > 1
         and pipeline_config.runtime.device_graph_capture
     ):
+        assert kv_manager is not None, (
+            "DP batch padding requires a KV cache manager"
+        )
         dp_padder = DPBatchPadder(
             dp_size=scheduler_config.data_parallel_degree,
             kv_manager=kv_manager,
@@ -248,7 +265,8 @@ def load_text_generation_scheduler(
         # For spec decoding, there may be multiple KVCaches. The scheduler
         # arbitrarily uses either the draft or target one. The other kvcache is
         # hidden from scheduler currently and managed by pipelines.
-        kv_cache=kv_manager,
+        # For non-KV-cache models (e.g. Mamba SSM), kv_managers is empty.
+        kv_cache=_get_kv_cache(pipeline),
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

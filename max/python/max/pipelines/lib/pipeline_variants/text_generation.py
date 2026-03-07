@@ -18,7 +18,6 @@ import copy
 import dataclasses
 import json
 import logging
-from abc import abstractmethod
 from os import environ
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
@@ -100,15 +99,8 @@ class TextGenerationPipelineInterface(
 ):
     """Interface for text generation pipelines."""
 
-    # TODO: Get rid of these fields
     _devices: list[Device]
-    _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
-
-    @property
-    @abstractmethod
-    def kv_manager(self) -> PagedKVCacheManager:
-        """Returns the KV cache managers for this pipeline."""
-        ...
+    _pipeline_model: PipelineModel[TextGenerationContextType]
 
 
 class TextGenerationPipeline(
@@ -194,10 +186,6 @@ class TextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
-        if not issubclass(pipeline_model, PipelineModelWithKVCache):
-            raise ValueError(
-                f"TextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
-            )
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -210,15 +198,19 @@ class TextGenerationPipeline(
             else ReturnLogits.LAST_TOKEN,
         )
 
-        kv_params = self._pipeline_model.kv_params
-        assert isinstance(kv_params, KVCacheParams)
-        self._kv_manager: PagedKVCacheManager = load_kv_manager(
-            params=kv_params,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_seq_len=self._pipeline_model.max_seq_len,
-            session=session,
-            available_cache_memory=model_config.kv_cache._available_cache_memory,
-        )
+        # Set up KV cache manager if the model supports it.
+        # Non-KV-cache models (e.g. Mamba SSM) skip this.
+        self._kv_manager: PagedKVCacheManager | None = None
+        if isinstance(self._pipeline_model, PipelineModelWithKVCache):
+            kv_params = self._pipeline_model.kv_params
+            assert isinstance(kv_params, KVCacheParams)
+            self._kv_manager = load_kv_manager(
+                params=kv_params,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_seq_len=self._pipeline_model.max_seq_len,
+                session=session,
+                available_cache_memory=model_config.kv_cache._available_cache_memory,
+            )
 
         # Load sampler.
         self._sampler_with_bitmask: Model | None = None
@@ -261,6 +253,16 @@ class TextGenerationPipeline(
     ]:
         """Return the tokenizer used for building contexts and decoding."""
         return self._tokenizer
+
+    @property
+    def kv_managers(self) -> list[PagedKVCacheManager]:
+        """Return the list of KV cache managers backing this pipeline.
+
+        Empty for non-KV-cache models (e.g. Mamba SSM).
+        """
+        if self._kv_manager is None:
+            return []
+        return [self._kv_manager]
 
     def update_for_structured_output(
         self,
@@ -393,10 +395,12 @@ class TextGenerationPipeline(
         if bitmask is not None:
             num_steps = 1
 
-        # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._kv_manager.runtime_inputs(
-            replica_batches, num_steps
-        )
+        # Retrieve the KV Cache Inputs (if model uses KV cache).
+        kv_cache_inputs = None
+        if self._kv_manager is not None:
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                replica_batches, num_steps
+            )
 
         # Log batch details
         if self.batch_info_output_fname is not None:
@@ -593,12 +597,13 @@ class TextGenerationPipeline(
             if i == num_steps - 1:
                 break
 
-            curr_step_inputs.kv_cache_inputs = (
-                self._kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs,
-                    curr_step_inputs,
+            if self._kv_manager is not None:
+                curr_step_inputs.kv_cache_inputs = (
+                    self._kv_manager.increment_cache_lengths(
+                        curr_step_inputs.kv_cache_inputs,
+                        curr_step_inputs,
+                    )
                 )
-            )
             with Tracer(f"prepare_next_token_inputs_{i}"):
                 curr_step_inputs = (
                     self._pipeline_model.prepare_next_token_inputs(
@@ -641,7 +646,8 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._kv_manager.step(inputs.batches)
+        if self._kv_manager is not None:
+            self._kv_manager.step(inputs.batches)
 
         return res
 
@@ -658,6 +664,9 @@ class TextGenerationPipeline(
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
-        """Returns the KV cache manager for this pipeline."""
+    def kv_manager(self) -> PagedKVCacheManager | None:
+        """Returns the KV cache manager for this pipeline.
+
+        Returns None for non-KV-cache models (e.g. Mamba SSM).
+        """
         return self._kv_manager

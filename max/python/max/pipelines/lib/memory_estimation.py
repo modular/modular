@@ -30,7 +30,11 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .config.model_config import MAXModelConfig
-from .interfaces import ArchConfig, ArchConfigWithKVCache
+from .interfaces import (
+    ArchConfig,
+    ArchConfigWithKVCache,
+    ArchConfigWithSSMCache,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -124,6 +128,18 @@ class MemoryEstimator:
             )
 
         if not isinstance(arch_config, ArchConfigWithKVCache):
+            # Check for SSM cache (Mamba models)
+            if isinstance(arch_config, ArchConfigWithSSMCache):
+                ssm_params = arch_config.get_ssm_cache_params()
+                cache_mem = cls.available_kv_cache_memory(
+                    model_weights_size,
+                    activation_memory_size,
+                    model_config,
+                    devices,
+                )
+                return ssm_params.compute_max_seq_len_fitting_in_cache(
+                    cache_mem
+                )
             return None
 
         arch_config = cast(ArchConfigWithKVCache, arch_config)
@@ -244,9 +260,24 @@ class MemoryEstimator:
             )
 
         if not user_provided_max_batch_size:
-            pipeline_config.runtime.max_batch_size = (
-                cls._infer_optimal_batch_size(arch_config, devices)
-            )
+            if isinstance(arch_config, ArchConfigWithSSMCache):
+                # SSM cache is fixed-size per batch element (no seq_len
+                # scaling).  Compute the largest batch that fits in the
+                # available cache memory instead of using the generic
+                # _DEFAULT_BATCH_SIZE which is tuned for KV-cache models.
+                ssm_params = arch_config.get_ssm_cache_params()
+                per_element = ssm_params.per_element_bytes
+                if per_element > 0:
+                    pipeline_config.runtime.max_batch_size = min(
+                        _DEFAULT_BATCH_SIZE,
+                        max(1, available_kv_cache_memory // per_element),
+                    )
+                else:
+                    pipeline_config.runtime.max_batch_size = _DEFAULT_BATCH_SIZE
+            else:
+                pipeline_config.runtime.max_batch_size = (
+                    cls._infer_optimal_batch_size(arch_config, devices)
+                )
 
         assert pipeline_config.runtime.max_batch_size is not None
         if (
@@ -271,7 +302,14 @@ class MemoryEstimator:
         total_size += actual_kv_cache_size
         # If the model is too large to fit in memory, and the user did not
         # specify a max_length, try to infer a value that would fit.
-        if int(total_size) > free_memory and not user_provided_max_length:
+        # SSM cache doesn't scale with sequence length, so skip the
+        # max_length binary search for SSM models — the batch size was
+        # already fitted above.
+        if (
+            int(total_size) > free_memory
+            and not user_provided_max_length
+            and not isinstance(arch_config, ArchConfigWithSSMCache)
+        ):
             original_max_length = model_config.max_length
             (
                 found_valid_max_length,
@@ -469,6 +507,18 @@ class MemoryEstimator:
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
                 available_cache_memory=available_kv_cache_memory,
+            )
+        elif isinstance(arch_config, ArchConfigWithSSMCache):
+            ssm_params = arch_config.get_ssm_cache_params()
+            max_seq_len = (
+                max_seq_len_override
+                if max_seq_len_override is not None
+                else arch_config.get_max_seq_len()
+            )
+            return ssm_params.estimated_memory_size(
+                available_cache_memory=available_kv_cache_memory,
+                max_batch_size=max_batch_size,
+                max_seq_len=max_seq_len,
             )
         else:
             return 0
@@ -715,12 +765,15 @@ class MemoryEstimator:
         """Infer the optimal batch size for the model.
 
         Args:
-            arch_config: Architecture config that provides KV cache parameters.
+            arch_config: Architecture config that provides cache parameters.
             devices: The list of devices on which the model will run.
         """
-        if not isinstance(arch_config, ArchConfigWithKVCache):
+        if not isinstance(
+            arch_config,
+            ArchConfigWithKVCache | ArchConfigWithSSMCache,
+        ):
             return 1
         if len(devices) == 1 and devices[0].is_host:
-            # batching on CPU is generally not useful, so we hard-code a batch size of 1.
+            # Batching on CPU is generally not useful.
             return 1
         return _DEFAULT_BATCH_SIZE

@@ -401,7 +401,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager | None,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
         dp_padder: DPBatchPadder | None = None,
     ) -> None:
@@ -440,7 +440,10 @@ class TextBatchConstructor:
             )
         ]
 
-        if self.scheduler_config.max_batch_total_tokens is not None:
+        if (
+            self.scheduler_config.max_batch_total_tokens is not None
+            and self.kv_cache is not None
+        ):
             token_budgets.append(
                 TotalContextTokenBudget(
                     capacity=self.scheduler_config.max_batch_total_tokens,
@@ -561,7 +564,9 @@ class TextBatchConstructor:
         """Releases dummy KV and pipeline entries from the previous batch's DP padding."""
         if self._prev_dp_padding is not None:
             for req_id, replica_idx in self._prev_dp_padding.dummies:
-                if self.kv_cache.contains(req_id, replica_idx=replica_idx):
+                if self.kv_cache is not None and self.kv_cache.contains(
+                    req_id, replica_idx=replica_idx
+                ):
                     self.kv_cache.release(req_id, replica_idx=replica_idx)
                 self.pipeline.release(req_id)
         self._prev_dp_padding = self._current_dp_padding
@@ -864,30 +869,31 @@ class TextBatchConstructor:
             if status == BudgetStatus.BUDGET_EXHAUSTED:
                 break
 
-            # At this point, we can assume that the paged cache is active.
-            while True:
-                try:
-                    self.kv_cache.alloc(
-                        candidate_context,
-                        replica_idx=replica_idx,
-                        num_steps=batch.num_steps,
-                    )
-                    break
-                except InsufficientBlocksError:
-                    if len(candidate_ids) == 0:
-                        if len(batch) == 0:
-                            raise
-                        else:
-                            return
+            # Allocate paged cache blocks if available (not used by SSM models).
+            if self.kv_cache is not None:
+                while True:
+                    try:
+                        self.kv_cache.alloc(
+                            candidate_context,
+                            replica_idx=replica_idx,
+                            num_steps=batch.num_steps,
+                        )
+                        break
+                    except InsufficientBlocksError:
+                        if len(candidate_ids) == 0:
+                            if len(batch) == 0:
+                                raise
+                            else:
+                                return
 
-                    # Pop the oldest candidate id
-                    oldest_id = candidate_ids.pop()
-                    oldest_context = replica_requests.tg_reqs.pop(oldest_id)
-                    self._preempt_request(
-                        oldest_context,
-                        replica_idx,
-                        reason=PreemptionReason.KV_CACHE_MEMORY,
-                    )
+                        # Pop the oldest candidate id
+                        oldest_id = candidate_ids.pop()
+                        oldest_context = replica_requests.tg_reqs.pop(oldest_id)
+                        self._preempt_request(
+                            oldest_context,
+                            replica_idx,
+                            reason=PreemptionReason.KV_CACHE_MEMORY,
+                        )
 
             match status:
                 case BudgetStatus.BUDGET_REACHED:

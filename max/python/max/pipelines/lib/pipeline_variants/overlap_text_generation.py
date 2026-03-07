@@ -825,6 +825,11 @@ class OverlapTextGenerationPipeline(
             self._pipeline_model.release(request_id)
 
     @property
+    def kv_managers(self) -> list[PagedKVCacheManager]:
+        """Return the list of KV cache managers backing this pipeline."""
+        return [self._kv_manager]
+
+    @property
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager

@@ -881,6 +881,11 @@ class SpeculativeDecodingPipelineBase(
         # Target model KV cache is released by scheduler via batch_constructor
 
     @property
+    def kv_managers(self) -> list[PagedKVCacheManager]:
+        """Return the list of KV cache managers backing this pipeline."""
+        return [self._target_kv_manager]
+
+    @property
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the target model KV cache manager."""
         return self._target_kv_manager

@@ -79,6 +79,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         eos_token_list = list(self._eos_token_id)
 
         # Reserve KV cache blocks for the batch.
+        assert self._kv_manager is not None
         for context in batch.values():
             self._kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
 

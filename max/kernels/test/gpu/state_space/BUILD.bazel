@@ -51,7 +51,7 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:internal_utils",
             "//max:linalg",
-            "//max/kernels/src/state_space",
+            "//max:state_space",
             "@mojo//:std",
         ],
     )
