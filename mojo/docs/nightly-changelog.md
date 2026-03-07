@@ -58,6 +58,11 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- `ArcPointer` now conforms to the `Hashable` trait, enabling its use as a
+  `Dict` key or `Set` element. The hash is based on the allocation address,
+  consistent with pointer-identity semantics (`a is b` implies
+  `hash(a) == hash(b)`).
+
 ## Tooling changes
 
 ## ❌ Removed
