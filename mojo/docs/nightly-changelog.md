@@ -1,25 +1,10 @@
-# Mojo unreleased changelog
+# Nightly: v0.26.2
 
-This is a list of UNRELEASED changes for the Mojo language and tools.
+This version is still a work in progress.
 
-When we cut a release, these notes move to `changelog-released.md` and that's
-what we publish.
+## ✨ Highlights
 
-[//]: # Here's the template to use when starting a new batch of notes:
-[//]: ## UNRELEASED
-[//]: ### ✨ Highlights
-[//]: ### Language enhancements
-[//]: ### Language changes
-[//]: ### Library changes
-[//]: ### Tooling changes
-[//]: ### ❌ Removed
-[//]: ### 🛠️ Fixed
-
-## UNRELEASED
-
-### ✨ Highlights
-
-### Language enhancements
+## Language enhancements
 
 - Mojo now supports specifying default value for inferred parameter, it make it
   easier to create a partially bound type like
@@ -237,7 +222,7 @@ what we publish.
   def bar() raises: # Explicit raises Error (required)
   ```
 
-### Language changes
+## Language changes
 
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
   concise `...` to unbind any unspecified parameter explicitly.
@@ -340,7 +325,7 @@ what we publish.
   condition for runtime `if`. Compiler now warns if it is used as condition
   for `comptime if`.
 
-### Library changes
+## Library changes
 
 - `StaticTuple` now supports comparison operators. `__eq__`/`__ne__` are
   available when `element_type: Equatable`, and `__lt__`/`__le__`/`__gt__`/
@@ -703,7 +688,7 @@ what we publish.
   operations for extracting the `DType` of a `SIMD` in generic code. There are
   better alternatives available in Mojo today using reflection capabilities.
 
-### Tooling changes
+## Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
   non-conjoined form as before. Now, both `-Dfoo` and `-D foo` are accepted.
@@ -733,7 +718,7 @@ what we publish.
   Multiple kernels generated from the same function are disambiguated with a
   numeric suffix (e.g. `<out>_<kernelfn>_1.ptx`).
 
-### ❌ Removed
+## ❌ Removed
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
   for `__moveinit__`/`__del__` arguments as appropriate.
@@ -745,7 +730,7 @@ what we publish.
   This decorator should not be used outside the standard library, and might be
   removed in a future release.
 
-### 🛠️ Fixed
+## 🛠️ Fixed
 
 - Fixed a bug where Mojo incorrectly passed or returned structs in `extern` C
   function calls. The compiler now applies platform ABI coercion (System V

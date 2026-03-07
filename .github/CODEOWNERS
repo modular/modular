@@ -27,7 +27,7 @@
 # Documentation
 /mojo/docs/         @modular/mojo-docs
 
-/mojo/docs/changelog.md @modular/stdlib
+/mojo/docs/nightly-changelog.md @modular/stdlib
 
 /mojo/stdlib/docs/  @modular/mojo-docs @modular/stdlib
 
