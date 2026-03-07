@@ -291,7 +291,9 @@ class FluxPipeline(DiffusionPipeline):
         seq_len = int(prompt_embeds.shape[1])
 
         if num_visuals_per_prompt != 1:
-            prompt_embeds = F.tile(prompt_embeds, (1, num_visuals_per_prompt, 1))
+            prompt_embeds = F.tile(
+                prompt_embeds, (1, num_visuals_per_prompt, 1)
+            )
             prompt_embeds = prompt_embeds.reshape(
                 (bs_embed * num_visuals_per_prompt, seq_len, -1)
             )
