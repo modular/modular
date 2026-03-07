@@ -1,0 +1,2 @@
+// Parse the stdlib root __init__.mojo through the LSP server.
+// RUN: parse-mojo-files-with-lsp --no-recursive $MODULAR_MOJO_MAX_IMPORT_PATH

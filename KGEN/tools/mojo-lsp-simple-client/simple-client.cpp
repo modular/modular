@@ -7,6 +7,7 @@
 #include "../mojo-lsp-test-client/LSPBatchClient.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 using namespace M;
 namespace lsp = llvm::lsp;
@@ -19,6 +20,15 @@ int main(int argc, char **argv) {
       "attach-debugger",
       llvm::cl::desc("Launch the LSP and start a debug session attached to "
                      "it on VS Code."),
+      llvm::cl::init(false),
+  };
+
+  llvm::cl::opt<bool> keepIOFiles{
+      "keep-io-files",
+      llvm::cl::desc(
+          "Preserve the server's stdin/stdout/stderr temp files and print "
+          "their paths, even on success. Useful for inspecting raw LSP "
+          "traffic. On failure the files are always preserved."),
       llvm::cl::init(false),
   };
 
@@ -39,23 +49,37 @@ int main(int argc, char **argv) {
   llvm::MemoryBuffer &buffer = *bufferOr->get();
   Document doc("file://" + inputFile, buffer.getBuffer());
 
-  // We modify the environment to guarantee that IO files are preserved for
-  // inspection.
-  setenv("PRESERVE_LSP_IO_FILES", "1", /*overwrite=*/true);
+  if (keepIOFiles)
+    setenv("PRESERVE_LSP_IO_FILES", "1", /*overwrite=*/true);
 
   // By default, we include the following requests that don't require any
   // special input.
-  LSPBatchClient(/*attachDebugger=*/attachDebugger)
-      .open(doc)
-      .documentSymbol(doc,
-                      [](const std::vector<llvm::lsp::DocumentSymbol> &) {
-                        // This is left here for demonstrative purposes.
-                        // Whenever you need to use this client, just specify
-                        // the requests you want to send. You can use this
-                        // lambda to print the results, but you can probably
-                        // more easily just inspect the stdout/stderr files.
-                      })
-      .semanticTokensFull(doc, [&](ArrayRef<Mojo::LSP::SemanticToken>) {})
-      .hoverNullable(doc, {0, 0}, [&](const std::optional<lsp::Hover2> &) {})
-      .execute();
+  auto result =
+      LSPBatchClient(/*attachDebugger=*/attachDebugger)
+          .open(doc)
+          .documentSymbol(doc,
+                          [](const std::vector<llvm::lsp::DocumentSymbol> &) {
+                            // This is left here for demonstrative purposes.
+                            // Whenever you need to use this client, just
+                            // specify the requests you want to send. You can
+                            // use this lambda to print the results, but you can
+                            // probably more easily just inspect the
+                            // stdout/stderr files.
+                          })
+          .semanticTokensFull(doc, [&](ArrayRef<Mojo::LSP::SemanticToken>) {})
+          .hoverNullable(doc, {0, 0},
+                         [&](const std::optional<lsp::Hover2> &) {})
+          .execute();
+
+  if (failed(result.err) && result.serverIOFiles) {
+    // Stream the server's stderr inline so crash details are immediately
+    // visible without manually cat-ing the temp file.
+    if (auto stderrBuf =
+            llvm::MemoryBuffer::getFile(result.serverIOFiles->serverStderr)) {
+      StringRef content = (*stderrBuf)->getBuffer();
+      llvm::errs() << content;
+    }
+  }
+
+  return failed(result.err) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
