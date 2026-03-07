@@ -343,6 +343,17 @@ what we publish.
   `lane_group_sum_and_broadcast()`, `lane_group_max_and_broadcast()` functions
   are deprecated — use the short names instead.
 
+- `Dict` and `Set` now have a `reserve(min_capacity)` method for
+  post-construction pre-allocation. This allows users to avoid repeated rehashes
+  when inserting a known number of entries:
+
+  ```mojo
+  var d = Dict[String, Int]()
+  d.reserve(1000)
+  for i in range(1000):
+      d[String(i)] = i  # No rehashing occurs
+  ```
+
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
