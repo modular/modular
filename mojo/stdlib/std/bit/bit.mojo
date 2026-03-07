@@ -668,3 +668,44 @@ fn rotate_bits_right[
         return llvm_intrinsic["llvm.fshr", type_of(x), has_side_effect=False](
             x, x, type_of(x)(shift)
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# bit_mask
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn bit_mask[dtype: DType](start: Int, end: Int) -> Scalar[dtype]:
+    """Returns a scalar with bits in the half-open range `[start, end)` set to 1
+    and all other bits set to 0.
+
+    Parameters:
+        dtype: The integer `DType` of the returned scalar. Must be integral.
+
+    Args:
+        start: Index of the lowest bit to set (inclusive). Must be non-negative.
+        end: Index one past the highest bit to set (exclusive). Must satisfy
+             `start < end <= bit_width_of[dtype]()`.
+
+    Returns:
+        A `Scalar[dtype]` mask with bits `[start, end)` set.
+
+    Examples:
+
+    ```mojo
+    from std.bit import bit_mask
+    print(bit_mask[DType.uint8](2, 5))   # 0b00011100 = 28
+    print(bit_mask[DType.uint16](0, 8))  # 0x00FF = 255
+    ```
+    """
+    comptime assert dtype.is_integral(), "dtype must be an integral type"
+    comptime bitwidth = bit_width_of[dtype]()
+    assert start >= 0, "start must be non-negative"
+    assert start < end, "start must be strictly less than end"
+    assert end <= bitwidth, "end must not exceed the bit width of dtype"
+    # When end == bitwidth, shifting 1 left by `end` bits overflows.
+    # Use the all-ones complement approach instead.
+    if end == bitwidth:
+        return ~Scalar[dtype](0) << start
+    return (Scalar[dtype](1) << end) - (Scalar[dtype](1) << start)

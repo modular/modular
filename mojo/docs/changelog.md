@@ -320,6 +320,10 @@ what we publish.
 
 ### Library changes
 
+- Added `bit_mask[dtype](start, end)` to `std.bit`. Returns a `Scalar[dtype]`
+  with bits in the half-open range `[start, end)` set to 1 and all other bits
+  set to 0. Asserts that `0 <= start < end <= bitwidth(dtype)`.
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,

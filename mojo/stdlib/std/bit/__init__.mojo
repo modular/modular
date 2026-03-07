@@ -25,6 +25,7 @@ any algorithm requiring direct bit-level control.
 """
 
 from .bit import (
+    bit_mask,
     bit_not,
     bit_reverse,
     bit_width,
