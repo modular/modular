@@ -47,6 +47,7 @@ from transformers import AutoConfig
 from ..interfaces import ModelOutputs, PipelineModel, PipelineModelWithKVCache
 from ..pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
+    calculate_num_steps,
     get_eos_tokens,
     get_weight_paths,
 )
@@ -364,6 +365,23 @@ def _build_rejection_runner(
         )
 
 
+def compute_max_num_draft_steps(
+    replica_batches: list[list[TextContext]],
+    desired_num_draft_steps: int,
+    max_seq_len: int,
+    is_draft: bool,
+) -> int:
+    """Compute the maximum number of draft steps that can be run for a batch."""
+    max_seq_len = max_seq_len - 1 if is_draft else max_seq_len
+    num_draft_steps = desired_num_draft_steps
+    for replica_batch in replica_batches:
+        for context in replica_batch:
+            num_draft_steps = calculate_num_steps(
+                context, num_draft_steps, max_seq_len
+            )
+    return num_draft_steps
+
+
 class SpeculativeDecodingPipelineBase(
     TextGenerationPipelineInterface[TextContext],
     ABC,
@@ -526,10 +544,10 @@ class SpeculativeDecodingPipelineBase(
 
         # Check that the max length for both models are the same
         draft_seq_len = self._draft_model.calculate_max_seq_len(
-            self.pipeline_config, draft_config
+            self.pipeline_config, draft_hf_config
         )
         target_seq_len = self._target_model.calculate_max_seq_len(
-            self.pipeline_config, target_config
+            self.pipeline_config, target_hf_config
         )
         if draft_seq_len != target_seq_len:
             raise ValueError(
@@ -557,15 +575,28 @@ class SpeculativeDecodingPipelineBase(
         multi_kv_params = MultiKVCacheParams.from_params(
             target_kv_params, draft_kv_params
         )
-        self._target_kv_manager, self._draft_kv_manager = (
-            load_multi_kv_managers(
-                params=multi_kv_params,
-                max_batch_size=pipeline_config.runtime.max_batch_size,
-                max_seq_len=self._max_seq_len,
-                session=self._session,
-                available_cache_memory=cache_mem,
-            )
+
+        self._target_kv_manager, draft_kv_manager = load_multi_kv_managers(
+            params=multi_kv_params,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_seq_len=self._max_seq_len,
+            session=self._session,
+            available_cache_memory=cache_mem,
         )
+
+        # We employ a crazy hack here where we completely disregard the draft
+        # kv cache manager. We save the draft kv cache buffer and discard the rest
+        # of the object. Now whenever we want to use the draft runtime inputs,
+        # we use the target kv cache manager and secretly swap out the host kv
+        # cache buffers for that of the draft model.
+        # TODO: do this properly once the kv cache manager is refactored to support
+        # spec decoding.
+        draft_kv_inputs = draft_kv_manager.runtime_inputs(
+            [[] * multi_kv_params.data_parallel_degree]
+        )
+        self._draft_kv_buffers = [
+            replica_input.blocks for replica_input in draft_kv_inputs.inputs
+        ]
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -722,22 +753,8 @@ class SpeculativeDecodingPipelineBase(
 
     @traced
     def release(self, request_id: RequestID) -> None:
-        """Releases resources associated with this request ID.
-
-        Args:
-            request_id: Unique identifier for the finished request.
-
-        Note: Target model KV cache is released by the scheduler via batch_constructor.
-        This method only releases the draft model KV cache, which the scheduler
-        doesn't know about.
-        """
-        # Release draft model KV cache (scheduler doesn't manage this).
-        # The request may not have been claimed yet if it errored before
-        # execute() ran the draft model, so check before releasing.
-        replica_idx = self._draft_replica_idx.pop(request_id, 0)
-        if self._draft_kv_manager.contains(request_id, replica_idx=replica_idx):
-            self._draft_kv_manager.release(request_id, replica_idx=replica_idx)
-        # Target model KV cache is released by scheduler via batch_constructor
+        """Release the state for the request."""
+        pass
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:

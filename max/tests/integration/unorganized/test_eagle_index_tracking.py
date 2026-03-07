@@ -69,6 +69,9 @@ class EAGLEIndexTracker:
         self._metrics = SpeculativeDecodingMetrics()
         self._draft_kv_manager = MagicMock()
         self._target_kv_manager = MagicMock()
+        self._num_draft_steps = 42
+        self._max_seq_len = 10000
+        self._draft_kv_buffers = MagicMock()
 
     def update_contexts(
         self,
@@ -105,7 +108,6 @@ class EAGLEIndexTracker:
     def prepare_draft_batch(
         self,
         batch: list[TextContext],
-        num_steps: int = 3,
         return_n_logits: int = 1,
     ) -> None:
         model = MockModel()
@@ -114,7 +116,6 @@ class EAGLEIndexTracker:
             model=model,  # type: ignore[arg-type]
             batch=batch,
             replica_batches=[batch],
-            num_steps=num_steps,
             return_n_logits=return_n_logits,
             hidden_states=None,  # type: ignore[arg-type]
         )

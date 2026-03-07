@@ -354,7 +354,6 @@ def test_kv_cache_claiming_protocol() -> None:
                 pipeline._draft_model,
                 batch,
                 replica_batches=[batch],
-                num_steps=3,
                 return_n_logits=1,
                 is_draft=True,
             )
