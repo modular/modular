@@ -357,6 +357,7 @@ what we publish.
   - `InlineArray`: `Writable`
   - `List`: `Equatable`, `Writable`
   - `Optional`: `Writable`
+  - `Tuple`: `Writable`
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
