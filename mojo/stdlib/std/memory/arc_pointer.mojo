@@ -28,6 +28,7 @@ from std.format._utils import (
     constrained_conforms_to_writable,
 )
 from std.builtin.constrained import _constrained_conforms_to
+from std.hashlib.hasher import Hasher
 
 
 struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
@@ -71,7 +72,7 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
 
 
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
-    Identifiable, ImplicitlyCopyable, RegisterPassable, Writable
+    Hashable, Identifiable, ImplicitlyCopyable, RegisterPassable, Writable
 ):
     """Atomic reference-counted pointer.
 
@@ -263,6 +264,20 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             False otherwise.
         """
         return self._inner == rhs._inner
+
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        """Hash this pointer by its address.
+
+        Two `ArcPointer` instances that point to the same object (i.e. `a is b`)
+        will always produce the same hash value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance to update.
+        """
+        hasher.update(Int(self._inner))
 
     fn write_to(self, mut writer: Some[Writer]):
         """Formats this pointer's value to the provided Writer.
