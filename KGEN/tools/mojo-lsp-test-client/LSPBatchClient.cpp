@@ -375,12 +375,6 @@ ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,
   if (attachDebugger)
     args.push_back("-attach-debugger-on-startup");
 
-  if (std::getenv("PRESERVE_LSP_IO_FILES")) {
-    llvm::errs() << "You can manually rerun this invocation with:\n"
-                 << "  " << lspServerPath << " -mojo-test < "
-                 << ioFiles.serverStdin << "\n";
-  }
-
   int exitCode = llvm::sys::ExecuteAndWait(lspServerPath, args,
                                            /*Env=*/std::nullopt, /*redirects=*/
                                            {
@@ -423,16 +417,27 @@ LSPBatchClient::ExecutionResult LSPBatchClient::execute() {
   }
   LSPServerStdioFiles ioFiles(tempDirOr->getPath());
 
-  if (std::getenv("PRESERVE_LSP_IO_FILES")) {
+  bool preserveIOFiles = std::getenv("PRESERVE_LSP_IO_FILES");
+
+  // Keep the temp dir and print the file paths so they can be inspected.
+  auto keepAndPrintIOFiles = [&] {
     tempDirOr->keep();
     llvm::errs() << "Language server stdin: " << ioFiles.serverStdin << "\n";
     llvm::errs() << "Language server stdout: " << ioFiles.serverStdout << "\n";
     llvm::errs() << "Language server stderr: " << ioFiles.serverStderr << "\n";
-  }
+  };
+
+  // Print paths before executing so they are visible even if the server
+  // crashes hard and doExecute never returns cleanly.
+  if (preserveIOFiles)
+    keepAndPrintIOFiles();
 
   LSPBatchClient::ExecutionResult result;
   if (auto err = doExecute(ioFiles, lspServerPath)) {
     result.err = std::move(err);
+    // Also print on failure when not already printed above.
+    if (!preserveIOFiles)
+      keepAndPrintIOFiles();
   }
   onExecuteCallback(result);
   result.serverIOFiles = std::move(ioFiles);
