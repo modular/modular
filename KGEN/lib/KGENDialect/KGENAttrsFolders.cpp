@@ -49,6 +49,36 @@ FailureOr<TypedAttr> VariadicReduceAttr::evaluateWithContext(
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicTabulateAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr> VariadicTabulateAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  auto cntAttr = sugarDynCast<IntegerAttr>(getCount());
+  auto genAttr = sugarDynCast<GeneratorAttr>(getGenerator());
+  if (!cntAttr || !genAttr)
+    return failure();
+
+  int64_t n = cntAttr.getInt();
+  if (n <= 0)
+    return failure();
+
+  VariadicType resultType = getType();
+  SmallVector<TypedAttr> values;
+  values.reserve(n);
+  for (int64_t i = 0; i < n; ++i) {
+    IntegerAttr idxAttr = IntegerAttr::get(IndexType::get(getContext()), i);
+    GeneratorAttr spGen = genAttr.getSpecializedGenerator({idxAttr}, &context);
+    if (!spGen)
+      return TypedAttr();
+    if (!spGen.isFullyBound())
+      return failure();
+    values.push_back(sugarCast<TypedAttr>(spGen.getInstantiatedValue()));
+  }
+  return {VariadicAttr::get(values, resultType)};
+}
+
+//===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//
 

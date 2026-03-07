@@ -74,6 +74,30 @@ struct Variadic:
         `> : `,
         Variadic.ValuesOfType[T],
     ]
+
+    # ===-----------------------------------------------------------------------===#
+    # Tabulate
+    # ===-----------------------------------------------------------------------===#
+
+    # tabulate: Apply an "index -> value" generator, N times to build a variadic.
+    comptime tabulate[
+        ToT: AnyType,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToValueGeneratorType[ToT],
+    ] = __mlir_attr[
+        `#kgen.variadic.tabulate<`,
+        count._mlir_value,
+        `,`,
+        _IndexToIntTabulateWrap[ToT, Mapper, ...],
+        `> : `,
+        Variadic.ValuesOfType[ToT],
+    ]
+
+    # ===-----------------------------------------------------------------------===#
+    # Contains
+    # ===-----------------------------------------------------------------------===#
+
     comptime contains[
         Trait: type_of(AnyType),
         //,
@@ -173,6 +197,25 @@ struct Variadic:
         VariadicType=From,
         Reducer=Variadic._ValueToValueMapper[Mapper, ...],
     ]
+
+
+# ===-----------------------------------------------------------------------===#
+# TabulateHelpers
+# ===-----------------------------------------------------------------------===#
+
+comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `>`,
+    +ToT,
+    `>`,
+]
+
+comptime _IndexToIntTabulateWrap[
+    ToT: AnyType,
+    ToWrap: _TabulateIntToValueGeneratorType[ToT],
+    idx: __mlir_type.index,
+] = ToWrap[Int(mlir_value=idx)]
 
 
 # ===-----------------------------------------------------------------------===#

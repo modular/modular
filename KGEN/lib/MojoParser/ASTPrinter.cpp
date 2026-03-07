@@ -889,6 +889,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto vaTab = dyn_cast<VariadicTabulateAttr>(param)) {
+    os << "#" << vaTab.name << "(";
+    printParam(os, vaTab.getCount(), diagShared);
+    os << ", ";
+    printGeneratorAttr(cast<GeneratorAttr>(vaTab.getGenerator()));
+    os << ")";
+    return;
+  }
+
   if (auto vaSize = dyn_cast<VariadicSizeAttr>(param)) {
     os << "len(";
     printParam(os, vaSize.getVariadic(), diagShared);

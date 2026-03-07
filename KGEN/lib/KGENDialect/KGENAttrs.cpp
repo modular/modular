@@ -194,6 +194,7 @@ bool VariadicReduceAttr::isConstant() const { return false; }
 bool VariadicZipAttr::isConstant() const { return false; }
 bool VariadicSizeAttr::isConstant() const { return false; }
 bool VariadicSplatAttr::isConstant() const { return false; }
+bool VariadicTabulateAttr::isConstant() const { return false; }
 bool VariadicConcatAttr::isConstant() const { return false; }
 
 LogicalResult
@@ -328,6 +329,59 @@ TypedAttr VariadicSplatAttr::getChecked(
   if (failed(verify(emitError, type, elt, count)))
     return {};
   return get(type, elt, count);
+}
+
+LogicalResult
+VariadicTabulateAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                             VariadicType type, TypedAttr count,
+                             TypedAttr generator) {
+  if (!isa<IndexType>(count.getType()))
+    return emitError() << "expected 'index' type for count, got: "
+                       << count.getType();
+
+  auto genType = dyn_cast<GeneratorType>(generator.getType());
+  if (!genType)
+    return emitError() << "expected generator to have GeneratorType, got: "
+                       << generator.getType();
+
+  IndexDepthAdjuster adjuster(-1);
+  genType = cast<GeneratorType>(adjuster.replace(genType));
+  ArrayRef<Type> inputTps = genType.getInputParamTypes();
+  if (inputTps.size() != 1 || inputTps[0] != IndexType::get(type.getContext()))
+    return emitError()
+           << "expected generator to take single index parameter, got "
+           << inputTps.size() << " parameter(s)";
+
+  if (genType.getBody() != type.getElementType())
+    return emitError()
+           << "expected generator body type to match variadic element type: "
+           << type.getElementType() << ", got: " << genType.getBody();
+
+  return success();
+}
+
+TypedAttr VariadicTabulateAttr::get(VariadicType type, TypedAttr count,
+                                    TypedAttr generator) {
+  auto cntAttr = sugarDynCast<IntegerAttr>(count);
+  auto genAttr = sugarDynCast<GeneratorAttr>(generator);
+  if (!cntAttr || !genAttr)
+    return Base::get(type.getContext(), type, count, generator);
+
+  int64_t n = cntAttr.getInt();
+  if (n <= 0)
+    return Base::get(type.getContext(), type, count, generator);
+
+  // Defer to evaluateWithContext when we don't have an evaluation context
+  // (e.g. we can't specialize the generator here).
+  return Base::get(type.getContext(), type, count, generator);
+}
+
+TypedAttr VariadicTabulateAttr::getChecked(
+    function_ref<::mlir::InFlightDiagnostic()> emitError, VariadicType type,
+    TypedAttr count, TypedAttr generator) {
+  if (failed(verify(emitError, type, count, generator)))
+    return {};
+  return get(type, count, generator);
 }
 
 LogicalResult
