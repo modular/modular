@@ -196,8 +196,9 @@ struct Batch(TrivialRegisterPassable, Writable):
             ")",
         )
 
+    @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Writes the string representation of this `Batch` to a writer.
+        """Writes the repr of this `Batch` to a writer.
 
         Args:
             writer: The object to write to.
