@@ -38,6 +38,11 @@ This version is still a work in progress.
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
 
+- `ArcPointer` now conforms to the `Hashable` trait, enabling its use as a
+  `Dict` key or `Set` element. The hash is based on the allocation address,
+  consistent with pointer-identity semantics (`a is b` implies
+  `hash(a) == hash(b)`).
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
