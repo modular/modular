@@ -25,6 +25,21 @@ from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 from std.builtin.constrained import _constrained_conforms_to
 
 
+fn _dict_capacity_for(n: Int) -> Int:
+    """Return the Dict slot count needed to hold n entries without rehashing.
+
+    Dict's 7/8 load factor means `growth_left = capacity * 7 // 8`. Requesting
+    `ceil(8n/7)` slots guarantees `growth_left >= n` after power-of-two rounding.
+
+    Args:
+        n: The number of entries to accommodate.
+
+    Returns:
+        The minimum capacity to pass to `Dict(capacity=...)`.
+    """
+    return (n * 8 + 6) // 7
+
+
 struct Set[T: KeyElement, H: Hasher = default_hasher](
     Boolable,
     Comparable,
@@ -85,9 +100,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             ts: Variadic of elements to add to the set.
             __set_literal__: Tell Mojo to use this method for set literals.
         """
-        # TODO: Reserve space in this set. Also, take the elements as 'owned'
-        # and transfer them into the set to eliminate copyability.
-        self._data = Dict[Self.T, NoneType, Self.H]()
+        self._data = Dict[Self.T, NoneType, Self.H](
+            capacity=_dict_capacity_for(len(ts))
+        )
         for t in ts:
             self.add(t)
 
@@ -98,7 +113,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             elements: A vector of elements to add to the set.
         """
-        self = Self()
+        self._data = Dict[Self.T, NoneType, Self.H](
+            capacity=_dict_capacity_for(len(elements))
+        )
         for e in elements:
             self.add(e)
 
