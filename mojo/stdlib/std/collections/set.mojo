@@ -23,6 +23,21 @@ from std.hashlib import Hasher, default_hasher
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 
+fn _dict_capacity_for(n: Int) -> Int:
+    """Return the Dict slot count needed to hold n entries without rehashing.
+
+    Dict's 7/8 load factor means `growth_left = capacity * 7 // 8`. Requesting
+    `ceil(8n/7)` slots guarantees `growth_left >= n` after power-of-two rounding.
+
+    Args:
+        n: The number of entries to accommodate.
+
+    Returns:
+        The minimum capacity to pass to `Dict(capacity=...)`.
+    """
+    return (n * 8 + 6) // 7
+
+
 struct Set[T: KeyElement, H: Hasher = default_hasher](
     Boolable,
     Comparable where conforms_to(T, Equatable),
@@ -83,10 +98,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             ts: Variadic of elements to add to the set.
             __set_literal__: Tell Mojo to use this method for set literals.
         """
-        # Request ceil(8n/7) slots so that Dict's 7/8 load factor yields
-        # at least len(ts) usable entries without triggering a rehash.
         self._data = Dict[Self.T, NoneType, Self.H](
-            capacity=(len(ts) * 8 + 6) // 7
+            capacity=_dict_capacity_for(len(ts))
         )
         for t in ts:
             self.add(t)
@@ -98,10 +111,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Args:
             elements: A vector of elements to add to the set.
         """
-        # Request ceil(8n/7) slots so that Dict's 7/8 load factor yields
-        # at least len(elements) usable entries without triggering a rehash.
         self._data = Dict[Self.T, NoneType, Self.H](
-            capacity=(len(elements) * 8 + 6) // 7
+            capacity=_dict_capacity_for(len(elements))
         )
         for e in elements:
             self.add(e)
