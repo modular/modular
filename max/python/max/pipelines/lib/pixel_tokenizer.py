@@ -453,7 +453,7 @@ class PixelGenerationTokenizer(
 
         Matches diffusers FLUX2 behavior:
         - cap image area when needed
-        - floor dimensions to multiples of vae_scale_factor * 2
+        - floor dimensions to multiples of vae_spatial_compression_ratio * 2
         - apply aspect-ratio preserving center-crop resize to the floored size
 
         Args:
