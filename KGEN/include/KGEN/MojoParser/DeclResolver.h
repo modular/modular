@@ -198,6 +198,13 @@ public:
     return declsCurrentlyProcessing.stack.back();
   }
 
+  /// Return the declaration context to use when pretty-printing parameter
+  /// references in diagnostics.
+  ASTDecl *getDiagnosticDeclContext() const {
+    return diagnosticDeclContext ? diagnosticDeclContext
+                                 : getDeclCurrentlyProcessing();
+  }
+
   bool isAlreadyProcessing(ASTDecl &decl) const {
     return declsCurrentlyProcessing.map.contains(&decl);
   }
@@ -285,18 +292,17 @@ public:
                                                    StringAttr newName,
                                                    ASTDecl &scope);
 
-  /// This struct is used to change the current declaration being processed.
+  /// This struct is used to update `diagnosticDeclContext`.
   /// This is used to ensure that error messages complaining about inferred
   /// parameters and types correctly refer to ParamDeclRefAttr's in the correct
   /// declaration.
-  struct DeclScopeChanger {
-    DeclScopeChanger(ASTDecl *declToUse);
-    ~DeclScopeChanger();
+  struct DiagnosticDeclContextChanger {
+    DiagnosticDeclContextChanger(ASTDecl *declToUse);
+    ~DiagnosticDeclContextChanger();
 
   private:
     DeclResolver *resolver = nullptr;
-    DenseMap<ASTDecl *, llvm::SMLoc> map;
-    std::vector<ASTDecl *> stack;
+    ASTDecl *prevDiagnosticDeclContext = nullptr;
   };
 
 private:
@@ -400,6 +406,10 @@ private:
     }
   };
   CurrentProcessingSet declsCurrentlyProcessing;
+
+  /// The declaration context used when pretty-printing parameter references in
+  /// diagnostics.
+  ASTDecl *diagnosticDeclContext = nullptr;
 
   /// Allow access to private fields.
   friend SharedState;

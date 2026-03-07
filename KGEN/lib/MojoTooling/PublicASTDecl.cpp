@@ -595,7 +595,7 @@ populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
                              MojoASTDeclRef *parentDeclContext = nullptr) {
   // Set the scope to the parent declaration so the ASTType printer can deduce
   // dependent parameter names.
-  DeclResolver::DeclScopeChanger scope(
+  DeclResolver::DiagnosticDeclContextChanger scope(
       parentDeclContext && *parentDeclContext ? &**parentDeclContext : nullptr);
 
   // Update param / arg types with decl refs instead of index refs.
@@ -1338,7 +1338,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
                                            FnTypeGeneratorType signature,
                                            ArrayRef<Type> userArgTypes,
                                            Type userResultType) {
-  DeclResolver::DeclScopeChanger declScopeChanger(&*declRef);
+  DeclResolver::DiagnosticDeclContextChanger declScopeChanger(&*declRef);
   auto &shared = *declRef.getShared();
   raisesFlag = signature.isThrows();
   isAsyncFlag = signature.isAsync();

@@ -415,7 +415,7 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
     return;
   }
 
-  ASTDecl *ctxDecl = shared.declResolver->getDeclCurrentlyProcessing();
+  ASTDecl *ctxDecl = shared.declResolver->getDiagnosticDeclContext();
   if (!ctxDecl) {
     os << demangledName;
     return;
@@ -489,7 +489,7 @@ static ParamDeclRefAttr findDeclRefForIndexRef(ParamIndexRefAttr idxRef,
                                                SharedState *shared) {
   if (!shared)
     return {};
-  ASTDecl *ctxDecl = shared->declResolver->getDeclCurrentlyProcessing();
+  ASTDecl *ctxDecl = shared->declResolver->getDiagnosticDeclContext();
   if (!ctxDecl)
     return {};
 
@@ -1280,7 +1280,7 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
     // can find the corresponding Origin parameter.  This reduces us complaining
     // about x._mlir_origin.
     if (ASTDecl *ctxDecl =
-            diagShared->declResolver->getDeclCurrentlyProcessing()) {
+            diagShared->declResolver->getDiagnosticDeclContext()) {
       if (sugarIsa<OriginType>(declRef.getType())) {
         IREmitter emitter(*ctxDecl, ExprContext::EC_Origin);
         TypedAttr paramVal =

@@ -65,7 +65,7 @@ void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
   // before the diagnostic is emitted.  This happens (e.g.) in overload
   // resolution where lots of diagnostics are producted (with different callees)
   // and then are emitted in a deferred way.
-  ASTDecl *ctxDecl = shared->declResolver->getDeclCurrentlyProcessing();
+  ASTDecl *ctxDecl = shared->declResolver->getDiagnosticDeclContext();
 
   // Remember we emitted this parameter so we can post-process the diagnostic.
   auto &mdiag = static_cast<MojoInflightDiag &>(diag);
@@ -246,11 +246,13 @@ MojoInflightDiag::~MojoInflightDiag() {
         attachNote(emittedParams[0].loc)
             << differ.accessPath << " of left " << kind << " is ";
         {
-          DeclResolver::DeclScopeChanger x(emittedParams[0].ctxDecl);
+          DeclResolver::DiagnosticDeclContextChanger x(
+              emittedParams[0].ctxDecl);
           *this << differ.leftNested;
         }
         {
-          DeclResolver::DeclScopeChanger x(emittedParams[1].ctxDecl);
+          DeclResolver::DiagnosticDeclContextChanger x(
+              emittedParams[1].ctxDecl);
           *this << " but the right " << kind << " is " << differ.rightNested;
         }
       }
@@ -289,7 +291,7 @@ MojoInflightDiag::~MojoInflightDiag() {
 
     // Make sure to unpack this in the right context so any parameter references
     // are referring to the right declaration.
-    DeclResolver::DeclScopeChanger x(ctxDecl);
+    DeclResolver::DiagnosticDeclContextChanger x(ctxDecl);
 
     // Ensure the strings are textually different.
     auto attrString = ASTType::getParamAsString(attrValue, /*forDiag=*/shared);
