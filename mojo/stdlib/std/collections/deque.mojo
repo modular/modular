@@ -23,6 +23,7 @@ from std.collections import Deque
 
 
 from std.bit import next_power_of_two
+from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from std.builtin.constrained import _constrained_conforms_to
 import std.format._utils as fmt
 
@@ -400,6 +401,67 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         offset = self._physical_index(self._head + normalized_idx)
         return (self._data + offset)[]
+
+    fn __getitem__(self, slice: ContiguousSlice) -> Self:
+        """Gets a new deque with elements at the specified contiguous slice.
+
+        The returned deque has default configuration (`min_capacity`, `maxlen`,
+        `shrink`) regardless of the source deque's configuration.
+
+        Args:
+            slice: A slice specifying start and stop (stride is always 1).
+
+        Returns:
+            A new `Deque` containing the elements at the specified positions.
+
+        Example:
+
+        ```mojo
+        var d = Deque[Int](1, 2, 3, 4, 5)
+        var s = d[1:4]
+        print(s)  # Deque(2, 3, 4)
+        ```
+        """
+        var start, end = slice.indices(len(self))
+        var count = end - start
+        # Use count + 1 to avoid triggering a realloc when the ring buffer
+        # would otherwise be exactly full after inserting all elements.
+        var result = Self(capacity=count + 1)
+        for i in range(start, end):
+            result.append(self[i].copy())
+        return result^
+
+    fn __getitem__(self, slice: StridedSlice) -> Self:
+        """Gets a new deque with elements at the specified strided slice positions.
+
+        The returned deque has default configuration (`min_capacity`, `maxlen`,
+        `shrink`) regardless of the source deque's configuration.
+
+        Args:
+            slice: A slice specifying start, stop, and step.
+
+        Returns:
+            A new `Deque` containing the elements at the specified positions.
+
+        Example:
+
+        ```mojo
+        var d = Deque[Int](1, 2, 3, 4, 5)
+        var s = d[::2]
+        print(s)  # Deque(1, 3, 5)
+        var s2 = d[::-1]
+        print(s2)  # Deque(5, 4, 3, 2, 1)
+        ```
+        """
+        var start, end, step = slice.indices(len(self))
+        var r = range(start, end, step)
+        var count = len(r)
+        # Use count + 1 to avoid triggering a realloc when the ring buffer
+        # would otherwise be exactly full after inserting all elements.
+        var result = Self(capacity=count + 1)
+        for i in r:
+            result.append(self[i].copy())
+        return result^
 
     fn _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])

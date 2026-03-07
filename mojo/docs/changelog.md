@@ -343,6 +343,17 @@ what we publish.
   `lane_group_sum_and_broadcast()`, `lane_group_max_and_broadcast()` functions
   are deprecated — use the short names instead.
 
+- `Deque` now supports slice subscripting via `__getitem__`. Both contiguous
+  slices (`d[1:4]`) and strided slices (`d[::2]`, `d[::-1]`) return a new
+  `Deque` with the selected elements:
+
+  ```mojo
+  var d: Deque[Int] = [1, 2, 3, 4, 5]
+  print(d[1:4])   # Deque(2, 3, 4)
+  print(d[::2])   # Deque(1, 3, 5)
+  print(d[::-1])  # Deque(5, 4, 3, 2, 1)
+  ```
+
 - `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
   used to index into collections (e.g., `nums[True]`), which is not desirable
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly

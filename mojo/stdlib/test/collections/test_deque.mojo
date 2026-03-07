@@ -1166,5 +1166,72 @@ def test_write_repr_to() raises:
 # ===-------------------------------------------------------------------===#
 
 
+def test_getitem_slice_basic() raises:
+    """Basic contiguous slicing returns a new Deque with the expected elements.
+    """
+    var d: Deque[Int] = [1, 2, 3, 4, 5]
+    var s = d[1:4]
+    assert_equal(len(s), 3)
+    assert_equal(s[0], 2)
+    assert_equal(s[1], 3)
+    assert_equal(s[2], 4)
+
+
+def test_getitem_slice_step() raises:
+    """Slicing with a step selects every nth element."""
+    var d: Deque[Int] = [1, 2, 3, 4, 5]
+    var s = d[::2]
+    assert_equal(len(s), 3)
+    assert_equal(s[0], 1)
+    assert_equal(s[1], 3)
+    assert_equal(s[2], 5)
+
+
+def test_getitem_slice_negative_step() raises:
+    """Slicing with a negative step reverses the selection."""
+    var d: Deque[Int] = [1, 2, 3, 4, 5]
+    var s = d[::-1]
+    assert_equal(len(s), 5)
+    assert_equal(s[0], 5)
+    assert_equal(s[1], 4)
+    assert_equal(s[4], 1)
+
+
+def test_getitem_slice_empty() raises:
+    """An out-of-range or reversed slice returns an empty Deque."""
+    var d: Deque[Int] = [1, 2, 3]
+    var s = d[5:10]
+    assert_equal(len(s), 0)
+
+    var s2 = d[3:1]
+    assert_equal(len(s2), 0)
+
+
+def test_getitem_slice_negative_indices() raises:
+    """Negative indices are normalized correctly."""
+    var d: Deque[Int] = [1, 2, 3, 4, 5]
+    var s = d[-3:-1]
+    assert_equal(len(s), 2)
+    assert_equal(s[0], 3)
+    assert_equal(s[1], 4)
+
+
+def test_getitem_slice_uses_default_config() raises:
+    """Slicing returns a new deque with default configuration."""
+    var d = Deque[Int](maxlen=5, min_capacity=8, shrink=False)
+    for i in range(5):
+        d.append(i)
+
+    var s = d[1:4]
+    assert_equal(len(s), 3)
+    assert_equal(s[0], 1)
+    assert_equal(s[1], 2)
+    assert_equal(s[2], 3)
+    # Slice result must not inherit source configuration.
+    assert_equal(s._maxlen, -1)
+    assert_equal(s._min_capacity, Deque[Int].default_capacity)
+    assert_true(s._shrink)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
