@@ -16,6 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std.builtin.constrained import _constrained_conforms_to
+from std.hashlib.hasher import Hasher
 from std.format._utils import (
     write_sequence_to,
     TypeNames,
@@ -55,6 +56,7 @@ struct Tuple[*element_types: Movable](
     # ImplicitlyDestructible and Movable are listed explicitly because
     # conditional conformances require all conformances to be stated.
     ImplicitlyDestructible,
+    Hashable where AllHashable[*element_types],
     Movable,
     Sized,
     Writable where AllWritable[*element_types],
@@ -194,6 +196,19 @@ struct Tuple[*element_types: Movable](
             The tuple length.
         """
         return Self.__len__()
+
+    @always_inline
+    fn __hash__[H: Hasher](self, mut hasher: H) where AllHashable[*element_types]:
+        """Hash the tuple by feeding each element into the hasher in order.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance to update.
+        """
+        comptime for i in range(Self.__len__()):
+            hasher.update(trait_downcast[Hashable](self[i]))
 
     @always_inline("nodebug")
     def __getitem_param__[
