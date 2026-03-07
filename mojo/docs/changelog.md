@@ -320,6 +320,10 @@ what we publish.
 
 ### Library changes
 
+- `Random` and `NormalRandom` in `std.random.philox` now conform to `Writable`,
+  making it possible to print or inspect their internal state (seed key and
+  counter). Example output: `Random[10](key=[42, 0], counter=[0, 0, 0, 0])`.
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,
