@@ -10,7 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Dropout layer implementation."""
 
-from .autoencoder_kl import AutoencoderKLModel
-from .autoencoder_kl_flux2 import AutoencoderKLFlux2Model
-from .autoencoder_kl_ltx2 import AutoencoderKLLTX2VideoModel
+from max.experimental.tensor import Tensor
+
+from .module import Module
+
+
+class Dropout(Module[[Tensor], Tensor]):
+    """Identity Dropout layer for inference."""
+
+    def __init__(self, p: float = 0.5) -> None:
+        super().__init__()
+        self.p = p
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Forward pass for the identity dropout layer.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Output tensor.
+        """
+        return x

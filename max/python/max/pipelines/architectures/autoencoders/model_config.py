@@ -103,3 +103,57 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
             }
         )
         return AutoencoderKLFlux2Config(**init_dict)
+
+
+class AutoencoderKLLTX2VideoConfig(AutoencoderKLConfigBase):
+    latent_channels: int = 128
+    decoder_block_out_channels: tuple[int, ...] = (256, 512, 1024)
+    decoder_layers_per_block: tuple[int, ...] = (5, 5, 5, 5)
+    decoder_spatio_temporal_scaling: tuple[bool, ...] = (True, True, True)
+    decoder_inject_noise: tuple[bool, ...] = (False, False, False, False)
+    upsample_residual: tuple[bool, ...] = (True, True, True)
+    upsample_factor: tuple[int, ...] = (2, 2, 2)
+    timestep_conditioning: bool = False
+    patch_size: int = 4
+    patch_size_t: int = 1
+    resnet_norm_eps: float = 1e-6
+    scaling_factor: float = 1.0
+    decoder_causal: bool = False  # Real LTX-2 VAE uses non-causal decoder
+    decoder_spatial_padding_mode: str = "reflect"
+
+    @staticmethod
+    def generate(
+        config_dict: dict[str, Any],
+        encoding: SupportedEncoding,
+        devices: list[Device],
+    ) -> "AutoencoderKLLTX2VideoConfig":
+        init_dict = {
+            key: value
+            for key, value in config_dict.items()
+            if key in AutoencoderKLConfigBase.__annotations__
+        }
+        # Add LTX-2-specific parameters if present
+        ltx2_params = [
+            "decoder_block_out_channels",
+            "decoder_layers_per_block",
+            "decoder_spatio_temporal_scaling",
+            "decoder_inject_noise",
+            "upsample_residual",
+            "upsample_factor",
+            "timestep_conditioning",
+            "patch_size",
+            "patch_size_t",
+            "resnet_norm_eps",
+            "decoder_causal",
+            "decoder_spatial_padding_mode",
+        ]
+        for param in ltx2_params:
+            if param in config_dict:
+                init_dict[param] = config_dict[param]
+        init_dict.update(
+            {
+                "dtype": supported_encoding_dtype(encoding),
+                "device": DeviceRef.from_device(devices[0]),
+            }
+        )
+        return AutoencoderKLLTX2VideoConfig(**init_dict)
