@@ -539,8 +539,17 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload=payload,
             headers=headers,
             prompt_len=request_func_input.prompt_len,
-            content_extractor=lambda data: data["choices"][0]["delta"].get(
-                "content", ""
+            # NOTE:
+            # "reasoning" and "reasoning_content" are NOT official OpenAI fields.
+            # Different model providers and serving frameworks may emit one or both
+            # to stream chain-of-thought tokens separately from "content". These
+            # fields may also be None in some chunks.
+            #
+            # We merge them here to preserve all streamed text.
+            content_extractor=lambda data: (
+                (data["choices"][0]["delta"].get("reasoning") or "")
+                + (data["choices"][0]["delta"].get("reasoning_content") or "")
+                + (data["choices"][0]["delta"].get("content") or "")
             ),
             tokenizer=self.tokenizer,
         )
