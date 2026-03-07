@@ -19,10 +19,11 @@ from typing import Any, cast
 
 import numpy as np
 from max.driver import Buffer, Device
+from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import LogProbabilities
+from max.interfaces import LogProbabilities, RequestID
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
@@ -42,6 +43,7 @@ from transformers import AutoConfig
 
 from .functional_ops import _get_state_space_paths
 from .model_config import MambaConfig
+from .ssm_cache import SSMStateCache
 
 logger = logging.getLogger("max.pipelines")
 
@@ -54,6 +56,7 @@ class MambaModelInputs(ModelInputs):
     return_n_logits: Buffer
     is_prefill: bool
     layer_states: list[Buffer]
+    request_ids: list[RequestID]
 
     def __init__(
         self,
@@ -62,12 +65,14 @@ class MambaModelInputs(ModelInputs):
         return_n_logits: Buffer,
         is_prefill: bool = True,
         layer_states: list[Buffer] | None = None,
+        request_ids: list[RequestID] | None = None,
     ) -> None:
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
         self.return_n_logits = return_n_logits
         self.is_prefill = is_prefill
         self.layer_states = layer_states or []
+        self.request_ids = request_ids or []
 
 
 class MambaModel(PipelineModel[TextContext]):
@@ -97,10 +102,24 @@ class MambaModel(PipelineModel[TextContext]):
             adapter,
             return_logits,
         )
-        self._layer_states: list[Buffer] = []
         self._prefill_model, self._step_model = self._load_models()
+        self._ssm_cache = self._create_ssm_cache()
         self.logprobs_device = devices[0]
         self.logprobs_model = self._load_logprobs_model(session)
+
+    def _create_ssm_cache(self) -> SSMStateCache:
+        """Create the SSM state cache with pre-allocated slot buffers."""
+        cfg = self._model_config
+        max_slots = self.pipeline_config.runtime.max_batch_size or 1
+        return SSMStateCache(
+            num_layers=cfg.num_hidden_layers,
+            intermediate_size=cfg.intermediate_size,
+            d_state=cfg.d_state,
+            conv_kernel=cfg.conv_kernel,
+            dtype=self.dtype,
+            max_slots=max_slots,
+            device=self.devices[0],
+        )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -198,7 +217,6 @@ class MambaModel(PipelineModel[TextContext]):
 
     @traced
     def _load_models(self) -> tuple[Any, Any]:
-        from max.dtype import DType
         from max.experimental import functional as F
         from max.graph import TensorType
         from max.pipelines.lib import CompilationTimer
@@ -331,8 +349,10 @@ class MambaModel(PipelineModel[TextContext]):
         # First output is logits, rest are layer states
         logits = cast(Buffer, outputs[0].driver_tensor)
 
-        # Store layer states for next step
-        self._layer_states = [s.driver_tensor for s in outputs[1:]]
+        # Store updated states back into the SSM cache slots.
+        new_states = [s.driver_tensor for s in outputs[1:]]
+        if model_inputs.request_ids:
+            self._ssm_cache.update_states(model_inputs.request_ids, new_states)
 
         return ModelOutputs(
             logits=logits,
@@ -349,6 +369,11 @@ class MambaModel(PipelineModel[TextContext]):
             raise ValueError("Mamba does not support DP>1")
 
         context_batch = replica_batches[0]
+        request_ids = [ctx.request_id for ctx in context_batch]
+
+        # Claim SSM cache slots for each request (idempotent if already claimed).
+        for rid in request_ids:
+            self._ssm_cache.claim(rid)
 
         input_row_offsets = np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],
@@ -362,22 +387,34 @@ class MambaModel(PipelineModel[TextContext]):
             np.array([return_n_logits], dtype=np.int64)
         )
 
-        # If SSM states are already cached from a previous batch, continue
-        # in step mode rather than re-running prefill. The pipeline scheduler
-        # calls prepare_initial_token_inputs at the start of each batch,
-        # but for Mamba the SSM state is not reconstructable from tokens
-        # alone — it must be carried forward from the previous step.
-        if self._layer_states:
+        # Check if any request already has computed states (continuation).
+        # For Mamba, SSM state is not reconstructable from tokens alone —
+        # it must be carried forward from the previous step. The pipeline
+        # scheduler calls prepare_initial_token_inputs at the start of each
+        # batch, but if states exist we use step mode instead of re-prefill.
+        has_existing_states = any(
+            self._ssm_cache.contains(rid)
+            and self._ssm_cache.has_valid_state(rid)
+            for rid in request_ids
+        )
+
+        if has_existing_states:
+            layer_states = self._ssm_cache.get_states(request_ids)
             return MambaModelInputs(
                 tokens_buf,
                 offsets_buf,
                 n_logits_buf,
                 is_prefill=False,
-                layer_states=self._layer_states,
+                layer_states=layer_states,
+                request_ids=request_ids,
             )
 
         return MambaModelInputs(
-            tokens_buf, offsets_buf, n_logits_buf, is_prefill=True
+            tokens_buf,
+            offsets_buf,
+            n_logits_buf,
+            is_prefill=True,
+            request_ids=request_ids,
         )
 
     def prepare_next_token_inputs(
@@ -386,14 +423,20 @@ class MambaModel(PipelineModel[TextContext]):
         prev_model_inputs: ModelInputs,
     ) -> MambaModelInputs:
         prev = cast(MambaModelInputs, prev_model_inputs)
+        layer_states = self._ssm_cache.get_states(prev.request_ids)
 
         return MambaModelInputs(
             tokens=next_tokens,
             input_row_offsets=prev.input_row_offsets,
             return_n_logits=prev.return_n_logits,
             is_prefill=False,
-            layer_states=self._layer_states,
+            layer_states=layer_states,
+            request_ids=prev.request_ids,
         )
+
+    def release(self, request_id: RequestID) -> None:
+        """Release SSM cache slot when a request completes."""
+        self._ssm_cache.release(request_id)
 
     def compute_log_probabilities(
         self,

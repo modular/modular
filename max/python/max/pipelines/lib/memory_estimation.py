@@ -260,9 +260,24 @@ class MemoryEstimator:
             )
 
         if not user_provided_max_batch_size:
-            pipeline_config.runtime.max_batch_size = (
-                cls._infer_optimal_batch_size(arch_config, devices)
-            )
+            if isinstance(arch_config, ArchConfigWithSSMCache):
+                # SSM cache is fixed-size per batch element (no seq_len
+                # scaling).  Compute the largest batch that fits in the
+                # available cache memory instead of using the generic
+                # _DEFAULT_BATCH_SIZE which is tuned for KV-cache models.
+                ssm_params = arch_config.get_ssm_cache_params()
+                per_element = ssm_params.per_element_bytes
+                if per_element > 0:
+                    pipeline_config.runtime.max_batch_size = min(
+                        _DEFAULT_BATCH_SIZE,
+                        max(1, available_kv_cache_memory // per_element),
+                    )
+                else:
+                    pipeline_config.runtime.max_batch_size = _DEFAULT_BATCH_SIZE
+            else:
+                pipeline_config.runtime.max_batch_size = (
+                    cls._infer_optimal_batch_size(arch_config, devices)
+                )
 
         assert pipeline_config.runtime.max_batch_size is not None
         if (
@@ -287,7 +302,14 @@ class MemoryEstimator:
         total_size += actual_kv_cache_size
         # If the model is too large to fit in memory, and the user did not
         # specify a max_length, try to infer a value that would fit.
-        if int(total_size) > free_memory and not user_provided_max_length:
+        # SSM cache doesn't scale with sequence length, so skip the
+        # max_length binary search for SSM models — the batch size was
+        # already fitted above.
+        if (
+            int(total_size) > free_memory
+            and not user_provided_max_length
+            and not isinstance(arch_config, ArchConfigWithSSMCache)
+        ):
             original_max_length = model_config.max_length
             (
                 found_valid_max_length,
@@ -748,7 +770,7 @@ class MemoryEstimator:
         """
         if not isinstance(
             arch_config,
-            (ArchConfigWithKVCache, ArchConfigWithSSMCache),
+            ArchConfigWithKVCache | ArchConfigWithSSMCache,
         ):
             return 1
         if len(devices) == 1 and devices[0].is_host:
