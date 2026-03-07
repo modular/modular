@@ -16,6 +16,8 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std.builtin.constrained import _constrained_conforms_to
+from std.hashlib.hash import _constrained_elements_hashable
+from std.hashlib.hasher import Hasher
 from std.format._utils import (
     write_sequence_to,
     TypeNames,
@@ -34,7 +36,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
+struct Tuple[*element_types: Movable](Hashable, ImplicitlyCopyable, Sized, Writable):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
@@ -178,6 +180,23 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             The tuple length.
         """
         return Self.__len__()
+
+    @always_inline
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the tuple by feeding each element into the hasher in order.
+
+        Constraints:
+            All element types must conform to `Hashable`.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance to update.
+        """
+        _constrained_elements_hashable[*Self.element_types, Parent=Self]()
+        comptime for i in range(Self.__len__()):
+            hasher.update(trait_downcast[Hashable](self[i]))
 
     @always_inline("nodebug")
     fn __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
