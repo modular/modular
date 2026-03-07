@@ -120,5 +120,18 @@ def test_write_repr_to() raises:
     )
 
 
+def test_hash() raises:
+    var p = ArcPointer(42)
+    var q = p  # same allocation
+
+    # Two pointers to the same object hash identically
+    assert_equal(hash(p), hash(q))
+
+    # A pointer to a different allocation hashes differently (with overwhelmingly
+    # high probability — same address would mean two live allocations overlap)
+    var r = ArcPointer(42)
+    assert_true(hash(p) != hash(r))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
