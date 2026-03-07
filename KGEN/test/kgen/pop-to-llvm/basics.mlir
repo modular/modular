@@ -316,6 +316,26 @@ kgen.func @store_with_volatile(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<
   kgen.return
 }
 
+// CHECK-LABEL: @load_with_nontemporal
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+kgen.func @load_with_nontemporal(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
+  // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: llvm.load %[[PTR]] {alignment = 128 : i64, nontemporal} : !llvm.ptr -> f32
+  %0 = pop.load nontemporal<1> %p align<128> : !kgen.pointer<scalar<f32>>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
+// CHECK-LABEL: @store_with_nontemporal
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+// CHECK-SAME: %[[ARG1:[a-z0-9]*]]:
+kgen.func @store_with_nontemporal(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
+  // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
+  // CHECK: llvm.store %[[VAL]], %[[PTR]] {alignment = 128 : i64, nontemporal} : i32, !llvm.ptr
+  pop.store nontemporal<1> %v, %p align<128> : !kgen.pointer<scalar<si32>>
+  kgen.return
+}
+
 // CHECK-LABEL: @store_with_atomic
 // CHECK-SAME: [[ARG0:%[a-z0-9]*]]:
 // CHECK-SAME: [[ARG1:%[a-z0-9]*]]:

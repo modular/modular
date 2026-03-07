@@ -1935,7 +1935,8 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
         /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr(), false),
-        /*isNonTemporal=*/false,
+        /*isNonTemporal=*/
+        getBoolAttrValue(adaptor.getIsNonTemporalAttr(), false),
         /*isInvariant=*/getBoolAttrValue(adaptor.getIsInvariantAttr(), false),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
@@ -1964,7 +1965,8 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
         /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr(), false),
-        /*isNonTemporal=*/false,
+        /*isNonTemporal=*/
+        getBoolAttrValue(adaptor.getIsNonTemporalAttr(), false),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
     return success();

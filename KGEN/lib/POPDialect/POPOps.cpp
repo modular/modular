@@ -208,11 +208,13 @@ LogicalResult SIMDSplatOp::verify() {
 
 void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
                    std::optional<unsigned> alignment, bool isVolatile,
-                   bool isInvariant, AtomicOrdering ordering,
+                   bool isInvariant, bool isNonTemporal,
+                   AtomicOrdering ordering,
                    std::optional<StringAttr> syncscope) {
   build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
         isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(),
-        isInvariant ? b.getBoolAttr(isInvariant) : TypedAttr(), ordering,
+        isInvariant ? b.getBoolAttr(isInvariant) : TypedAttr(),
+        isNonTemporal ? b.getBoolAttr(isNonTemporal) : TypedAttr(), ordering,
         syncscope ? *syncscope : TypedAttr());
 }
 
@@ -244,10 +246,11 @@ LogicalResult LoadOp::verify() {
 
 void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
                     std::optional<unsigned> alignment, bool isVolatile,
-                    AtomicOrdering ordering) {
+                    bool isNonTemporal, AtomicOrdering ordering) {
   build(b, state, arg, ptr,
         alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
-        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(), ordering);
+        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(),
+        isNonTemporal ? b.getBoolAttr(isNonTemporal) : TypedAttr(), ordering);
 }
 
 LogicalResult StoreOp::verify() {
