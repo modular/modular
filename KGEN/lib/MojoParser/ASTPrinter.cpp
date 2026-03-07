@@ -880,15 +880,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto vaSplat = dyn_cast<VariadicSplatAttr>(param)) {
-    os << "#" << vaSplat.name << "(";
-    printParam(os, vaSplat.getElement(), diagShared);
-    os << ", ";
-    printParam(os, vaSplat.getCount(), diagShared);
-    os << ")";
-    return;
-  }
-
   if (auto vaTab = dyn_cast<VariadicTabulateAttr>(param)) {
     os << "#" << vaTab.name << "(";
     printParam(os, vaTab.getCount(), diagShared);

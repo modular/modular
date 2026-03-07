@@ -883,16 +883,6 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
-  // TODO: should we make param match-ability an MLIR interface?
-  // Check struct values fieldwise.
-  if (auto actualStruct = dyn_cast<VariadicSplatAttr>(actualAttr)) {
-    if (auto expectedStruct = dyn_cast<VariadicSplatAttr>(expectedAttr)) {
-      PROP(matchParams(actualStruct.getElement(), expectedStruct.getElement()));
-      PROP(matchParams(actualStruct.getCount(), expectedStruct.getCount()));
-      return success();
-    }
-  }
-
   if (auto actualTab = dyn_cast<VariadicTabulateAttr>(actualAttr)) {
     if (auto expectedTab = dyn_cast<VariadicTabulateAttr>(expectedAttr)) {
       PROP(matchParams(actualTab.getCount(), expectedTab.getCount()));

@@ -60,7 +60,7 @@ FailureOr<TypedAttr> VariadicTabulateAttr::evaluateWithContext(
     return failure();
 
   int64_t n = cntAttr.getInt();
-  if (n <= 0)
+  if (n < 0)
     return failure();
 
   VariadicType resultType = getType();
