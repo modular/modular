@@ -186,21 +186,10 @@ struct Variadic:
         Prev,
         Variadic.values[Mapper[From[idx], idx]],
     ]
-    comptime _ValueToValueVariadicMapper[
-        FromType: AnyType,
-        ToType: AnyType,
-        //,
-        Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
-        From: Variadic.ValuesOfType[FromType],
-    ] = _ReduceVariadicValueAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_type[ToType],
-        VariadicType=From,
-        Reducer=Variadic._ValueToValueMapper[Mapper, ...],
-    ]
 
 
 # ===-----------------------------------------------------------------------===#
-# TabulateHelpers
+# Tabulate Helpers
 # ===-----------------------------------------------------------------------===#
 
 comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
@@ -225,19 +214,6 @@ comptime _IndexToIntTabulateWrap[
 
 comptime _ReduceVariadicIdxGeneratorTypeGenerator[
     Prev: AnyType, From: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Prev,
-    `, "From": !kgen.variadic<`,
-    From,
-    `>, "Idx":`,
-    Int,
-    `>`,
-    +Prev,
-    `>`,
-]
-comptime _ReduceVariadicValueIdxGeneratorTypeGenerator[
-    Prev: AnyType, From: AnyType
 ] = __mlir_type[
     `!lit.generator<<"Prev": `,
     +Prev,
@@ -275,26 +251,6 @@ comptime _ReduceVariadicAndIdxToVariadic[
     VariadicType,
     `,`,
     _IndexToIntWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
-comptime _ReduceVariadicValueAndIdxToVariadic[
-    From: AnyType,
-    To: AnyType,
-    //,
-    *,
-    BaseVal: Variadic.ValuesOfType[To],
-    VariadicType: Variadic.ValuesOfType[From],
-    Reducer: _ReduceVariadicValueIdxGeneratorTypeGenerator[
-        Variadic.ValuesOfType[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
-    BaseVal,
-    `,`,
-    VariadicType,
-    `,`,
-    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
     `> : `,
     type_of(BaseVal),
 ]
