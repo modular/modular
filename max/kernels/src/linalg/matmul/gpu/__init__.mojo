@@ -33,12 +33,10 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tile_layout import TensorLayout
 from layout.tile_tensor import TileTensor
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
-from layout.tile_tensor import TileTensor
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
 from std.utils import Index, IndexList

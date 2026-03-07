@@ -26,8 +26,7 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 
 
@@ -80,7 +79,7 @@ fn shrink_qkv_permute_3mn_sm100[
         - The epilogue assumes `N % vector_width == 0` for aligned vector stores.
     """
     var M = c_lora.dim[1]()
-    var c_tensor_lora = from_ndbuffer_row_major(c_lora)  # LayoutTensor[3]
+    var c_tensor_lora = TileTensor(c_lora).to_layout_tensor()
     comptime N = c_shape.get[2]()
     comptime B = c_shape.get[0]()
     comptime assert (

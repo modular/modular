@@ -57,9 +57,8 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tile_tensor import TileTensor
 from std.logger import Logger
 from std.memory import LegacyUnsafePointer, stack_allocation
 
@@ -664,9 +663,9 @@ fn gemv_gpu_dispatch[
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
     comptime simd_width = simd_width_of[a.type, target=get_gpu_target()]()
 
-    var c_tensor = from_ndbuffer_row_major(c)
-    var b_tensor = from_ndbuffer_row_major(b)
-    var a_tensor = from_ndbuffer_row_major(a)
+    var c_tensor = TileTensor(c).to_layout_tensor()
+    var b_tensor = TileTensor(b).to_layout_tensor()
+    var a_tensor = TileTensor(a).to_layout_tensor()
 
     comptime has_N = c.shape.has_value[1]()
     comptime static_N = c.shape.get[1]() if has_N else UNKNOWN_VALUE

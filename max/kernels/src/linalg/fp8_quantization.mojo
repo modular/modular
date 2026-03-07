@@ -39,7 +39,6 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from std.logger import Logger
 from std.memory import LegacyUnsafePointer, bitcast
 
@@ -863,11 +862,11 @@ fn naive_blockwise_scaled_fp8_matmul[
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
-    var a_scales = from_ndbuffer_row_major(a_scales_device)
-    var b_scales = from_ndbuffer_row_major(b_scales_device)
+    var a = TileTensor(a_device).to_layout_tensor()
+    var b = TileTensor(b_device).to_layout_tensor()
+    var c = TileTensor(c_device).to_layout_tensor()
+    var a_scales = TileTensor(a_scales_device).to_layout_tensor()
+    var b_scales = TileTensor(b_scales_device).to_layout_tensor()
 
     var M = c_device.dim(0)
     var N = c_device.dim(1)
