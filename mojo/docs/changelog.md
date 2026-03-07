@@ -336,6 +336,13 @@ what we publish.
 
 ### Library changes
 
+- `SIMD[DType.bool, N]` now has two new methods:
+  - `first_true()` — returns the index of the first `True` lane, or `-1` if
+    all lanes are `False`. Replaces the manual `pack_bits` +
+    `count_trailing_zeros` pattern.
+  - `count_true()` — returns the number of `True` lanes. A bool-specific
+    alias for `reduce_bit_count()`.
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,
