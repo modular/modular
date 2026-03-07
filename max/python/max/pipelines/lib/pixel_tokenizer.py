@@ -1093,7 +1093,7 @@ class PixelGenerationTokenizer(
             * (latent_width // 2)
             * (
                 (
-                    (getattr(visual_options, "num_frames") - 1)
+                    (visual_options.num_frames - 1)
                     // self._vae_temporal_compression_ratio
                     + 1
                 )
@@ -1122,8 +1122,8 @@ class PixelGenerationTokenizer(
         extra_params: dict[str, npt.NDArray[Any]] = {}
         if self._pipeline_class_name == PipelineClassName.LTX2:
             latent_mel_bins = self._mel_bins // self._mel_compression_ratio
-            num_frames = getattr(visual_options, "num_frames")
-            frames_per_second = getattr(visual_options, "frames_per_second")
+            num_frames = visual_options.num_frames
+            frames_per_second = visual_options.frames_per_second
             duration_s = num_frames / frames_per_second
             audio_latents_per_second = (
                 self._audio_sampling_rate
