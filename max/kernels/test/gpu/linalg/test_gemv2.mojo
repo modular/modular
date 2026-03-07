@@ -20,6 +20,9 @@ from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
+from layout.tile_tensor import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from std.utils import IndexList
 
@@ -161,20 +164,36 @@ fn test[
     var c_host_final = c_managed.tensor()
 
     comptime BLOCK_DIM = 16
+    var c_ref_tt = TileTensor(
+        c_device_ref_tensor.ptr,
+        row_major(Coord(Idx(m), Idx(n))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device_tensor.ptr)
+        ),
+        row_major(Coord(Idx(dynamic_a_shape[0]), Idx(dynamic_a_shape[1]))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device_tensor.ptr)
+        ),
+        row_major(Coord(Idx(dynamic_b_shape[0]), Idx(dynamic_b_shape[1]))),
+    )
     comptime naive_kernel = matmul_kernel_naive[
         out_type,
         in_type,
         in_type,
-        c_layout,
-        a_layout,
-        b_layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
         transpose_b=transpose_b,
     ]
     ctx.enqueue_function_experimental[naive_kernel](
-        c_device_ref_tensor,
-        a_device_tensor,
-        b_device_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         m,
         n,
         k,
