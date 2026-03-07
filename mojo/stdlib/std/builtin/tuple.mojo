@@ -15,10 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.builtin.comparable import (
-    _constrained_elements_comparable,
-    _constrained_elements_equatable,
-)
 from std.builtin.constrained import _constrained_conforms_to
 from std.format._utils import (
     write_sequence_to,
@@ -34,7 +30,6 @@ from std.reflection.traits import (
     AllImplicitlyCopyable,
     AllWritable,
 )
-from std.reflection.traits import AllEquatable
 from std.sys.intrinsics import _type_is_eq
 
 from std.reflection.type_info import _unqualified_type_name
@@ -285,7 +280,6 @@ struct Tuple[*element_types: Movable](
         Returns:
             True if this tuple is equal to the other tuple, False otherwise.
         """
-        _constrained_elements_equatable[*Self.element_types, Parent=Self]()
         comptime for i in range(Self.__len__()):
             ref lhs = trait_downcast[Equatable](self[i])
             ref rhs = trait_downcast[Equatable](other[i])
@@ -315,7 +309,6 @@ struct Tuple[*element_types: Movable](
         Returns:
             True if this tuple is lexicographically less than the other, False otherwise.
         """
-        _constrained_elements_comparable[*Self.element_types, Parent=Self]()
         comptime for i in range(Self.__len__()):
             ref lhs = trait_downcast[Comparable](self[i])
             ref rhs = trait_downcast[Comparable](other[i])

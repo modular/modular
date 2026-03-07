@@ -11,7 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin.constrained import _constrained_conforms_to, _constrained_field_conforms_to
+from std.builtin.constrained import (
+    _constrained_conforms_to,
+    _constrained_field_conforms_to,
+)
 from std.builtin.range import _ZeroStartingRange
 from std.reflection import struct_field_names, struct_field_types
 
