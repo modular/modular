@@ -13,15 +13,12 @@
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import *
 
 
 fn add_constant_fn(
-    output: UnsafePointer[Float32],
-    input: UnsafePointer[Float32],
+    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     constant: Float32,
     len: Int,
 ):

@@ -36,7 +36,6 @@ from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer
 from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
-from std.memory import LegacyUnsafePointer
 from std.utils.index import Index, IndexList
 
 
@@ -105,8 +104,6 @@ fn bench_rms_norm_fused_fp8[
     ctx.enqueue_copy(gamma_d, gamma_h)
 
     # ===== Benchmark 1: RMS norm alone =====
-    comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
     @always_inline
     @__copy_capture(
         shape,
@@ -122,12 +119,12 @@ fn bench_rms_norm_fused_fp8[
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Construct buffers with offsets
-            var data_ptr_offset = UnsafePointer[Scalar[in_dtype]](
+            var data_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
                 cb_data.offset_ptr(iteration)
             )
-            var rms_output_ptr_offset = UnsafePointer[Scalar[in_dtype]](
-                cb_rms_output.offset_ptr(iteration)
-            )
+            var rms_output_ptr_offset = UnsafePointer[
+                Scalar[in_dtype], MutAnyOrigin
+            ](cb_rms_output.offset_ptr(iteration))
             var data_buf_offset = TileTensor(
                 data_ptr_offset, row_major(Coord(shape))
             )
@@ -187,7 +184,7 @@ fn bench_rms_norm_fused_fp8[
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Input function for FP8 quant (reads from RMS norm output)
-            var rms_ptr_offset = UnsafePointer[Scalar[in_dtype]](
+            var rms_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
                 cb_rms_output.offset_ptr(iteration)
             )
 
@@ -201,13 +198,15 @@ fn bench_rms_norm_fused_fp8[
                 return rms_ptr_offset.load[width=width](idx)
 
             var fp8_output_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-                UnsafePointer[Scalar[out_dtype]](
+                UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fp8_output.offset_ptr(iteration)
                 ),
                 Index(rows, cols),
             )
             var scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-                UnsafePointer[Scalar[DType.float32]](scales_base_ptr),
+                UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+                    scales_base_ptr
+                ),
                 Index(1, rows),
             )
 
@@ -245,7 +244,7 @@ fn bench_rms_norm_fused_fp8[
         @always_inline
         fn kernel_launch(ctx_: DeviceContext, iteration: Int) raises:
             # Input function with offset
-            var data_ptr_offset = UnsafePointer[Scalar[in_dtype]](
+            var data_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
                 cb_data.offset_ptr(iteration)
             )
 
@@ -264,7 +263,7 @@ fn bench_rms_norm_fused_fp8[
                 )
 
             var fused_output_ndbuf = NDBuffer[out_dtype, rank, MutAnyOrigin](
-                UnsafePointer[Scalar[out_dtype]](
+                UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fused_output.offset_ptr(iteration)
                 ),
                 rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
@@ -274,7 +273,9 @@ fn bench_rms_norm_fused_fp8[
             var fused_scales_ndbuf = NDBuffer[
                 DType.float32, rank, MutAnyOrigin
             ](
-                UnsafePointer[Scalar[DType.float32]](scales_base_ptr_fused),
+                UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+                    scales_base_ptr_fused
+                ),
                 fused_scale_shape,
             )
 
@@ -321,8 +322,10 @@ fn bench_rms_norm_fused_fp8[
     var rms_verify_base_ptr = rms_verify_d.unsafe_ptr()
 
     # Run separate operations with zero offset
-    var data_ptr_verify = UnsafePointer[Scalar[in_dtype]](cb_data.unsafe_ptr())
-    var rms_output_ptr_verify = UnsafePointer[Scalar[in_dtype]](
+    var data_ptr_verify = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
+        cb_data.unsafe_ptr()
+    )
+    var rms_output_ptr_verify = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
         rms_verify_base_ptr
     )
     var data_buf_verify = TileTensor(data_ptr_verify, row_major(Coord(shape)))
@@ -364,16 +367,18 @@ fn bench_rms_norm_fused_fp8[
     fn fp8_input_fn_verify[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
-        var rms_ptr = UnsafePointer[Scalar[in_dtype]](rms_verify_base_ptr)
+        var rms_ptr = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
+            rms_verify_base_ptr
+        )
         var idx = row * cols + col
         return rms_ptr.load[width=width](idx)
 
     var fp8_output_ndbuf_verify = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        UnsafePointer[Scalar[out_dtype]](fp8_verify_base_ptr),
+        UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
         Index(rows, cols),
     )
     var scales_ndbuf_verify = NDBuffer[DType.float32, 2, MutAnyOrigin](
-        UnsafePointer[Scalar[DType.float32]](scales_base_ptr),
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
         Index(1, rows),
     )
 
@@ -392,19 +397,23 @@ fn bench_rms_norm_fused_fp8[
     fn input_fn_fused_verify[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
-        var data_ptr = UnsafePointer[Scalar[in_dtype]](data_base_ptr_verify)
+        var data_ptr = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
+            data_base_ptr_verify
+        )
         var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
         var idx = data_buf.layout(Coord(coords))
         return data_buf.ptr.load[width=width](idx)
 
     var fused_output_ndbuf_verify = NDBuffer[out_dtype, rank, MutAnyOrigin](
-        UnsafePointer[Scalar[out_dtype]](fused_verify_base_ptr),
+        UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fused_verify_base_ptr),
         rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
     )
     var verify_scale_shape = shape
     verify_scale_shape[rank - 1] = 1
     var fused_scales_ndbuf_verify = NDBuffer[DType.float32, rank, MutAnyOrigin](
-        UnsafePointer[Scalar[DType.float32]](scales_base_ptr_fused),
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+            scales_base_ptr_fused
+        ),
         verify_scale_shape,
     )
 

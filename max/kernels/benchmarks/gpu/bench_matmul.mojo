@@ -39,9 +39,7 @@ from internal_utils import (
     arg_parse,
     pytorch_like_tolerances_for,
 )
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.random import rand, Random
 from internal_utils._utils import (
     InitializationType,
@@ -60,12 +58,12 @@ from std.utils import IndexList
 fn _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
-    output: UnsafePointer[Scalar[c_type]],
-    reference: UnsafePointer[Scalar[c_type]],
+    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     length: Int,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32]],
+    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -155,8 +153,8 @@ fn verify_matmul[
 
     # Initialize matmul operands
     comptime if not init_on_gpu:
-        var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
-        var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
+        var a_host_ptr = alloc[Scalar[dtype]](a_size)
+        var b_host_ptr = alloc[Scalar[dtype]](b_size)
         var a_host = NDBuffer[dtype, 2, _, static_a_shape](
             a_host_ptr, dynamic_a_shape
         )
@@ -236,7 +234,7 @@ fn verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = UnsafePointer[Scalar[DType.float32]].alloc(NUM_BLOCKS * 5)
+    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -381,8 +379,8 @@ fn bench_matmul[
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
-        var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_a.alloc_size())
-        var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_b.alloc_size())
+        var a_host_ptr = alloc[Scalar[dtype]](cb_a.alloc_size())
+        var b_host_ptr = alloc[Scalar[dtype]](cb_b.alloc_size())
         var a_host = NDBuffer[dtype, 1](a_host_ptr, cb_a.alloc_size())
         var b_host = NDBuffer[dtype, 1](b_host_ptr, cb_b.alloc_size())
 

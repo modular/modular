@@ -26,9 +26,6 @@ from layout import TileTensor
 from layout.tile_layout import row_major
 from layout.coord import Coord, Idx
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_false
 
 from std.utils.numerics import isnan
@@ -36,9 +33,9 @@ from std.utils.numerics import isnan
 
 # TF32 Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp32_tf32(
-    c_ptr: UnsafePointer[Float32],
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -73,9 +70,9 @@ fn mma_kernel_fp32_tf32(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp32_bf16(
-    c_ptr: UnsafePointer[Float32],
-    a_ptr: UnsafePointer[BFloat16],
-    b_ptr: UnsafePointer[BFloat16],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -110,9 +107,9 @@ fn mma_kernel_fp32_bf16(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
 fn mma_kernel_fp32_bf16_2(
-    c_ptr: UnsafePointer[Float32],
-    a_ptr: UnsafePointer[BFloat16],
-    b_ptr: UnsafePointer[BFloat16],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -147,9 +144,9 @@ fn mma_kernel_fp32_bf16_2(
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp32_fp16(
-    c_ptr: UnsafePointer[Float32],
-    a_ptr: UnsafePointer[Float16],
-    b_ptr: UnsafePointer[Float16],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -184,9 +181,9 @@ fn mma_kernel_fp32_fp16(
 
 # FP16 Tensor core Matmul with shape m16n8k8
 fn mma_kernel_fp16_fp16(
-    c_ptr: UnsafePointer[Float16],
-    a_ptr: UnsafePointer[Float16],
-    b_ptr: UnsafePointer[Float16],
+    c_ptr: UnsafePointer[Float16, MutAnyOrigin],
+    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -231,12 +228,12 @@ fn run_mma_fp32_tf32(
 ) raises:
     print("== run_matmul fp32.tf32 tensor core kernel")
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
-    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var a_host_ref = alloc[Float32](M * K)
+    var b_host_ref = alloc[Float32](K * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -302,8 +299,6 @@ fn run_mma_fp32_tf32(
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects (enqueue_function_experimental
     # requires exact type matches).
-    from std.memory import UnsafePointer
-
     var c_tt = TileTensor(
         c_device_ref.unsafe_ptr(),
         row_major(Coord(Idx(M), Idx(N))),
@@ -404,12 +399,12 @@ fn run_mma_fp32_bf16(
 ) raises:
     print("== run_matmul fp32.bf16 1688 tensor core kernel")
 
-    var a_host = UnsafePointer[BFloat16].alloc(M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
-    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[BFloat16](M * K)
+    var b_host = alloc[BFloat16](K * N)
+    var c_host = alloc[Float32](M * N)
+    var a_host_ref = alloc[Float32](M * K)
+    var b_host_ref = alloc[Float32](K * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -472,8 +467,6 @@ fn run_mma_fp32_bf16(
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    from std.memory import UnsafePointer
-
     var c_tt = TileTensor(
         c_device_ref.unsafe_ptr(),
         row_major(Coord(Idx(M), Idx(N))),
@@ -572,12 +565,12 @@ fn run_mma_fp32_bf16_2(
 ) raises:
     print("== run_matmul fp32.bf16 16816 tensor core kernel")
 
-    var a_host = UnsafePointer[BFloat16].alloc(M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
-    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[BFloat16](M * K)
+    var b_host = alloc[BFloat16](K * N)
+    var c_host = alloc[Float32](M * N)
+    var a_host_ref = alloc[Float32](M * K)
+    var b_host_ref = alloc[Float32](K * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -640,8 +633,6 @@ fn run_mma_fp32_bf16_2(
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    from std.memory import UnsafePointer
-
     var c_tt = TileTensor(
         c_device_ref.unsafe_ptr(),
         row_major(Coord(Idx(M), Idx(N))),
@@ -740,12 +731,12 @@ fn run_mma_fp32_fp16(
 ) raises:
     print("== run_matmul fp32.fp16 tensor core kernel")
 
-    var a_host = UnsafePointer[Float16].alloc(M * K)
-    var b_host = UnsafePointer[Float16].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
-    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float16](M * K)
+    var b_host = alloc[Float16](K * N)
+    var c_host = alloc[Float32](M * N)
+    var a_host_ref = alloc[Float32](M * K)
+    var b_host_ref = alloc[Float32](K * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -808,8 +799,6 @@ fn run_mma_fp32_fp16(
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    from std.memory import UnsafePointer
-
     var c_tt = TileTensor(
         c_device_ref.unsafe_ptr(),
         row_major(Coord(Idx(M), Idx(N))),
@@ -908,12 +897,12 @@ fn run_mma_fp16_fp16(
 ) raises:
     print("== run_matmul fp16.fp16 tensor core kernel")
 
-    var a_host = UnsafePointer[Float16].alloc(M * K)
-    var b_host = UnsafePointer[Float16].alloc(K * N)
-    var c_host = UnsafePointer[Float16].alloc(M * N)
-    var a_host_ref = UnsafePointer[Float32].alloc(M * K)
-    var b_host_ref = UnsafePointer[Float32].alloc(K * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float16](M * K)
+    var b_host = alloc[Float16](K * N)
+    var c_host = alloc[Float16](M * N)
+    var a_host_ref = alloc[Float32](M * K)
+    var b_host_ref = alloc[Float32](K * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -976,8 +965,6 @@ fn run_mma_fp16_fp16(
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    from std.memory import UnsafePointer
-
     var c_tt = TileTensor(
         c_device_ref.unsafe_ptr(),
         row_major(Coord(Idx(M), Idx(N))),

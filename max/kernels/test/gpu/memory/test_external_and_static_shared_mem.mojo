@@ -17,14 +17,12 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu import thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.sync import barrier
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 from std.testing import assert_equal
 
 
 def test_external_shared_mem(ctx: DeviceContext) raises:
-    fn dynamic_smem_kernel(data: UnsafePointer[Float32]):
+    fn dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
         var sram = stack_allocation[
             16,
             Float32,
@@ -40,7 +38,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
-    var res_host_ptr = UnsafePointer[Float32].alloc(16)
+    var res_host_ptr = alloc[Float32](16)
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     for i in range(16):

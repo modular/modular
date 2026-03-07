@@ -20,15 +20,12 @@
 
 from std.gpu import thread_idx
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    fn kernel(x: UnsafePointer[Int]):
+    fn kernel(x: UnsafePointer[Int, MutAnyOrigin]):
         x[0] = Int(thread_idx.x)
 
     # CHECK: tid.x

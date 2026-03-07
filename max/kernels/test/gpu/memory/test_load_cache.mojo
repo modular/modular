@@ -14,9 +14,6 @@
 
 from std.gpu.host.compile import _compile_code
 from std.gpu.memory import CacheEviction, CacheOperation, load
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal, assert_true
 
 
@@ -28,7 +25,7 @@ fn load_value[
     prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+](ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> SIMD[dtype, width]:
     return load[
         width=width,
         read_only=read_only,

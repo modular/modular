@@ -13,9 +13,6 @@
 
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import *
 
 
@@ -23,7 +20,7 @@ def test_convert_asm() raises:
     @parameter
     fn my_cast[
         frm: DType, to: DType
-    ](output: UnsafePointer[Scalar[to]], x: Scalar[frm]):
+    ](output: UnsafePointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):
         output[] = x.cast[to]()
 
     assert_true(
@@ -65,7 +62,7 @@ def test_convert_asm() raises:
 
 fn convert_kernel[
     src_type: DType, dst_type: DType, size: Int
-](dst_ptr: UnsafePointer[Scalar[dst_type]]):
+](dst_ptr: UnsafePointer[Scalar[dst_type], MutAnyOrigin]):
     comptime for i in range(0, size, 2):
         var src_vec = SIMD[src_type, 2](
             Scalar[src_type](i), Scalar[src_type](i + 1)

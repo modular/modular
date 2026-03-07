@@ -12,12 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
-fn kernel_with_list(res: UnsafePointer[Float32]):
+fn kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):
     var list: List[Float32] = [10]
     for i in range(4):
         list.append(Float32(i + 1))

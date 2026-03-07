@@ -31,12 +31,9 @@
 from std.sys import argv
 
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
-fn bad_func(ptr: UnsafePointer[Int32], i: Int):
+fn bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i: Int):
     # Potential out of bounds access
     ptr[i] = 42
 

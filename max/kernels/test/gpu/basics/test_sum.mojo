@@ -17,9 +17,6 @@ from std.gpu import global_idx
 from std.gpu.primitives import block, warp
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 comptime dtype = DType.uint64
@@ -28,8 +25,8 @@ comptime dtype = DType.uint64
 fn warp_sum_kernel[
     dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     size: Int,
 ):
     var tid = global_idx.x
@@ -43,8 +40,8 @@ def test_warp_sum(ctx: DeviceContext) raises:
     comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var in_host = alloc[Scalar[dtype]](size)
+    var out_host = alloc[Scalar[dtype]](size)
 
     for i in range(size):
         in_host[i] = UInt64(i)
@@ -88,8 +85,8 @@ fn block_sum_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     size: Int,
 ):
     var tid = global_idx.x
@@ -105,8 +102,8 @@ def test_block_sum(ctx: DeviceContext) raises:
     comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var in_host = alloc[Scalar[dtype]](size)
+    var out_host = alloc[Scalar[dtype]](size)
 
     for i in range(size):
         in_host[i] = UInt64(i)

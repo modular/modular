@@ -35,9 +35,7 @@ from layout._ndbuffer_stub import (
     vectorize,
 )
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
 from std.utils import Index, IndexList, StaticTuple
 
 
@@ -80,7 +78,7 @@ fn print_element[
     rank: Int,
     element_shape: IndexList[rank],
 ](
-    element_ptr: LegacyUnsafePointer[mut=False, Scalar[dtype]],
+    element_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     element_layout: ElementLayout[rank, element_shape],
 ):
     var simd_element = SIMD[dtype, element_shape[0] * element_shape[1]](0)
@@ -190,7 +188,7 @@ fn test_copy_to_nd_buffer_scalars():
 fn test_copy_from_nd_buffer_vectors():
     print("== test_copy_from_nd_buffer_vectors")
 
-    var buff_storage = UnsafePointer[Float32].alloc(16 * 16)
+    var buff_storage = alloc[Float32](16 * 16)
     var buff = NDBuffer[DType.float32, 2, _, DimList(16, 16)](buff_storage)
     linspace_fill(buff)
 
@@ -254,7 +252,7 @@ fn test_copy_to_nd_buffer_vectors():
     )
     arange(layout_tensor)
 
-    var buff_storage = UnsafePointer[Float32].alloc(16 * 16)
+    var buff_storage = alloc[Float32](16 * 16)
     var buff = NDBuffer[DType.float32, 2, _, DimList(16, 16)](buff_storage)
     buff.zero()
 
@@ -525,7 +523,7 @@ fn test_vectorize_and_distribute():
 # CHECK-LABEL: test_copy_nd_buffer_to_layout_tensor
 fn test_copy_nd_buffer_to_layout_tensor():
     print("== test_copy_nd_buffer_to_layout_tensor")
-    var buff_storage = UnsafePointer[Float32].alloc(8 * 8)
+    var buff_storage = alloc[Float32](8 * 8)
     var buff = NDBuffer[DType.float32, 2, _, DimList(8, 8)](buff_storage)
     # FIXME: This doesn't if _copy_nd_buffer_to_layout_tensor is inlined!
     # var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
@@ -1366,7 +1364,7 @@ fn test_copy_to_nd_buffer_masked_scalar():
 fn test_from_ndbuffer_to_layout_tensor():
     print("== test_from_ndbuffer_to_layout_tensor")
     comptime type = DType.float32
-    comptime ptr = UnsafePointer[Scalar[type]].alloc(64)
+    comptime ptr = alloc[Scalar[type]](64)
     comptime rank = 4
     comptime shape = IndexList[4](2, 3, 2, 2)
     var buffer1 = NDBuffer[type, rank, shape=DimList(2, 3, 2, 2)](ptr, shape)

@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import has_nvidia_gpu_accelerator
 
 from std.benchmark import Bench
@@ -129,7 +126,7 @@ struct test_matmul[
         ](
             m: Int,
             n: Int,
-            ptr: UnsafePointer[Scalar[Self.dtype]],
+            ptr: UnsafePointer[Scalar[Self.dtype], _],
             out result: LayoutTensor[Self.dtype, layout, ptr.origin],
         ):
             var dynamic_layout = type_of(result.runtime_layout)(

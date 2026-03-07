@@ -18,9 +18,6 @@ from std.sys.intrinsics import PrefetchOptions
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime mr = 6
 comptime nr = 64
@@ -29,9 +26,9 @@ comptime simd_size = 16
 
 
 fn kernel6x4(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, _],
+    b_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     n: Int,
     k: Int,
     kc: Int,
@@ -146,9 +143,9 @@ fn kernel6x4(
 
 
 fn kernel6x4_naive(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float32, _],
+    b_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     n: Int,
     k: Int,
     kc: Int,

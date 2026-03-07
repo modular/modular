@@ -15,14 +15,11 @@ import std.gpu.primitives.warp as warp
 from std.gpu import barrier, global_idx, lane_id
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 
 fn kernel(
-    output: UnsafePointer[Float32],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     size: Int,
 ):
     var global_tid = global_idx.x
@@ -34,7 +31,7 @@ fn kernel(
 fn test_grid_dim(ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
-    var output_host = UnsafePointer[Float32].alloc(buffer_size)
+    var output_host = alloc[Float32](buffer_size)
 
     for i in range(buffer_size):
         output_host[i] = -1.0

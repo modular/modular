@@ -22,9 +22,7 @@ from layout import Layout, RuntimeLayout
 from layout.int_tuple import IntTuple, size
 from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc, stack_allocation
 from std.testing import assert_false
 
 from std.utils import StaticTuple
@@ -86,9 +84,9 @@ fn getKr[mode: IntTuple]() -> Int:
 fn matmul_ukern[
     elt: DType, width: Int, mr: Int, nr: Int, kr: Int, kf: Int
 ](
-    C: UnsafePointer[Scalar[elt]],
-    A: UnsafePointer[Scalar[elt]],
-    B: UnsafePointer[Scalar[elt]],
+    C: UnsafePointer[mut=True, Scalar[elt], _],
+    A: UnsafePointer[Scalar[elt], _],
+    B: UnsafePointer[Scalar[elt], _],
     inc: Bool,
 ):
     comptime Align: Int = size_of[elt]() * width
@@ -264,7 +262,7 @@ fn matmul[
     comptime assert size(layoutB.stride[1].tuple()[1]) == WNr * Kc
     comptime assert size(layoutB.stride[1].tuple()[2]) == Nc * K
 
-    comptime Ptr = UnsafePointer[Scalar[elt]]
+    comptime Ptr = UnsafePointer[Scalar[elt], MutAnyOrigin]
     var pc: UnsafePointer[Scalar[elt]] = C.ptr
     var pa: UnsafePointer[Scalar[elt]] = A.ptr
     # TODO: nontemporal prefetches on the microkernel slices of `B`
@@ -299,7 +297,7 @@ fn alloc_tensor[
     elt: DType, layout: Layout
 ]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
     return LayoutTensor[elt, layout, MutAnyOrigin](
-        UnsafePointer[Scalar[elt]].alloc(layout.size(), alignment=64)
+        alloc[Scalar[elt]](layout.size(), alignment=64)
     )
 
 
@@ -309,7 +307,7 @@ fn alloc_tensor[
     elt, layout, MutAnyOrigin
 ]:
     return LayoutTensor[elt, layout, MutAnyOrigin](
-        UnsafePointer[Scalar[elt]].alloc(rtlayout.size(), alignment=64),
+        alloc[Scalar[elt]](rtlayout.size(), alignment=64),
         rtlayout,
     )
 
@@ -342,7 +340,7 @@ fn delete_idx(arg: List[Int], idx: Int) -> List[Int]:
 @always_inline
 fn strided_load[
     elt: DType, //, W: Int, X: Int
-](p: UnsafePointer[Scalar[elt]], i: Int) -> SIMD[elt, W]:
+](p: UnsafePointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
     comptime if X == 1:
         return p.load[width=W](i)
     else:
@@ -352,7 +350,7 @@ fn strided_load[
 @always_inline
 fn strided_store[
     elt: DType, W: Int, //, X: Int
-](p: UnsafePointer[Scalar[elt]], i: Int, x: SIMD[elt, W]):
+](p: UnsafePointer[mut=True, Scalar[elt], _], i: Int, x: SIMD[elt, W]):
     comptime if X == 1:
         p.store(i, x)
     else:
@@ -365,14 +363,14 @@ fn vectorize_flat[
     elt_b: DType,
     //,
     f: fn[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
+        UnsafePointer[Scalar[elt_a], _], UnsafePointer[Scalar[elt_b], _], Int
     ) capturing -> None,
     simd_width: Int,
     unroll_factor: Int,
     shape: List[Int],
     stride_a: List[Int],
     stride_b: List[Int],
-](a: UnsafePointer[Scalar[elt_a]], b: UnsafePointer[Scalar[elt_b]]):
+](a: UnsafePointer[Scalar[elt_a], _], b: UnsafePointer[Scalar[elt_b], _]):
     comptime assert len(shape) == len(stride_a)
     comptime assert len(shape) == len(stride_b)
 
@@ -424,7 +422,7 @@ fn vectorize_layout_tensor[
     layout_b: Layout,
     //,
     f: fn[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
+        UnsafePointer[Scalar[elt_a], _], UnsafePointer[Scalar[elt_b], _], Int
     ) capturing -> None,
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
@@ -460,8 +458,8 @@ fn copy_to[
     fn copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        dstp: UnsafePointer[Scalar[elt_dst]],
-        srcp: UnsafePointer[Scalar[elt_src]],
+        dstp: UnsafePointer[Scalar[elt_dst], _],
+        srcp: UnsafePointer[Scalar[elt_src], _],
         i: Int,
     ):
         var vsrc = strided_load[width, stride_b](srcp, i)
@@ -494,8 +492,8 @@ fn check_approx_equal[
     fn check[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        pa: UnsafePointer[Scalar[elt_dst]],
-        pb: UnsafePointer[Scalar[elt_src]],
+        pa: UnsafePointer[Scalar[elt_dst], _],
+        pb: UnsafePointer[Scalar[elt_src], _],
         i: Int,
     ):
         var va = strided_load[width, stride_a](pa, i).cast[cmp_elt]()

@@ -30,9 +30,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.memory import LegacyUnsafePointer, memset_zero, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import memset_zero, stack_allocation
 from std.testing import *
 
 from std.utils.index import IndexList
@@ -114,7 +112,7 @@ def test_hello_mojo_sm90() raises:
 
 
 fn erf_elementwise(
-    buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext
+    buf: UnsafePointer[Float32, MutAnyOrigin], len: Int, ctx: DeviceContext
 ) raises:
     # Each thread will process 4 * simd_width elements.
     comptime granularity = 4 * simd_width_of[DType.float32]()
@@ -162,7 +160,7 @@ def test_erf_elementwise_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn erf_kernel(buf: UnsafePointer[Float32], len: Int):
+fn erf_kernel(buf: UnsafePointer[Float32, MutAnyOrigin], len: Int):
     var tid = thread_idx.x + block_dim.y * block_idx.y
 
     if tid >= UInt(len):
@@ -195,7 +193,7 @@ def test_erf_kernel_sm90() raises:
 
 
 fn test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, address_space=AddressSpace.SHARED]
+    UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
 ):
     return stack_allocation[
         999, DType.int8, 8, address_space=AddressSpace.SHARED
@@ -257,9 +255,9 @@ def test_barrier_sm90() raises:
 
 
 fn gemm(
-    c: UnsafePointer[Float32],
-    a: UnsafePointer[Float32],
-    b: UnsafePointer[Float32],
+    c: UnsafePointer[Float32, MutAnyOrigin],
+    a: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: UnsafePointer[Float32, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,

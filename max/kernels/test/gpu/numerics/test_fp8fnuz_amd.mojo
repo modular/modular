@@ -12,13 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def test_fp8_constructor(ctx: DeviceContext) raises:
-    fn kernel(ptr: UnsafePointer[Float8_e5m2fnuz]):
+    fn kernel(ptr: UnsafePointer[Float8_e5m2fnuz, MutAnyOrigin]):
         ptr[] = Float8_e5m2fnuz(42.0)
 
     # CHECK: v_mov_b32_e32 {{.*}}, 0x55

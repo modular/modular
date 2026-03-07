@@ -16,13 +16,10 @@ import std.sys
 
 from std.gpu.host.compile import _compile_code, get_gpu_target
 from layout import ComptimeInt, Idx, Coord, RuntimeInt
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_true
 
 
-fn kernel(v: Int, ptr: UnsafePointer[Int32]):
+fn kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
     """Kernel that uses MixedTuple with both compile-time and runtime indices.
 
     Args:

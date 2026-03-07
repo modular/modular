@@ -16,10 +16,7 @@ from std.math import ceildiv
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from std.gpu.primitives import block
 from std.gpu.host import DeviceBuffer, DeviceContext
-from std.memory import LegacyUnsafePointer
 from std.testing import assert_equal, assert_true
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -29,12 +26,12 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 fn _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
-    output: UnsafePointer[Scalar[c_type]],
-    reference: UnsafePointer[Scalar[c_type]],
+    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     length: Int,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32]],
+    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -85,7 +82,11 @@ fn _verify_buffers_gpu[
 # ---------------------------------------------------------------------------
 fn _fill_buffer[
     dtype: DType,
-](ptr: UnsafePointer[Scalar[dtype]], length: Int, val: Scalar[dtype],):
+](
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    length: Int,
+    val: Scalar[dtype],
+):
     var i = UInt(global_idx.x)
     var stride = UInt(grid_dim.x * block_dim.x)
     while i < UInt(length):
@@ -135,7 +136,7 @@ fn run_verify_kernel[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = UnsafePointer[Scalar[DType.float32]].alloc(NUM_BLOCKS * 5)
+    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 

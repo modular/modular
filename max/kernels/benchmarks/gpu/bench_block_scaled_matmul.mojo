@@ -41,10 +41,9 @@ from internal_utils import (
     pytorch_like_tolerances_for,
 )
 from internal_utils._measure import relative_difference
-from std.memory import LegacyUnsafePointer, bitcast
+from std.memory import bitcast
 from linalg.fp4_quantization import block_scaled_matmul
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.random import rand, Random
 from internal_utils._utils import (
     InitializationType,
@@ -75,7 +74,7 @@ from std.gpu.host.info import B200
 # Each thread processes 4 elements for better memory throughput.
 fn _init_block_scaled_scales_gpu[
     dtype: DType
-](x: UnsafePointer[Scalar[dtype]], len: Int):
+](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int):
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
@@ -268,8 +267,8 @@ fn bench_matmul[
     )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_a.alloc_size())
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_b.alloc_size())
+    var a_host_ptr = alloc[Scalar[dtype]](cb_a.alloc_size())
+    var b_host_ptr = alloc[Scalar[dtype]](cb_b.alloc_size())
 
     # TODO: remove init_on_gpu flag and the loading on CPU
     comptime init_on_gpu = True
@@ -452,8 +451,8 @@ fn bench_matmul[
             # Copy results to host for comparison
             # Create non-owning DeviceBuffers with exact size for the copy
             var c_size = shape_c_dim[0] * shape_c_dim[1]
-            var c_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
-            var c_ref_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
+            var c_host = alloc[Scalar[DType.bfloat16]](c_size)
+            var c_ref_host = alloc[Scalar[DType.bfloat16]](c_size)
             var c_view = DeviceBuffer[DType.bfloat16](
                 ctx, cb_c.unsafe_ptr(), c_size, owning=False
             )
@@ -466,7 +465,7 @@ fn bench_matmul[
 
             # Sanity check: verify outputs match expected zero/non-zero state
             fn is_all_zeros(
-                ptr: UnsafePointer[Scalar[DType.bfloat16]], size: Int
+                ptr: UnsafePointer[Scalar[DType.bfloat16], _], size: Int
             ) -> Bool:
                 for i in range(size):
                     if ptr[i] != 0:
