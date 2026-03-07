@@ -3195,6 +3195,74 @@ fn factorial(n: Int) -> Int:
     return table[n]
 
 
+fn comb(n: Int, k: Int) -> Int:
+    """Computes the number of ways to choose `k` items from `n` items without
+    repetition and without order (binomial coefficient).
+
+    Equivalent to Python's `math.comb(n, k)`.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to choose. Must be non-negative.
+
+    Returns:
+        The binomial coefficient C(n, k). Returns 0 if `k > n`. Results are
+        undefined for negative inputs.
+
+    Examples:
+
+    ```mojo
+    from std.math import comb
+    print(comb(5, 2))  # 10
+    print(comb(10, 0)) # 1
+    print(comb(3, 5))  # 0
+    ```
+    """
+    assert n >= 0, "n must be non-negative"
+    assert k >= 0, "k must be non-negative"
+    if k > n:
+        return 0
+    # Use the smaller of k and n-k to minimise the number of iterations.
+    var k2 = k if k <= n - k else n - k
+    var result = 1
+    for i in range(k2):
+        result = result * (n - i) // (i + 1)
+    return result
+
+
+fn perm(n: Int, k: Int = -1) -> Int:
+    """Computes the number of ways to arrange `k` items from `n` items without
+    repetition (permutations).
+
+    Equivalent to Python's `math.perm(n, k)`.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to arrange. Must be non-negative. If -1
+           (the default), returns `n!`.
+
+    Returns:
+        The number of permutations P(n, k) = n! / (n-k)!. Results are
+        undefined for negative inputs or when `k > n`.
+
+    Examples:
+
+    ```mojo
+    from std.math import perm
+    print(perm(5, 2))  # 20
+    print(perm(5))     # 120  (same as factorial(5))
+    print(perm(5, 0))  # 1
+    ```
+    """
+    assert n >= 0, "n must be non-negative"
+    var k2 = n if k == -1 else k
+    assert 0 <= k2 <= n, "k must be between 0 and n"
+    var result = 1
+    for i in range(k2):
+        result *= n - i
+    return result
+
+
 # ===----------------------------------------------------------------------=== #
 # clamp
 # ===----------------------------------------------------------------------=== #

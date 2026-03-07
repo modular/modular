@@ -353,6 +353,12 @@ what we publish.
   segments, producing considerably smaller static data and faster runtime than
   the previous struct-based precompiled entries.
 
+- Added `comb(n, k)` and `perm(n, k)` to `std.math`, matching Python's
+  `math.comb()` and `math.perm()`. `comb(n, k)` computes the binomial
+  coefficient C(n, k) without computing full factorials, returning 0 when
+  `k > n`. `perm(n, k)` computes permutations P(n, k); omitting `k` (default
+  `-1`) returns `n!`.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
