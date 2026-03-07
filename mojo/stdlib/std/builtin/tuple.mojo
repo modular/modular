@@ -36,7 +36,9 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Movable](Hashable, ImplicitlyCopyable, Sized, Writable):
+struct Tuple[*element_types: Movable](
+    Hashable, ImplicitlyCopyable, Sized, Writable
+):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
