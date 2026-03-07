@@ -503,6 +503,36 @@ def test_waitcnt_compile() raises:
     )
 
 
+# CHECK-LABEL: test_nt_load_compile
+def test_nt_load_compile() raises:
+    print("== test_nt_load_compile")
+
+    fn kernel(x: UnsafePointer[Float32]):
+        var ptr = x + Int(thread_idx.x) * 4
+        var val = ptr.load[width=4, nontemporal=True]()
+        keep(val)
+
+    # CHECK: global_load_dwordx4 {{.*}} nt
+    print(_compile_code[kernel, target=MI355X_TARGET]())
+
+
+# CHECK-LABEL: test_nt_store_compile
+def test_nt_store_compile() raises:
+    print("== test_nt_store_compile")
+
+    fn kernel(
+        x: UnsafePointer[Float32],
+        y: UnsafePointer[Float32],
+    ):
+        var ptr_in = x + Int(thread_idx.x) * 4
+        var ptr_out = y + Int(thread_idx.x) * 4
+        var val = ptr_in.load[width=4]()
+        ptr_out.store[nontemporal=True](val)
+
+    # CHECK: global_store_dwordx4 {{.*}} nt
+    print(_compile_code[kernel, target=MI355X_TARGET]())
+
+
 def main() raises:
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
@@ -517,3 +547,5 @@ def main() raises:
     test_ds_read_tr16_b64_compile()
     test_permlane_compile()
     test_waitcnt_compile()
+    test_nt_load_compile()
+    test_nt_store_compile()
