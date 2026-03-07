@@ -150,7 +150,7 @@ class PixelGenerationContext(BaseContext, Protocol):
 
     @property
     def num_visuals_per_prompt(self) -> int:
-        """Number of images to generate."""
+        """Number of visuals to generate."""
         ...
 
     @property
