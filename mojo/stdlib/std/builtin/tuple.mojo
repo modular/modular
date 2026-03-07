@@ -37,6 +37,28 @@ from std.reflection.type_info import _unqualified_type_name
 
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
+fn _constrained_elements_equatable[*Ts: AnyType, Parent: AnyType]():
+    comptime for i in range(Variadic.size(Ts)):
+        comptime T = Ts[i]
+        _constrained_conforms_to[
+            conforms_to(T, Equatable),
+            Parent=Parent,
+            Element=T,
+            ParentConformsTo="Equatable",
+        ]()
+
+
+fn _constrained_elements_comparable[*Ts: AnyType, Parent: AnyType]():
+    comptime for i in range(Variadic.size(Ts)):
+        comptime T = Ts[i]
+        _constrained_conforms_to[
+            conforms_to(T, Comparable),
+            Parent=Parent,
+            Element=T,
+            ParentConformsTo="Comparable",
+        ]()
+
+
 # ===-----------------------------------------------------------------------===#
 # Tuple
 # ===-----------------------------------------------------------------------===#
@@ -281,6 +303,7 @@ struct Tuple[*element_types: Movable](
         Returns:
             True if this tuple is equal to the other tuple, False otherwise.
         """
+        _constrained_elements_equatable[*Self.element_types, Parent=Self]()
         comptime for i in range(Self.__len__()):
             ref lhs = trait_downcast[Equatable](self[i])
             ref rhs = trait_downcast[Equatable](other[i])
@@ -310,6 +333,7 @@ struct Tuple[*element_types: Movable](
         Returns:
             True if this tuple is lexicographically less than the other, False otherwise.
         """
+        _constrained_elements_comparable[*Self.element_types, Parent=Self]()
         comptime for i in range(Self.__len__()):
             ref lhs = trait_downcast[Comparable](self[i])
             ref rhs = trait_downcast[Comparable](other[i])
