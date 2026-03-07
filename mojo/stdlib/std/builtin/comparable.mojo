@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.constrained import _constrained_conforms_to, _constrained_field_conforms_to
 from std.builtin.range import _ZeroStartingRange
 from std.reflection import struct_field_names, struct_field_types
 
@@ -146,3 +146,43 @@ trait Comparable(Equatable):
             True if `self` is greater than or equal to `rhs`.
         """
         return not self < rhs
+
+
+fn _constrained_elements_equatable[*Ts: AnyType, Parent: AnyType]():
+    """Asserts at compile time that all types in `Ts` conform to `Equatable`.
+
+    Produces a clear error message if any element type does not satisfy the
+    constraint, following the same pattern as `constrained_conforms_to_writable`.
+
+    Parameters:
+        Ts: The element types to check.
+        Parent: The enclosing type (used in the error message).
+    """
+    comptime for i in range(Variadic.size(Ts)):
+        comptime T = Ts[i]
+        _constrained_conforms_to[
+            conforms_to(T, Equatable),
+            Parent=Parent,
+            Element=T,
+            ParentConformsTo="Equatable",
+        ]()
+
+
+fn _constrained_elements_comparable[*Ts: AnyType, Parent: AnyType]():
+    """Asserts at compile time that all types in `Ts` conform to `Comparable`.
+
+    Produces a clear error message if any element type does not satisfy the
+    constraint, following the same pattern as `constrained_conforms_to_writable`.
+
+    Parameters:
+        Ts: The element types to check.
+        Parent: The enclosing type (used in the error message).
+    """
+    comptime for i in range(Variadic.size(Ts)):
+        comptime T = Ts[i]
+        _constrained_conforms_to[
+            conforms_to(T, Comparable),
+            Parent=Parent,
+            Element=T,
+            ParentConformsTo="Comparable",
+        ]()
