@@ -66,8 +66,8 @@ class MojoModulePath:
 def is_mojo_source_package_path(path: Path) -> bool:
     """Returns True if the given path is a Mojo package source directory.
 
-    A Mojo package source directory is a directory that contains an `__init__.mojo`
-    or `__init__.🔥` file.
+    A Mojo package source directory is a directory that contains an
+    `__init__.mojo` file.
 
     Args:
         path: The path to check
@@ -86,12 +86,12 @@ def find_mojo_module_in_dir(
     Returns:
         A `MojoModulePath` if found, otherwise None.
     """
-    # Check for package first: <dir_path>/<module_name>/__init__.mojo or .🔥
+    # Check for package first: <dir_path>/<module_name>/__init__.mojo
     if init_file_path := _mojo_source_package_root_file(dir_path / module_name):
         return MojoModulePath(init_file_path, True)
 
-    # If not a package, check for single file: <dir_path>/<module_name>.mojo or .🔥
-    for ext in ["mojo", "🔥"]:
+    # If not a package, check for single file: <dir_path>/<module_name>.mojo
+    for ext in ["mojo"]:
         potential_file = dir_path / f"{module_name}.{ext}"
         if potential_file.is_file():
             # Found single file.
@@ -102,11 +102,11 @@ def find_mojo_module_in_dir(
 
 
 def _mojo_source_package_root_file(path: Path) -> Path | None:
-    """Returns the path to the `__init__.mojo` or `__init__.🔥` package root
+    """Returns the path to the `__init__.mojo` package root
     file if this is a Mojo source package directory, otherwise None.
 
-    A Mojo package source directory is a directory that contains an `__init__.mojo`
-    or `__init__.🔥` file.
+    A Mojo package source directory is a directory that contains an
+    `__init__.mojo` file.
 
     Args:
         path: The path to check
@@ -119,25 +119,22 @@ def _mojo_source_package_root_file(path: Path) -> Path | None:
         return None
 
     init_mojo = path / "__init__.mojo"
-    init_fire = path / "__init__.🔥"
 
     if init_mojo.is_file():
         return init_mojo
-    elif init_fire.is_file():
-        return init_fire
     else:
         return None
 
 
 def is_mojo_binary_package_path(path: Path) -> bool:
     """Returns True if the given path is a Mojo binary package file, i.e.
-    a file ending in ".mojopkg" or ".📦".
+    a file ending in ".mojopkg".
     """
 
     if not path.is_file():
         return False
 
-    return path.suffix in [".mojopkg", ".📦"]
+    return path.suffix == ".mojopkg"
 
 
 def _build_mojo_source_package(path: Path) -> Path:

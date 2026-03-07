@@ -722,6 +722,12 @@ This version is still a work in progress.
 
 ## ❌ Removed
 
+- The `.🔥` (flame) and `📦` (package) emoji file extensions are no longer
+  supported. Use `.mojo` for all Mojo source files and `__init__.mojo` for
+  package initialization files. The emoji extensions were removed
+  to simplify the tooling and improve compatibility across different
+  systems and editors.
+
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
   for `__moveinit__`/`__del__` arguments as appropriate.
 

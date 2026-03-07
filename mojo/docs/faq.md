@@ -38,13 +38,6 @@ name for a language that brings magical powers to Python, including unlocking
 an innovative programming model for accelerators and other heterogeneous
 systems pervasive in AI today.
 
-### Why does Mojo have the 🔥 file extension?
-
-We paired Mojo with fire emoji 🔥 as a fun visual way to impart onto users that
-Mojo empowers them to get their Mojo on—to develop faster and more efficiently
-than ever before. We also believe that the world can handle a unicode extension
-at this point, but you can also just use the `.mojo` extension. :)
-
 ### What problems does Mojo solve that no other language can?
 
 Mojo combines the usability of Python with the systems programming features
