@@ -14,8 +14,10 @@
 from std.time import sleep, time_function
 
 from std.benchmark import Report, clobber_memory, keep, run
+from std.benchmark.benchmark import Batch
 from std.benchmark.bencher import BenchMetric, Format, ThroughputMeasure
 from std.testing import TestSuite, assert_equal, assert_true
+from test_utils import check_write_to
 
 
 def test_stopping_criteria() raises:
@@ -180,6 +182,24 @@ def test_throughput_measure_write_repr_to() raises:
     assert_true(s.startswith("ThroughputMeasure("))
     assert_true("metric=" in s)
     assert_true("value=1024" in s)
+
+
+def test_batch_write_to() raises:
+    var b = Batch(duration=1000, iterations=10, _is_significant=True)
+    check_write_to(
+        b,
+        expected="Batch(duration=1000ns, iterations=10, significant=True)",
+        is_repr=False,
+    )
+
+
+def test_batch_write_repr_to() raises:
+    var b = Batch(duration=2000, iterations=5, _is_significant=False)
+    check_write_to(
+        b,
+        expected="Batch(duration=2000, iterations=5, _is_significant=False)",
+        is_repr=True,
+    )
 
 
 def main() raises:
