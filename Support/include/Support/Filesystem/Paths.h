@@ -15,7 +15,7 @@ namespace M::Filesystem {
 /// directory that contains an `__init__.mojo` file).
 bool isMojoSourcePackagePath(const std::filesystem::path &path);
 
-/// Returns true if the given path is a Mojo binary package (i.e. a `.📦` or
+/// Returns true if the given path is a Mojo binary package (i.e. a
 /// `.mojopkg` file).
 bool isMojoBinaryPackagePath(const std::filesystem::path &path);
 

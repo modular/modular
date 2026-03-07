@@ -128,7 +128,7 @@ int main(int argc, char **argv) {
     // If it looks like a Mojo source file, invoke the `run` subcommand.
     State state(programName, "run", arguments);
     StringRef argRef(arg);
-    if (argRef.ends_with(".mojo") || argRef.ends_with(".🔥"))
+    if (argRef.ends_with(".mojo"))
       return registry.getCallback("run").get()(state);
 
     // Otherwise, we don't know what this is; return an error.

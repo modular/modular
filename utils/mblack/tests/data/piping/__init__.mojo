@@ -745,7 +745,7 @@ def get_sources(
             err(f"invalid path: {s}")
 
     def filter_mojo_sources(source: Path):
-        return source.suffix in [".mojo", ".🔥"] or source.name == "-"
+        return source.suffix == ".mojo" or source.name == "-"
 
     if is_mojo:
         sources = set(filter(filter_mojo_sources, sources))
@@ -864,7 +864,7 @@ def format_file_in_place(
         mode = replace(mode, is_pyi=True)
     elif src.suffix == ".ipynb":
         mode = replace(mode, is_ipynb=True)
-    elif src.suffix in (".mojo", ".🔥"):
+    elif src.suffix == ".mojo":
         mode = replace(mode, target_versions={TargetVersion.MOJO})
         mode = replace(mode, is_mojo=True)
 

@@ -88,7 +88,7 @@ LogicalResult writeBinaryPackage(Operation *op, MojoPackageVersion &mojoVer,
                                  StringRef mlirChecksum, raw_ostream &os);
 
 /// Returns whether the memory buffer points to a valid Mojo package
-/// (.mojopkg/.📦) file. Checks only the magic bytes at the beginning of the
+/// (.mojopkg) file. Checks only the magic bytes at the beginning of the
 /// buffer.
 bool isMojoPackage(llvm::MemoryBufferRef buffer);
 

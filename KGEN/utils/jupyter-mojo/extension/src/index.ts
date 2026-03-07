@@ -36,7 +36,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     app.docRegistry.addFileType({
       name : 'mojo',
       mimeTypes : [ 'text/x-mojo' ],
-      extensions : [ '.mojo', '.🔥' ],
+      extensions : [ '.mojo' ],
       displayName : 'Mojo',
       icon : mojoFireIcon,
       contentType : 'file',

@@ -13,7 +13,7 @@
 
 # RUN: echo "" > %t.foobar
 # RUN: not mojo format %t.foobar 2>&1 | FileCheck %s --check-prefix=INVALID_FILE_TYPE
-# INVALID_FILE_TYPE: invalid input '{{.*}}', expected a source .mojo/.🔥 file, or a directory
+# INVALID_FILE_TYPE: invalid input '{{.*}}', expected a source .mojo file, or a directory
 
 # RUN: not mojo format %s - 2>&1 | FileCheck %s --check-prefix=MIX_STDIN
 # MIX_STDIN: error: cannot mix '-' with other inputs

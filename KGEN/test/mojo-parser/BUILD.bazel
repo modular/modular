@@ -8,7 +8,6 @@ _DATA = [
     "**/docs_package/**/*.mojo",
     "**/imported_cached_module.mojo",
     "**/imported_module.mojo",
-    "**/test_bad_package/**",
     "**/test_package.foo",
     "**/test_package/**",
     "**/test_package_user/**/*.mojo",
