@@ -509,7 +509,7 @@ def test_nt_load_compile() raises:
 
     fn kernel(x: UnsafePointer[Float32]):
         var ptr = x + Int(thread_idx.x) * 4
-        var val = ptr.load[width=4, nontemporal=True]()
+        var val = ptr.load[width=4, non_temporal=True]()
         keep(val)
 
     # CHECK: global_load_dwordx4 {{.*}} nt
@@ -527,7 +527,7 @@ def test_nt_store_compile() raises:
         var ptr_in = x + Int(thread_idx.x) * 4
         var ptr_out = y + Int(thread_idx.x) * 4
         var val = ptr_in.load[width=4]()
-        ptr_out.store[nontemporal=True](val)
+        ptr_out.store[non_temporal=True](val)
 
     # CHECK: global_store_dwordx4 {{.*}} nt
     print(_compile_code[kernel, target=MI355X_TARGET]())

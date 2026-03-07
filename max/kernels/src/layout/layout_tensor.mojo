@@ -2107,7 +2107,7 @@ struct LayoutTensor[
     fn load[
         width: Int,
         load_alignment: Int = Self.alignment,
-        nontemporal: Bool = False,
+        non_temporal: Bool = False,
     ](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified 2D coordinates.
 
@@ -2119,7 +2119,7 @@ struct LayoutTensor[
             width: The number of elements to load into the SIMD vector. Should match
                   the target hardware's vector width for optimal performance.
             load_alignment: The alignment to use. Defaults to Self.alignment.
-            nontemporal: If True, issue a non-temporal (streaming) load hint,
+            non_temporal: If True, issue a non-temporal (streaming) load hint,
                 indicating the data has no temporal locality and should not
                 pollute caches.
 
@@ -2163,14 +2163,14 @@ struct LayoutTensor[
             ), "LayoutTensor load out of bounds"
 
         return self.ptr.load[
-            width=width, alignment=load_alignment, nontemporal=nontemporal
+            width=width, alignment=load_alignment, non_temporal=non_temporal
         ](self._offset(m, n))
 
     @always_inline("nodebug")
     fn load[
         width: Int,
         load_alignment: Int = Self.alignment,
-        nontemporal: Bool = False,
+        non_temporal: Bool = False,
     ](self, coords: IndexList[...]) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified coordinates.
 
@@ -2183,7 +2183,7 @@ struct LayoutTensor[
             width: The number of elements to load into the SIMD vector. Should match
                     the target hardware's vector width for optimal performance.
             load_alignment: The alignment to use. Defaults to Self.alignment.
-            nontemporal: If True, issue a non-temporal (streaming) load hint,
+            non_temporal: If True, issue a non-temporal (streaming) load hint,
                 indicating the data has no temporal locality and should not
                 pollute caches.
 
@@ -2211,7 +2211,7 @@ struct LayoutTensor[
         assert self.runtime_layout.stride.value[self.rank - 1] == 1
 
         return self.ptr.load[
-            width=width, alignment=load_alignment, nontemporal=nontemporal
+            width=width, alignment=load_alignment, non_temporal=non_temporal
         ](self._offset(coords))
 
     @always_inline

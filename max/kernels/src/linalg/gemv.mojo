@@ -393,7 +393,7 @@ fn gemv_split_k[
                 if i + tile_id_n >= n:
                     continue
             comptime if is_amd_gpu():
-                var b_vec = weight_tile.load[simd_width, nontemporal=True](
+                var b_vec = weight_tile.load[simd_width, non_temporal=True](
                     i, Int(thread_idx.x) * simd_width
                 )
                 tile_w.store(i, 0, rebind[WeightVecType](b_vec))
