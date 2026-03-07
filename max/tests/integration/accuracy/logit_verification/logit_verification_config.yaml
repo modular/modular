@@ -283,7 +283,7 @@ logit_verification_pipelines:
     pipeline: "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic"
     compatible_with: [gpu]
     encoding: float8_e4m3fn
-    tags: [float8-support, nvidia-multi]
+    tags: [nvidia-multi, 8xb200]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden/1/58bcc105671be4a0fb59070924a231ab4fefd02879dd6e826d4d8f99ddfb962f/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden.tar.gz"
       json_file: "vllm_RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_float8_e4m3fn_golden.json"
