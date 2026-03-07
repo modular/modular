@@ -16,6 +16,7 @@ from std.collections import OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
+from std.sys.info import align_of
 from std.utils.index import Index, IndexList
 
 from std.algorithm.functional import _elementwise_impl_gpu
@@ -200,6 +201,7 @@ fn fused_rope_rmsnorm_kernel[
                 ), "kv_norm_dim should be divisible by k_width"
 
                 var vec_data = SIMD[accum_type, k_width](0)
+                var gamma_val = SIMD[gamma_dtype, k_width](0)
 
                 var idx = thread_idx.x * k_width
                 if idx < kv_norm_dim:
@@ -209,6 +211,11 @@ fn fused_rope_rmsnorm_kernel[
                         post_seq_idx,
                         idx,
                     ).cast[accum_type]()
+                    # Prefetch gamma before reduction.
+                    gamma_val = gamma.load[
+                        width=k_width,
+                        alignment = align_of[SIMD[gamma_dtype, k_width]](),
+                    ](Coord(Idx(idx)))
 
                 var norm_val = _rms_norm_warp_tiling_subkernel[
                     warps_per_block,
@@ -217,7 +224,7 @@ fn fused_rope_rmsnorm_kernel[
                     global_token_idx,
                     idx,
                     vec_data,
-                    gamma,
+                    gamma_val,
                     epsilon.cast[accum_type](),
                     0.0,
                     kv_norm_dim,
@@ -381,6 +388,15 @@ fn fused_rope_rmsnorm_quantization_kernel[
                         (Idx(global_token_idx), Idx(idx))
                     ).cast[accum_type]()
 
+                # Prefetch gamma before block_reduce to overlap memory
+                # latency with reduction compute.
+                var gamma_val = SIMD[gamma_dtype, k_width](0)
+                if idx < kv_norm_dim:
+                    gamma_val = gamma.load[
+                        width=k_width,
+                        alignment = align_of[SIMD[gamma_dtype, k_width]](),
+                    ](Coord(Idx(idx)))
+
                 var norm_val = _rms_norm_warp_tiling_subkernel[
                     warps_per_block,
                     False,  # Do not multiply the gamma before casting.
@@ -388,7 +404,7 @@ fn fused_rope_rmsnorm_quantization_kernel[
                     global_token_idx,
                     idx,
                     vec_data,
-                    gamma,
+                    gamma_val,
                     epsilon.cast[accum_type](),
                     0.0,
                     kv_norm_dim,
