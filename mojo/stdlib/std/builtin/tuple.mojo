@@ -15,6 +15,10 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std.builtin.comparable import (
+    _constrained_elements_comparable,
+    _constrained_elements_equatable,
+)
 from std.builtin.constrained import _constrained_conforms_to
 from std.format._utils import (
     write_sequence_to,
@@ -36,28 +40,6 @@ from std.sys.intrinsics import _type_is_eq
 from std.reflection.type_info import _unqualified_type_name
 
 from std.utils._visualizers import lldb_formatter_wrapping_type
-
-fn _constrained_elements_equatable[*Ts: AnyType, Parent: AnyType]():
-    comptime for i in range(Variadic.size(Ts)):
-        comptime T = Ts[i]
-        _constrained_conforms_to[
-            conforms_to(T, Equatable),
-            Parent=Parent,
-            Element=T,
-            ParentConformsTo="Equatable",
-        ]()
-
-
-fn _constrained_elements_comparable[*Ts: AnyType, Parent: AnyType]():
-    comptime for i in range(Variadic.size(Ts)):
-        comptime T = Ts[i]
-        _constrained_conforms_to[
-            conforms_to(T, Comparable),
-            Parent=Parent,
-            Element=T,
-            ParentConformsTo="Comparable",
-        ]()
-
 
 # ===-----------------------------------------------------------------------===#
 # Tuple
