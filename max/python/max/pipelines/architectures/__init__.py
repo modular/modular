@@ -55,6 +55,7 @@ def register_all_models() -> None:
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
     from .llama4 import llama4_arch
+    from .ltx2_modulev3 import ltx2_modulev3_arch
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
@@ -117,6 +118,7 @@ def register_all_models() -> None:
         qwen3_embedding_arch,
         qwen3vl_arch,
         qwen3vl_moe_arch,
+        ltx2_modulev3_arch,
     ]
 
     for arch in architectures:
