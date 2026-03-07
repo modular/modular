@@ -209,7 +209,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
 
 @traced
-def build_scatter_future_tokens_graph() -> Graph:
+def build_scatter_future_tokens_graph(device: DeviceRef) -> Graph:
     """Builds a trivial scatter_nd graph."""
     with Graph(
         "my_scatter_future_tokens_graph",
@@ -218,19 +218,19 @@ def build_scatter_future_tokens_graph() -> Graph:
             TensorType(
                 DType.int64,
                 shape=[SymbolicDim("curr_batch_size")],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
             # Generated tokens for batch N-1
             TensorType(
                 DType.int64,
                 shape=[SymbolicDim("prev_batch_size"), Dim(1)],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
             # Indices that maps generated tokens from batch N-1 to batch N
             TensorType(
                 DType.int32,
                 shape=[SymbolicDim("prev_batch_size")],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
         ],
     ) as graph:
@@ -256,9 +256,9 @@ class ScatterFutureTokenProcessor:
     present in the previous batch.
     """
 
-    def __init__(self, session: InferenceSession) -> None:
+    def __init__(self, session: InferenceSession, device: DeviceRef) -> None:
         self._scatter_future_tokens = session.load(
-            build_scatter_future_tokens_graph()
+            build_scatter_future_tokens_graph(device)
         )
 
     def _compute_scatter_future_tok_indices(
@@ -480,7 +480,9 @@ class OverlapTextGenerationPipeline(
 
         # Load the scatter future tokens graph.
         self._scatter_future_tokens: ScatterFutureTokenProcessor = (
-            ScatterFutureTokenProcessor(session)
+            ScatterFutureTokenProcessor(
+                session, DeviceRef.from_device(self._devices[0])
+            )
         )
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
