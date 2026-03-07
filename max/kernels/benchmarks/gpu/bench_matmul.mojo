@@ -362,6 +362,7 @@ fn bench_matmul[
     shape_b_dim: IndexList[2],
     init_type: InitializationType,
     verify: Bool,
+    run_benchmark: Bool = True,
 ) raises:
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
@@ -429,56 +430,56 @@ fn bench_matmul[
             transpose_b=transpose_b,
         )
 
-    @parameter
     @__copy_capture(
         cb_a,
         cb_b,
         cb_c,
     )
+    @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+            cb_a.offset_ptr(iteration), shape_a_dim
+        )
+        var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+            cb_b.offset_ptr(iteration), shape_b_dim
+        )
+        var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
+            cb_c.offset_ptr(iteration), shape_c_dim
+        )
+
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
-                cb_a.offset_ptr(iteration), shape_a_dim
-            )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
-                cb_b.offset_ptr(iteration), shape_b_dim
-            )
-            var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
-                cb_c.offset_ptr(iteration), shape_c_dim
-            )
+        @__copy_capture(tensor_c)
+        fn test_lambda_add_coords_prod[
+            _dtype: DType,
+            width: Int,
+            *,
+            alignment: Int = align_of[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            _dtype, width
+        ]:
+            var x = tensor_c.load[width=width](idx).cast[_dtype]()
+            var y = val * x
+            return y
 
-            @parameter
-            @always_inline
-            @__copy_capture(tensor_c)
-            fn test_lambda_add_coords_prod[
-                _dtype: DType,
-                width: Int,
-                *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-                _dtype, width
-            ]:
-                var x = tensor_c.load[width=width](idx).cast[_dtype]()
-                var y = val * x
-                return y
+        comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
+            test_lambda_add_coords_prod
+        ) if epilogue else None
 
-            comptime optional_lambda_fn = Optional[
-                elementwise_compute_lambda_type
-            ](test_lambda_add_coords_prod) if epilogue else None
+        comptime if use_vendor_blas:
+            run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+                elementwise_compute_lambda_fn=optional_lambda_fn,
+                register_based_epilogue=register_based_epilogue,
+            ](tensor_c, tensor_a, tensor_b, ctx)
 
-            comptime if use_vendor_blas:
-                run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
-            else:
-                _matmul_gpu[
-                    use_tensor_core=True,
-                    transpose_b=transpose_b,
-                    elementwise_compute_lambda_fn=optional_lambda_fn,
-                    register_based_epilogue=register_based_epilogue,
-                ](tensor_c, tensor_a, tensor_b, ctx)
-
+    @parameter
+    @always_inline
+    fn bench_func(mut b: Bencher) raises:
         b.iter_custom[kernel_launch](ctx)
 
     var flops = ThroughputMeasure(
@@ -486,21 +487,24 @@ fn bench_matmul[
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
         2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
     )
-    b.bench_function[bench_func](
-        BenchId(
-            _get_run_name[
-                dtype,
-                shape_c,
-                shape_a,
-                shape_b,
-                transpose_b=transpose_b,
-                cache_busting=cache_busting,
-                use_vendor_blas=use_vendor_blas,
-            ](shape_c_dim, shape_a_dim, shape_b_dim)
-        ),
-        # TODO: Pick relevant benchmetric
-        [flops],
-    )
+    if run_benchmark:
+        b.bench_function[bench_func](
+            BenchId(
+                _get_run_name[
+                    dtype,
+                    shape_c,
+                    shape_a,
+                    shape_b,
+                    transpose_b=transpose_b,
+                    cache_busting=cache_busting,
+                    use_vendor_blas=use_vendor_blas,
+                ](shape_c_dim, shape_a_dim, shape_b_dim)
+            ),
+            # TODO: Pick relevant benchmetric
+            [flops],
+        )
+    else:
+        kernel_launch(ctx, 0)
 
     # Verification: compare our kernel output against vendor BLAS as reference.
     # The benchmark already wrote our kernel's output to buffer_c at offset 0
@@ -538,6 +542,7 @@ fn create_matmul_bench[
     k: ValOrDim,
     init_type: InitializationType,
     verify: Bool,
+    run_benchmark: Bool,
 ) raises:
     comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
@@ -565,6 +570,7 @@ fn create_matmul_bench[
         dynamic_b_shape,
         init_type,
         verify,
+        run_benchmark=run_benchmark,
     )
 
 
@@ -585,6 +591,7 @@ def main() raises:
     comptime register_based_epilogue = get_defined_bool[
         "register_based_epilogue", True
     ]()
+    var run_benchmark = arg_parse("run_benchmark", True)
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -603,6 +610,8 @@ def main() raises:
             static[K](),
             init_type,
             verify,
+            run_benchmark=run_benchmark,
         )
 
-    m.dump_report()
+    if run_benchmark:
+        m.dump_report()

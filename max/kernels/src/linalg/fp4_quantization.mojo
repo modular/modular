@@ -50,7 +50,6 @@ from linalg.utils import (
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from std.memory import bitcast
 from std.gpu.sync import named_barrier
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -711,9 +710,9 @@ fn quantize_dynamic_block_scaled[
         " MXFP8_SF_VECTOR_SIZE (32 for MXFP8)"
     )
 
-    var input_tensor = from_ndbuffer_row_major(input_device)
-    var output_tensor = from_ndbuffer_row_major(output_device)
-    var scales_tensor = from_ndbuffer_row_major(scales_device)
+    var input_tensor = TileTensor(input_device).to_layout_tensor()
+    var output_tensor = TileTensor(output_device).to_layout_tensor()
+    var scales_tensor = TileTensor(scales_device).to_layout_tensor()
 
     var num_rows = input_tensor.dim(0)
     var num_cols = input_tensor.dim(1)
@@ -781,8 +780,8 @@ fn block_scales_interleave[
         NVFP4_SF_DTYPE,
     ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) for now."
 
-    var output = from_ndbuffer_row_major(output_scales_device)
-    var input = from_ndbuffer_row_major(input_scales_device)
+    var output = TileTensor(output_scales_device).to_layout_tensor()
+    var input = TileTensor(input_scales_device).to_layout_tensor()
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
         ctx, input, output
@@ -1253,11 +1252,15 @@ fn block_scaled_matmul[
         SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
-    var c = from_ndbuffer_row_major(c_device).as_any_origin()
-    var a = from_ndbuffer_row_major(a_device).as_any_origin()
-    var b = from_ndbuffer_row_major(b_device).as_any_origin()
-    var a_scales = from_ndbuffer_row_major(a_scales_device).as_any_origin()
-    var b_scales = from_ndbuffer_row_major(b_scales_device).as_any_origin()
+    var c = TileTensor(c_device).to_layout_tensor().as_any_origin()
+    var a = TileTensor(a_device).to_layout_tensor().as_any_origin()
+    var b = TileTensor(b_device).to_layout_tensor().as_any_origin()
+    var a_scales = (
+        TileTensor(a_scales_device).to_layout_tensor().as_any_origin()
+    )
+    var b_scales = (
+        TileTensor(b_scales_device).to_layout_tensor().as_any_origin()
+    )
 
     comptime sfa_layout = a_scales.layout
     comptime sfb_layout = b_scales.layout

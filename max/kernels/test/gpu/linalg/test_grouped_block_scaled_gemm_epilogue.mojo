@@ -39,6 +39,8 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout.tile_layout import row_major as tile_row_major
+from layout.tile_tensor import TileTensor
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -272,7 +274,6 @@ fn test_grouped_gemm_epilogue[
     )
 
     # Problem sizes tensor
-    comptime problem_sizes_layout = Layout.row_major(max_groups, 4)
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
     problem_sizes_host[0] = Int32(m.value)  # M
     problem_sizes_host[1] = Int32(n.value)  # N
@@ -284,13 +285,8 @@ fn test_grouped_gemm_epilogue[
     )
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
-    var problem_sizes_tensor = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
-        problem_sizes_device.unsafe_ptr(),
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
+    var problem_sizes_tensor = TileTensor(
+        problem_sizes_device.unsafe_ptr(), tile_row_major[max_groups, 4]()
     )
 
     # Pointer arrays
@@ -318,26 +314,20 @@ fn test_grouped_gemm_epilogue[
     ctx.enqueue_copy(sfa_ptrs_device, sfa_ptrs_host)
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
 
-    comptime ptr_layout = Layout.row_major(max_groups, 1)
-    var a_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        a_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var a_ptrs_tensor = TileTensor(
+        a_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var b_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        b_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var b_ptrs_tensor = TileTensor(
+        b_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var c_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        c_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var c_ptrs_tensor = TileTensor(
+        c_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfa_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfa_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfa_ptrs_tensor = TileTensor(
+        sfa_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfb_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfb_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfb_ptrs_tensor = TileTensor(
+        sfb_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
 
     # Compute total tiles
@@ -348,6 +338,61 @@ fn test_grouped_gemm_epilogue[
     # Create epilogue lambda optional
     comptime optional_lambda = Optional[elementwise_compute_lambda_type](
         epilogue_add_c
+    )
+
+    # Template tensors - 3D TileTensors with batch=1
+    comptime static_a_3d_shape = DimList(1, m.dim, k.dim)
+    var a_template_nd = NDBuffer[a_type, 3, _, static_a_3d_shape](
+        a_device.unsafe_ptr(), IndexList[3](1, m.value, k.value)
+    )
+    comptime static_b_3d_shape = DimList(
+        1, n.dim, k.dim
+    ) if transpose_b else DimList(1, k.dim, n.dim)
+    var b_template_nd = NDBuffer[b_type, 3, _, static_b_3d_shape](
+        b_device.unsafe_ptr(),
+        IndexList[3](1, n.value, k.value) if transpose_b else IndexList[3](
+            1, k.value, n.value
+        ),
+    )
+    comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
+    var c_template_nd = NDBuffer[c_type, 3, _, static_c_3d_shape](
+        c_device.unsafe_ptr(), IndexList[3](1, m.value, n.value)
+    )
+
+    # Scale factor template tensors - 5D with batch=1 and merged last dims
+    comptime static_a_scales_5d_shape = DimList(
+        1,
+        ceildiv(m.dim, SF_MN_GROUP_SIZE),
+        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+    var a_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_5d_shape](
+        sfa_device.unsafe_ptr(),
+        IndexList[5](
+            1,
+            ceildiv(m.value, SF_MN_GROUP_SIZE),
+            ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ),
+    )
+    comptime static_b_scales_5d_shape = DimList(
+        1,
+        ceildiv(n.dim, SF_MN_GROUP_SIZE),
+        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+    var b_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_5d_shape](
+        sfb_device.unsafe_ptr(),
+        IndexList[5](
+            1,
+            ceildiv(n.value, SF_MN_GROUP_SIZE),
+            ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ),
     )
 
     # Launch grouped GEMM with epilogue
@@ -365,11 +410,11 @@ fn test_grouped_gemm_epilogue[
         problem_sizes_tensor,
         num_groups,
         total_tiles,
-        from_ndbuffer_row_major(a_device_nd),
-        from_ndbuffer_row_major(b_device_nd),
-        from_ndbuffer_row_major(c_device_nd),
-        from_ndbuffer_row_major(sfa_device_nd),
-        from_ndbuffer_row_major(sfb_device_nd),
+        TileTensor(a_template_nd),
+        TileTensor(b_template_nd),
+        TileTensor(c_template_nd),
+        TileTensor(a_scales_5d_nd),
+        TileTensor(b_scales_5d_nd),
         ctx,
     )
 

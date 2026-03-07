@@ -24,27 +24,25 @@ from ..value import StrongTensorValueLike, TensorValue
 def transfer_to(
     x: StrongTensorValueLike, device: Device | DeviceRef
 ) -> TensorValue:
-    """Graph execution-time device transfer operation.
+    """Inserts a device transfer node into the compiled graph.
 
-    Inserts a transfer node into the compiled graph that moves ``x`` to
-    ``device`` at execution time. This is a **graph-level operation**: it
-    operates on symbolic :obj:`TensorValue` objects during graph tracing and
-    is baked into the compiled graph as an ``mo.transfer`` MLIR op.
+    Moves ``x`` to ``device`` at execution time. This is a **graph-level
+    operation**: it operates on symbolic :obj:`TensorValue` objects during
+    graph tracing and is baked into the compiled graph as an
+    ``mo.transfer`` MLIR op.
 
     This is distinct from :meth:`~max.experimental.nn.Module.to`, which is a
     **pre-compilation** operation that moves stored weight tensors on the
     Python host before the graph is built. Use ``transfer_to`` when you need
     to route an activation tensor between devices inside :meth:`forward`
-    (e.g., host-to-device input staging, device-to-host output retrieval, or
+    (for example, host-to-device input staging, device-to-host output retrieval, or
     cross-GPU tensor movement for multi-device models).
 
-    Implementation notes:
-
-    - Host↔device transfers (CPU↔GPU) use the graph's immutable root chain
-      so they can be hoisted to model initialization by the optimizer.
-    - Device-to-device transfers (GPU↔GPU) join both per-device chains to
-      prevent reordering that would deadlock multi-device collectives.
-    - If source and destination device are identical, this is a no-op.
+    Host↔device transfers (CPU↔GPU) use the graph's immutable root chain
+    so they can be hoisted to model initialization by the optimizer.
+    Device-to-device transfers (GPU↔GPU) join both per-device chains to
+    prevent reordering that would deadlock multi-device collectives.
+    If source and destination device are identical, this is a no-op.
 
     Args:
         x: The input tensor to transfer.

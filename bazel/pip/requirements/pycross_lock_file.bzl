@@ -85,7 +85,6 @@ PINS = {
     "logbar": "logbar@0.0.3",
     "markupsafe": "markupsafe@3.0.3",
     "matplotlib": "matplotlib@3.10.7",
-    "microbench": "microbench@0.9.1",
     "ml-dtypes": "ml-dtypes@0.5.4",
     "msgspec": "msgspec@0.20.0",
     "mteb": "mteb@1.29.12",
@@ -4913,36 +4912,6 @@ def targets():
         name = "mdurl@0.1.2",
         wheel = ":_wheel_mdurl@0.1.2",
         testonly = "mdurl" in _TESTONLY_DEPS,
-    )
-
-    _microbench_0_9_1_build_deps = [
-        ":setuptools",
-        ":wheel",
-    ]
-
-    native.alias(
-        name = "_sdist_microbench@0.9.1",
-        actual = "@pycross_lock_file_sdist_microbench_0.9.1//file",
-    )
-
-    pycross_wheel_build(
-        name = "_build_microbench@0.9.1",
-        sdist = ":_sdist_microbench@0.9.1",
-        target_environment = _target,
-        deps = _microbench_0_9_1_build_deps,
-        testonly = "microbench" in _TESTONLY_DEPS,
-        **extra_build_args
-    )
-
-    native.alias(
-        name = "_wheel_microbench@0.9.1",
-        actual = ":_build_microbench@0.9.1",
-    )
-
-    pycross_wheel_library(
-        name = "microbench@0.9.1",
-        wheel = ":_wheel_microbench@0.9.1",
-        testonly = "microbench" in _TESTONLY_DEPS,
     )
 
     _mistral_common_1_8_8_deps = [
@@ -12437,16 +12406,6 @@ def repositories():
         ],
         sha256 = "8b81a01171f541ce75396fb4fb5073189bfbd874a1cfb9a15290ffd22f339d2e",
         downloaded_file_path = "logbar-0.0.3.tar.gz",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_sdist_microbench_0.9.1",
-        urls = [
-            "https://files.pythonhosted.org/packages/95/45/14b404d377c5af66a20069427dcf9a306c3783de8afb9a7655604b929eb9/microbench-0.9.1.tar.gz",
-        ],
-        sha256 = "0548a68a37f554bed83e8f6092fffa116c2ec7fe64ed44150e41903c28beb658",
-        downloaded_file_path = "microbench-0.9.1.tar.gz",
     )
 
     maybe(

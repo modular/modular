@@ -627,32 +627,30 @@ fn _get_c_smem_layout[
     comptime min_wg_bn = 16
     comptime MIN_WG_BN = min_wg_bn if size_of[c_type]() == 2 else BN // 4
 
-    comptime if available_smem_size > (
+    comptime assert available_smem_size > (
         pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
-    ):
+    ), (
+        "There is not enough SMEM to fit the pipeline yet alone the"
+        " output tile!"
+        + " available_smem_size: "
+        + String(available_smem_size)
+        + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
+        + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
+    )
 
-        fn _get_max_wg_bn() capturing -> Int:
-            var WG_BN = MAX_WG_BN
-            while (
-                available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
-                or BN % WG_BN != 0
-            ) and WG_BN > MIN_WG_BN:
-                WG_BN //= 2
-            return WG_BN
+    fn _get_max_wg_bn() capturing -> Int:
+        var WG_BN = MAX_WG_BN
+        while (
+            available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
+            or BN % WG_BN != 0
+        ) and WG_BN > MIN_WG_BN:
+            WG_BN //= 2
+        return WG_BN
 
-        comptime max_wg_bn = _get_max_wg_bn()
-        return Layout.row_major(
-            max_wg_bn, WG_BM
-        ) if swapAB else Layout.row_major(WG_BM, max_wg_bn)
-    else:
-        comptime assert False, (
-            "There is not enough SMEM to fit the pipeline yet alone the"
-            " output tile!"
-            + " available_smem_size: "
-            + String(available_smem_size)
-            + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
-            + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
-        )
+    comptime max_wg_bn = _get_max_wg_bn()
+    return Layout.row_major(max_wg_bn, WG_BM) if swapAB else Layout.row_major(
+        WG_BM, max_wg_bn
+    )
 
 
 fn warp_specialize_gemm_with_multicasting_splitk[

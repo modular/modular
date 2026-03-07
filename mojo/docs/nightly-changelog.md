@@ -1,25 +1,26 @@
-# Mojo unreleased changelog
+# Nightly: v0.26.2
 
-This is a list of UNRELEASED changes for the Mojo language and tools.
+This version is still a work in progress.
 
-When we cut a release, these notes move to `changelog-released.md` and that's
-what we publish.
+## ✨ Highlights
 
-[//]: # Here's the template to use when starting a new batch of notes:
-[//]: ## UNRELEASED
-[//]: ### ✨ Highlights
-[//]: ### Language enhancements
-[//]: ### Language changes
-[//]: ### Library changes
-[//]: ### Tooling changes
-[//]: ### ❌ Removed
-[//]: ### 🛠️ Fixed
+## Language enhancements
 
-## UNRELEASED
+- Mojo now supports specifying default value for inferred parameter, it make it
+  easier to create a partially bound type like
 
-### ✨ Highlights
+  ```mojo
+  struct Pointer[mut = False, // o: Origin[mut]] : pass
 
-### Language enhancements
+  # Default to immutable pointer
+  comptime ImmPointer = Pointer[_]
+  # Explicitly set to mutable pointer
+  comptime mutPointer = Pointer[mut = True, _]
+  # Inferred mutability from `SomeOrigin()`
+  comptime InferredPointer = Pointer[SomeOrigin()]
+  # Parametric mutability pointer.
+  comptime ParametricPointer = Pointer[...]
+  ```
 
 - Mojo now supports a standalone `assert` statement, similar to Python's
   `assert`. It checks a condition at runtime and aborts the program if the
@@ -221,7 +222,7 @@ what we publish.
   def bar() raises: # Explicit raises Error (required)
   ```
 
-### Language changes
+## Language changes
 
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
   concise `...` to unbind any unspecified parameter explicitly.
@@ -318,7 +319,32 @@ what we publish.
   `from pkg import foo` and `from pkg import *` now correctly resolve to the
   function rather than the module.
 
-### Library changes
+- `is_compile_time()` has been renamed to `is_run_in_comptime_interpreter()` to
+  provide a mechanism for supporting different code execution path in comptime
+  interpreter from runtime generated code. The check should be used as
+  condition for runtime `if`. Compiler now warns if it is used as condition
+  for `comptime if`.
+
+## Library changes
+
+- `StaticTuple` now supports comparison operators. `__eq__`/`__ne__` are
+  available when `element_type: Equatable`, and `__lt__`/`__le__`/`__gt__`/
+  `__ge__` are available when `element_type: Comparable`. All use
+  lexicographic ordering with compile-time unrolled loops.
+
+- `Dict` now uses real conditional conformances for `Writable`. The `Dict` type
+  only conforms to `Writable` when both its key and value types do, enforced at
+  compile time via `where` clauses.
+
+- Standard library types now use conditional conformances, replacing previous
+  `_constrained_conforms_to` checks:
+  - `Dict`: `Writable`
+  - `InlineArray`: `Writable`
+  - `List`: `Equatable`, `Writable`
+  - `Optional`: `Writable`
+  - `Set`: `Writable`
+  - `Tuple`: `Writable`
+  - `Variant`: `Writable`
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
@@ -657,11 +683,14 @@ what we publish.
   print(a.__floordiv__(b))
   ```
 
+- Changed `CompilationTarget.unsupported_target_error()` to return `Never`, and
+  removed it's `result` type parameter.
+
 - Remove `DType.get_dtype[T]()` and `DType.is_scalar[T]()`. These were low-level
   operations for extracting the `DType` of a `SIMD` in generic code. There are
   better alternatives available in Mojo today using reflection capabilities.
 
-### Tooling changes
+## Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
   non-conjoined form as before. Now, both `-Dfoo` and `-D foo` are accepted.
@@ -691,7 +720,7 @@ what we publish.
   Multiple kernels generated from the same function are disambiguated with a
   numeric suffix (e.g. `<out>_<kernelfn>_1.ptx`).
 
-### ❌ Removed
+## ❌ Removed
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
   for `__moveinit__`/`__del__` arguments as appropriate.
@@ -703,7 +732,7 @@ what we publish.
   This decorator should not be used outside the standard library, and might be
   removed in a future release.
 
-### 🛠️ Fixed
+## 🛠️ Fixed
 
 - Fixed a bug where Mojo incorrectly passed or returned structs in `extern` C
   function calls. The compiler now applies platform ABI coercion (System V

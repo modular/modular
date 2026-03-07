@@ -46,8 +46,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
@@ -385,9 +384,9 @@ fn grouped_matmul_kernel_sm100[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
-    var c_frag = SIMD[
-        accum_type, c_frag_size
-    ]()  # array of accumulator elements
+    var c_frag: InlineArray[
+        Scalar[accum_type], c_frag_size
+    ]  # array of accumulator elements
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -616,7 +615,7 @@ fn grouped_matmul_sm100[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tensor = from_ndbuffer_row_major(a)
+    a_tensor = TileTensor(a).to_layout_tensor()
     a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
@@ -630,7 +629,7 @@ fn grouped_matmul_sm100[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_tensor)
-    c_tensor = from_ndbuffer_row_major(c)
+    c_tensor = TileTensor(c).to_layout_tensor()
 
     comptime block_dim = 128
     comptime smem_use = (
@@ -966,14 +965,14 @@ fn grouped_matmul_amd[
     comptime BK = block_tile_shape[2]
     comptime assert K % BK == 0
 
-    var a_tensor = from_ndbuffer_row_major(a)
+    var a_tensor = TileTensor(a).to_layout_tensor()
     var b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
         MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
-    var c_tensor = from_ndbuffer_row_major(c)
+    var c_tensor = TileTensor(c).to_layout_tensor()
 
     comptime block_dim = 256
 

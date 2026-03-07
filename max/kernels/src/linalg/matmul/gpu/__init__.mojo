@@ -33,10 +33,10 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_layout import TensorLayout
+from layout.tile_tensor import TileTensor
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
-from layout.tile_tensor import TileTensor
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
 from std.utils import Index, IndexList
@@ -186,21 +186,25 @@ fn matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout_type: TensorLayout,
+    a_layout_type: TensorLayout,
+    b_layout_type: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout_type, MutAnyOrigin],
+    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin],
+    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert c.flat_rank == 2, "expected 2D tensor for c"
+    comptime assert a.flat_rank == 2, "expected 2D tensor for a"
+    comptime assert b.flat_rank == 2, "expected 2D tensor for b"
+
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -793,26 +797,26 @@ fn _matmul_gpu[
     logger.info("Executing: Naive MATMUL kernel")
     comptime BLOCK_DIM = 16
 
-    var c_layout_tensor = from_ndbuffer_row_major(c)
-    var a_layout_tensor = from_ndbuffer_row_major(a)
-    var b_layout_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = TileTensor(c)
+    var a_tensor = TileTensor(a)
+    var b_tensor = TileTensor(b)
 
     comptime kernel = matmul_kernel_naive[
         c_type,
         a_type,
         b_type,
-        c_layout_tensor.layout,
-        a_layout_tensor.layout,
-        b_layout_tensor.layout,
+        type_of(c_tensor).LayoutType,
+        type_of(a_tensor).LayoutType,
+        type_of(b_tensor).LayoutType,
         BLOCK_DIM,
         transpose_b,
         elementwise_lambda_fn=elementwise_lambda_wrapper,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        c_layout_tensor,
-        a_layout_tensor,
-        b_layout_tensor,
+        c_tensor,
+        a_tensor,
+        b_tensor,
         m,
         n,
         k,

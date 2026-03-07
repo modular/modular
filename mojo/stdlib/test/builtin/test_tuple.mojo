@@ -309,6 +309,17 @@ def test_tuple_assert_not_equal() raises:
     assert_not_equal((1, 2, 3), (1, 2))
 
 
+def test_tuple_conditional_conformances() raises:
+    # Writable conformance is conditional on all element types being Writable.
+    assert_true(conforms_to(Tuple[Int], Writable))
+    assert_true(conforms_to(Tuple[Int, String], Writable))
+    assert_true(conforms_to(Tuple[], Writable))
+
+    # TODO(MOCO-3413): Enable negative test case when conforms_to evaluates
+    # where clauses correctly.
+    # assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
+
+
 def test_tuple_assert_equal_failure_message() raises:
     with assert_raises(contains="Tuple[Int, Int](Int(1), Int(2))"):
         assert_equal((1, 2), (1, 3))

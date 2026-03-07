@@ -155,7 +155,6 @@ def test_speculative_decoding_no_rejection(
         pipeline._draft_model,
         context_batch,
         [context_batch],
-        num_steps,
         return_n_logits=1,
         is_draft=True,
     )
@@ -235,7 +234,6 @@ def test_speculative_decoding_partial_rejection(
         pipeline._draft_model,
         context_batch,
         [context_batch],
-        num_steps,
         return_n_logits=1,
         is_draft=True,
     )

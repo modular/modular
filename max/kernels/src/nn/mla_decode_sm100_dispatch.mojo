@@ -25,6 +25,7 @@ from std.logger import Logger
 from layout.layout_tensor import (
     LayoutTensor,
 )
+from layout.tile_tensor import lt_to_tt
 from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
@@ -1234,7 +1235,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         scale,
         mla_decode_pack,
         scales_ptr,
-        scalar_args_buf,
+        lt_to_tt(scalar_args_buf),
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
@@ -1326,7 +1327,7 @@ fn launch_mla_sm100_decode_native_fp8[
         scale,
         mla_decode_pack,
         scales_ptr,
-        scalar_args_buf,
+        lt_to_tt(scalar_args_buf),
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,

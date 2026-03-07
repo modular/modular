@@ -37,11 +37,10 @@ Value elements must be `Copyable`. As with `KeyElement`, the
 See the `Dict` docs for more details.
 """
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.compile import get_type_name
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
-from std.sys.intrinsics import is_compile_time, likely
+from std.sys.intrinsics import is_run_in_comptime_interpreter, likely
 
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.memory import alloc, bitcast, memcpy, memset, pack_bits
@@ -105,7 +104,7 @@ struct _Group(Copyable, Movable):
         """
         self.ctrl = ptr.load[width=_GROUP_WIDTH]()
 
-    # TODO: Remove `is_compile_time()` branches once `pack_bits` is supported
+    # TODO: Remove `is_run_in_comptime_interpreter()` branches once `pack_bits` is supported
     # by the compile-time interpreter. Currently `pack_bits` uses `pop.bitcast`
     # which the interpreter can't handle, so we fall back to scalar loops for
     # comptime contexts (e.g., Dict used in `comptime` expressions).
@@ -120,7 +119,7 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] == h2.
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             return Self._scalar_match(self.ctrl, h2)
         return pack_bits(self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](h2)))
 
@@ -131,7 +130,7 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] == EMPTY (0xFF).
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             return Self._scalar_match(self.ctrl, _CTRL_EMPTY)
         return pack_bits(
             self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_EMPTY))
@@ -147,7 +146,7 @@ struct _Group(Copyable, Movable):
         Returns:
             A bitmask where bit i is set if ctrl[i] is EMPTY or DELETED.
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             var result = UInt16(0)
 
             comptime for i in range(_GROUP_WIDTH):
@@ -171,7 +170,7 @@ struct _Group(Copyable, Movable):
         Returns:
             Transformed control byte vector.
         """
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             var result = SIMD[DType.uint8, _GROUP_WIDTH](0)
 
             comptime for i in range(_GROUP_WIDTH):
@@ -566,7 +565,7 @@ struct Dict[
     Defaultable,
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(K, Writable) and conforms_to(V, Writable),
 ):
     """A container that stores key-value pairs.
 
@@ -1057,7 +1056,11 @@ struct Dict[
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(
+        self,
+    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
+        Self.V, Writable
+    ):
         """Returns a string representation of a `Dict`.
 
         Returns:
@@ -1069,7 +1072,11 @@ struct Dict[
 
     @no_inline
     @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
+    fn __str__(
+        self,
+    ) -> String where conforms_to(Self.K, Writable) and conforms_to(
+        Self.V, Writable
+    ):
         """Returns a string representation of a `Dict`.
 
         Returns:
@@ -1093,10 +1100,9 @@ struct Dict[
 
     fn _write_dict_body[
         f_key: fn(Self.K, mut Some[Writer]), f_val: fn(Self.V, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
-        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.K, Writable
+    ) and conforms_to(Self.V, Writable):
         writer.write_string("{")
 
         var i = 0
@@ -1112,7 +1118,9 @@ struct Dict[
         writer.write_string("}")
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
         """Write this `Dict` to the writer.
 
         Args:
@@ -1124,7 +1132,9 @@ struct Dict[
         ](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
         """Write this `Dict`'s representation to the writer.
 
         Args:

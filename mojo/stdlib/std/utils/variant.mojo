@@ -12,16 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """Defines a Variant type."""
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 from std.builtin.variadics import Variadic
 from std.compile import get_type_name
 from std.format._utils import (
     FormatStruct,
     TypeNames,
-    constrained_conforms_to_writable,
 )
 from std.memory import UnsafeMaybeUninit
+from std.reflection.traits import AllWritable
 from ._nicheable import UnsafeNicheable, NicheIndex
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq, size_of
@@ -301,7 +300,10 @@ when eligible, falling back to the general discriminant-tagged storage."""
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Movable](ImplicitlyCopyable, Writable):
+struct Variant[*Ts: Movable](
+    ImplicitlyCopyable,
+    Writable where AllWritable[*Ts],
+):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -510,9 +512,9 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable, Writable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn _write_value_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
-        constrained_conforms_to_writable[*Self.Ts, Parent=Self]()
-
+    fn _write_value_to[
+        *, is_repr: Bool
+    ](self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
         comptime for i in range(Variadic.size(Self.Ts)):
             comptime T = Self.Ts[i]
             if self.isa[T]():
@@ -526,26 +528,22 @@ struct Variant[*Ts: Movable](ImplicitlyCopyable, Writable):
                 return
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
         """Writes the currently held variant value to the provided Writer.
 
         Args:
             writer: The object to write to.
-
-        Constraints:
-            All types in `Ts` must conform to Writable.
         """
         self._write_value_to[is_repr=False](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where AllWritable[*Self.Ts]:
         """Write the string representation of the Variant.
 
         Args:
             writer: The object to write to.
-
-        Constraints:
-            All types in `Ts` must conform to Writable.
         """
 
         @parameter

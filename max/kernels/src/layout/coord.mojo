@@ -1441,8 +1441,9 @@ fn _get_flattened_helper[
 ](tuple: Coord[*element_types]) -> Int:
     """Helper function to recursively access flattened elements."""
 
-    comptime if i >= Coord[*element_types].__len__():
-        comptime assert False, "flat_idx out of bounds"
+    comptime assert (
+        i < Coord[*element_types].__len__()
+    ), "flat_idx out of bounds"
 
     comptime T = element_types[i]
 

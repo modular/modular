@@ -758,7 +758,7 @@ fn async_copy_commit_group():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -787,7 +787,7 @@ fn async_copy_wait_group(n: Int32):
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -814,7 +814,7 @@ fn async_copy_wait_all():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 

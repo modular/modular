@@ -156,74 +156,73 @@ fn _tc_reduce_vector[
         Uses matrix multiply-accumulate (MMA) and shuffle operations for efficient reduction.
     """
 
-    comptime if out_type == DType.float32 and in_type == DType.bfloat16:
-        comptime if simd_width == 1:
-            return val[0].cast[out_type]()
+    comptime assert (
+        out_type == DType.float32 and in_type == DType.bfloat16
+    ), "unsupported input/output type"
 
-        elif simd_width == 2:
-            var tmp = val.cast[out_type]()
-            return tmp[0] + tmp[1]
+    comptime if simd_width == 1:
+        return val[0].cast[out_type]()
 
-        elif simd_width == 4:
-            # we do m16n8k8 tensor core matmul to get partial results in first row
-            var d_reg = SIMD[out_type, 4]()
-            var a_reg = SIMD[in_type, 4](1)
-            var b_reg = SIMD[in_type, 2]()
-            b_reg[0] = val[0]
-            b_reg[1] = val[1]
-            var c_reg = SIMD[out_type, 4]()
+    elif simd_width == 2:
+        var tmp = val.cast[out_type]()
+        return tmp[0] + tmp[1]
 
-            # do another iteration for the next set of values where
-            # result from previous used as C matrix for element wise
-            # add by tensor cores
-            mma(d_reg, a_reg, b_reg, c_reg)
-            b_reg[0] = val[2]
-            b_reg[1] = val[3]
-            mma(c_reg, a_reg, b_reg, d_reg)
+    elif simd_width == 4:
+        # we do m16n8k8 tensor core matmul to get partial results in first row
+        var d_reg = SIMD[out_type, 4]()
+        var a_reg = SIMD[in_type, 4](1)
+        var b_reg = SIMD[in_type, 2]()
+        b_reg[0] = val[0]
+        b_reg[1] = val[1]
+        var c_reg = SIMD[out_type, 4]()
 
-            # a third mma operation needed to sum the 8 elements
-            b_reg = SIMD[in_type, 2](1)
-            var x_reg = c_reg.cast[in_type]()
-            d_reg = SIMD[out_type, 4]()
-            mma(d_reg, x_reg, b_reg, d_reg)
+        # do another iteration for the next set of values where
+        # result from previous used as C matrix for element wise
+        # add by tensor cores
+        mma(d_reg, a_reg, b_reg, c_reg)
+        b_reg[0] = val[2]
+        b_reg[1] = val[3]
+        mma(c_reg, a_reg, b_reg, d_reg)
 
-            return d_reg[0]
+        # a third mma operation needed to sum the 8 elements
+        b_reg = SIMD[in_type, 2](1)
+        var x_reg = c_reg.cast[in_type]()
+        d_reg = SIMD[out_type, 4]()
+        mma(d_reg, x_reg, b_reg, d_reg)
 
-        elif simd_width == 8:
-            # matrix A is of tile shape 16x16 and can process partial
-            # sums of 256 elements matrix B is all 1s so it can enable the summation
-            var d_reg = SIMD[out_type, 4]()
-            var b_reg = SIMD[in_type, 4](1)
+        return d_reg[0]
 
-            # perform a m16n8k16 tensor core matmul to get the first col
-            # as resultant partial sums
-            mma(d_reg, val, b_reg, d_reg)
-            var res = d_reg[0] + d_reg[2]
+    elif simd_width == 8:
+        # matrix A is of tile shape 16x16 and can process partial
+        # sums of 256 elements matrix B is all 1s so it can enable the summation
+        var d_reg = SIMD[out_type, 4]()
+        var b_reg = SIMD[in_type, 4](1)
 
-            # the resultant matrix d from previous operation has its first column
-            # containing the values and only threads T0, T4, T8, T16 ... T28
-            # contain the results. We need to sum them to get final result with
-            # 0x11111111 mask we can restrict the active shuffle threads to every 1 in 4
+        # perform a m16n8k16 tensor core matmul to get the first col
+        # as resultant partial sums
+        mma(d_reg, val, b_reg, d_reg)
+        var res = d_reg[0] + d_reg[2]
 
-            res += shuffle_down(0x11111111, res, 16)
-            res += shuffle_down(0x11111111, res, 8)
-            res += shuffle_down(0x11111111, res, 4)
+        # the resultant matrix d from previous operation has its first column
+        # containing the values and only threads T0, T4, T8, T16 ... T28
+        # contain the results. We need to sum them to get final result with
+        # 0x11111111 mask we can restrict the active shuffle threads to every 1 in 4
 
-            return res
-        elif simd_width > 8:
-            var tmp = SIMD[out_type, simd_width // 8]()
+        res += shuffle_down(0x11111111, res, 16)
+        res += shuffle_down(0x11111111, res, 8)
+        res += shuffle_down(0x11111111, res, 4)
 
-            comptime for i in range(0, simd_width, 8):
-                tmp[i // 8] = _tc_reduce_vector[out_type](
-                    val.slice[8, offset=i]()
-                )
+        return res
+    elif simd_width > 8:
+        var tmp = SIMD[out_type, simd_width // 8]()
 
-            return tmp.reduce_add()
+        comptime for i in range(0, simd_width, 8):
+            tmp[i // 8] = _tc_reduce_vector[out_type](val.slice[8, offset=i]())
 
-        else:
-            comptime assert False, "unsupported simd_width for BF16"
+        return tmp.reduce_add()
+
     else:
-        comptime assert False, "unsupported input/output type"
+        comptime assert False, "unsupported simd_width for BF16"
 
 
 @always_inline

@@ -92,6 +92,7 @@ def serve_api_server_and_model_worker(
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
+        reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
     )
 
     # Initialize and serve webserver.

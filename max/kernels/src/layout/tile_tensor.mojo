@@ -2673,3 +2673,144 @@ fn flatten_leading[
     return rebind[tensor.ViewType[ResultLayout]](
         tensor.reshape(row_major(Coord(merged, tensor.layout.shape[2]())))
     )
+
+
+# ============================================================================
+# lt_to_tt -- Convert a LayoutTensor to a TileTensor
+# ============================================================================
+
+# Note: _IntTupleToCoordLike causes a compiler crash (as of 2026-02), so we
+# use _DimsToCoordLike with rank-specialized DimList helpers instead.
+
+from .int_tuple import UNKNOWN_VALUE as _UNKNOWN_VALUE, IntTuple as _IntTuple
+from .layout import Layout as _LegacyLayout
+from .layout_tensor import LayoutTensor as _LayoutTensor
+
+
+@parameter
+fn _int_to_dim(value: Int) -> Dim:
+    """Convert an IntTuple value to a Dim.
+
+    UNKNOWN_VALUE becomes Dim() (dynamic), anything else becomes Dim(N)
+    (static).  Used at comptime to derive DimLists from legacy Layout
+    shapes and strides.
+    """
+    if value != _UNKNOWN_VALUE:
+        return Dim(value)
+    return Dim()
+
+
+comptime _LTDims1[it: _IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+)
+comptime _LTDims2[it: _IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+)
+comptime _LTDims3[it: _IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+    _int_to_dim(it[2].value()),
+)
+comptime _LTDims4[it: _IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+    _int_to_dim(it[2].value()),
+    _int_to_dim(it[3].value()),
+)
+comptime _LTDims5[it: _IntTuple] = DimList(
+    _int_to_dim(it[0].value()),
+    _int_to_dim(it[1].value()),
+    _int_to_dim(it[2].value()),
+    _int_to_dim(it[3].value()),
+    _int_to_dim(it[4].value()),
+)
+
+comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
+    it[idx].value()
+)
+comptime _LTDims[it: _IntTuple] = DimList(
+    Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
+)
+"""Convert a flat IntTuple to a DimList.
+
+UNKNOWN_VALUE entries become dynamic Dims; known values become static Dims.
+"""
+
+
+comptime LTToTTLayout[lt_layout: _LegacyLayout] = Layout[
+    shape_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.shape]],
+    stride_types=_DimsToCoordLike[DType.int64, _LTDims[lt_layout.stride]],
+]
+"""Derive a TileTensor Layout from a legacy Layout.
+
+Known dimensions become ComptimeInt, UNKNOWN_VALUE dimensions become
+RuntimeInt.  Works for flat layouts of rank 1 through 6.
+
+Parameters:
+    lt_layout: The legacy Layout to convert.
+"""
+
+
+@always_inline
+fn lt_to_tt[
+    dtype: DType,
+    lt_layout: _LegacyLayout,
+    //,
+    ResultLayout: TensorLayout = LTToTTLayout[lt_layout],
+](lt: _LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
+    dtype,
+    Layout[
+        shape_types=ResultLayout._shape_types,
+        stride_types=ResultLayout._stride_types,
+    ],
+    lt.origin,
+]:
+    """Convert a LayoutTensor to a TileTensor.
+
+    Static dimensions (known at compile time) are preserved as ComptimeInt.
+    Dynamic dimensions (UNKNOWN_VALUE) become RuntimeInt, filled from the
+    LayoutTensor's runtime layout.  Works for any flat rank.
+
+    By default the TileTensor layout is derived automatically from the
+    LayoutTensor's legacy layout.  Pass an explicit ``ResultLayout`` to
+    override which dimensions are static vs runtime.
+
+    Parameters:
+        dtype: Element type of the tensor.
+        lt_layout: The legacy Layout of the LayoutTensor.
+        ResultLayout: The target TileTensor layout type.  Defaults to
+            ``LTToTTLayout[lt_layout]``.
+
+    Args:
+        lt: The LayoutTensor to convert.
+
+    Returns:
+        A TileTensor with the same data and equivalent layout.
+    """
+    comptime ConcLayout = Layout[
+        shape_types=ResultLayout._shape_types,
+        stride_types=ResultLayout._stride_types,
+    ]
+    comptime rank = ConcLayout.rank
+    var shape_c = Coord[*ConcLayout.shape_types]()
+    var stride_c = Coord[*ConcLayout.stride_types]()
+
+    comptime for i in range(rank):
+        comptime if not shape_c.element_types[i].is_static_value:
+            shape_c[i] = rebind[shape_c.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+            )
+
+        comptime if not stride_c.element_types[i].is_static_value:
+            stride_c[i] = rebind[stride_c.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+            )
+
+    var ptr = UnsafePointer[Scalar[dtype], lt.origin](
+        unsafe_from_address=Int(lt.ptr)
+    )
+    return TileTensor[dtype, ConcLayout, lt.origin](
+        ptr=ptr,
+        layout=ConcLayout(shape_c, stride_c),
+    )

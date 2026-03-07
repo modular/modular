@@ -146,7 +146,7 @@ def test_shuffle_compile() raises:
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
-    # CHECK: %7 = and i32 %5, -64
+    # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = icmp slt i32 %6, %7
     # CHECK: %9 = select i1 %8, i32 %5, i32 %6
     # CHECK: %10 = shl i32 %9, 2
@@ -161,8 +161,8 @@ def test_shuffle_compile() raises:
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = xor i32 %5, %3
-    # CHECK: %7 = and i32 %5, -64
-    # CHECK: %8 = add i32 %7, 64
+    # CHECK: %7 = and i32 %5, 64
+    # CHECK: %8 = add nuw nsw i32 %7, 64
     # CHECK: %9 = icmp ult i32 %6, %8
     # CHECK: %10 = select i1 %9, i32 %6, i32 %5
     # CHECK: %11 = shl i32 %10, 2
@@ -176,7 +176,7 @@ def test_shuffle_compile() raises:
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
     # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
     # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
-    # CHECK: %6 = and i32 %5, 1073741760
+    # CHECK: %6 = and i32 %5, 64
     # CHECK: %7 = or i32 %6, %3
     # CHECK: %8 = shl i32 %7, 2
     # CHECK: %9 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %8, i32 %3)
@@ -279,7 +279,7 @@ def test_threadid_compile() raises:
 
     # CHECK-LABEL: @test_compile_gcn_load_store_
     # CHECK: llvm.amdgcn.workitem.id.x
-    # CHECK: %[[VAR:.*]] = tail call ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
+    # CHECK: %[[VAR:.*]] = tail call {{.*}}ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
     # CHECK: getelementptr inbounds nuw i8, ptr addrspace(4) %[[VAR]], i64 12
     print(
         _compile_code[
@@ -503,6 +503,36 @@ def test_waitcnt_compile() raises:
     )
 
 
+# CHECK-LABEL: test_nt_load_compile
+def test_nt_load_compile() raises:
+    print("== test_nt_load_compile")
+
+    fn kernel(x: UnsafePointer[Float32]):
+        var ptr = x + Int(thread_idx.x) * 4
+        var val = ptr.load[width=4, non_temporal=True]()
+        keep(val)
+
+    # CHECK: global_load_dwordx4 {{.*}} nt
+    print(_compile_code[kernel, target=MI355X_TARGET]())
+
+
+# CHECK-LABEL: test_nt_store_compile
+def test_nt_store_compile() raises:
+    print("== test_nt_store_compile")
+
+    fn kernel(
+        x: UnsafePointer[Float32],
+        y: UnsafePointer[Float32],
+    ):
+        var ptr_in = x + Int(thread_idx.x) * 4
+        var ptr_out = y + Int(thread_idx.x) * 4
+        var val = ptr_in.load[width=4]()
+        ptr_out.store[non_temporal=True](val)
+
+    # CHECK: global_store_dwordx4 {{.*}} nt
+    print(_compile_code[kernel, target=MI355X_TARGET]())
+
+
 def main() raises:
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
@@ -517,3 +547,5 @@ def main() raises:
     test_ds_read_tr16_b64_compile()
     test_permlane_compile()
     test_waitcnt_compile()
+    test_nt_load_compile()
+    test_nt_store_compile()

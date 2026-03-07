@@ -278,7 +278,9 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     # final results accumulator regs for C
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag = InlineArray[Scalar[accum_type], c_frag_size](
+        fill=Scalar[accum_type](0)
+    )
 
     # temporary accumulators for TMEM loads
     comptime total_repeat = BN // 8
@@ -288,7 +290,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime assert (
         total_repeat % repeat == 0
     ), "total_repeat must be divisible by repeat"
-    var c_frag_temp = SIMD[accum_type, temp_cfrags_size]()
+    var c_frag_temp: InlineArray[Scalar[accum_type], temp_cfrags_size]
 
     for k_iter in range(num_iters):
         if elect_one_thread:
@@ -390,13 +392,16 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 var scale = rebind[Scalar[accum_type]](a_scale) * rebind[
                     Scalar[accum_type]
                 ](b_scale)
+                var scale_pair = SIMD[accum_type, 2](scale)
 
-                c_frag[ld_iter * temp_cfrags_size + 2 * j] += c_frag_temp[
-                    2 * j
-                ] * rebind[Scalar[accum_type]](scale)
-                c_frag[ld_iter * temp_cfrags_size + 2 * j + 1] += c_frag_temp[
-                    2 * j + 1
-                ] * rebind[Scalar[accum_type]](scale)
+                comptime idx = ld_iter * temp_cfrags_size + 2 * j
+                var c_pair = SIMD[accum_type, 2](c_frag[idx], c_frag[idx + 1])
+                var t_pair = SIMD[accum_type, 2](
+                    c_frag_temp[2 * j], c_frag_temp[2 * j + 1]
+                )
+                var result = c_pair + t_pair * scale_pair
+                c_frag[idx] = result[0]
+                c_frag[idx + 1] = result[1]
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[1]()
@@ -452,7 +457,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
                     if m < UInt32(M) and n < UInt32(N):
                         var c_mn = SIMD[accum_type, 2](
-                            c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
+                            c_frag[2 * i_vec],
+                            c_frag[2 * i_vec + 1],
                         ).cast[c_type]()
 
                         comptime if elementwise_lambda_fn:

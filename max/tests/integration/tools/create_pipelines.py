@@ -38,8 +38,12 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
-from max.pipelines.architectures.flux2.pipeline_flux2 import Flux2Pipeline
+from max.pipelines.architectures.flux1_modulev3.pipeline_flux import (
+    FluxPipeline,
+)
+from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
+    Flux2Pipeline,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
@@ -723,6 +727,7 @@ class GenericOracle(PipelineOracle):
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
@@ -796,12 +801,11 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding | None,
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
-        trust_remote_code = self.config_params.get("trust_remote_code", False)
         model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
             revision=model_revision,
-            trust_remote_code=trust_remote_code,
+            trust_remote_code=self.trust_remote_code,
         )
         weight_path = self.weight_path(encoding) if encoding else None
         if weight_path:
@@ -830,7 +834,7 @@ class GenericOracle(PipelineOracle):
                     config=config,
                     gguf_file=str(downloaded_weight_path),
                     device_map=device,
-                    trust_remote_code=trust_remote_code,
+                    trust_remote_code=self.trust_remote_code,
                     torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                     if encoding
                     else None,
@@ -840,7 +844,7 @@ class GenericOracle(PipelineOracle):
                 self.model_path,
                 revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 device_map=device,
-                trust_remote_code=trust_remote_code,
+                trust_remote_code=self.trust_remote_code,
                 torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                 if encoding
                 else None,

@@ -1592,7 +1592,7 @@ fn mha[
         else:
             attention.mha_prefill()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -3280,7 +3280,7 @@ fn mha_decoding[
             num_partitions,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 

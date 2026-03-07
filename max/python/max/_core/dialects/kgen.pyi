@@ -1854,6 +1854,42 @@ class VariadicSplatAttr(max._core.Attribute):
     @property
     def count(self) -> max._core.dialects.builtin.TypedAttr: ...
 
+class VariadicTabulateAttr(max._core.Attribute):
+    """
+    The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values
+    by invoking the provided generator function N times with indices 0, 1, ...,
+    N-1, where N is the integer count. The generator is a function from index to
+    (element type); each result is collected into the result variadic.
+
+    Example:
+    ```mlir
+    #kgen.variadic.tabulate<:!kgen.variadic<f32> 3, fn(i: index) -> f32> : !kgen.variadic<f32>
+    // ->
+    #kgen.variadic<0, 1, 2> : !kgen.variadic<f32>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        count: max._core.dialects.builtin.TypedAttr,
+        generator: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: VariadicType,
+        count: max._core.dialects.builtin.TypedAttr,
+        generator: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> VariadicType: ...
+    @property
+    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class VariadicZipAttr(max._core.Attribute):
     """
     The `#kgen.variadic.zip` attribute is used to zip a variadic of
@@ -3079,10 +3115,10 @@ class GeneratorOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
 
-class IsCompileTimeOp(max._core.Operation):
+class IsRunInComptimeInterpreterOp(max._core.Operation):
     """
-    The `kgen.is_compile_time` represents a boolean value which is `true`
-    during compile time and `false` otherwise.
+    The `kgen.is_run_in_comptime_interpreter` represents a boolean value which
+    is `true` when running in the comptime interpreter and `false` otherwise.
     When used as condition for control flow, for example,
     only the `true` branch will be evaluated during compile
     time, while the other branch will be compiled to generated code.
@@ -3092,7 +3128,7 @@ class IsCompileTimeOp(max._core.Operation):
     Example:
 
     ```mlir
-      kgen.is_compile_time : i1
+      kgen.is_run_in_comptime_interpreter : i1
     ```
     """
 

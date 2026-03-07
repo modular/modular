@@ -687,7 +687,6 @@ dependencies = [
     { name = "logbar", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "markupsafe", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "matplotlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
-    { name = "microbench", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "ml-dtypes", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "msgspec", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "munch", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
@@ -885,7 +884,6 @@ requires-dist = [
     { name = "logbar" },
     { name = "markupsafe" },
     { name = "matplotlib" },
-    { name = "microbench" },
     { name = "ml-dtypes" },
     { name = "msgspec" },
     { name = "munch" },
@@ -4739,12 +4737,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
 ]
-
-[[package]]
-name = "microbench"
-version = "0.9.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/95/45/14b404d377c5af66a20069427dcf9a306c3783de8afb9a7655604b929eb9/microbench-0.9.1.tar.gz", hash = "sha256:0548a68a37f554bed83e8f6092fffa116c2ec7fe64ed44150e41903c28beb658", size = 39252, upload-time = "2024-08-17T16:42:28.383Z" }
 
 [[package]]
 name = "mistral-common"

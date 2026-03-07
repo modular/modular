@@ -947,8 +947,8 @@ struct ConvertE4M3FNToE4M3FNUZ:
         ctx: DeviceContextPtr,
     ) raises:
         convert_e4m3fn_to_e4m3fnuz(
-            input.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             ctx.get_device_context(),
         )
 

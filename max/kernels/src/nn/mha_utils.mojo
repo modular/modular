@@ -618,7 +618,7 @@ fn _copy_frag_to_smem[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 

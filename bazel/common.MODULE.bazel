@@ -15,7 +15,7 @@ bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_java", version = "9.1.0")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
@@ -63,10 +63,6 @@ single_version_override(
     module_name = "rules_cc",
     patch_strip = 1,
     patches = [
-        # https://github.com/bazelbuild/bazel/pull/26925
-        "//bazel/public-patches:rules_cc_dsym_feature.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/535
-        "//bazel/public-patches:rules_cc_allowlists.patch",
         # https://github.com/bazelbuild/rules_cc/pull/527
         "//bazel/public-patches:rules_cc_textual_hdrs.patch",
         # https://github.com/bazelbuild/rules_cc/pull/578
@@ -381,9 +377,9 @@ use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 
 http_archive(
     name = "bazel_clang_tidy",
-    sha256 = "a1d55ba339bf6952c77e5e48c13a4c86b5c63349bf6bd321e0c01e342d31fc3b",
-    strip_prefix = "bazel_clang_tidy-3897fd6fb52c7dd6b99058f13eabba7a4127baa2",
-    url = "https://github.com/erenon/bazel_clang_tidy/archive/3897fd6fb52c7dd6b99058f13eabba7a4127baa2.tar.gz",
+    sha256 = "96da6e935ccc91045cf928dbc57f22508a2729c51f7fb3f56178017b0deb9b3c",
+    strip_prefix = "bazel_clang_tidy-c4d35e0d0b838309358e57a2efed831780f85cd0",
+    url = "https://github.com/erenon/bazel_clang_tidy/archive/c4d35e0d0b838309358e57a2efed831780f85cd0.tar.gz",
 )
 
 http_archive(

@@ -22,15 +22,15 @@ from std.gpu.compute.mma_util import (
     load_matrix_b,
     store_matrix_d,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_false
 
-from std.utils.index import IndexList
 from std.utils.numerics import isnan
 
 
@@ -296,24 +296,30 @@ fn run_mma_fp32_tf32(
     ctx.enqueue_copy(a_device_ref, a_host_ref)
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        a_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
-    )
-
-    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        b_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
-    )
-
-    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        c_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
-    )
-
     comptime BLOCK_DIM = 16
+
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
+
+    var c_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
+    )
 
     @always_inline
     @parameter
@@ -322,15 +328,15 @@ fn run_mma_fp32_tf32(
             DType.float32,
             DType.float32,
             DType.float32,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            type_of(c_tt).LayoutType,
+            type_of(a_tt).LayoutType,
+            type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
         ctx.enqueue_function_experimental[kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c_tt,
+            a_tt,
+            b_tt,
             M,
             N,
             K,
@@ -464,21 +470,25 @@ fn run_mma_fp32_bf16(
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     comptime BLOCK_DIM = 16
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        a_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    # Create TileTensors for the naive kernel.
+    from std.memory import UnsafePointer
+
+    var c_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
     )
-
-    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        b_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-
-    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        c_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
     )
 
     @always_inline
@@ -488,15 +498,15 @@ fn run_mma_fp32_bf16(
             DType.float32,
             DType.float32,
             DType.float32,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            type_of(c_tt).LayoutType,
+            type_of(a_tt).LayoutType,
+            type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
         ctx.enqueue_function_experimental[kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c_tt,
+            a_tt,
+            b_tt,
             M,
             N,
             K,
@@ -629,21 +639,24 @@ fn run_mma_fp32_bf16_2(
 
     comptime BLOCK_DIM = 16
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    # Create TileTensors for the naive kernel.
+    from std.memory import UnsafePointer
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        a_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    var c_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
     )
-
-    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        b_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-
-    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        c_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
     )
 
     @always_inline
@@ -653,15 +666,15 @@ fn run_mma_fp32_bf16_2(
             DType.float32,
             DType.float32,
             DType.float32,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            type_of(c_tt).LayoutType,
+            type_of(a_tt).LayoutType,
+            type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
         ctx.enqueue_function_experimental[kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c_tt,
+            a_tt,
+            b_tt,
             M,
             N,
             K,
@@ -793,21 +806,25 @@ fn run_mma_fp32_fp16(
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     comptime BLOCK_DIM = 16
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        a_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    # Create TileTensors for the naive kernel.
+    from std.memory import UnsafePointer
+
+    var c_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
     )
-
-    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        b_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-
-    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        c_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
     )
 
     @always_inline
@@ -817,16 +834,15 @@ fn run_mma_fp32_fp16(
             DType.float32,
             DType.float32,
             DType.float32,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            type_of(c_tt).LayoutType,
+            type_of(a_tt).LayoutType,
+            type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
-
         ctx.enqueue_function_experimental[kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c_tt,
+            a_tt,
+            b_tt,
             M,
             N,
             K,
@@ -958,21 +974,25 @@ fn run_mma_fp16_fp16(
     ctx.enqueue_copy(b_device_ref, b_host_ref)
 
     comptime BLOCK_DIM = 16
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
-    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        a_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    # Create TileTensors for the naive kernel.
+    from std.memory import UnsafePointer
+
+    var c_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
     )
-
-    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        b_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-
-    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        c_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device_ref.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
     )
 
     @always_inline
@@ -982,15 +1002,15 @@ fn run_mma_fp16_fp16(
             DType.float32,
             DType.float32,
             DType.float32,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            type_of(c_tt).LayoutType,
+            type_of(a_tt).LayoutType,
+            type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
         ctx.enqueue_function_experimental[kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c_tt,
+            a_tt,
+            b_tt,
             M,
             N,
             K,

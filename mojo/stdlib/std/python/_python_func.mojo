@@ -1293,21 +1293,21 @@ struct PyObjectFunction[
             This function will abort if downcasting fails for non-PythonObject types.
         """
 
-        comptime if _type_is_eq[Self.self_type, NoneType]():
-            comptime assert False, "Cannot get self arg for NoneType"
-        else:
-            try:
-                return py_self.downcast_value_ptr[Self.self_type]()
-            except e:
-                abort(
-                    String(
-                        (
-                            "Python method receiver object did not have the"
-                            " expected type: "
-                        ),
-                        e,
-                    )
+        comptime assert not _type_is_eq[
+            Self.self_type, NoneType
+        ](), "Cannot get self arg for NoneType"
+        try:
+            return py_self.downcast_value_ptr[Self.self_type]()
+        except e:
+            abort(
+                String(
+                    (
+                        "Python method receiver object did not have the"
+                        " expected type: "
+                    ),
+                    e,
                 )
+            )
 
     @staticmethod
     fn _convert_kwargs(

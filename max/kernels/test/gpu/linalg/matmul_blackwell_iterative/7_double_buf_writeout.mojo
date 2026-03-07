@@ -313,9 +313,11 @@ fn consumer_main_loop[
 
 @always_inline
 fn stsm_helper[
-    swizzle: Swizzle
+    swizzle: Swizzle,
+    vec_dtype: DType,
+    vec_size: Int,
 ](
-    vec: SIMD,
+    vec: InlineArray[Scalar[vec_dtype], vec_size],
     dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
@@ -336,9 +338,18 @@ fn stsm_helper[
     comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_row_size
         var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
-        var v = vec.slice[stsmx4_lane_size, offset=i * stsmx4_lane_size]().cast[
-            dst.dtype
-        ]()
+        var v = SIMD[dst.dtype, stsmx4_lane_size]()
+
+        comptime for k in range(stsmx4_lane_size // 2):
+            var pair = SIMD[vec_dtype, 2](
+                rebind[Scalar[vec_dtype]](vec[i * stsmx4_lane_size + 2 * k]),
+                rebind[Scalar[vec_dtype]](
+                    vec[i * stsmx4_lane_size + 2 * k + 1]
+                ),
+            )
+            var casted = pair.cast[dst.dtype]()
+            v[2 * k] = casted[0]
+            v[2 * k + 1] = casted[1]
         st_matrix[simd_width=4](dst.ptr + offset, bitcast[DType.float32, 4](v))
 
 
@@ -434,11 +445,14 @@ fn multi_stage_store_C[
         var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
 
         # Pack the upper frag to shared memory
+        comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
         stsm_helper[swizzle](
-            upper_frag, c_smem_warp_tile.tile[16, stageN](0, 0)
+            rebind[InlineArray[Scalar[accum_type], frag_width]](upper_frag),
+            c_smem_warp_tile.tile[16, stageN](0, 0),
         )
         stsm_helper[swizzle](
-            lower_frag, c_smem_warp_tile.tile[16, stageN](1, 0)
+            rebind[InlineArray[Scalar[accum_type], frag_width]](lower_frag),
+            c_smem_warp_tile.tile[16, stageN](1, 0),
         )
 
         # Guard the write to shared memory is done.

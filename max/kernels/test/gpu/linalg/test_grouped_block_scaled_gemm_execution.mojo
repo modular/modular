@@ -35,6 +35,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_layout import row_major as tile_row_major
 from layout.tile_tensor import TileTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
@@ -60,6 +61,118 @@ from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
+
+
+fn launch_grouped_gemm_with_templates[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    scales_dtype: DType,
+    transpose_b: Bool,
+    max_groups: Int,
+    m: ValOrDim,
+    n: ValOrDim,
+    k_array_dim: Dim,
+    k_sf_dim: Dim,
+    sf_vector_size: Int,
+    *,
+    config: BlockScaledMatmulConfig[
+        a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+    ],
+](
+    a_ptrs: TileTensor[DType.uint64, ...],
+    b_ptrs: TileTensor[DType.uint64, ...],
+    c_ptrs: TileTensor[DType.uint64, ...],
+    sfa_ptrs: TileTensor[DType.uint64, ...],
+    sfb_ptrs: TileTensor[DType.uint64, ...],
+    problem_sizes: TileTensor[DType.int32, ...],
+    num_groups: Int,
+    total_tiles: Int,
+    k_array_val: Int,
+    k_sf_val: Int,
+    a_ptr: UnsafePointer[Scalar[a_type]],
+    b_ptr: UnsafePointer[Scalar[b_type]],
+    c_ptr: UnsafePointer[Scalar[c_type]],
+    sfa_ptr: UnsafePointer[Scalar[scales_dtype]],
+    sfb_ptr: UnsafePointer[Scalar[scales_dtype]],
+    ctx: DeviceContext,
+) raises:
+    """Create template TileTensors and launch grouped block-scaled GEMM."""
+    # 3D template tensors with batch=1
+    comptime static_a_3d_shape = DimList(1, m.dim, k_array_dim)
+    var a_nd = NDBuffer[a_type, 3, _, static_a_3d_shape](
+        a_ptr, IndexList[3](1, m.value, k_array_val)
+    )
+    comptime static_b_3d_shape = DimList(
+        1, n.dim, k_array_dim
+    ) if transpose_b else DimList(1, k_array_dim, n.dim)
+    var b_nd = NDBuffer[b_type, 3, _, static_b_3d_shape](
+        b_ptr,
+        IndexList[3](1, n.value, k_array_val) if transpose_b else IndexList[3](
+            1, k_array_val, n.value
+        ),
+    )
+    comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
+    var c_nd = NDBuffer[c_type, 3, _, static_c_3d_shape](
+        c_ptr, IndexList[3](1, m.value, n.value)
+    )
+
+    # 5D scale factor templates with batch=1 and merged last dims
+    comptime static_sfa_shape = DimList(
+        1,
+        ceildiv(m.dim, SF_MN_GROUP_SIZE),
+        ceildiv(k_sf_dim, sf_vector_size * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+    var sfa_nd = NDBuffer[scales_dtype, 5, _, static_sfa_shape](
+        sfa_ptr,
+        IndexList[5](
+            1,
+            ceildiv(m.value, SF_MN_GROUP_SIZE),
+            ceildiv(k_sf_val, sf_vector_size * SF_ATOM_K),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ),
+    )
+    comptime static_sfb_shape = DimList(
+        1,
+        ceildiv(n.dim, SF_MN_GROUP_SIZE),
+        ceildiv(k_sf_dim, sf_vector_size * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+    var sfb_nd = NDBuffer[scales_dtype, 5, _, static_sfb_shape](
+        sfb_ptr,
+        IndexList[5](
+            1,
+            ceildiv(n.value, SF_MN_GROUP_SIZE),
+            ceildiv(k_sf_val, sf_vector_size * SF_ATOM_K),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ),
+    )
+
+    grouped_block_scaled_matmul[
+        transpose_b=transpose_b,
+        max_groups=max_groups,
+        config=config,
+    ](
+        a_ptrs,
+        b_ptrs,
+        c_ptrs,
+        sfa_ptrs,
+        sfb_ptrs,
+        problem_sizes,
+        num_groups,
+        total_tiles,
+        TileTensor(a_nd),
+        TileTensor(b_nd),
+        TileTensor(c_nd),
+        TileTensor(sfa_nd),
+        TileTensor(sfb_nd),
+        ctx,
+    )
 
 
 fn test_existing_kernel_single_group[
@@ -535,26 +648,14 @@ fn test_grouped_kernel_single_group[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
     ctx.synchronize()
 
-    # Create HOST-based problem_sizes tensor for host-side computations
-    # The grouped_block_scaled_matmul function reads this on the host
-    comptime problem_sizes_layout = Layout.row_major(max_groups, 4)
-    var problem_sizes_tensor_host = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
-        problem_sizes_host,  # Use HOST pointer for host-side access
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
+    # Create HOST-based problem_sizes TileTensor for host-side computations
+    var problem_sizes_tensor_host = TileTensor(
+        problem_sizes_host, tile_row_major[max_groups, 4]()
     )
 
-    # Create DEVICE-based problem_sizes tensor for kernel
-    var problem_sizes_tensor_device = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
-        problem_sizes_device.unsafe_ptr(),
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
+    # Create DEVICE-based problem_sizes TileTensor for kernel
+    var problem_sizes_tensor_device = TileTensor(
+        problem_sizes_device.unsafe_ptr(), tile_row_major[max_groups, 4]()
     )
 
     # Compute total tiles on HOST
@@ -596,37 +697,23 @@ fn test_grouped_kernel_single_group[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    comptime ptr_layout = Layout.row_major(max_groups, 1)
-    var a_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        a_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var a_ptrs_tensor = TileTensor(
+        a_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var b_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        b_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var b_ptrs_tensor = TileTensor(
+        b_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var c_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        c_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var c_ptrs_tensor = TileTensor(
+        c_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfa_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfa_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfa_ptrs_tensor = TileTensor(
+        sfa_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfb_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfb_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfb_ptrs_tensor = TileTensor(
+        sfb_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
 
-    # Template tensors - use the 2D tensors directly (like non-grouped kernel)
-    # The grouped_block_scaled_matmul function will convert them to 3D internally
-    # This preserves compile-time dimensions for proper TMA descriptor creation
-    # a_tensor, b_tensor, a_scales_tensor, b_scales_tensor already created above
-
-    # Create c_tensor for grouped output (reuse c_device_nd from above)
-    var c_tensor_for_grouped = from_ndbuffer_row_major(c_device_nd)
-
-    # Run the grouped kernel with 2D template tensors
+    # Run the grouped kernel
     print("  Running grouped kernel...")
 
     comptime config = BlockScaledMatmulConfig[
@@ -641,9 +728,18 @@ fn test_grouped_kernel_single_group[
         num_accum_pipeline_stages=2,
     )
 
-    grouped_block_scaled_matmul[
-        transpose_b=transpose_b,
-        max_groups=max_groups,
+    launch_grouped_gemm_with_templates[
+        a_type,
+        b_type,
+        c_type,
+        scales_dtype,
+        transpose_b,
+        max_groups,
+        m,
+        n,
+        k.dim,
+        k.dim,
+        SF_VECTOR_SIZE,
         config=config,
     ](
         a_ptrs_tensor,
@@ -654,11 +750,13 @@ fn test_grouped_kernel_single_group[
         problem_sizes_tensor_device,
         num_groups,
         total_tiles,
-        a_tensor,
-        b_tensor,
-        c_tensor_for_grouped,
-        a_scales_tensor,
-        b_scales_tensor,
+        k.value,
+        k.value,
+        a_device.unsafe_ptr(),
+        b_device.unsafe_ptr(),
+        c_device.unsafe_ptr(),
+        a_scales_device.unsafe_ptr(),
+        b_scales_device.unsafe_ptr(),
         ctx,
     )
     ctx.synchronize()
@@ -948,45 +1046,25 @@ fn test_grouped_kernel_multi_group_same_ptr[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    # Create tensors for dispatch
-    comptime problem_sizes_layout = Layout.row_major(max_groups, 4)
-    var problem_sizes_tensor_host = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
-        problem_sizes_host,
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
-    )
-    var problem_sizes_tensor_device = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
-        problem_sizes_device.unsafe_ptr(),
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
+    # Create TileTensor tensors for dispatch
+    var problem_sizes_tensor_host = TileTensor(
+        problem_sizes_host, tile_row_major[max_groups, 4]()
     )
 
-    comptime ptr_layout = Layout.row_major(max_groups, 1)
-    var a_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        a_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var a_ptrs_tensor = TileTensor(
+        a_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var b_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        b_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var b_ptrs_tensor = TileTensor(
+        b_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var c_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        c_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var c_ptrs_tensor = TileTensor(
+        c_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfa_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfa_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfa_ptrs_tensor = TileTensor(
+        sfa_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfb_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfb_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfb_ptrs_tensor = TileTensor(
+        sfb_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
 
     # Calculate total tiles across all groups
@@ -1012,10 +1090,19 @@ fn test_grouped_kernel_multi_group_same_ptr[
         num_accum_pipeline_stages=2,
     )
 
-    grouped_block_scaled_matmul[
-        transpose_b=transpose_b,
+    launch_grouped_gemm_with_templates[
+        a_type,
+        b_type,
+        c_type,
+        scales_dtype,
+        transpose_b,
+        max_groups,
+        m,
+        n,
+        k.dim,
+        k.dim,
+        SF_VECTOR_SIZE,
         config=config,
-        max_groups=max_groups,
     ](
         a_ptrs_tensor,
         b_ptrs_tensor,
@@ -1025,11 +1112,13 @@ fn test_grouped_kernel_multi_group_same_ptr[
         problem_sizes_tensor_host,
         num_groups,
         total_tiles,
-        a_tensor,  # Template for TMA creation
-        b_tensor,
-        c_tensor,
-        a_scales_tensor,
-        b_scales_tensor,
+        k.value,
+        k.value,
+        a_device.unsafe_ptr(),
+        b_device.unsafe_ptr(),
+        c_device.unsafe_ptr(),
+        a_scales_device.unsafe_ptr(),
+        b_scales_device.unsafe_ptr(),
         ctx,
     )
     ctx.synchronize()
@@ -1362,37 +1451,25 @@ fn test_grouped_kernel_two_groups_different_ptrs[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    # Create tensors for dispatch
-    comptime problem_sizes_layout = Layout.row_major(max_groups, 4)
-    var problem_sizes_tensor_host = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
-        problem_sizes_host,
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
+    # Create TileTensor tensors for dispatch
+    var problem_sizes_tensor_host = TileTensor(
+        problem_sizes_host, tile_row_major[max_groups, 4]()
     )
 
-    comptime ptr_layout = Layout.row_major(max_groups, 1)
-    var a_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        a_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var a_ptrs_tensor = TileTensor(
+        a_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var b_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        b_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var b_ptrs_tensor = TileTensor(
+        b_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var c_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        c_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var c_ptrs_tensor = TileTensor(
+        c_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfa_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfa_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfa_ptrs_tensor = TileTensor(
+        sfa_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfb_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfb_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfb_ptrs_tensor = TileTensor(
+        sfb_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
 
     # Calculate total tiles
@@ -1418,15 +1495,18 @@ fn test_grouped_kernel_two_groups_different_ptrs[
         num_accum_pipeline_stages=2,
     )
 
-    # Use group 0 tensors as templates for TMA descriptor creation
-    var c0_nd_for_template = NDBuffer[c_type, 2, _, static_c_shape](
-        c0_device.unsafe_ptr(), dynamic_c_shape
-    )
-    var c0_tensor_for_template = from_ndbuffer_row_major(c0_nd_for_template)
-
-    grouped_block_scaled_matmul[
-        transpose_b=transpose_b,
-        max_groups=max_groups,
+    launch_grouped_gemm_with_templates[
+        a_type,
+        b_type,
+        c_type,
+        scales_dtype,
+        transpose_b,
+        max_groups,
+        m,
+        n,
+        k.dim,
+        k.dim,
+        SF_VECTOR_SIZE,
         config=config,
     ](
         a_ptrs_tensor,
@@ -1437,11 +1517,13 @@ fn test_grouped_kernel_two_groups_different_ptrs[
         problem_sizes_tensor_host,
         num_groups,
         total_tiles,
-        a0_tensor,  # Template tensors from group 0
-        b0_tensor,
-        c0_tensor_for_template,
-        sfa0_tensor,
-        sfb0_tensor,
+        k.value,
+        k.value,
+        a0_device.unsafe_ptr(),
+        b0_device.unsafe_ptr(),
+        c0_device.unsafe_ptr(),
+        sfa0_device.unsafe_ptr(),
+        sfb0_device.unsafe_ptr(),
         ctx,
     )
     ctx.synchronize()

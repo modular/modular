@@ -20,8 +20,8 @@ from std.format._utils import (
     write_sequence_to,
     TypeNames,
     FormatStruct,
-    constrained_conforms_to_writable,
 )
+from std.reflection.traits import AllWritable
 from std.sys.intrinsics import _type_is_eq
 
 from std.reflection.type_info import _unqualified_type_name
@@ -34,7 +34,11 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
+struct Tuple[*element_types: Movable](
+    ImplicitlyCopyable,
+    Sized,
+    Writable where AllWritable[*element_types],
+):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
@@ -301,7 +305,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         return not self == other
 
     @no_inline
-    fn _write_tuple_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
+    fn _write_tuple_to[
+        *, is_repr: Bool
+    ](self, mut writer: Some[Writer]) where AllWritable[*Self.element_types]:
         """Write this tuple's elements to a writer.
 
         Parameters:
@@ -310,8 +316,6 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         Args:
             writer: The writer to write to.
         """
-
-        constrained_conforms_to_writable[*Self.element_types, Parent=Self]()
 
         @parameter
         fn elements[i: Int](mut writer: Some[Writer]):
@@ -329,7 +333,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             writer.write_string(",")
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where AllWritable[*Self.element_types]:
         """Write this tuple's text representation to a writer.
 
         Elements are formatted using their `write_to()` representation.
@@ -343,7 +349,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         writer.write_string(")")
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where AllWritable[*Self.element_types]:
         """Write this tuple's debug representation to a writer.
 
         Outputs the type name and parameters followed by elements formatted

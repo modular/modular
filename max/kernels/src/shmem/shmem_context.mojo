@@ -114,7 +114,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
     elif has_amd_gpu_accelerator():
         _shmem_launch_tcp[func]()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 

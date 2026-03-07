@@ -22,8 +22,8 @@ from max.pipelines.lib import (
 from .model_config import FluxConfig
 from .pipeline_flux import FluxPipeline
 
-flux1_arch = SupportedArchitecture(
-    name="FluxPipeline",
+flux1_modulev3_arch = SupportedArchitecture(
+    name="FluxPipeline_ModuleV3",
     task=PipelineTask.PIXEL_GENERATION,
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},

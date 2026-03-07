@@ -187,6 +187,27 @@ struct Variadic:
         count: The number of times to splat the value.
     """
 
+    comptime tabulate[
+        ToT: AnyType,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToValueGeneratorType[ToT],
+    ] = __mlir_attr[
+        `#kgen.variadic.tabulate<`,
+        count._mlir_value,
+        `,`,
+        _IndexToIntTabulateWrap[ToT, Mapper, ...],
+        `> : `,
+        Variadic.ValuesOfType[ToT],
+    ]
+    """Apply an "index -> value" generator, N times to build a variadic.
+
+    Parameters:
+        ToT: The type of the values in the variadic sequence.
+        count: The number of times to apply the generator.
+        Mapper: The generator to apply, mapping from Int to ToT.
+    """
+
     comptime contains[
         Trait: type_of(AnyType),
         //,
@@ -396,6 +417,34 @@ struct Variadic:
     comptime ChainedVariant = Variant[*Step2]
     ```
     """
+
+    comptime _ValueIdxToValueGeneratorType[
+        From: AnyType, To: AnyType
+    ] = __mlir_type[
+        `!lit.generator<<"From": `,
+        +From,
+        `, "Idx":`,
+        Int,
+        `>`,
+        +To,
+        `>`,
+    ]
+    """This specifies a generator to generate a generator type for the reducer of
+    values. The result generator type is [From, idx: Int] -> To,
+    """
+
+    comptime _ValueToValueMapper[
+        FromType: AnyType,
+        ToType: AnyType,
+        //,
+        Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
+        Prev: Variadic.ValuesOfType[ToType],
+        From: Variadic.ValuesOfType[FromType],
+        idx: Int,
+    ] = Variadic.concat_values[
+        Prev,
+        Variadic.values[Mapper[From[idx], idx]],
+    ]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1198,6 +1247,24 @@ struct VariadicPack[
 
 
 # ===-----------------------------------------------------------------------===#
+# Tabulate Helpers
+# ===-----------------------------------------------------------------------===#
+
+comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `>`,
+    +ToT,
+    `>`,
+]
+
+comptime _IndexToIntTabulateWrap[
+    ToT: AnyType,
+    ToWrap: _TabulateIntToValueGeneratorType[ToT],
+    idx: __mlir_type.index,
+] = ToWrap[Int(mlir_value=idx)]
+
+# ===-----------------------------------------------------------------------===#
 # VariadicReduce
 # ===-----------------------------------------------------------------------===#
 
@@ -1217,23 +1284,6 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
 ]
 """This specifies a generator to generate a generator type for the reducer.
 The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> Prev,
-"""
-
-comptime _ReduceVariadicValueIdxGeneratorTypeGenerator[
-    Prev: AnyType, From: AnyType
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Prev,
-    `, "From": !kgen.variadic<`,
-    From,
-    `>, "Idx":`,
-    Int,
-    `>`,
-    +Prev,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the reducer of
-values. The result generator type is [Prev: AnyType, Ts: Variadic.ValuesOfType[AnyType], idx: Int] -> Prev,
 """
 
 comptime _IndexToIntWrap[
@@ -1267,37 +1317,6 @@ comptime _ReduceVariadicAndIdxToVariadic[
     type_of(BaseVal),
 ]
 """Construct a new variadic of types using a reducer. To reduce to a single
-type, one could reduce the input to a single element variadic instead.
-
-Parameters:
-    From: The common trait bound for the input variadic types.
-    To: The common trait bound for the output variadic types.
-    BaseVal: The initial value to reduce on.
-    VariadicType: The variadic to be reduced.
-    Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction.
-"""
-
-comptime _ReduceVariadicValueAndIdxToVariadic[
-    From: AnyType,
-    To: AnyType,
-    //,
-    *,
-    BaseVal: Variadic.ValuesOfType[To],
-    VariadicType: Variadic.ValuesOfType[From],
-    Reducer: _ReduceVariadicValueIdxGeneratorTypeGenerator[
-        Variadic.ValuesOfType[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
-    BaseVal,
-    `,`,
-    VariadicType,
-    `,`,
-    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
-"""Construct a new variadic of values using a reducer. To reduce to a single
 type, one could reduce the input to a single element variadic instead.
 
 Parameters:

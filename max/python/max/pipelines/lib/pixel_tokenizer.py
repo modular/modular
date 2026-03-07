@@ -481,7 +481,7 @@ class PixelGenerationTokenizer(
             assert delegate is not None
 
             if self._pipeline_class_name == PipelineClassName.FLUX2:
-                from max.pipelines.architectures.flux2.system_messages import (
+                from max.pipelines.architectures.flux2_modulev3.system_messages import (
                     SYSTEM_MESSAGE,
                     format_input,
                 )
@@ -491,6 +491,30 @@ class PixelGenerationTokenizer(
                     system_message=SYSTEM_MESSAGE,
                     images=None,
                 )
+
+                # Validate prompt length before truncation.
+                # apply_chat_template with truncation=True silently
+                # drops tokens; error early instead.
+                precheck = delegate.apply_chat_template(
+                    messages_batch[0],
+                    add_generation_prompt=False,
+                    tokenize=True,
+                    return_dict=True,
+                    truncation=False,
+                )
+                precheck_ids = precheck["input_ids"]
+                precheck_len = (
+                    len(precheck_ids[0])
+                    if precheck_ids and isinstance(precheck_ids[0], list)
+                    else len(precheck_ids)
+                )
+                if max_sequence_length and precheck_len > max_sequence_length:
+                    raise ValueError(
+                        f"Prompt is too long for this model's text"
+                        f" encoder: {precheck_len} tokens exceeds"
+                        f" the maximum of {max_sequence_length}"
+                        " tokens. Please shorten your prompt."
+                    )
 
                 return delegate.apply_chat_template(
                     messages_batch[0],
@@ -504,7 +528,7 @@ class PixelGenerationTokenizer(
                     return_overflowing_tokens=False,
                 )
             elif self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
-                from max.pipelines.architectures.flux2.system_messages import (
+                from max.pipelines.architectures.flux2_modulev3.system_messages import (
                     format_input_klein,
                 )
 
@@ -527,6 +551,19 @@ class PixelGenerationTokenizer(
                         messages_batch[0],
                         **kwargs,
                     )
+                # Validate prompt length before truncation.
+                raw_ids = delegate.encode(
+                    prompt_text,
+                    add_special_tokens=add_special_tokens,
+                )
+                if max_sequence_length and len(raw_ids) > max_sequence_length:
+                    raise ValueError(
+                        f"Prompt is too long for this model's text"
+                        f" encoder: {len(raw_ids)} tokens exceeds"
+                        f" the maximum of {max_sequence_length}"
+                        " tokens. Please shorten your prompt."
+                    )
+
                 return delegate(
                     prompt_text,
                     padding="max_length",
@@ -536,6 +573,22 @@ class PixelGenerationTokenizer(
                     return_attention_mask=True,
                 )
             else:
+                # Validate prompt length before truncation.
+                # The tokenizer's truncation=True silently drops
+                # tokens beyond max_sequence_length; error early
+                # instead.
+                raw_ids = delegate.encode(
+                    prompt_str,
+                    add_special_tokens=add_special_tokens,
+                )
+                if max_sequence_length and len(raw_ids) > max_sequence_length:
+                    raise ValueError(
+                        f"Prompt is too long for this model's text"
+                        f" encoder: {len(raw_ids)} tokens exceeds"
+                        f" the maximum of {max_sequence_length}"
+                        " tokens. Please shorten your prompt."
+                    )
+
                 return delegate(
                     prompt_str,
                     padding="max_length",

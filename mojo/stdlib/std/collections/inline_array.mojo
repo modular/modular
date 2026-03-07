@@ -125,7 +125,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     DevicePassable,
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(ElementType, Writable),
 ):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
@@ -692,9 +692,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     fn _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.ElementType, Writable
+    ):
         var index = 0
 
         @parameter
@@ -707,22 +707,20 @@ struct InlineArray[ElementType: Copyable, size: Int](
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = index
 
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes the InlineArray representation to a Writer.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes the repr representation of this InlineArray to a Writer.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -739,7 +737,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of the InlineArray.
 
         Returns:
@@ -751,7 +749,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of the InlineArray.
 
         Returns:
