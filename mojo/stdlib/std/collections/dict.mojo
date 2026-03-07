@@ -856,8 +856,7 @@ struct Dict[
             values: The corresponding values to pair with the keys.
             __dict_literal__: Tell Mojo to use this method for dict literals.
         """
-        # TODO: Use capacity to reserve space.
-        self = Self()
+        self = Self(capacity=len(keys))
         assert len(keys) == len(
             values
         ), "keys and values must have the same length"
