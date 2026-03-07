@@ -154,12 +154,6 @@ class PixelGenerationTokenizer(
                 subfolder=subfolder,
             )
 
-            if "gemma" in type(self.delegate).__name__.lower():
-                # Gemma expects left padding for chat-style prompts
-                self.delegate.padding_side = "left"
-                if self.delegate.pad_token is None:
-                    self.delegate.pad_token = self.delegate.eos_token
-
             if subfolder_2 is not None:
                 self.delegate_2 = AutoTokenizer.from_pretrained(
                     model_path,
