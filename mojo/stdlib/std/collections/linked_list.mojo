@@ -569,6 +569,69 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return UInt(count)
 
+    fn index[
+        _ElementType: Equatable & Copyable, //
+    ](
+        self: LinkedList[_ElementType],
+        read value: _ElementType,
+        start: Int = 0,
+        stop: Optional[Int] = None,
+    ) raises -> Int:
+        """Returns the index of the first occurrence of `value` in the list.
+
+        Parameters:
+            _ElementType: The list element type, used to conditionally enable
+                the function.
+
+        Args:
+            value: The value to search for.
+            start: The index to start searching from (default 0). Negative
+                values are treated as offsets from the end of the list.
+            stop: The index to stop searching at (exclusive). Defaults to the
+                end of the list. Negative values are treated as offsets from
+                the end of the list.
+
+        Returns:
+            The index of the first occurrence of `value` in the range
+            `[start, stop)`.
+
+        Raises:
+            ValueError: If the value is not found in the specified range.
+
+        Notes:
+            Time Complexity: O(n) in len(self) traversals.
+
+        Example:
+
+        ```mojo
+        var ll = LinkedList[Int](1, 2, 3, 2, 1)
+        print(ll.index(2))  # 1
+        print(ll.index(2, start=2))  # 3
+        ```
+        """
+        var n = len(self)
+        var start_norm = max(start if start >= 0 else start + n, 0)
+        var stop_val = stop.value() if stop else n
+        var stop_norm = min(
+            max(stop_val if stop_val >= 0 else stop_val + n, 0), n
+        )
+
+        # Advance to start_norm without unnecessary comparisons in the hot loop
+        var current = self._head
+        for _ in range(start_norm):
+            if not current:
+                break
+            current = current[].next
+
+        var idx = start_norm
+        while current and idx < stop_norm:
+            if current[].value == value:
+                return idx
+            current = current[].next
+            idx += 1
+
+        raise Error("ValueError: value is not in list")
+
     fn __contains__[
         _ElementType: Equatable & Copyable, //
     ](self: LinkedList[_ElementType], value: _ElementType) -> Bool:
