@@ -1591,7 +1591,7 @@ fn _elementwise_impl_cpu_1d[
     """
     comptime assert rank == 1, "Specialization for 1D"
 
-    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = max(1, min(8, simd_width // 4))
 
     var problem_size = shape.flattened_length()
 
@@ -1656,7 +1656,7 @@ fn _elementwise_impl_cpu_nd[
     if shape[rank - 1] == 0:
         return
 
-    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = max(1, min(8, simd_width // 4))
 
     # Strategy: we parallelize over all dimensions except the innermost and
     # vectorize over the innermost dimension. We unroll the innermost dimension
@@ -1986,7 +1986,7 @@ fn _stencil_impl_cpu[
     var parallelism_size = total_size // shape[rank - 1]
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
+    comptime unroll_factor = max(1, min(8, simd_width // 4))
 
     @always_inline
     @parameter

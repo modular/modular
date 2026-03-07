@@ -200,8 +200,7 @@ fn map_reduce[
     Returns:
         The final reduced scalar value.
     """
-    comptime unroll_factor = 8  # TODO: search
-    # TODO: explicitly unroll like vectorize_unroll does.
+    comptime unroll_factor = _max(1, _min(8, simd_width // 4))
     comptime unrolled_simd_width = simd_width * unroll_factor
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
     var vector_end = align_down(length, simd_width)
@@ -321,8 +320,7 @@ fn reduce_boolean[
         The computed reduction value.
     """
     comptime simd_width = simd_width_of[dtype]()
-    comptime unroll_factor = 8  # TODO: search
-    # TODO: explicitly unroll like vectorize_unroll does.
+    comptime unroll_factor = _max(1, _min(8, simd_width // 4))
     comptime unrolled_simd_width = simd_width * unroll_factor
 
     var length = len(src)
