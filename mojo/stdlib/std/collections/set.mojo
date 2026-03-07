@@ -17,12 +17,10 @@ from std.format._utils import (
     FormatStruct,
     Named,
     TypeNames,
-    constrained_conforms_to_writable,
 )
 from std.hashlib import Hasher, default_hasher
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
-from std.builtin.constrained import _constrained_conforms_to
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
@@ -33,7 +31,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Iterable,
     KeyElement,
     Sized,
-    Writable,
+    Writable where conforms_to(T, Writable),
 ):
     """A set data type.
 
@@ -308,7 +306,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.T, Writable):
         """Returns the string representation of the set.
 
         Returns:
@@ -320,7 +318,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
         """Returns the string representation of the set.
 
         Returns:
@@ -330,9 +328,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self.write_repr_to(output)
         return output
 
-    fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
-        constrained_conforms_to_writable[Self.T, Parent=Self]()
-
+    fn _write_self_to[
+        *, is_repr: Bool
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
         @parameter
@@ -348,11 +346,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -360,11 +357,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self._write_self_to[is_repr=False](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.

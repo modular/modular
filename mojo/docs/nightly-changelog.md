@@ -342,6 +342,7 @@ This version is still a work in progress.
   - `InlineArray`: `Writable`
   - `List`: `Equatable`, `Writable`
   - `Optional`: `Writable`
+  - `Set`: `Writable`
   - `Tuple`: `Writable`
   - `Variant`: `Writable`
 
