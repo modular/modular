@@ -41,8 +41,6 @@ from std.gpu.host import (
     DeviceContext,
     get_gpu_target,
 )
-from std.gpu.memory import CacheOperation
-from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
@@ -259,30 +257,6 @@ fn gemv_kernel_vector[
 
 
 @always_inline
-fn _load_weight_streaming[
-    dtype: DType,
-    width: Int,
-](
-    base_ptr: UnsafePointer[Scalar[dtype], ...],
-    elem_offset: Int,
-) -> SIMD[
-    dtype, width
-]:
-    """Load weight data with non-temporal (streaming) cache hint on AMD.
-
-    Weight data in GEMV is read exactly once — non-temporal hints
-    prevent L1/L2 cache pollution, freeing cache for reused data.
-    """
-    comptime if is_amd_gpu():
-        var buf = AMDBufferResource(base_ptr)
-        return buf.load[dtype, width, cache_policy=CacheOperation.STREAMING](
-            Int32(elem_offset)
-        )
-    else:
-        return base_ptr.load[width=width](elem_offset)
-
-
-@always_inline
 fn _dot_accum[
     in_type: DType,
     accum_type: DType,
@@ -412,24 +386,20 @@ fn gemv_split_k[
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
 
-        # Load weights. Use streaming (NT) loads on AMD BF16 to avoid
-        # L1/L2 pollution. FP8 uses plain loads — AMDBufferResource NT
-        # path regresses FP8 by 10-20% (buffer descriptor setup overhead
-        # outweighs cache benefit with fewer iters).
+        # Load weights with non-temporal hints on AMD to avoid L1/L2
+        # cache pollution (weights are read exactly once).
         comptime for i in range(tile_n):
             comptime if check_bounds:
                 if i + tile_id_n >= n:
                     continue
-            comptime if is_amd_gpu() and not b_type.is_float8():
-                var b_vec = _load_weight_streaming[width=simd_width](
-                    weight.ptr,
-                    (tile_id_n + i) * k + iteration * tile_k + tid * simd_width,
+            comptime if is_amd_gpu():
+                var b_vec = weight_tile.load[simd_width, nontemporal=True](
+                    i, Int(thread_idx.x) * simd_width
                 )
                 tile_w.store(i, 0, rebind[WeightVecType](b_vec))
             else:
-                var b_vec = weight_tile.vectorize[1, simd_width]()[
-                    i, thread_idx.x
-                ]
+                var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
+                var b_vec = vec_weight_tile[i, thread_idx.x]
                 tile_w.store(i, 0, rebind[WeightVecType](b_vec))
 
         # Load activations and accumulate dot products.
