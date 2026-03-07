@@ -59,7 +59,6 @@ from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
-    LayoutTensorIter,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
