@@ -1820,40 +1820,6 @@ class VariadicSizeAttr(max._core.Attribute):
     @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicSplatAttr(max._core.Attribute):
-    """
-    The `#kgen.variadic.splat` creates a variadic by splatting the same value
-    to the given times.
-
-    Example:
-    ```mlir
-    #kgen.variadic.splat<Int, 5> : !variadic<!AnyType>
-    // ->
-    #kgen.variadic<[Int, Int, Int, Int, Int]> : !variadic<!AnyType>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        type: VariadicType,
-        element: max._core.dialects.builtin.TypedAttr,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        type: VariadicType,
-        element: max._core.dialects.builtin.TypedAttr,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def type(self) -> VariadicType: ...
-    @property
-    def element(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
-
 class VariadicTabulateAttr(max._core.Attribute):
     """
     The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values

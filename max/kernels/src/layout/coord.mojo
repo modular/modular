@@ -414,7 +414,9 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     fn __init__[
         rank: Int, dtype: DType
     ](
-        out self: Coord[*_Splatted[RuntimeInt[dtype], rank]],
+        out self: Coord[
+            *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[dtype]]
+        ],
         index_list: std.utils.IndexList[rank, element_type=dtype],
     ):
         """Construct a Coord from an IndexList.
@@ -1305,9 +1307,14 @@ fn coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
 
 fn coord[
     dtype: DType, *element_types: Movable
-](var values: Tuple[*element_types]) -> Coord[
-    *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
-] where _AllEqual[Int, *element_types]:
+](
+    var values: Tuple[*element_types],
+    out result: Coord[
+        *Variadic.splat_type[
+            Trait=CoordLike, type_of(values).__len__(), RuntimeInt[dtype]
+        ]
+    ],
+) where _AllEqual[Int, *element_types]:
     """Create a Coord from a tuple of integers with specified dtype.
 
     Parameters:
@@ -1320,17 +1327,14 @@ fn coord[
     Returns:
         A Coord instance containing RuntimeInt elements for each value.
     """
-    var tuple = Coord[
-        *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
-    ]()
+    result = {}
 
     comptime for i in range(type_of(values).__len__()):
-        UnsafePointer(to=tuple[i]).init_pointee_copy(
-            rebind[type_of(tuple[i])](
+        UnsafePointer(to=result[i]).init_pointee_copy(
+            rebind[type_of(result[i])](
                 RuntimeInt[dtype](Scalar[dtype](rebind[Int](values[i])))
             )
         )
-    return tuple
 
 
 fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
@@ -1348,7 +1352,7 @@ fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
 
 
 comptime DynamicCoord[dtype: DType, size: Int] = Coord[
-    *_Splatted[RuntimeInt[dtype], size]
+    *Variadic.splat_type[Trait=CoordLike, size, RuntimeInt[dtype]]
 ]
 """
 Create a Coord full of `size` dynamic elements with `dtype`.
@@ -1362,7 +1366,7 @@ Returns:
 """
 
 comptime StaticCoord[value: Int, size: Int] = Coord[
-    *_Splatted[ComptimeInt[value], size]
+    *Variadic.splat_type[Trait=CoordLike, size, ComptimeInt[value]]
 ]
 """
 Create a Coord full of `size` static elements with `dtype`.
@@ -1555,16 +1559,6 @@ comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
     Reducer=_IntToComptimeIntMapper,
 ]
 
-comptime _Splatted[T: CoordLike, count: Int] = __mlir_attr[
-    `#kgen.variadic.splat<`,
-    T,
-    `,`,
-    count._mlir_value,
-    `> : `,
-    Variadic.TypesOfTrait[type_of(T)],
-]
-
-
 # ===-----------------------------------------------------------------------===#
 # Dim to CoordLike conversion
 # ===-----------------------------------------------------------------------===#
@@ -1647,7 +1641,8 @@ comptime _IntTupleToCoordLike[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=Variadic.types[
-        T=CoordLike, *_Splatted[RuntimeInt[dtype], len(tuple)]
+        T=CoordLike,
+        *Variadic.splat_type[Trait=CoordLike, len(tuple), RuntimeInt[dtype]],
     ],
     Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
 ]

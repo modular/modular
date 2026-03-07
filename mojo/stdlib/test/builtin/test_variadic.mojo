@@ -124,7 +124,7 @@ def test_variadic_value_reducer_empty() raises:
 
 
 def test_variadic_splatted() raises:
-    comptime splatted_variadic = Variadic.splat[String, 3]
+    comptime splatted_variadic = Variadic.splat_type[3, String]
     assert_equal(Variadic.size(splatted_variadic), 3)
     assert_true(_type_is_eq[splatted_variadic[0], String]())
     assert_true(_type_is_eq[splatted_variadic[1], String]())
@@ -132,7 +132,7 @@ def test_variadic_splatted() raises:
 
 
 def test_variadic_splatted_zero() raises:
-    comptime splatted_variadic = Variadic.splat[Float64, 0]
+    comptime splatted_variadic = Variadic.splat_type[0, Float64]
     assert_equal(Variadic.size(splatted_variadic), 0)
 
 

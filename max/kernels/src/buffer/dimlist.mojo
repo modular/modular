@@ -579,7 +579,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             A list of all dynamic dimension values.
         """
         comptime assert length > 0, "length must be positive"
-        return Self(Variadic.splat_value[Dim(), length])
+        return Self(Variadic.splat_value[length, Dim()])
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
