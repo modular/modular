@@ -126,8 +126,7 @@ fn _vectorize_mask[
 ](mask: TileMask[rank, mask_sizes, element_stride]) -> TileMask[
     rank, sizes, element_stride
 ]:
-    var res = TileMask[rank, sizes, element_stride](mask.max_dim, mask.offset)
-    return res
+    return TileMask[rank, sizes, element_stride](mask.max_dim, mask.offset)
 
 
 # Returns the shaep of the `thread_layout` as tuple.
@@ -176,11 +175,11 @@ fn _distribute_mask[
 #
 @always_inline("nodebug")
 fn _distribute_shape[thread_layout: Layout, shape: DimList]() -> DimList:
-    comptime transform[dim: Dim, idx: Int]: Dim = dim // Int(
+    comptime transform[idx: Int]: Dim = shape.value.value[idx] // Int(
         thread_layout.shape[idx]
     )
     return DimList(
-        Variadic._ValueToValueVariadicMapper[transform, shape.value.value]
+        Variadic.tabulate[Variadic.size(shape.value.value), transform]
     )
 
 
@@ -232,9 +231,9 @@ fn distribute[
 
 @always_inline("nodebug")
 fn _vectorize_shape[*sizes: Int, shape: DimList]() -> DimList:
-    comptime transform[dim: Dim, idx: Int]: Dim = dim // sizes[idx]
+    comptime transform[idx: Int]: Dim = shape.value.value[idx] // sizes[idx]
     return DimList(
-        Variadic._ValueToValueVariadicMapper[transform, shape.value.value]
+        Variadic.tabulate[Variadic.size(shape.value.value), transform]
     )
 
 

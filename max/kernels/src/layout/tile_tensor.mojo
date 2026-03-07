@@ -2725,28 +2725,14 @@ comptime _LTDims5[it: _IntTuple] = DimList(
     _int_to_dim(it[3].value()),
     _int_to_dim(it[4].value()),
 )
-comptime _LTDims6[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-    _int_to_dim(it[2].value()),
-    _int_to_dim(it[3].value()),
-    _int_to_dim(it[4].value()),
-    _int_to_dim(it[5].value()),
+
+comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
+    it[idx].value()
 )
-
-
-comptime _LTDims[it: _IntTuple] = _LTDims1[it] if len(it) == 1 else _LTDims2[
-    it
-] if len(it) == 2 else _LTDims3[it] if len(it) == 3 else _LTDims4[it] if len(
-    it
-) == 4 else _LTDims5[
-    it
-] if len(
-    it
-) == 5 else _LTDims6[
-    it
-]
-"""Convert a flat IntTuple (rank 1-6) to a DimList.
+comptime _LTDims[it: _IntTuple] = DimList(
+    Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
+)
+"""Convert a flat IntTuple to a DimList.
 
 UNKNOWN_VALUE entries become dynamic Dims; known values become static Dims.
 """
