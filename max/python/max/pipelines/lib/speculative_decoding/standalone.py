@@ -117,15 +117,15 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> tuple[int, Buffer, Buffer, ModelInputs, Buffer | None]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
-        sampler_inputs = SamplerInputs.create(batch, self.draft_devices[0])
+        sampler_inputs = SamplerInputs.create(batch, self.devices[0])
 
         # Generate tensor for generated tokens.
         generated_tokens = Buffer.zeros(
-            (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.int64, device=self.devices[0]
         )
 
         generated_logits = Buffer.zeros(
-            (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.float32, device=self.devices[0]
         )
 
         # Multi-step execution
@@ -135,7 +135,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Buffer.zeros(
                 (num_steps, len(batch), self.vocab_size),
                 dtype=DType.float32,
-                device=self.draft_devices[0],
+                device=self.devices[0],
             )
             if self._needs_all_draft_logits
             else None

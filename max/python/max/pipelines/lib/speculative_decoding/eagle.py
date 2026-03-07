@@ -40,6 +40,7 @@ from max.pipelines.lib.interfaces import (
 from max.pipelines.lib.pipeline_variants.utils import calculate_num_steps
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.profiler import traced
+from transformers import AutoConfig
 
 from ..sampling import PenaltyInputs, SamplerInputs, token_sampler
 from .base import SpeculativeDecodingPipelineBase
@@ -49,6 +50,19 @@ if TYPE_CHECKING:
     from ..config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _get_hidden_dim(hf_config: AutoConfig) -> int:
+    if hasattr(hf_config, "hidden_size"):
+        return hf_config.hidden_size
+    elif hasattr(hf_config, "text_config") and hasattr(
+        hf_config.text_config, "hidden_size"
+    ):
+        return hf_config.text_config.hidden_size
+    else:
+        raise ValueError(
+            "Could not determine hidden_size from target model config"
+        )
 
 
 @final
@@ -87,26 +101,19 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_weight_adapters,
         )
 
-        self._target_sampler = self._target_session.load(
+        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
+        self._target_sampler = self._session.load(
             token_sampler(
                 self.pipeline_config.sampling,
                 return_logits=True,
-                device=DeviceRef.from_device(self.target_devices[0]),
+                device=device_refs[0],
             )
         )
 
         # Gather graph for extracting hidden states corresponding to accepted tokens after verification
         hf_config = self._target_model.huggingface_config
-        hidden_dim = getattr(hf_config, "hidden_size", None)
-        if hidden_dim is None and hasattr(hf_config, "text_config"):
-            hidden_dim = hf_config.text_config.hidden_size
-        assert hidden_dim is not None, (
-            "Could not determine hidden_size from target model config"
-        )
-        device_refs = [
-            DeviceRef.from_device(dev) for dev in self.target_devices
-        ]
-        self._hs_gather_model = self._target_session.load(
+        hidden_dim = _get_hidden_dim(hf_config)
+        self._hs_gather_model = self._session.load(
             build_gather_graph(device_refs, DType.bfloat16, hidden_dim)
         )
 
@@ -125,19 +132,17 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         Returns:
             Buffer of sampled tokens with shape [batch_size, 1]
         """
-        sampler_inputs = SamplerInputs.create(
-            context_batch, self.target_devices[0]
-        )
+        sampler_inputs = SamplerInputs.create(context_batch, self.devices[0])
 
         prev_tokens = Buffer.zeros(
             (len(context_batch), 0),
             dtype=DType.int64,
-            device=self.target_devices[0],
+            device=self.devices[0],
         )
         prev_logits = Buffer.zeros(
             (len(context_batch), 0),
             dtype=DType.float32,
-            device=self.target_devices[0],
+            device=self.devices[0],
         )
 
         graph_inputs: list[Buffer] = [
@@ -152,7 +157,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
         if need_penalties and self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
-                context_batch, self.target_devices[0]
+                context_batch, self.devices[0]
             )
             graph_inputs.extend(penalty_inputs.as_list())
 
@@ -322,7 +327,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
                 base_inputs.batch_context_lengths[i][0] = device_context_length
 
-            if len(replica_batches) != len(self.draft_devices):
+            if len(replica_batches) != len(self.devices):
                 # We only support either DP=1 or DP=n_devices.
                 assert len(replica_batches) == 1
                 # Duplicate the batch context lengths for each device.
@@ -500,7 +505,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> tuple[int, Buffer, Buffer, Buffer | None, Buffer | list[Buffer]]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
-        sampler_inputs = SamplerInputs.create(batch, self.draft_devices[0])
+        sampler_inputs = SamplerInputs.create(batch, self.devices[0])
 
         # Build penalty inputs once for the entire draft generation loop
         need_penalties = any(
@@ -509,15 +514,15 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         penalty_inputs: PenaltyInputs | None = None
         if need_penalties and self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
-                batch, self.draft_devices[0], num_steps=num_steps
+                batch, self.devices[0], num_steps=num_steps
             )
 
         generated_tokens = Buffer.zeros(
-            (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.int64, device=self.devices[0]
         )
 
         generated_logits = Buffer.zeros(
-            (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.float32, device=self.devices[0]
         )
 
         curr_step_inputs = model_inputs
@@ -526,7 +531,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Buffer.zeros(
                 (num_steps, len(batch), self.vocab_size),
                 dtype=DType.float32,
-                device=self.draft_devices[0],
+                device=self.devices[0],
             )
             if self._needs_all_draft_logits
             else None
@@ -586,7 +591,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         draft_tokens: Buffer,
         draft_logits: Buffer | None,
         all_draft_logits: Buffer | None,
-        data_parallel_splits_np: npt.NDArray[np.int64],
         merged_tokens: Buffer | None = None,
         merged_offsets: Buffer | None = None,
         host_merged_offsets: Buffer | None = None,
@@ -829,7 +833,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             tokens = ctx.spec_decoding_state.saved_draft_tokens
             batch_tokens[i, : len(tokens)] = tokens
         return (
-            Buffer.from_numpy(batch_tokens).to(self.target_devices[0]),
+            Buffer.from_numpy(batch_tokens).to(self.devices[0]),
             max_num_tokens,
         )
 
@@ -842,7 +846,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> list[Buffer]:
         """Gather accepted hidden states from verification output for draft input."""
         model_args: list[Buffer] = []
-        for dev_idx in range(len(self.target_devices)):
+        for dev_idx in range(len(self.devices)):
             start = int(data_parallel_splits_np[dev_idx])
             end = int(data_parallel_splits_np[dev_idx + 1])
             local_offset = int(logit_offsets_np[start])
@@ -857,7 +861,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             else:
                 indices_np = np.array([], dtype=np.int64)
             indices_buf = Buffer.from_numpy(indices_np).to(
-                self.target_devices[dev_idx]
+                self.devices[dev_idx]
             )
             model_args.extend([target_hidden_states[dev_idx], indices_buf])
 
@@ -979,15 +983,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             [int(context.tokens[-1]) for context in context_batch],
             dtype=np.int64,
         )
-        draft_input_tokens = Buffer.from_numpy(last_tokens).to(
-            self.target_devices[0]
-        )
+        draft_input_tokens = Buffer.from_numpy(last_tokens).to(self.devices[0])
         draft_input_offsets_np = np.cumsum(
             [0] + [1 for _ in context_batch],
             dtype=np.uint32,
         )
         draft_input_offsets = Buffer.from_numpy(draft_input_offsets_np).to(
-            self.target_devices[0]
+            self.devices[0]
         )
         merged_tokens, merged_offsets = self._ragged_token_merger(
             draft_input_tokens,
@@ -1015,7 +1017,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_tokens,
             draft_logits=None,
             all_draft_logits=None,
-            data_parallel_splits_np=data_parallel_splits_np,
             merged_tokens=merged_tokens,
             merged_offsets=merged_offsets,
             host_merged_offsets=host_merged_offsets,
