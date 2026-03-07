@@ -320,6 +320,11 @@ what we publish.
 
 ### Library changes
 
+- `ArcPointer` now conforms to the `Hashable` trait, enabling its use as a
+  `Dict` key or `Set` element. The hash is based on the allocation address,
+  consistent with pointer-identity semantics (`a is b` implies
+  `hash(a) == hash(b)`).
+
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
   `std.gpu.primitives.warp` now always broadcast the reduction result to all
   participating lanes, using optimized hardware-specific paths (AMD DPP,
