@@ -107,7 +107,7 @@ class PixelGenerationRequest:
             raise ValueError("Number of inference steps must be positive.")
 
         if self.num_visuals_per_prompt <= 0:
-            raise ValueError("Number of images per prompt must be positive.")
+            raise ValueError("Number of visuals per prompt must be positive.")
 
 
 @runtime_checkable

@@ -674,7 +674,7 @@ class PixelContext:
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
         num_visuals_per_prompt: Number of images/videos to generate per prompt.
-        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
+        input_image: Optional input image for image-to-image generation (NumPy uint8 array).
         num_frames: Number of frames for video generation.
         frame_rate: Frame rate for video generation.
         model_name: Name of the model being used.

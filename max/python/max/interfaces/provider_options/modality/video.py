@@ -50,7 +50,7 @@ class VideoProviderOptions(BaseModel):
     )
 
     frames_per_second: int | None = Field(
-        None,
+        24,
         description=(
             "The frame rate for video generation in frames per second (fps). "
             "Common values are 24, 30, or 60 fps."
@@ -59,10 +59,30 @@ class VideoProviderOptions(BaseModel):
     )
 
     num_frames: int | None = Field(
-        None,
+        121,
         description=(
             "The number of frames to generate for video output. "
             "Total video duration equals num_frames / frames_per_second."
         ),
         gt=0,
+    )
+
+    guidance_scale: float = Field(
+        3.5,
+        description=(
+            "Guidance scale for classifier-free guidance. "
+            "Higher values make the generation follow the prompt more closely. "
+            "Set to 1.0 to disable CFG. Defaults to 3.5."
+        ),
+        gt=0.0,
+    )
+
+    true_cfg_scale: float = Field(
+        1.0,
+        description=(
+            "True classifier-free guidance scale. "
+            "True CFG is enabled when true_cfg_scale > 1.0 and negative_prompt is provided. "
+            "Defaults to 1.0."
+        ),
+        gt=0.0,
     )

@@ -304,10 +304,8 @@ class PixelGenerationTokenizer(
             dtype=latent_coords.dtype,
         )
         # Broadcast the VAE scale factors such that they are compatible with latent_coords's shape
-        broadcast_shape = [1] * latent_coords.ndim
-        broadcast_shape[1] = -1  # This is the (frame, height, width) dim
         # Apply per-axis scaling to convert latent coordinates to pixel space coordinates
-        pixel_coords = latent_coords * scale_tensor.view(*broadcast_shape)
+        pixel_coords = latent_coords * scale_tensor.reshape(1, 3, 1, 1)
 
         # As the VAE temporal stride for the first frame is 1 instead of self.vae_scale_factors[0], we need to shift
         # and clamp to keep the first-frame timestamps causal and non-negative.
@@ -337,7 +335,7 @@ class PixelGenerationTokenizer(
             dtype=np.float32,
         )
 
-        # 2. Calculate start timstamps in seconds with respect to the original spectrogram grid
+        # 2. Calculate start timestamps in seconds with respect to the original spectrogram grid
         audio_scale_factor = self._vae_temporal_compression_ratio
         # Scale back to mel spectrogram space
         grid_start_mel = grid_f * audio_scale_factor
@@ -350,7 +348,7 @@ class PixelGenerationTokenizer(
             grid_start_mel * self._audio_hop_length / self._audio_sampling_rate
         )
 
-        # 3. Calculate start timstamps in seconds with respect to the original spectrogram grid
+        # 3. Calculate start timestamps in seconds with respect to the original spectrogram grid
         grid_end_mel = (grid_f + self._patch_size_t) * audio_scale_factor
         grid_end_mel = (
             grid_end_mel + self._causal_offset - audio_scale_factor
@@ -963,10 +961,9 @@ class PixelGenerationTokenizer(
         input_image = self._retrieve_image(request) or input_image
 
         # Extract image provider options (always available via defaults)
-        visual_options = getattr(
-            request.body.provider_options,
-            "video",
-            request.body.provider_options.image,
+        visual_options = (
+            request.body.provider_options.video
+            or request.body.provider_options.image
         )
         if visual_options is None:
             raise ValueError(
@@ -1096,7 +1093,7 @@ class PixelGenerationTokenizer(
             * (latent_width // 2)
             * (
                 (
-                    (getattr(visual_options, "num_frames", 1) - 1)
+                    (getattr(visual_options, "num_frames") - 1)
                     // self._vae_temporal_compression_ratio
                     + 1
                 )
@@ -1125,10 +1122,8 @@ class PixelGenerationTokenizer(
         extra_params: dict[str, npt.NDArray[Any]] = {}
         if self._pipeline_class_name == PipelineClassName.LTX2:
             latent_mel_bins = self._mel_bins // self._mel_compression_ratio
-            num_frames = getattr(visual_options, "num_frames", 1)
-            frames_per_second = getattr(
-                visual_options, "frames_per_second", 1.0
-            )
+            num_frames = getattr(visual_options, "num_frames")
+            frames_per_second = getattr(visual_options, "frames_per_second")
             duration_s = num_frames / frames_per_second
             audio_latents_per_second = (
                 self._audio_sampling_rate
