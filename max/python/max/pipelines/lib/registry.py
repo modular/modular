@@ -90,6 +90,7 @@ def _infer_task_from_hf_pipeline_tag(
         "audio-generation": PipelineTask.AUDIO_GENERATION,
         "text-to-image": PipelineTask.PIXEL_GENERATION,
         "image-to-image": PipelineTask.PIXEL_GENERATION,
+        "text-to-video": PipelineTask.PIXEL_GENERATION,
         # Add more mappings as needed
     }
 
@@ -752,13 +753,15 @@ class PipelineRegistry:
                     "tokenizer_2" in diffusers_config["components"]
                 )
 
-            # Standard max_length for CLIP tokenizer (primary)
-            # and T5 tokenizer (secondary, if present)
+            # Standard max_length for CLIP is 77,
+            # for Gemma3 it is 1024
             tokenizer_kwargs = {
                 "model_path": pipeline_config.model.model_path,
                 "pipeline_config": pipeline_config,
                 "subfolder": "tokenizer",
-                "max_length": 77,  # Standard for CLIP
+                "max_length": 77
+                if "gemma" not in pipeline_config.model.model_path.lower()
+                else 1024,
                 "revision": pipeline_config.model.huggingface_model_revision,
                 "trust_remote_code": pipeline_config.model.trust_remote_code,
             }
