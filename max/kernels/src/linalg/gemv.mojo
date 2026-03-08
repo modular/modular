@@ -19,7 +19,6 @@ from std.sys import (
     llvm_intrinsic,
     simd_width_of,
 )
-from std.sys.info import _accelerator_arch
 
 
 import std.gpu.primitives.warp as warp
