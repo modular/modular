@@ -930,8 +930,7 @@ class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
         temb: Tensor | None = None,
         causal: bool | None = None,
     ) -> Tensor:
-        if causal is None:
-            causal = self.is_causal
+        causal = causal or self.is_causal
 
         hidden_states = self.conv_in(hidden_states, causal=causal)
 
@@ -1044,16 +1043,24 @@ class AutoencoderKLLTX2Video(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
         timestep: Tensor | None = None,
         causal: bool | None = None,
     ) -> Tensor:
-        if causal is None:
-            causal = self.config.decoder_causal
         return self.decoder(z, timestep, causal=causal)
 
 
 class PostprocessAndDecode(nn.Module[..., Tensor]):
-    """Fused latents denorm + VAE decode in a single compiled graph.
+    """Fused unpack + latents denorm + VAE decode + post-process in a single compiled graph.
 
-    Eliminates the inter-graph boundary and intermediate tensor materialization
-    that previously existed between _postprocess_latents and vae.decode().
+    Eliminates the inter-graph boundaries and intermediate tensor materializations
+    that previously existed between unpack, denormalization, vae.decode(), and
+    video post-processing.
+
+    Accepts packed latents in (B, S, C) shape where
+    S = latent_num_frames * latent_height * latent_width and C = num_channels.
+    The LTX-2 transformer uses patch_size = patch_size_t = 1 so the packing is
+    trivially one token per latent voxel, just like Flux2.
+    The temporal and spatial dimensions are conveyed via three 1-D shape-carrier
+    tensors whose *lengths* (not values) encode latent_num_frames, latent_height,
+    and latent_width as symbolic graph Dims, so a single compiled graph handles
+    any video size without recompilation.
     """
 
     def __init__(
@@ -1075,40 +1082,61 @@ class PostprocessAndDecode(nn.Module[..., Tensor]):
 
     def forward(
         self,
-        latents: Tensor,
+        latents_bsc: Tensor,
+        f_carrier: Tensor,
+        h_carrier: Tensor,
+        w_carrier: Tensor,
     ) -> Tensor:
-        # Denormalization
-        C = latents.shape[1]
-        latents_mean = F.reshape(
-            self.latents_mean.cast(latents.dtype), (1, C, 1, 1, 1)
-        )
-        latents_std = F.reshape(
-            self.latents_std.cast(latents.dtype), (1, C, 1, 1, 1)
-        )
-        latents = latents * latents_std + latents_mean
+        batch = latents_bsc.shape[0]
+        C = latents_bsc.shape[2]
+        # Extract latent dims from carrier shapes (symbolic Dims, not runtime values).
+        f = f_carrier.shape[0]
+        h = h_carrier.shape[0]
+        w = w_carrier.shape[0]
 
-        decoded = self.decoder(latents, None, causal=True)
-        decoded = F.cast(decoded, DType.float32)
+        # Assert seq == f * h * w so the reshape verifier accepts it, then unpack
+        # packed (B, S, C) -> (B, C, F, H, W).  LTX-2's transformer uses
+        # patch_size = patch_size_t = 1 so each token is one latent voxel.
+        latents_bsc = F.rebind(latents_bsc, [batch, f * h * w, C])
+        latents_bfhwc = F.reshape(latents_bsc, (batch, f, h, w, C))
+        latents = F.permute(latents_bfhwc, [0, 4, 1, 2, 3])  # (B, C, F, H, W)
+
+        # Denormalize: latents * latents_std + latents_mean
+        # (scaling_factor is always 1.0 for LTX-2 video VAE)
+        latents_mean_r = F.reshape(self.latents_mean, (1, C, 1, 1, 1))
+        latents_std_r = F.reshape(self.latents_std, (1, C, 1, 1, 1))
+        latents = latents * latents_std_r + latents_mean_r
+
+        decoded = self.decoder(latents, None, causal=False)
+
+        # Post-process: [-1, 1] -> [0, 255] uint8, keeping the decoder's native
+        # dtype to reduce bandwidth before the final cast.
+        decoded = decoded * 0.5 + 0.5
+        decoded = F.max(decoded, 0.0)
+        decoded = F.min(decoded, 1.0)
+        decoded = decoded * 255.0
+
+        # Permute: (B, C, F, H, W) -> (B, F, H, W, C)
         decoded = F.permute(decoded, [0, 2, 3, 4, 1])
-        return F.transfer_to(decoded, DeviceRef.CPU())
+        return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:
-        # Hardcoded for height=512, width=768, num_frames=121, frame_rate=24:
-        #   in_channels       = 128
-        #   latent_num_frames = (121-1)//8+1 = 16
-        #   latent_height     = 512//32      = 16
-        #   latent_width      = 768//32      = 24
         return (
             TensorType(
                 self._dtype,
-                shape=[
-                    "batch_size",
-                    self._num_channels,
-                    "latent_num_frames",
-                    "latent_height",
-                    "latent_width",
-                ],
+                shape=["batch_size", "video_seq_len", self._num_channels],
                 device=self._device,
+            ),
+            # Shape carriers: lengths encode latent dims as symbolic Dims.
+            # Content is never read; only the shapes matter.
+            TensorType(
+                DType.float32, shape=["latent_num_frames"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.float32, shape=["latent_height"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.float32, shape=["latent_width"], device=DeviceRef.CPU()
             ),
         )
 
@@ -1136,15 +1164,19 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
         )
 
     def load_model(self) -> Any:
-        """Load and compile the decoder and encoder models with BatchNorm statistics.
+        """Load and compile the decoder model with latent normalisation statistics.
 
-        Extracts BatchNorm statistics (latents_mean, latents_std) which are specific
-        to LTX-2, then delegates to base class for weight loading and model compilation.
+        Extracts latents_mean and latents_std tensors from the weights (which
+        diffusers stores as persistent buffers), then delegates to the base class
+        for weight loading and model compilation.
 
         Returns:
             Compiled decoder model callable.
+
+        Raises:
+            ValueError: If latents_mean or latents_std are not found in the weights.
         """
-        latents_stats = {}
+        latents_stats: dict[str, Any] = {}
 
         for key, value in self.weights.items():
             if key in ("latents_mean", "latents_std"):
@@ -1153,45 +1185,51 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
                 if weight_data.dtype != target_dtype:
                     if weight_data.dtype.is_float() and target_dtype.is_float():
                         weight_data = weight_data.astype(target_dtype)
-                    # Non-float left as-is; latents_mean/latents_std are typically float.
                 latents_stats[key] = weight_data.data
 
         latents_mean_data = latents_stats.get("latents_mean")
         latents_std_data = latents_stats.get("latents_std")
 
+        if latents_mean_data is None or latents_std_data is None:
+            raise ValueError(
+                "Latent normalisation statistics (latents_mean, latents_std) not "
+                "found in weights. Make sure the checkpoint contains these buffers."
+            )
+
         super().load_model()
 
-        if latents_mean_data is not None or latents_std_data is not None:
-            if latents_mean_data is not None:
-                self.latents_mean = Tensor.from_dlpack(latents_mean_data).to(
-                    self.devices[0]
-                )
-            if latents_std_data is not None:
-                self.latents_std = Tensor.from_dlpack(latents_std_data).to(
-                    self.devices[0]
-                )
+        self.latents_mean = Tensor.from_dlpack(latents_mean_data).to(
+            self.devices[0]
+        )
+        self.latents_std = Tensor.from_dlpack(latents_std_data).to(
+            self.devices[0]
+        )
 
         return self.model
 
     def build_fused_decode(
-        self, device: Device, num_channels: int
+        self,
+        device: Device,
+        num_channels: int,
     ) -> Callable[..., Any]:
-        """Build a fused postprocess + VAE decode compiled graph.
+        """Build a fused unpack + postprocess + VAE decode compiled graph.
 
-        Combines latents denormalization and VAE decoding into a single
-        compiled graph, eliminating the intermediate tensor and device sync
-        between the two previously separate compiled graphs.  The reshape from
-        packed (B, S, C) to spatial (B, H, W, C) is the first op inside the
-        graph; spatial dims are conveyed via shape-carrier tensors so the same
-        compiled graph handles any image size without recompilation.
+        Combines latent unpacking, denormalization, VAE decoding, and video
+        post-processing into a single compiled graph.  Packed latents in
+        (B, S, C) format are accepted directly (as produced by the denoiser).
+        LTX-2's transformer uses patch_size = patch_size_t = 1 so the (B, S, C)
+        token format maps one-to-one to latent voxels.  Three shape-carrier
+        tensors convey the latent temporal and spatial dimensions as symbolic
+        Dims so the same compiled graph handles any video resolution without
+        recompilation.
 
         Args:
             device: Target device for the compiled graph.
             num_channels: Number of latent channels (self.latents_mean.shape[0]).
 
         Returns:
-            Compiled callable taking (latents_bhwc) and
-            returning the decoded image tensor.
+            Compiled callable taking (latents_bsc, f_carrier, h_carrier, w_carrier)
+            and returning a (B, F, H, W, C) uint8 video tensor on CPU.
         """
         dtype = self.config.dtype
         device_ref = DeviceRef.from_device(device)
@@ -1232,25 +1270,15 @@ class AutoencoderKLLTX2VideoModel(BaseAutoencoderModel):
 
     @property
     def bn(self) -> SimpleNamespace:
-        """Property to access BatchNorm-like statistics, compatible with diffusers API.
+        """Exposes latent normalisation statistics in a diffusers-compatible namespace.
 
-        Returns a SimpleNamespace with latents_mean and latents_std attributes.
-        Note that ``latents_std`` is a standard deviation tensor corresponding to
-        the ``latents_std`` weights used in the denormalization formula
-        ``latents * latents_std + latents_mean``.
+        Returns a ``SimpleNamespace`` with ``latents_mean`` and ``latents_std``
+        attributes, mirroring the ``bn`` property on :class:`AutoencoderKLFlux2Model`
+        so that both can be consumed by shared pipeline code.
 
         Returns:
-            SimpleNamespace: Object containing latents_mean and latents_std attributes.
-
-        Raises:
-            ValueError: If BatchNorm statistics are not loaded.
+            SimpleNamespace: Object containing ``latents_mean`` and ``latents_std``.
         """
-        if self.latents_mean is None or self.latents_std is None:
-            raise ValueError(
-                "Latents statistics (latents_mean, latents_std) not loaded. "
-                "Make sure the model weights contain 'latents_mean' and 'latents_std'."
-            )
-
         return SimpleNamespace(
             latents_mean=self.latents_mean, latents_std=self.latents_std
         )
