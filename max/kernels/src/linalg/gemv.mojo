@@ -15,10 +15,10 @@ from std.math import align_down, align_up, ceildiv
 from std.sys import (
     has_amd_gpu_accelerator,
     is_amd_gpu,
-    _is_amd_mi250x,
     llvm_intrinsic,
     simd_width_of,
 )
+from std.sys.info import _is_amd_mi250x
 
 
 import std.gpu.primitives.warp as warp
