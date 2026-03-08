@@ -35,7 +35,7 @@ from .model_config import (
 )
 
 
-def pixel_shuffle_3d_merge(x: Tensor, stride: tuple[int, int, int]) -> Tensor:
+def pixel_shuffle_3d_merge(x: Tensor) -> Tensor:
     """Robust 3D pixel shuffle merge.
 
     Input x is rank 8: [B, C, D, d, H, h, W, w]
@@ -45,8 +45,14 @@ def pixel_shuffle_3d_merge(x: Tensor, stride: tuple[int, int, int]) -> Tensor:
     the symbolic verifier encounters pre-existing mul_no_wrap products in later
     merge steps.  All input dims must be pure (non-product) Dims.
     """
+    # b, c, D, d, H, h, W, w = x.shape
+    # return x.reshape((b, c, D * d, H * h, W * w))
     b, c, D, d, H, h, W, w = x.shape
-    return x.reshape((b, c, D * d, H * h, W * w))
+    x = F.flatten(x, 6, 7)
+    x = F.flatten(x, 4, 5)
+    x = F.rebind(x, (b, c, D * d, H * h, W * w))
+    x = F.flatten(x, 2, 3)
+    return x
 
 
 class PerChannelRMSNorm(nn.Module[[Tensor], Tensor]):
