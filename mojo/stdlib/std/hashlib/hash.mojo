@@ -134,4 +134,3 @@ def hash[
     hasher._update_with_bytes(Span(ptr=bytes, length=n))
     var value = hasher^.finish()
     return value
-

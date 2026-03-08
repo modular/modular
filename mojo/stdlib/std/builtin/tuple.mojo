@@ -50,13 +50,13 @@ struct Tuple[*element_types: Movable](
     # ImplicitlyCopyable refines Copyable, but the compiler can't infer
     # parent trait constraints from derived ones yet. Remove AllCopyable
     # from this where clause once that's fixed.
+    Hashable where AllHashable[*element_types],
+    # ImplicitlyDestructible and Movable are listed explicitly because
+    # conditional conformances require all conformances to be stated.
     ImplicitlyCopyable where (
         AllImplicitlyCopyable[*element_types] and AllCopyable[*element_types]
     ),
-    # ImplicitlyDestructible and Movable are listed explicitly because
-    # conditional conformances require all conformances to be stated.
     ImplicitlyDestructible,
-    Hashable where AllHashable[*element_types],
     Movable,
     Sized,
     Writable where AllWritable[*element_types],
@@ -198,9 +198,9 @@ struct Tuple[*element_types: Movable](
         return Self.__len__()
 
     @always_inline
-    fn __hash__[H: Hasher](
-        self, mut hasher: H
-    ) where AllHashable[*Self.element_types]:
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where AllHashable[*Self.element_types]:
         """Hash the tuple by feeding each element into the hasher in order.
 
         Parameters:
