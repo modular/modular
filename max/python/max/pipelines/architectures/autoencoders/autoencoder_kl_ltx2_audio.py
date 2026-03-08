@@ -762,11 +762,7 @@ class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
         latents_bclm: Tensor,
     ) -> Tensor:
         # Denormalization
-        # latents_mean/std are typically [128]. Reshape to [1, C, 1, M] to broadcast
-        # across [N, C, F, M].
-        mean = self.latents_mean.reshape([1, self._num_channels, 1, -1])
-        std = self.latents_std.reshape([1, self._num_channels, 1, -1])
-        latents = latents_bclm * std + mean
+        latents = latents_bclm * self.latents_std + self.latents_mean
 
         decoded = self.decoder(latents)
         # TODO: Add vocoder here too?
