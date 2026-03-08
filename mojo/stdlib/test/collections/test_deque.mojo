@@ -1187,70 +1187,74 @@ def test_deque_conditional_conformances() raises:
 
 
 def test_getitem_slice_basic() raises:
-    """Basic contiguous slicing returns a new Deque with the expected elements.
-    """
+    """Basic contiguous slicing iterates the expected elements without allocating."""
     var d: Deque[Int] = [1, 2, 3, 4, 5]
-    var s = d[1:4]
-    assert_equal(len(s), 3)
-    assert_equal(s[0], 2)
-    assert_equal(s[1], 3)
-    assert_equal(s[2], 4)
+    var result = List[Int]()
+    for x in d[1:4]:
+        result.append(x.copy())
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 2)
+    assert_equal(result[1], 3)
+    assert_equal(result[2], 4)
 
 
 def test_getitem_slice_step() raises:
     """Slicing with a step selects every nth element."""
     var d: Deque[Int] = [1, 2, 3, 4, 5]
-    var s = d[::2]
-    assert_equal(len(s), 3)
-    assert_equal(s[0], 1)
-    assert_equal(s[1], 3)
-    assert_equal(s[2], 5)
+    var result = List[Int]()
+    for x in d[::2]:
+        result.append(x.copy())
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 1)
+    assert_equal(result[1], 3)
+    assert_equal(result[2], 5)
 
 
 def test_getitem_slice_negative_step() raises:
     """Slicing with a negative step reverses the selection."""
     var d: Deque[Int] = [1, 2, 3, 4, 5]
-    var s = d[::-1]
-    assert_equal(len(s), 5)
-    assert_equal(s[0], 5)
-    assert_equal(s[1], 4)
-    assert_equal(s[4], 1)
+    var result = List[Int]()
+    for x in d[::-1]:
+        result.append(x.copy())
+    assert_equal(len(result), 5)
+    assert_equal(result[0], 5)
+    assert_equal(result[1], 4)
+    assert_equal(result[4], 1)
 
 
 def test_getitem_slice_empty() raises:
-    """An out-of-range or reversed slice returns an empty Deque."""
+    """An out-of-range or inverted slice produces an empty iterator."""
     var d: Deque[Int] = [1, 2, 3]
-    var s = d[5:10]
-    assert_equal(len(s), 0)
+    var count = 0
+    for _ in d[5:10]:
+        count += 1
+    assert_equal(count, 0)
 
-    var s2 = d[3:1]
-    assert_equal(len(s2), 0)
+    count = 0
+    for _ in d[3:1]:
+        count += 1
+    assert_equal(count, 0)
 
 
 def test_getitem_slice_negative_indices() raises:
     """Negative indices are normalized correctly."""
     var d: Deque[Int] = [1, 2, 3, 4, 5]
-    var s = d[-3:-1]
-    assert_equal(len(s), 2)
-    assert_equal(s[0], 3)
-    assert_equal(s[1], 4)
+    var result = List[Int]()
+    for x in d[-3:-1]:
+        result.append(x.copy())
+    assert_equal(len(result), 2)
+    assert_equal(result[0], 3)
+    assert_equal(result[1], 4)
 
 
-def test_getitem_slice_uses_default_config() raises:
-    """Slicing returns a new deque with default configuration."""
-    var d = Deque[Int](maxlen=5, min_capacity=8, shrink=False)
-    for i in range(5):
-        d.append(i)
-
-    var s = d[1:4]
-    assert_equal(len(s), 3)
-    assert_equal(s[0], 1)
-    assert_equal(s[1], 2)
-    assert_equal(s[2], 3)
-    # Slice result must not inherit source configuration.
-    assert_equal(s._maxlen, -1)
-    assert_equal(s._min_capacity, Deque[Int].default_capacity)
-    assert_true(s._shrink)
+def test_getitem_slice_does_not_mutate_source() raises:
+    """Slicing does not modify the source deque."""
+    var d: Deque[Int] = [1, 2, 3, 4, 5]
+    var count = 0
+    for _ in d[1:4]:
+        count += 1
+    assert_equal(count, 3)
+    assert_equal(len(d), 5)
 
 
 def main() raises:

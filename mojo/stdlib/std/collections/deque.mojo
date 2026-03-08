@@ -23,6 +23,7 @@ from std.collections import Deque
 
 
 from std.bit import next_power_of_two
+from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 import std.format._utils as fmt
 from std.hashlib import Hasher
 
@@ -397,66 +398,69 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         offset = self._physical_index(self._head + normalized_idx)
         return (self._data + offset)[]
 
-    def __getitem__(self, slice: ContiguousSlice) -> Self:
-        """Gets a new deque with elements at the specified contiguous slice.
+    def __getitem__[
+        origin: Origin, //
+    ](ref[origin] self, slice: ContiguousSlice) -> _DequeSliceIter[
+        Self.ElementType, origin
+    ]:
+        """Returns a lazy iterator over a contiguous slice of the deque.
 
-        The returned deque has default configuration (`min_capacity`, `maxlen`,
-        `shrink`) regardless of the source deque's configuration.
+        No allocation is performed; the iterator borrows from `self`.
+
+        Parameters:
+            origin: The origin of the deque reference.
 
         Args:
             slice: A slice specifying start and stop (stride is always 1).
 
         Returns:
-            A new `Deque` containing the elements at the specified positions.
+            An iterator over the elements at the specified positions.
 
         Example:
 
         ```mojo
         var d = Deque[Int](1, 2, 3, 4, 5)
-        var s = d[1:4]
-        print(s)  # Deque(2, 3, 4)
+        for x in d[1:4]:
+            print(x)  # 2, 3, 4
         ```
         """
         var start, end = slice.indices(len(self))
-        var count = end - start
-        # Use count + 1 to avoid triggering a realloc when the ring buffer
-        # would otherwise be exactly full after inserting all elements.
-        var result = Self(capacity=count + 1)
-        for i in range(start, end):
-            result.append(self[i].copy())
-        return result^
+        return _DequeSliceIter(
+            index=start, stop=end, step=1, src=Pointer(to=self)
+        )
 
-    def __getitem__(self, slice: StridedSlice) -> Self:
-        """Gets a new deque with elements at the specified strided slice positions.
+    def __getitem__[
+        origin: Origin, //
+    ](ref[origin] self, slice: StridedSlice) -> _DequeSliceIter[
+        Self.ElementType, origin
+    ]:
+        """Returns a lazy iterator over a strided slice of the deque.
 
-        The returned deque has default configuration (`min_capacity`, `maxlen`,
-        `shrink`) regardless of the source deque's configuration.
+        No allocation is performed; the iterator borrows from `self`.
+
+        Parameters:
+            origin: The origin of the deque reference.
 
         Args:
             slice: A slice specifying start, stop, and step.
 
         Returns:
-            A new `Deque` containing the elements at the specified positions.
+            An iterator over the elements at the specified positions.
 
         Example:
 
         ```mojo
         var d = Deque[Int](1, 2, 3, 4, 5)
-        var s = d[::2]
-        print(s)  # Deque(1, 3, 5)
-        var s2 = d[::-1]
-        print(s2)  # Deque(5, 4, 3, 2, 1)
+        for x in d[::2]:
+            print(x)  # 1, 3, 5
+        for x in d[::-1]:
+            print(x)  # 5, 4, 3, 2, 1
         ```
         """
         var start, end, step = slice.indices(len(self))
-        var r = range(start, end, step)
-        var count = len(r)
-        # Use count + 1 to avoid triggering a realloc when the ring buffer
-        # would otherwise be exactly full after inserting all elements.
-        var result = Self(capacity=count + 1)
-        for i in r:
-            result.append(self[i].copy())
-        return result^
+        return _DequeSliceIter(
+            index=start, stop=end, step=step, src=Pointer(to=self)
+        )
 
     def _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
@@ -1063,3 +1067,60 @@ struct _DequeIter[
             iter_len = self.index
 
         return (iter_len, {iter_len})
+
+
+@fieldwise_init
+struct _DequeSliceIter[
+    mut: Bool,
+    //,
+    T: Copyable & ImplicitlyDestructible,
+    origin: Origin[mut=mut],
+](ImplicitlyCopyable, Iterable, Iterator):
+    """A lazy iterator over a slice of a `Deque`.
+
+    No allocation is performed; the iterator holds a borrow on the source deque.
+
+    Parameters:
+        mut: Whether the reference to the deque is mutable.
+        T: The type of the elements in the deque.
+        origin: The lifetime of the deque.
+    """
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Self.T
+
+    var index: Int
+    var stop: Int
+    var step: Int
+    var src: Pointer[Deque[Self.T], Self.origin]
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
+        var done = (self.step > 0 and self.index >= self.stop) or (
+            self.step < 0 and self.index <= self.stop
+        )
+        if done:
+            raise StopIteration()
+        var idx = self.index
+        self.index += self.step
+        return self.src[][idx]
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining: Int
+        if self.step > 0:
+            remaining = max(
+                0, (self.stop - self.index + self.step - 1) // self.step
+            )
+        else:
+            remaining = max(
+                0,
+                (self.index - self.stop + (-self.step) - 1) // (-self.step),
+            )
+        return (remaining, {remaining})
