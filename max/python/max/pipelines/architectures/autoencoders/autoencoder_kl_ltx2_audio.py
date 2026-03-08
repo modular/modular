@@ -48,9 +48,11 @@ class LTX2AudioCausalConv2d(nn.Module[[Tensor], Tensor]):
         groups: int = 1,
         bias: bool = True,
         causality_axis: str = "height",
+        dtype: DType | None = None,
     ) -> None:
         super().__init__()
         self.causality_axis = causality_axis
+        self._dtype = dtype
         kernel_size = (
             (kernel_size, kernel_size)
             if isinstance(kernel_size, int)
@@ -109,6 +111,7 @@ class LTX2AudioCausalConv2d(nn.Module[[Tensor], Tensor]):
             num_groups=groups,
             has_bias=bias,
             permute=True,
+            dtype=self._dtype,
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -137,6 +140,7 @@ class LTX2AudioAttnBlock(nn.Module[[Tensor], Tensor]):
         self,
         in_channels: int,
         norm_type: str = "group",
+        dtype: DType | None = None,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -156,24 +160,28 @@ class LTX2AudioAttnBlock(nn.Module[[Tensor], Tensor]):
             in_channels=in_channels,
             out_channels=in_channels,
             permute=True,
+            dtype=dtype,
         )
         self.k = nn.Conv2d(
             kernel_size=1,
             in_channels=in_channels,
             out_channels=in_channels,
             permute=True,
+            dtype=dtype,
         )
         self.v = nn.Conv2d(
             kernel_size=1,
             in_channels=in_channels,
             out_channels=in_channels,
             permute=True,
+            dtype=dtype,
         )
         self.proj_out = nn.Conv2d(
             kernel_size=1,
             in_channels=in_channels,
             out_channels=in_channels,
             permute=True,
+            dtype=dtype,
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -207,6 +215,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
         temb_channels: int = 512,
         norm_type: str = "group",
         causality_axis: str | None = "height",
+        dtype: DType | None = None,
     ) -> None:
         super().__init__()
         self.causality_axis = causality_axis
@@ -242,6 +251,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                 kernel_size=3,
                 stride=1,
                 causality_axis=causality_axis,
+                dtype=dtype,
             )
         else:
             self.conv1 = nn.Conv2d(
@@ -251,6 +261,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                 stride=1,
                 padding=1,
                 permute=True,
+                dtype=dtype,
             )
         if temb_channels > 0:
             self.temb_proj = nn.Linear(temb_channels, out_channels)
@@ -272,6 +283,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                 kernel_size=3,
                 stride=1,
                 causality_axis=causality_axis,
+                dtype=dtype,
             )
         else:
             self.conv2 = nn.Conv2d(
@@ -281,6 +293,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                 stride=1,
                 padding=1,
                 permute=True,
+                dtype=dtype,
             )
         if self.in_channels != self.out_channels:
             if self.use_conv_shortcut:
@@ -292,6 +305,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                         kernel_size=3,
                         stride=1,
                         causality_axis=causality_axis,
+                        dtype=dtype,
                     )
                 else:
                     self.conv_shortcut = nn.Conv2d(
@@ -301,6 +315,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                         stride=1,
                         padding=1,
                         permute=True,
+                        dtype=dtype,
                     )
             else:
                 self.nin_shortcut: nn.Module[[Tensor], Tensor]
@@ -311,6 +326,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                         kernel_size=1,
                         stride=1,
                         causality_axis=causality_axis,
+                        dtype=dtype,
                     )
                 else:
                     self.nin_shortcut = nn.Conv2d(
@@ -320,6 +336,7 @@ class LTX2AudioResnetBlock(nn.Module[..., Tensor]):
                         stride=1,
                         padding=0,
                         permute=True,
+                        dtype=dtype,
                     )
 
     def forward(self, x: Tensor, temb: Tensor | None = None) -> Tensor:
@@ -351,6 +368,7 @@ class LTX2AudioUpsample(nn.Module[[Tensor], Tensor]):
         in_channels: int,
         with_conv: bool,
         causality_axis: str | None = "height",
+        dtype: DType | None = None,
     ) -> None:
         super().__init__()
         self.with_conv = with_conv
@@ -364,6 +382,7 @@ class LTX2AudioUpsample(nn.Module[[Tensor], Tensor]):
                     kernel_size=3,
                     stride=1,
                     causality_axis=causality_axis,
+                    dtype=dtype,
                 )
             else:
                 self.conv = nn.Conv2d(
@@ -373,6 +392,7 @@ class LTX2AudioUpsample(nn.Module[[Tensor], Tensor]):
                     stride=1,
                     padding=1,
                     permute=True,
+                    dtype=dtype,
                 )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -519,6 +539,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                 kernel_size=3,
                 stride=1,
                 causality_axis=self.causality_axis,
+                dtype=self.dtype,
             )
         else:
             self.conv_in = nn.Conv2d(
@@ -528,6 +549,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                 stride=1,
                 padding=1,
                 permute=True,
+                dtype=self.dtype,
             )
         self.non_linearity = activation_function_from_name("silu")
         self.mid = LTX2AudioDecoderMid()
@@ -538,10 +560,11 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
             dropout=dropout,
             norm_type=self.norm_type,
             causality_axis=self.causality_axis,
+            dtype=self.dtype,
         )
         if mid_block_add_attention:
             self.mid.attn_1 = LTX2AudioAttnBlock(
-                base_block_channels, norm_type=self.norm_type
+                base_block_channels, norm_type=self.norm_type, dtype=self.dtype
             )
         else:
             self.mid.attn_1 = nn.Identity()
@@ -552,6 +575,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
             dropout=dropout,
             norm_type=self.norm_type,
             causality_axis=self.causality_axis,
+            dtype=self.dtype,
         )
 
         self.up: nn.ModuleList[LTX2AudioDecoderStage] = nn.ModuleList()
@@ -573,6 +597,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                         dropout=dropout,
                         norm_type=self.norm_type,
                         causality_axis=self.causality_axis,
+                        dtype=self.dtype,
                     )
                 )
                 block_in = block_out
@@ -580,13 +605,18 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                     if curr_res in self.attn_resolutions:
                         stage.attn.append(
                             LTX2AudioAttnBlock(
-                                block_in, norm_type=self.norm_type
+                                block_in,
+                                norm_type=self.norm_type,
+                                dtype=self.dtype,
                             )
                         )
 
             if level != 0:
                 stage.upsample = LTX2AudioUpsample(
-                    block_in, True, causality_axis=self.causality_axis
+                    block_in,
+                    True,
+                    causality_axis=self.causality_axis,
+                    dtype=self.dtype,
                 )
                 curr_res *= 2
 
@@ -615,6 +645,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                 kernel_size=3,
                 stride=1,
                 causality_axis=self.causality_axis,
+                dtype=self.dtype,
             )
         else:
             self.conv_out = nn.Conv2d(
@@ -624,6 +655,7 @@ class LTX2AudioDecoder(nn.Module[[Tensor], Tensor]):
                 stride=1,
                 padding=1,
                 permute=True,
+                dtype=self.dtype,
             )
 
     def input_types(self) -> tuple[TensorType, ...]:
