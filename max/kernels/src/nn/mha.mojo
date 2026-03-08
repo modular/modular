@@ -181,7 +181,7 @@ fn flash_attention[
                 LayoutTensor[
                     mask.dtype,
                     Layout.row_major(mask.layout.shape),
-                    MutAnyOrigin,
+                    mask.origin,
                 ](
                     mask.ptr,
                     RuntimeLayout[
@@ -1238,7 +1238,7 @@ fn flash_attention[
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -1246,7 +1246,7 @@ fn flash_attention[
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()
@@ -1339,7 +1339,7 @@ fn flash_attention_ragged[
     var cache_row_offsets = input_row_offsets.as_any_origin()
 
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -1348,7 +1348,7 @@ fn flash_attention_ragged[
         cache_row_offsets,
     )
     var v_operand = RaggedMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()
@@ -5106,7 +5106,7 @@ fn mha_gpu_naive[
             LayoutTensor[
                 mask_type,
                 Layout.row_major(mask.layout.shape),
-                MutAnyOrigin,
+                mask.origin,
             ](
                 mask.ptr,
                 RuntimeLayout[Layout.row_major(mask.layout.shape)].row_major(
@@ -5156,7 +5156,7 @@ fn mha_gpu_naive[
     ] = None,
 ) raises:
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -5164,7 +5164,7 @@ fn mha_gpu_naive[
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()

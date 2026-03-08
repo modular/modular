@@ -147,7 +147,6 @@ fn grouped_matmul_sm90[
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](

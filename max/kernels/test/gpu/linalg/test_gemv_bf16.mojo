@@ -21,9 +21,6 @@ from layout.tile_layout import row_major
 from layout.coord import Coord, Idx
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_false
 
 from std.utils.numerics import isnan
@@ -33,12 +30,12 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
-    var a_host = UnsafePointer[BFloat16].alloc(M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var a_host_n = UnsafePointer[Float32].alloc(M * K)
-    var b_host_n = UnsafePointer[Float32].alloc(K * N)
-    var c_host_n = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[BFloat16](M * K)
+    var b_host = alloc[BFloat16](K * N)
+    var c_host = alloc[Float32](M * N)
+    var a_host_n = alloc[Float32](M * K)
+    var b_host_n = alloc[Float32](K * N)
+    var c_host_n = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = BFloat16(i)

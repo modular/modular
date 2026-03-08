@@ -18,10 +18,6 @@ type mismatch that caused the DeepSeek-R1-NVFP4 pipeline failure.
 """
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
@@ -81,15 +77,9 @@ fn test_grouped_1d1d_nvfp4[
     var total_tokens = num_active_experts * tokens_per_expert
 
     # Offsets and expert IDs
-    var a_offsets_host = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var a_scale_offsets_host = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts
-    )
-    var expert_ids_host = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
+    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var a_scale_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts)
+    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
 
     var a_scale_dim0 = 0
     a_offsets_host[0] = 0
@@ -154,7 +144,7 @@ fn test_grouped_1d1d_nvfp4[
 
     # Expert scales
     var es_buf = ctx.enqueue_create_buffer[DType.float32](num_experts)
-    var es_host = UnsafePointer[Scalar[DType.float32]].alloc(num_experts)
+    var es_host = alloc[Scalar[DType.float32]](num_experts)
     for i in range(num_experts):
         es_host[i] = 1.0
     ctx.enqueue_copy(es_buf, es_host)

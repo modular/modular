@@ -18,9 +18,7 @@ from std.math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from layout.tile_layout import row_major
 from layout.coord import Coord, Idx
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
@@ -76,81 +74,51 @@ fn test[
     ) if transpose_b else DimList(to_dim[K], to_dim[N])
     comptime static_c_shape = DimList(to_dim[M], to_dim[N])
 
-    var dynamic_a_shape = IndexList[2](M.or_else(m), K.or_else(k))
-    var dynamic_b_shape = IndexList[2](
-        N.or_else(n), K.or_else(k)
-    ) if transpose_b else IndexList[2](K.or_else(k), N.or_else(n))
-    var dynamic_c_shape = IndexList[2](M.or_else(m), N.or_else(n))
-
     var a_size = m * k
-    var b_size = n * k if transpose_b else k * n
+    var b_size = k * n
     var c_size = m * n
 
-    comptime a_layout = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), K.or_else(UNKNOWN_VALUE)
-    )
-    comptime b_layout = Layout.row_major(
-        N.or_else(UNKNOWN_VALUE), K.or_else(UNKNOWN_VALUE)
-    ) if transpose_b else Layout.row_major(
-        K.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
-    )
-    comptime c_layout = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
-    )
-
-    var a_managed = ManagedLayoutTensor[in_type, a_layout](
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
-        ctx,
-    )
-    var b_managed = ManagedLayoutTensor[in_type, b_layout](ctx)
-    var c_managed = ManagedLayoutTensor[out_type, c_layout](
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-        ctx,
-    )
-    var c_ref_managed = ManagedLayoutTensor[out_type, c_layout](
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-        ctx,
-    )
-
-    var a_host = a_managed.tensor[update=False]()
-    var b_host = b_managed.tensor[update=False]()
-    var c_host = c_managed.tensor[update=False]()
-    var c_host_ref = c_ref_managed.tensor[update=False]()
+    # Host buffers
+    var a_host = ctx.enqueue_create_host_buffer[in_type](a_size)
+    var b_host = ctx.enqueue_create_host_buffer[in_type](b_size)
+    var c_host = ctx.enqueue_create_host_buffer[out_type](c_size)
+    var c_host_ref = ctx.enqueue_create_host_buffer[out_type](c_size)
 
     comptime rand_min = -100
     comptime rand_max = 100
 
-    for i in range(m * k):
-        var val = random_si64(rand_min, rand_max)
-        a_host.ptr[i] = val.cast[in_type]()
+    for i in range(a_size):
+        a_host[i] = random_si64(rand_min, rand_max).cast[in_type]()
 
-    for i in range(k * n):
-        var val = random_si64(rand_min, rand_max)
-        b_host.ptr[i] = val.cast[in_type]()
+    for i in range(b_size):
+        b_host[i] = random_si64(rand_min, rand_max).cast[in_type]()
 
-    for i in range(m * n):
-        c_host.ptr[i] = 0
-        c_host_ref.ptr[i] = 0
+    for i in range(c_size):
+        c_host[i] = 0
+        c_host_ref[i] = 0
 
-    var a_device_tensor = a_managed.device_tensor()
-    var b_device_tensor = b_managed.device_tensor()
-    var c_device_tensor = c_managed.device_tensor()
-    var c_device_ref_tensor = c_ref_managed.device_tensor()
+    # Device buffers
+    var a_dev = ctx.enqueue_create_buffer[in_type](a_size)
+    var b_dev = ctx.enqueue_create_buffer[in_type](b_size)
+    var c_dev = ctx.enqueue_create_buffer[out_type](c_size)
+    var c_ref_dev = ctx.enqueue_create_buffer[out_type](c_size)
 
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+    ctx.enqueue_copy(c_dev, c_host)
+    ctx.enqueue_copy(c_ref_dev, c_host_ref)
+
+    # NDBuffers for _matmul_gpu
     var a_device = NDBuffer[in_type, 2, _, static_a_shape](
-        a_device_tensor.ptr,
+        a_dev.unsafe_ptr(),
         IndexList[2](m, k),
     )
     var b_device = NDBuffer[in_type, 2, _, static_b_shape](
-        b_device_tensor.ptr,
+        b_dev.unsafe_ptr(),
         IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
     var c_device = NDBuffer[out_type, 2, _, static_c_shape](
-        c_device_tensor.ptr,
-        IndexList[2](m, n),
-    )
-    var c_device_ref = NDBuffer[out_type, 2, _, static_c_shape](
-        c_device_ref_tensor.ptr,
+        c_dev.unsafe_ptr(),
         IndexList[2](m, n),
     )
 
@@ -161,37 +129,32 @@ fn test[
         ctx,
     )
 
-    var c_host_final = c_managed.tensor()
+    ctx.enqueue_copy(c_host, c_dev)
 
-    comptime BLOCK_DIM = 16
-    var c_ref_tt = TileTensor(
-        c_device_ref_tensor.ptr,
+    var c_tt = TileTensor(
+        c_ref_dev,
         row_major(Coord(Idx(m), Idx(n))),
     )
-    var a_tt = TileTensor(
-        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device_tensor.ptr)
-        ),
-        row_major(Coord(Idx(dynamic_a_shape[0]), Idx(dynamic_a_shape[1]))),
+    var a_tt = TileTensor[mut=False](a_dev, row_major(Coord(Idx(m), Idx(k))))
+    var b_shape_0 = n if transpose_b else k
+    var b_shape_1 = k if transpose_b else n
+    var b_tt = TileTensor[mut=False](
+        b_dev, row_major(Coord(Idx(b_shape_0), Idx(b_shape_1)))
     )
-    var b_tt = TileTensor(
-        UnsafePointer[Scalar[in_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device_tensor.ptr)
-        ),
-        row_major(Coord(Idx(dynamic_b_shape[0]), Idx(dynamic_b_shape[1]))),
-    )
+
+    comptime BLOCK_DIM = 16
     comptime naive_kernel = matmul_kernel_naive[
         out_type,
         in_type,
         in_type,
-        type_of(c_ref_tt).LayoutType,
+        type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
         BLOCK_DIM,
         transpose_b=transpose_b,
     ]
     ctx.enqueue_function_experimental[naive_kernel](
-        c_ref_tt,
+        c_tt,
         a_tt,
         b_tt,
         m,
@@ -202,11 +165,12 @@ fn test[
     )
     ctx.synchronize()
 
-    var c_host_ref_final = c_ref_managed.tensor()
+    ctx.enqueue_copy(c_host_ref, c_ref_dev)
+    ctx.synchronize()
 
     var errors = 0
-    for i in range(m * n):
-        if c_host_final.ptr[i] != c_host_ref_final.ptr[i]:
+    for i in range(c_size):
+        if c_host[i] != c_host_ref[i]:
             errors += 1
 
     print("errors", errors)

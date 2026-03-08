@@ -19,6 +19,7 @@ MMA: Uses BF16 operands (KIND_F16)
 
 from std.math import sqrt
 from std.memory import bitcast
+
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -57,7 +58,7 @@ from std.utils.static_tuple import StaticTuple
 
 fn cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
-](C: LayoutTensor, A: LayoutTensor, B: LayoutTensor):
+](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
     comptime N = C.layout[1].size()
     # layout_a is M x K
@@ -163,7 +164,9 @@ fn tma_umma_kernel_sgs[
 
     a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
         ]
     ](
         external_memory[

@@ -30,10 +30,6 @@ from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -121,11 +117,11 @@ fn test_grouped_gemm_epilogue[
     var c_size = m.value * n.value
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
@@ -143,7 +139,7 @@ fn test_grouped_gemm_epilogue[
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
-    var c_host_original_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_original_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_original = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_original_ptr, dynamic_c_shape
     )
@@ -211,11 +207,11 @@ fn test_grouped_gemm_epilogue[
     )
 
     # Scale factor host allocations
-    var sfa_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(sfa_size)
+    var sfa_host_ptr = alloc[Scalar[scales_dtype]](sfa_size)
     var sfa_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
         sfa_host_ptr, dynamic_a_scales_shape
     )
-    var sfb_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(sfb_size)
+    var sfb_host_ptr = alloc[Scalar[scales_dtype]](sfb_size)
     var sfb_host = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
         sfb_host_ptr, dynamic_b_scales_shape
     )
@@ -274,7 +270,7 @@ fn test_grouped_gemm_epilogue[
     )
 
     # Problem sizes tensor
-    var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
+    var problem_sizes_host = alloc[Int32](max_groups * 4)
     problem_sizes_host[0] = Int32(m.value)  # M
     problem_sizes_host[1] = Int32(n.value)  # N
     problem_sizes_host[2] = Int32(k.value)  # K
@@ -290,11 +286,11 @@ fn test_grouped_gemm_epilogue[
     )
 
     # Pointer arrays
-    var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var b_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var c_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfa_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfb_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
+    var a_ptrs_host = alloc[UInt64](max_groups)
+    var b_ptrs_host = alloc[UInt64](max_groups)
+    var c_ptrs_host = alloc[UInt64](max_groups)
+    var sfa_ptrs_host = alloc[UInt64](max_groups)
+    var sfb_ptrs_host = alloc[UInt64](max_groups)
 
     a_ptrs_host[0] = UInt64(Int(a_device.unsafe_ptr()))
     b_ptrs_host[0] = UInt64(Int(b_device.unsafe_ptr()))

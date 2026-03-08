@@ -401,7 +401,7 @@ fn _matmul_common[
     var hidden_state_2d = LayoutTensor[
         dtype,
         hidden_state_layout,
-        MutAnyOrigin,
+        hidden_state.origin,
     ](
         hidden_state.ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -773,21 +773,30 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
 fn _flash_attention_dispatch[
     dtype: DType,
     collection_t: KVCollectionT,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     *,
     target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
+    ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE), _
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True,
+        dtype,
+        _,
+        output_origin,
+        address_space=AddressSpace.GENERIC,
+        ...,
     ],
     context: DeviceContextPtr,
     sink_weights: OptionalReg[
@@ -879,7 +888,7 @@ fn _flash_attention_dispatch_materialized_mask[
         unswitch[call_flash_attention](Bool(sink_weights))
 
     return dispatch_materialized_mask[_dispatch_flash_attention](
-        LayoutTensor[mask_nd.dtype, mask_nd.layout, MutAnyOrigin](
+        LayoutTensor[mask_nd.dtype, mask_nd.layout, mask_nd.origin](
             mask_nd.ptr,
             RuntimeLayout[mask_nd.layout].row_major(
                 mask_nd.runtime_layout.shape.value.canonicalize()
@@ -1268,10 +1277,10 @@ def print_kv_cache_cont_batch_generic_gpu[
         is_print_compact,
     )
 
-    blocks_host_nd.ptr.free()
-    cache_lengths_host_nd.ptr.free()
-    lookup_table_host_nd.ptr.free()
-    valid_lengths_host_nd.ptr.free()
+    blocks_ptr.free()
+    cache_lengths_ptr.free()
+    lookup_table_ptr.free()
+    valid_lengths_host_ptr.free()
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -1371,10 +1380,10 @@ def print_kv_cache_paged_generic_gpu[
         is_print_compact,
     )
 
-    blocks_host_nd.ptr.free()
-    cache_lengths_host_nd.ptr.free()
-    lookup_table_host_nd.ptr.free()
-    valid_lengths_host_nd.ptr.free()
+    blocks_ptr.free()
+    cache_lengths_ptr.free()
+    lookup_table_ptr.free()
+    valid_lengths_host_ptr.free()
 
 
 # ===-----------------------------------------------------------------------===#

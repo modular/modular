@@ -119,9 +119,6 @@ fn test[
         input.layout,  # input shape
         layout_5d,  # filter shape
         layout_4d,  # output shape
-        _,
-        _,
-        _,
         type,  # input type
         type,  # filter type
         type,  # output type
@@ -167,9 +164,6 @@ fn test[
         Layout.row_major(N, H, W, C),
         packed_filter_layout,
         Layout.row_major(N, HO, WO, F),
-        _,
-        _,
-        _,
         type,  # input type
         type,  # filter type
         type,  # output type

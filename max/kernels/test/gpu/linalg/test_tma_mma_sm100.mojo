@@ -50,7 +50,7 @@ from std.utils.static_tuple import StaticTuple
 
 fn cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
-](C: LayoutTensor, A: LayoutTensor, B: LayoutTensor):
+](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
     comptime N = C.layout[1].size()
     # layout_a is M x K
@@ -150,7 +150,9 @@ fn tma_umma_kernel_ss[
 
     a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
         ]
     ](
         external_memory[
@@ -411,7 +413,9 @@ fn tma_umma_kernel_ts[
 
     b_smem = rebind[
         UnsafePointer[
-            Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[b_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
         ]
     ](
         external_memory[

@@ -18,9 +18,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -130,19 +127,19 @@ def _test_kernel_impl[
     var b_size = num_experts * expert_shape[0] * expert_shape[1]
     var c_size = total_num_tokens * expert_shape[0]
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 3, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
@@ -188,18 +185,10 @@ def _test_kernel_impl[
         expert_scales_device.unsafe_ptr(), num_experts
     )
 
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var a_scale_offsets_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_experts
-    )
-    var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        num_experts
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_active_experts)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
@@ -264,15 +253,11 @@ def _test_kernel_impl[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_total
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
     var a_scales_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_total
-    )
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
     var b_scales_host = NDBuffer[scales_dtype, 6, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )

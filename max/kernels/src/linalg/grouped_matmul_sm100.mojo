@@ -1206,7 +1206,6 @@ fn grouped_matmul_sm100_persistent[
     a_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * M, K),
-        MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
 

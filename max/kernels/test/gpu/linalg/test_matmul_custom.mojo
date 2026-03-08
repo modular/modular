@@ -24,9 +24,6 @@ from layout.coord import Coord, Idx
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils import Index, IndexList
@@ -35,12 +32,12 @@ from std.utils import Index, IndexList
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     print("== run_matmul naive kernel")
 
-    var a_host = UnsafePointer[BFloat16].alloc(M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(K * N)
-    var c_host = UnsafePointer[BFloat16].alloc(M * N)
-    var a_host_n = UnsafePointer[Float32].alloc(M * K)
-    var b_host_n = UnsafePointer[Float32].alloc(K * N)
-    var c_host_n = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[BFloat16](M * K)
+    var b_host = alloc[BFloat16](K * N)
+    var c_host = alloc[BFloat16](M * N)
+    var a_host_n = alloc[Float32](M * K)
+    var b_host_n = alloc[Float32](K * N)
+    var c_host_n = alloc[Float32](M * N)
 
     var rand_min = -1.0
     var rand_max = 1.0
@@ -206,12 +203,12 @@ fn run_matmul[
 ) raises:
     print("== run_matmul kernel => ", dtype, M, N, K)
 
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var a_host_n = alloc[Scalar[dtype]](M * K)
+    var b_host_n = alloc[Scalar[dtype]](K * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
@@ -360,10 +357,10 @@ fn run_matmul_split_k[
         K,
     )
 
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
@@ -507,12 +504,12 @@ fn run_matmul_transpose[
     print("== run_matmul kernel transpose => ", String(dtype), M, N, K)
 
     comptime transpose_b = True
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var a_host_n = alloc[Scalar[dtype]](M * K)
+    var b_host_n = alloc[Scalar[dtype]](K * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
@@ -648,12 +645,12 @@ fn run_batched_matmul(
 ) raises:
     print("== test_batched_matmul")
 
-    var a_host = UnsafePointer[BFloat16].alloc(B * M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(B * K * N)
-    var c_host = UnsafePointer[BFloat16].alloc(B * M * N)
-    var a_host_n = UnsafePointer[Float32].alloc(B * M * K)
-    var b_host_n = UnsafePointer[Float32].alloc(B * K * N)
-    var c_host_n = UnsafePointer[Float32].alloc(B * M * N)
+    var a_host = alloc[BFloat16](B * M * K)
+    var b_host = alloc[BFloat16](B * K * N)
+    var c_host = alloc[BFloat16](B * M * N)
+    var a_host_n = alloc[Float32](B * M * K)
+    var b_host_n = alloc[Float32](B * K * N)
+    var c_host_n = alloc[Float32](B * M * N)
 
     var rand_min = -100.0
     var rand_max = 100.0

@@ -341,7 +341,7 @@ fn create_tensormap[
             OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
-            _DeviceBufferPtr,  #  globalAddress
+            type_of(global_buf._handle),  #  globalAddress
             UnsafePointer[Int64, MutAnyOrigin],  # globalDim
             UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
             UnsafePointer[Int32, MutAnyOrigin],  # boxDim
@@ -456,21 +456,6 @@ fn create_tensormap_im2col[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeIm2col",
             _ConstCharPtr,
-            OpaquePointer[MutAnyOrigin],  # tensorMap
-            Int32,  # tensorDataType
-            Int32,  # tensorRank
-            _DeviceBufferPtr,  # globalAddress
-            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
-            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
-            UnsafePointer[Int32, MutAnyOrigin],  # pixelBoxLowerCorner
-            UnsafePointer[Int32, MutAnyOrigin],  # pixelBoxUpperCorner
-            Int32,  # channelsPerPixel
-            Int32,  # pixelsPerColumn
-            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
-            Int32,  # interleave
-            Int32,  # swizzle
-            Int32,  # l2Promotion
-            Int32,  # oobFill
         ](
             tensormap_ptr,
             DataType.from_dtype[dtype]()._value,

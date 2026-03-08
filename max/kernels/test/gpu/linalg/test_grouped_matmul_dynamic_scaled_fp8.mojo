@@ -29,9 +29,6 @@ from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import Index, IndexList
 
 
@@ -94,9 +91,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     comptime b_layout = Layout.row_major(num_experts, N, K)
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[in_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[in_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[out_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[in_type]](a_size)
+    var b_host_ptr = alloc[Scalar[in_type]](b_size)
+    var c_host_ptr = alloc[Scalar[out_type]](c_size)
 
     var a_host = LayoutTensor[in_type, a_layout](
         a_host_ptr,
@@ -108,12 +105,8 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     )
 
     # Create offsets and expert_ids
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_offsets
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_expert_ids
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_offsets)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_expert_ids)
 
     # Set up offsets
     for i in range(num_offsets):
@@ -145,12 +138,8 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
 
     var a_scales_host = LayoutTensor[DType.float32, a_scales_layout](
         a_scales_host_ptr,

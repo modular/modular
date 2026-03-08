@@ -58,7 +58,7 @@ fn fp8_index_kernel[
 ](
     output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
     # [total_seq_len, num_heads, depth]
-    q: LayoutTensor[dtype, q_layout, MutAnyOrigin],
+    q: LayoutTensor[dtype, q_layout, ImmutAnyOrigin],
     # [total_seq_len, num_heads]
     q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
     # MHAOperand for K values
@@ -126,7 +126,7 @@ fn fp8_index_kernel[
     )
 
     comptime QTileType = LayoutTensor[
-        dtype, Layout.row_major(num_heads, depth), MutAnyOrigin
+        dtype, Layout.row_major(num_heads, depth), ImmutAnyOrigin
     ]
 
     comptime QSTileType = LayoutTensor[
@@ -287,7 +287,9 @@ fn fp8_index[
     q_s: LayoutTensor[
         DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[dtype, k_layout, address_space=AddressSpace.GENERIC, ...],
+    k: LayoutTensor[
+        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
+    ],
     k_s: LayoutTensor[
         DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
@@ -295,7 +297,7 @@ fn fp8_index[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     max_seq_len: Int,
@@ -305,7 +307,7 @@ fn fp8_index[
     # Create RaggedMHAOperand wrappers for K and K_s
     # These allow accessing ragged data via cache_row_offsets indirection
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, ImmutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, k.origin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -314,7 +316,7 @@ fn fp8_index[
         LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            ImmutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -397,9 +399,9 @@ fn _index_matmul_max[
     k_type: MHAOperand,
 ](
     output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
-    q: LayoutTensor[dtype, q_layout, MutAnyOrigin],
+    q: LayoutTensor[dtype, q_layout, ImmutAnyOrigin],
     q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
-    k: LayoutTensor[dtype, k_layout, MutAnyOrigin],
+    k: LayoutTensor[dtype, k_layout, ImmutAnyOrigin],
     valid_length: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
@@ -431,14 +433,12 @@ fn _index_matmul_max[
     var q_runtime_layout = RuntimeLayout[q_layout].row_major(
         Index(seq_len, num_heads, depth)
     )
-    var q_batch = LayoutTensor[dtype, q_layout, MutAnyOrigin](
-        q_ptr, q_runtime_layout
-    )
+    var q_batch = LayoutTensor[dtype, q_layout](q_ptr, q_runtime_layout)
 
     var k_runtime_layout = RuntimeLayout[k_layout].row_major(
         Index(num_keys, 1, depth)
     )
-    var k_batch = LayoutTensor[dtype, k_layout, MutAnyOrigin](
+    var k_batch = LayoutTensor[dtype, k_layout, k.origin](
         k_ptr, k_runtime_layout
     )
 
@@ -540,7 +540,9 @@ fn fp8_index_naive[
     q_s: LayoutTensor[
         DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[dtype, k_layout, address_space=AddressSpace.GENERIC, ...],
+    k: LayoutTensor[
+        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
+    ],
     k_s: LayoutTensor[
         DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
@@ -548,7 +550,7 @@ fn fp8_index_naive[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     max_seq_len: Int,
@@ -556,7 +558,7 @@ fn fp8_index_naive[
     ctx: DeviceContext,
 ) raises:
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, k.origin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -565,7 +567,7 @@ fn fp8_index_naive[
         LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
