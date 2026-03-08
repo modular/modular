@@ -1617,9 +1617,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // 'def' implies raises if not specified.
   if (isDef) {
     if (!fnSignature.effects.isThrows())
-      p.emitWarning(funcOp.getLoc(),
-                    "'def' functions will soon stop implying 'raises', add an "
-                    "explicit 'raises'")
+      p.emitError(funcOp.getLoc(),
+                  "'def' functions will soon stop implying 'raises', add an "
+                  "explicit 'raises'")
           << FixIt::insertBeforeToken(p.getToken().getLoc(), "raises ");
     fnSignature.effects.setThrows();
   }

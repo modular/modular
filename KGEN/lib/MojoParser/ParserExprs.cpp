@@ -1312,9 +1312,9 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   // If not already specified, 'def' implies raises.
   if (isDef) {
     if (!fnSignature.effects.isThrows()) {
-      emitWarning(baseLoc,
-                  "'def' functions will soon stop implying 'raises', add an "
-                  "explicit 'raises'")
+      emitError(baseLoc,
+                "'def' functions will soon stop implying 'raises', add an "
+                "explicit 'raises'")
           << FixIt::insertBeforeToken(endLoc, "raises ");
     }
     fnSignature.effects.setThrows();
