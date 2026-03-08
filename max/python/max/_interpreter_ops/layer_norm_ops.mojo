@@ -22,7 +22,7 @@ from std.algorithm.functional import IndexList
 from std.math import sqrt
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor.managed_tensor_slice import ManagedTensorSlice
+from tensor import ManagedTensorSlice, get_unknown_tensor_spec
 from tensor.io_spec import Input
 from compiler_internal import StaticTensorSpec
 from nn.normalization import layer_norm as nn_layer_norm
@@ -191,7 +191,7 @@ fn layer_norm_op[
                     out_ptr.store[width=width](flat_idx, val)
 
                 # Create beta as InputTensor -> TileTensor for the kernel
-                comptime beta_spec = StaticTensorSpec[dtype, 1].create_unknown()
+                comptime beta_spec = get_unknown_tensor_spec[dtype, 1]()
                 var beta_tensor = ManagedTensorSlice[
                     io_spec=Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)

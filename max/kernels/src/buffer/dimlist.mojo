@@ -292,6 +292,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
     var value: VariadicParamList[Dim]
     """The underlying storage for the list of dimensions."""
 
+    @always_inline("nodebug")
     fn __init__(out self, *, copy: Self):
         """Creates a dimension list from the given list of values.
 
@@ -566,6 +567,23 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             index_list[idx] = Int(self.at[idx]())
 
         return index_list
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn from_index_list[rank: Int, //, value: IndexList[rank]]() -> Self:
+        """Creates a dimension list from the given index list.
+
+        Parameters:
+            rank: The rank of the index list.
+            value: The index list to create a dimension list from.
+
+        Returns:
+            A dimension list with the same dimensions as the index list.
+        """
+        comptime transform[idx: Int]: Dim = Dim() if value[idx] < 0 else Dim(
+            value[idx]
+        )
+        return DimList(comptime (Variadic.tabulate[rank, transform]))
 
     @always_inline
     @staticmethod

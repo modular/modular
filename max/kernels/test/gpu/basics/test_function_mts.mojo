@@ -17,8 +17,8 @@ from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
+from tensor import get_unknown_tensor_spec
 from std.testing import TestSuite, assert_equal
-
 from std.utils import IndexList
 
 comptime WIDTH = 5
@@ -29,9 +29,9 @@ comptime int_dtype = DType.uint8
 comptime float_dtype = DType.float32
 comptime rgb_layout_orig = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
 comptime gray_layout_orig = Layout.row_major(HEIGHT, WIDTH)
-comptime rgb_spec = StaticTensorSpec[int_dtype, 3].create_unknown()
+comptime rgb_spec = get_unknown_tensor_spec[int_dtype, 3]()
 comptime rgb_layout = rgb_spec.to_layout()
-comptime gray_spec = StaticTensorSpec[int_dtype, 2].create_unknown()
+comptime gray_spec = get_unknown_tensor_spec[int_dtype, 2]()
 comptime gray_layout = gray_spec.to_layout()
 
 
