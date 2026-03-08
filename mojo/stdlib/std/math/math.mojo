@@ -3218,8 +3218,8 @@ fn comb(n: Int, k: Int) -> Int:
         k: The number of items to choose. Must be non-negative.
 
     Returns:
-        The binomial coefficient C(n, k). Returns 0 if `k > n`. Results are
-        undefined for negative inputs.
+        The binomial coefficient C(n, k). Returns 0 if `k > n`. Asserts if
+        either argument is negative.
 
     Examples:
 
@@ -3238,7 +3238,16 @@ fn comb(n: Int, k: Int) -> Int:
     var k2 = k if k <= n - k else n - k
     var result = 1
     for i in range(k2):
-        result = result * (n - i) // (i + 1)
+        # Reduce (n-i) and (i+1) by their gcd before multiplying to avoid
+        # intermediate overflow when the final result fits in Int.
+        var num = n - i
+        var den = i + 1
+        var g = gcd(num, den)
+        num //= g
+        den //= g
+        # After removing gcd(num, den), the remaining den divides result
+        # exactly (since C(n, i+1) is always an integer).
+        result = (result // den) * num
     return result
 
 
@@ -3250,12 +3259,12 @@ fn perm(n: Int, k: Int = -1) -> Int:
 
     Args:
         n: The total number of items. Must be non-negative.
-        k: The number of items to arrange. Must be non-negative. If -1
-           (the default), returns `n!`.
+        k: The number of items to arrange. Must be non-negative and at most `n`.
+           If omitted (default), returns `n!` via `factorial(n)`.
 
     Returns:
-        The number of permutations P(n, k) = n! / (n-k)!. Results are
-        undefined for negative inputs or when `k > n`.
+        The number of permutations P(n, k) = n! / (n-k)!. Asserts if `n` is
+        negative, `k` is negative, or `k > n`.
 
     Examples:
 
@@ -3267,10 +3276,11 @@ fn perm(n: Int, k: Int = -1) -> Int:
     ```
     """
     assert n >= 0, "n must be non-negative"
-    var k2 = n if k == -1 else k
-    assert 0 <= k2 <= n, "k must be between 0 and n"
+    if k == -1:
+        return factorial(n)
+    assert 0 <= k <= n, "k must be between 0 and n"
     var result = 1
-    for i in range(k2):
+    for i in range(k):
         result *= n - i
     return result
 

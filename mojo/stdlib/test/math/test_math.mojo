@@ -56,6 +56,7 @@ from std.testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
+    assert_raises,
     assert_true,
 )
 
@@ -126,10 +127,13 @@ fn test_perm() raises:
     assert_equal(perm(5, 1), 5)
     assert_equal(perm(5, 2), 20)
     assert_equal(perm(5, 5), 120)
-    # perm(n) with default k=-1 returns n!
+    # perm(n) with default k=-1 delegates to factorial(n)
     assert_equal(perm(5), factorial(5))
     assert_equal(perm(0), 1)
     assert_equal(perm(10, 3), 720)
+    # k > n asserts (matching Python's ValueError)
+    with assert_raises():
+        _ = perm(3, 5)
 
 
 def test_copysign() raises:
