@@ -427,8 +427,8 @@ def test_keep_positive_removes_keys() raises:
     c3["y"] = -2
 
     var c4 = Counter[String]()
-    c4["x"] = 2  # "x" stays negative after add but "y" becomes positive? No:
-    # c3 += c4 → x=1+2=3 (kept), y=-2+0=-2 (removed)
+    c4["x"] = 2
+    # After c3 += c4: x=1+2=3 (kept), y=-2+0=-2 (removed)
     c3 += c4
     assert_equal(len(c3), 1)
     assert_true("x" in c3)
