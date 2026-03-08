@@ -118,7 +118,7 @@ class AutoencoderKLLTX2VideoConfig(AutoencoderKLConfigBase):
     patch_size_t: int = 1
     resnet_norm_eps: float = 1e-6
     scaling_factor: float = 1.0
-    decoder_causal: bool = False  # Real LTX-2 VAE uses non-causal decoder
+    decoder_causal: bool = False
     decoder_spatial_padding_mode: str = "reflect"
 
     @staticmethod
