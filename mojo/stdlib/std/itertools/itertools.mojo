@@ -107,6 +107,8 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
             Element=Self.IteratorTypeA,
             ParentConformsTo="Copyable",
         ]()
+        comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
+
         self._inner_a = rebind_var[Self.IteratorTypeA](
             trait_downcast[Copyable](copy._inner_a).copy()
         )

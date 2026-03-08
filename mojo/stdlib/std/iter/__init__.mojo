@@ -792,6 +792,8 @@ struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
         self._inner = rebind_var[Self.InnerIterator](
             trait_downcast[Copyable](copy._inner).copy()
         )
+
+        comptime assert conforms_to(Self.Element, Copyable)
         self._next = copy._next.copy()
 
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
