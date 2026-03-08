@@ -1486,10 +1486,9 @@ struct Dict[
         var h = hash[HasherType=Self.H](key)
         var found, slot_idx = self._find_slot(h, key)
         if found:
-            debug_assert(
-                _is_occupied(self._ctrl[slot_idx]),
-                "_find_slot returned found=True but ctrl byte is not occupied",
-            )
+            assert _is_occupied(
+                self._ctrl[slot_idx]
+            ), "_find_slot returned found=True but ctrl byte is not occupied"
             var entry = (self._slots + slot_idx).take_pointee()
             self._set_ctrl(slot_idx, _CTRL_DELETED)
             self._len -= 1
