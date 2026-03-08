@@ -26,7 +26,7 @@ from .dtype import DataType, Property
 from .result import Result
 
 
-comptime cublasLtHandle_t = OpaquePointer[MutAnyOrigin]
+comptime cublasLtHandle_t = OpaquePointer[_]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -114,11 +114,11 @@ fn cublasLtMatmulAlgoConfigSetAttribute(
 
 
 fn cublasLtCreate(
-    light_handle: UnsafePointer[cublasLtHandle_t, MutAnyOrigin],
+    light_handle: UnsafePointer[OpaquePointer[AnyOrigin[mut=True]], _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtCreate",
-        fn(UnsafePointer[cublasLtHandle_t, MutAnyOrigin]) -> Result,
+        fn(type_of(light_handle)) -> Result,
     ]()(light_handle)
 
 
@@ -136,7 +136,7 @@ fn cublasLtMatrixTransformDescCreate(
     return _get_dylib_function[
         "cublasLtMatrixTransformDescCreate",
         fn(
-            UnsafePointer[UnsafePointer[Transform, MutAnyOrigin], MutAnyOrigin],
+            type_of(transform_desc),
             DataType,
         ) -> Result,
     ]()(transform_desc, scale_type)
@@ -842,7 +842,7 @@ fn cublasLtMatmulAlgoCheck(
     return _get_dylib_function[
         "cublasLtMatmulAlgoCheck",
         fn(
-            cublasLtHandle_t,
+            type_of(light_handle),
             cublasLtMatmulDesc_t,
             cublasLtMatrixLayout_t,
             cublasLtMatrixLayout_t,
@@ -1549,7 +1549,7 @@ fn cublasLtMatmul(
     return _get_dylib_function[
         "cublasLtMatmul",
         fn(
-            cublasLtHandle_t,
+            type_of(light_handle),
             cublasLtMatmulDesc_t,
             OpaquePointer[ImmutAnyOrigin],
             OpaquePointer[ImmutAnyOrigin],
@@ -1997,7 +1997,7 @@ fn cublasLtMatmulAlgoGetHeuristic(
     return _get_dylib_function[
         "cublasLtMatmulAlgoGetHeuristic",
         fn(
-            cublasLtHandle_t,
+            type_of(light_handle),
             cublasLtMatmulDesc_t,
             cublasLtMatrixLayout_t,
             cublasLtMatrixLayout_t,
@@ -2280,7 +2280,7 @@ struct LayoutAttribute(TrivialRegisterPassable):
 
 fn cublasLtDestroy(light_handle: cublasLtHandle_t) raises -> Result:
     return _get_dylib_function[
-        "cublasLtDestroy", fn(cublasLtHandle_t) -> Result
+        "cublasLtDestroy", fn(type_of(light_handle)) -> Result
     ]()(light_handle)
 
 
@@ -2605,7 +2605,7 @@ fn cublasLtMatmulAlgoInit(
     return _get_dylib_function[
         "cublasLtMatmulAlgoInit",
         fn(
-            cublasLtHandle_t,
+            type_of(light_handle),
             ComputeType,
             DataType,
             DataType,
@@ -3720,7 +3720,7 @@ fn cublasLtMatrixTransform(
     return _get_dylib_function[
         "cublasLtMatrixTransform",
         fn(
-            cublasLtHandle_t,
+            type_of(light_handle),
             cublasLtMatrixTransformDesc_t,
             OpaquePointer[ImmutAnyOrigin],
             OpaquePointer[ImmutAnyOrigin],
