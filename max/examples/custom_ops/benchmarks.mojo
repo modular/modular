@@ -67,8 +67,8 @@ struct Tensor[
             io_spec=Self.io_spec, static_spec=Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            Self.static_spec.shape.into_index_list[Self.rank](),
-            Self.static_spec.strides.into_index_list[Self.rank](),
+            Self.static_spec.shape.to_index_list[Self.rank](),
+            Self.static_spec.strides.to_index_list[Self.rank](),
         )
 
     fn rand(self) raises -> Self:

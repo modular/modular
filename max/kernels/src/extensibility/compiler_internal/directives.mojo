@@ -37,28 +37,32 @@ fn view_kernel():
 
 
 @always_inline
-fn _row_major_strides[shape: DimList]() -> DimList:
+fn _row_major_strides_impl[
+    rank: Int, //
+](shape: IndexList[rank]) -> IndexList[rank]:
+    """Return a `DimList` of strides for data laid out in row-major order, from
+    a `DimList` representing the shape."""
+    var result = IndexList[rank]()
+    comptime if rank > 0:
+        result[rank - 1] = 1
+        for i in range(rank - 2, -1, -1):
+            result[i] = shape[i + 1] * result[i + 1]
+    return result
+
+
+@always_inline
+fn _row_major_strides[rank: Int, shape: DimList]() -> DimList:
     """Return a `DimList` of strides for data laid out in row-major order, from
     a `DimList` representing the shape."""
 
-    comptime assert len(shape) > 0, (
-        "initializing `StaticTensorSpec` with just a shape only"
-        " supports rank 1 to 3"
-    )
-
-    comptime if len(shape) == 1:
-        return 1
-    elif len(shape) == 2:
-        return DimList(shape.get[1](), 1)
-    elif len(shape) == 3:
-        return DimList(shape.get[2]() * shape.get[1](), shape.get[2](), 1)
-    else:
-        return -1
+    return DimList.from_index_list[
+        _row_major_strides_impl(shape.to_index_list[rank]())
+    ]()
 
 
 fn get_row_major_tensor_spec[
     dtype: DType, rank: Int, shape: DimList
-]() -> StaticTensorSpec[dtype, rank, shape, _row_major_strides[shape]()]:
+]() -> StaticTensorSpec[dtype, rank, shape, _row_major_strides[rank, shape]()]:
     """
     Returns a row-major StaticTensorSpec with the specified shape and dtype.
     """

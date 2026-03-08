@@ -541,7 +541,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         return not self._contains_impl[start, end](Dim())
 
     @always_inline
-    fn into_index_list[rank: Int](self) -> IndexList[rank]:
+    fn to_index_list[rank: Int](self) -> IndexList[rank]:
         """Copy the DimList values into an `IndexList`, providing the rank.
 
         Parameters:
@@ -554,7 +554,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         from buffer import DimList
 
         comptime dim_list = DimList(2, 4)
-        var index_list = comptime(dim_list.into_index_list[rank=2]())
+        var index_list = comptime(dim_list.to_index_list[rank=2]())
         ```
         """
         var num_elements = len(self)
