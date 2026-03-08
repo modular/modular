@@ -1418,7 +1418,10 @@ struct Dict[
         print(missing_value)  # => 99
         ```
         """
-        return self.unsafe_pop(key).or_else(default^)
+        var result = self.unsafe_pop(key)
+        if result:
+            return result.take()
+        return default^
 
     def pop(mut self, ref key: Self.K) raises DictKeyError[Self.K] -> Self.V:
         """Remove a value from the dictionary by key.
@@ -1438,11 +1441,9 @@ struct Dict[
         ```mojo
         var my_dict = Dict[String, Int]()
         my_dict["a"] = 1
-        my_dict["b"] = 2
-        var value = my_dict.pop("a", 99)
+        var value = my_dict.pop("a")
         print(value)  # => 1
-        var missing_value = my_dict.pop("c", 99)
-        print(missing_value)  # => 99
+        # my_dict.pop("missing")  # raises DictKeyError
         ```
         """
         var hash = hash[Self.H](key)
