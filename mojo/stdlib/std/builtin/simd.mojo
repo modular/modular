@@ -69,7 +69,13 @@ from std.sys.info import (
 )
 from std.sys.intrinsics import _type_is_eq
 
-from std.bit import bit_width, byte_swap, count_trailing_zeros, pop_count
+from std.bit import (
+    bit_width,
+    byte_swap,
+    count_leading_zeros,
+    count_trailing_zeros,
+    pop_count,
+)
 from std.builtin._format_float import _write_float
 from std.builtin.device_passable import DevicePassable
 from std.builtin.format_int import _write_int
@@ -2989,6 +2995,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             return Int(pop_count(self).reduce_add())
 
+    @always_inline
     def first_true(self) -> Int:
         """Returns the index of the first `True` lane in a boolean SIMD vector.
 
@@ -3016,8 +3023,12 @@ struct SIMD[dtype: DType, size: Int](
             var mask = pack_bits(rebind[SIMD[DType.bool, Self.size]](self))
             if not mask:
                 return -1
-            return Int(count_trailing_zeros(mask))
+            comptime if is_big_endian():
+                return Int(count_leading_zeros(mask))
+            else:
+                return Int(count_trailing_zeros(mask))
 
+    @always_inline
     def count_true(self) -> Int:
         """Returns the number of `True` lanes in a boolean SIMD vector.
 
