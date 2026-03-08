@@ -35,7 +35,7 @@ from .model_config import (
 )
 
 
-def pixel_shuffle_3d_merge(x: Tensor) -> Tensor:
+def pixel_shuffle_3d_merge(x: Tensor, stride: tuple[int, int, int]) -> Tensor:
     """Robust 3D pixel shuffle merge.
 
     Input x is rank 8: [B, C, D, d, H, h, W, w]
