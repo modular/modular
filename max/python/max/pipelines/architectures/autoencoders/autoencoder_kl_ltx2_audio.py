@@ -818,7 +818,9 @@ class PostprocessAndDecode(nn.Module[..., Tensor]):
         latents = F.reshape(
             latents_btd, (batch, t, latent_channels, self._latent_mel_bins)
         )
-        latents = F.permute(latents, (0, 2, 1, 3))  # (B, T, C, M) → (B, C, T, M)
+        latents = F.permute(
+            latents, (0, 2, 1, 3)
+        )  # (B, T, C, M) → (B, C, T, M)
 
         return self.decoder(latents)
 
