@@ -13,7 +13,7 @@ struct HasIntParam[x: Int]:
 # Functions
 ##===----------------------------------------------------------------------===##
 
-# expected-warning @+1 {{'def' functions will soon stop implying 'raises', add an explicit 'raises'}}
+# expected-error @+1 {{'def' functions will soon stop implying 'raises', add an explicit 'raises'}}
 def missing_raises():
   pass
 
