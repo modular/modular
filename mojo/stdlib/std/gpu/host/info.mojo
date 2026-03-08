@@ -2349,9 +2349,8 @@ fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 
 # All supported target architectures in canonical form.
 # This is the canonical list used for validation in _get_info_from_target.
-# Normalization: "nvidia:80" -> "sm_80", "mi250x" -> "gfx90a",
-#                "mi300x" -> "gfx942", "amdgpu:gfx942" -> "gfx942",
-#                "metal:4" -> "apple-m4".
+# Normalization: "nvidia:80" -> "sm_80", "mi300x" -> "gfx942",
+#                "amdgpu:gfx942" -> "gfx942", "metal:4" -> "apple-m4".
 #
 # SYNC: This list must stay in sync with printSupportedAccelerators() in
 #       KGEN/tools/mojo/Build/mojo-build.cpp. Run the following test to verify:
@@ -2411,8 +2410,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     """
     # Normalize the target architecture to canonical form.
     # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90", "nvidia:80" -> "sm_80", "sm80" -> "sm_80"
-    # AMD: "mi250x" -> "gfx90a", "mi300x" -> "gfx942", "mi355x" -> "gfx950",
-    #      "amdgpu:gfx942" -> "gfx942"
+    # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942"
     # Apple: "metal:4" -> "apple-m4"
     comptime target_arch = (
         target_arch0

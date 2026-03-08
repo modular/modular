@@ -266,15 +266,13 @@ fn _dot_accum[
 
     On AMD GPUs except gfx90a, bf16 inputs with an f32 accumulator use
     v_dot2_f32_bf16 to avoid explicit bf16→f32 conversion
-    (120 v_perm/v_bfi instructions). On gfx90a, non-AMD targets, or other
-    types, falls back to cast-then-multiply.
+    (120 v_perm/v_bfi instructions). On other targets or types, this
+    falls back to cast-then-multiply.
     """
     var result = acc
-    comptime arch = _accelerator_arch()
 
     comptime if (
-        "amdgpu:" in arch
-        and arch != "amdgpu:gfx90a"
+        is_amd_gpu() and not _is_amd_mi250x
         and in_type == DType.bfloat16
         and accum_type == DType.float32
     ):
