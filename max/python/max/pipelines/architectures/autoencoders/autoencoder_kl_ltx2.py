@@ -40,12 +40,13 @@ def pixel_shuffle_3d_merge(x: Tensor, stride: tuple[int, int, int]) -> Tensor:
 
     Input x is rank 8: [B, C, D, d, H, h, W, w]
     Output is rank 5: [B, C, D*d, H*h, W*w]
-    """
-    x = F.flatten(x, 6, 7)  # [B, C, D, d, H, h, W*w]
-    x = F.flatten(x, 4, 5)  # [B, C, D, d, H*h, W*w]
-    x = F.flatten(x, 2, 3)  # [B, C, D*d, H*h, W*w]
 
-    return x
+    Uses a single direct reshape with explicit symbolic products (no -1 inference), because the stepwise flatten approach fails when
+    the symbolic verifier encounters pre-existing mul_no_wrap products in later
+    merge steps.  All input dims must be pure (non-product) Dims.
+    """
+    b, c, D, d, H, h, W, w = x.shape
+    return x.reshape((b, c, D * d, H * h, W * w))
 
 
 class PerChannelRMSNorm(nn.Module[[Tensor], Tensor]):
@@ -1015,7 +1016,13 @@ class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
         return (
             TensorType(
                 self.dtype,
-                shape=["batch_size", self.in_channels, "num_frames", "height", "width"],
+                shape=[
+                    "batch_size",
+                    self.in_channels,
+                    "num_frames",
+                    "height",
+                    "width",
+                ],
                 device=self.device,
             ),
         )
