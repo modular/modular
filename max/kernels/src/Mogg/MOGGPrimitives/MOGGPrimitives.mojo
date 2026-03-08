@@ -18,7 +18,6 @@ from std.sys import size_of, align_of
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from tensor import get_unknown_tensor_spec
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
@@ -1060,7 +1059,7 @@ fn reshape_contiguous_buffer[
 ](
     buffer: ManagedTensorSlice[
         io_spec=IOSpec[mut, input](),
-        static_spec=get_unknown_tensor_spec[dtype, old_rank](),
+        static_spec=StaticTensorSpec[dtype, old_rank, ...].get_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
@@ -1103,7 +1102,7 @@ fn to_managed_tensor_slice[
     shape: UnsafePointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=get_unknown_tensor_spec[dtype, rank](),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
@@ -1138,7 +1137,7 @@ fn get_scalar_from_managed_tensor_slice[
 ](
     tensor: ManagedTensorSlice[
         io_spec=IOSpec[mut, input](),
-        static_spec=get_unknown_tensor_spec[dtype, 1](),
+        static_spec=StaticTensorSpec[dtype, 1, ...].get_unknown(),
     ]
 ) -> Scalar[dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
@@ -1160,7 +1159,7 @@ fn _to_managed_tensor_slice_index_list_shape[
     shape_tuple: IndexList[rank],
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=get_unknown_tensor_spec[dtype, rank](),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
@@ -1183,7 +1182,7 @@ fn to_managed_tensor_slice_list[
     out out_list: List[
         ManagedTensorSlice[
             io_spec=IOSpec[mut, input](),
-            static_spec=get_unknown_tensor_spec[dtype, rank](),
+            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
         ]
     ],
 ):

@@ -26,7 +26,6 @@ from layout.runtime_layout import RuntimeLayout
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import (
     ManagedTensorSlice,
-    get_unknown_tensor_spec,
 )
 from tensor.io_spec import Input, _FusedComputeOutput
 from compiler_internal import StaticTensorSpec
@@ -404,7 +403,7 @@ fn _batch_matmul_shape_for_rank[
         b_shape[i] = b_dims[i]
 
     # Create shape-only InputTensors with null pointers
-    comptime spec = get_unknown_tensor_spec[DType.float32, rank]()
+    comptime spec = StaticTensorSpec[DType.float32, rank, ...].get_unknown()
     var null_ptr = UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
         unsafe_from_address=0
     )
@@ -645,8 +644,8 @@ fn batch_matmul_op[
         ctx: Device context pointer (null for CPU).
     """
     # Create rank-3 ManagedTensorSlice wrappers with collapsed batch dimension
-    comptime in_spec = get_unknown_tensor_spec[dtype, 3]()
-    comptime out_spec = get_unknown_tensor_spec[dtype, 3]()
+    comptime in_spec = StaticTensorSpec[dtype, 3, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, 3, ...].get_unknown()
 
     var a = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         lhs_ptr, IndexList[3](batch_size, m, k)

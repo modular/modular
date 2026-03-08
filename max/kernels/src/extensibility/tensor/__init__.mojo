@@ -41,7 +41,6 @@ from .managed_tensor_slice import (
     trace_slice_arg,
     view_copy_impl,
     get_row_major_tensor_spec,
-    get_unknown_tensor_spec,
 )
 from .operation_traits import (
     ElementwiseBinaryComparisonOp,

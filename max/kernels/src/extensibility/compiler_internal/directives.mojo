@@ -45,7 +45,7 @@ fn _row_major_strides_impl[
     var result = IndexList[rank]()
     comptime if rank > 0:
         result[rank - 1] = 1
-        for i in range(rank - 2, -1, -1):
+        comptime for i in range(rank - 2, -1, -1):
             result[i] = shape[i + 1] * result[i + 1]
     return result
 
@@ -69,7 +69,7 @@ fn get_row_major_tensor_spec[
     return {align_of[dtype](), AddressSpace.GENERIC, False, None, None, None}
 
 
-fn get_unknown_tensor_spec[
+fn _get_unknown_tensor_spec[
     dtype: DType, rank: Int
 ]() -> StaticTensorSpec[
     dtype, rank, DimList.create_unknown[rank](), DimList.create_unknown[rank]()
@@ -147,6 +147,12 @@ struct StaticTensorSpec[
         self.in_lambda = internals.in_lambda
         self.out_lambda = internals.out_lambda
         self.out_compute_lambda = internals.out_compute_lambda
+
+    # This indirect approach to providing get_unknown is necessary because the
+    # we don't want clients to have to bind rank and shapes to use this. Aliases
+    # only require the parameters they USE to be bound, whereas static methods
+    # require all parameters to be bound.
+    comptime get_unknown = _get_unknown_tensor_spec[Self.dtype, Self.rank]
 
     @always_inline
     fn with_layout[

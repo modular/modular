@@ -28,7 +28,6 @@ from compiler_internal.directives import (
     __mogg_intrinsic_attr,
     StaticTensorSpecInternal,
     get_row_major_tensor_spec,
-    get_unknown_tensor_spec,
 )
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
@@ -387,7 +386,7 @@ comptime _FusedComputeOutputTensor = ManagedTensorSlice[
 
 comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
     io_spec=IOUnknown,
-    static_spec=get_unknown_tensor_spec[dtype, rank](),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]
 
 

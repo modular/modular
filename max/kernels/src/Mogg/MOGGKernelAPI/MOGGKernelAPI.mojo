@@ -63,7 +63,6 @@ from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
-from tensor import get_unknown_tensor_spec
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -4583,7 +4582,9 @@ fn concat_from_list_shape_impl[
 ](
     axis0: Int,
     inputs: List[
-        InputTensor[static_spec=get_unknown_tensor_spec[dtype, rank](),]
+        InputTensor[
+            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
+        ]
     ],
 ) raises -> IndexList[rank]:
     var axis = normalize_neg_index(axis0, rank)
