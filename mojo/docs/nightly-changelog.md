@@ -59,14 +59,17 @@ This version is still a work in progress.
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
 - `Deque` now supports slice subscripting via `__getitem__`. Both contiguous
-  slices (`d[1:4]`) and strided slices (`d[::2]`, `d[::-1]`) return a new
-  `Deque` with the selected elements:
+  slices (`d[1:4]`) and strided slices (`d[::2]`, `d[::-1]`) return a lazy
+  iterator that borrows from the source deque without allocating a new one:
 
   ```mojo
   var d: Deque[Int] = [1, 2, 3, 4, 5]
-  print(d[1:4])   # Deque(2, 3, 4)
-  print(d[::2])   # Deque(1, 3, 5)
-  print(d[::-1])  # Deque(5, 4, 3, 2, 1)
+  for x in d[1:4]:
+      print(x)   # 2, 3, 4
+  for x in d[::2]:
+      print(x)   # 1, 3, 5
+  for x in d[::-1]:
+      print(x)   # 5, 4, 3, 2, 1
   ```
 
 ## Tooling changes

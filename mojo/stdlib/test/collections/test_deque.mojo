@@ -1257,5 +1257,36 @@ def test_getitem_slice_does_not_mutate_source() raises:
     assert_equal(len(d), 5)
 
 
+def test_getitem_slice_iter_bounds() raises:
+    """_DequeSliceIter.bounds() correctly reports remaining elements."""
+    var d: Deque[Int] = [1, 2, 3, 4, 5]
+
+    # Contiguous slice: bounds before and after consuming an element.
+    var it = d[1:4]
+    var lo, hi = it.bounds()
+    assert_equal(lo, 3)
+    assert_equal(hi.value(), 3)
+    _ = it.__next__()
+    lo, hi = it.bounds()
+    assert_equal(lo, 2)
+    assert_equal(hi.value(), 2)
+
+    # Strided slice with step=2: [1,3,5] → 3 elements.
+    var it2 = d[::2]
+    lo, hi = it2.bounds()
+    assert_equal(lo, 3)
+    assert_equal(hi.value(), 3)
+
+    # Reverse slice: [5,4,3,2,1] → 5 elements.
+    var it3 = d[::-1]
+    lo, hi = it3.bounds()
+    assert_equal(lo, 5)
+    assert_equal(hi.value(), 5)
+    _ = it3.__next__()
+    lo, hi = it3.bounds()
+    assert_equal(lo, 4)
+    assert_equal(hi.value(), 4)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -458,6 +458,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         ```
         """
         var start, end, step = slice.indices(len(self))
+        assert step != 0, "Deque slice step cannot be zero"
         return _DequeSliceIter(
             index=start, stop=end, step=step, src=Pointer(to=self)
         )
