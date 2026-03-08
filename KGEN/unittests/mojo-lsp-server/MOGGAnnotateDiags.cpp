@@ -107,7 +107,7 @@ struct NonInputTensorList:
     ](
         output: List[
             OutputTensor[
-                static_spec = StaticTensorSpec[type, rank].create_unknown()
+                static_spec = get_unknown_tensor_spec[type, rank](),
             ]
         ],
     ):
