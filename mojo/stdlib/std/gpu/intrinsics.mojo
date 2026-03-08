@@ -42,7 +42,7 @@ from std.sys.info import (
     _is_sm_9x_or_newer,
     align_of,
     bit_width_of,
-    _cdna_3_or_newer,
+    _is_amd_cdna,
     _cdna_4_or_newer,
     _is_amd_rdna1,
     _is_amd_rdna2,
@@ -1090,8 +1090,8 @@ struct AMDBufferResource(TrivialRegisterPassable):
             # GFX10.x (RDNA1/RDNA2)
             self.desc[3] = 0x31014000
         else:
-            comptime assert _cdna_3_or_newer(), (
-                "The AMDBufferResource struct is only defined for CDNA 3+"
+            comptime assert _is_amd_cdna(), (
+                "The AMDBufferResource struct is only defined for CDNA"
                 " and RDNA 1-4 GPUs."
             )
             # GFX9 (CDNA/GCN)
