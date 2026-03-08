@@ -198,7 +198,7 @@ struct Tuple[*element_types: Movable](
         return Self.__len__()
 
     @always_inline
-    fn __hash__[H: Hasher](self, mut hasher: H) where AllHashable[*element_types]:
+    fn __hash__[H: Hasher](self, mut hasher: H) where AllHashable[*Self.element_types]:
         """Hash the tuple by feeding each element into the hasher in order.
 
         Parameters:
