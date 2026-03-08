@@ -106,6 +106,7 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
 
 
 class AutoencoderKLLTX2VideoConfig(AutoencoderKLConfigBase):
+    layers_per_block: tuple[int, ...] = (4, 6, 6, 2, 2)
     latent_channels: int = 128
     decoder_block_out_channels: tuple[int, ...] = (256, 512, 1024)
     decoder_layers_per_block: tuple[int, ...] = (5, 5, 5, 5)
