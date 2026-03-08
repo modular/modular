@@ -15,6 +15,7 @@ from std.math import align_down, align_up, ceildiv
 from std.sys import (
     has_amd_gpu_accelerator,
     is_amd_gpu,
+    _is_amd_mi250x,
     llvm_intrinsic,
     simd_width_of,
 )
@@ -272,7 +273,7 @@ fn _dot_accum[
     var result = acc
 
     comptime if (
-        is_amd_gpu() and not _is_amd_mi250x
+        is_amd_gpu() and not _is_amd_mi250x()
         and in_type == DType.bfloat16
         and accum_type == DType.float32
     ):
