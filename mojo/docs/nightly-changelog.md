@@ -338,6 +338,7 @@ This version is still a work in progress.
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
+  - `Deque`: `Equatable`, `Writable`
   - `Dict`: `Writable`
   - `InlineArray`: `Writable`
   - `List`: `Equatable`, `Writable`
