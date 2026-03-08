@@ -13,9 +13,6 @@
 
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import align_of, env_get_bool, simd_width_of, size_of
 
 from std.bit import next_power_of_two, prev_power_of_two
@@ -524,7 +521,7 @@ fn consumer_main_loop[
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     load_sfb_mbars: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     sfb_load_pipe_consumer_state: PipelineState[num_group_pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[

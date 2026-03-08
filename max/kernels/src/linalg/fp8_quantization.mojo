@@ -40,7 +40,7 @@ from layout import (
     row_major,
 )
 from std.logger import Logger
-from std.memory import LegacyUnsafePointer, bitcast
+from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from std.algorithm import elementwise
