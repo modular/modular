@@ -765,11 +765,15 @@ class AutoencoderKLLTX2Audio(nn.Module[[Tensor], Tensor]):
         return self.decoder(z)
 
 
-class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
-    """Fused BN-denorm + VAE decode in a single compiled graph.
+class PostprocessAndDecode(nn.Module[..., Tensor]):
+    """Fused latent denorm + unpack + VAE decode in a single compiled graph.
 
     Eliminates the inter-graph boundary and intermediate tensor materialization
-    that previously existed between _postprocess_latents and vae.decode().
+    by fusing the _denormalize_audio_latents, _unpack_audio_latents, and
+    audio_vae.decode steps from the diffusers pipeline.
+
+    Accepts patchified latents in (B, T, D) shape, where
+    D = latent_channels * latent_mel_bins (e.g. 8 * 16 = 128).
     """
 
     def __init__(
@@ -778,6 +782,7 @@ class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
         latents_mean: Tensor,
         latents_std: Tensor,
         num_channels: int,
+        latent_mel_bins: int,
         device: DeviceRef,
         dtype: DType,
     ) -> None:
@@ -786,32 +791,42 @@ class PostprocessAndDecode(nn.Module[[Tensor], Tensor]):
         self.latents_mean = latents_mean
         self.latents_std = latents_std
         self._num_channels = num_channels
+        self._latent_mel_bins = latent_mel_bins
         self._device = device
         self._dtype = dtype
 
     def forward(
         self,
-        latents_bclm: Tensor,
+        latents_btd: Tensor,
     ) -> Tensor:
-        # Denormalization: reshape [C] stats to [1, C, 1, 1] for broadcasting over [B, C, T, F]
-        std = self.latents_std.reshape((1, self._num_channels, 1, 1))
-        mean = self.latents_mean.reshape((1, self._num_channels, 1, 1))
-        latents = latents_bclm * std + mean
+        """Run latent denorm + unpack + VAE decode in one fused graph.
 
-        decoded = self.decoder(latents)
-        # TODO: Add vocoder here too?
-        return decoded
+        Args:
+            latents_btd: Normalized patchified latent tensor of shape (B, T, D).
+
+        Returns:
+            Decoded mel-spectrogram tensor.
+        """
+        # Denormalization: (B, T, D) * (D,) → element-wise broadcast on last dim
+        latents_btd = latents_btd * self.latents_std + self.latents_mean
+
+        # Unpack patchified (B, T, D) → spatial (B, C, T, M)
+        # D = C * M, where C = latent_channels, M = latent_mel_bins
+        batch = latents_btd.shape[0]
+        t = latents_btd.shape[1]
+        latent_channels = self._num_channels // self._latent_mel_bins
+        latents = F.reshape(
+            latents_btd, (batch, t, latent_channels, self._latent_mel_bins)
+        )
+        latents = F.permute(latents, (0, 2, 1, 3))  # (B, T, C, M) → (B, C, T, M)
+
+        return self.decoder(latents)
 
     def input_types(self) -> tuple[TensorType, ...]:
         return (
             TensorType(
                 self._dtype,
-                shape=[
-                    "batch_size",
-                    self._num_channels,
-                    "audio_num_frames",
-                    "num_mel_bins",
-                ],
+                shape=["batch_size", "audio_num_frames", self._num_channels],
                 device=self._device,
             ),
         )
@@ -890,16 +905,22 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
         return self.model
 
     def build_fused_decode(
-        self, device: Device, num_channels: int
+        self, device: Device, num_channels: int, latent_mel_bins: int
     ) -> Callable[..., Any]:
         """Build a fused postprocess + VAE decode compiled graph.
 
+        Combines latent denormalization, unpacking from patchified (B, T, D)
+        to spatial (B, C, T, M), and VAE decoding into a single compiled graph.
+
         Args:
             device: Target device for the compiled graph.
-            num_channels: Number of latent channels (latents_mean shape[0]).
+            num_channels: Patchified latent feature size D = latent_channels *
+                latent_mel_bins (equals latents_mean.shape[0]).
+            latent_mel_bins: Number of mel bins in the latent space
+                (mel_bins // LATENT_DOWNSAMPLE_FACTOR, typically 16).
 
         Returns:
-            Compiled callable taking a latent tensor ``latents_bclm`` and
+            Compiled callable taking a patchified latent tensor (B, T, D) and
             returning the decoded mel-spectrogram tensor.
         """
         dtype = self.config.dtype
@@ -929,6 +950,7 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
                 latents_mean=self.latents_mean,
                 latents_std=self.latents_std,
                 num_channels=num_channels,
+                latent_mel_bins=latent_mel_bins,
                 device=device_ref,
                 dtype=dtype,
             )
