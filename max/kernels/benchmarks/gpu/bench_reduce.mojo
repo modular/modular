@@ -14,7 +14,7 @@
 from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
 from std.sys.info import _TargetType
 
-from std.algorithm._gpu.reduction import reduce_launch
+from std.algorithm.backend.gpu.reduction import reduce_launch
 from std.benchmark import (
     Bench,
     Bencher,

@@ -18,7 +18,7 @@ from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
 import std.gpu.primitives.warp as warp
 from std.algorithm import sync_parallelize, vectorize
-from std.algorithm._gpu.reduction import block_reduce, row_reduce
+from std.algorithm.backend.gpu.reduction import block_reduce, row_reduce
 from std.algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
