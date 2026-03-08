@@ -25,10 +25,7 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from std.builtin.constrained import (
-    _constrained_conforms_to,
-    _constrained_field_conforms_to,
-)
+from std.builtin.constrained import _constrained_field_conforms_to
 from std.memory import Span
 from std.reflection import get_type_name, struct_field_names, struct_field_types
 
@@ -138,22 +135,3 @@ def hash[
     var value = hasher^.finish()
     return value
 
-
-fn _constrained_elements_hashable[*Ts: AnyType, Parent: AnyType]():
-    """Asserts at compile time that all types in `Ts` conform to `Hashable`.
-
-    Produces a clear error message if any element type does not satisfy the
-    constraint, following the same pattern as `constrained_conforms_to_writable`.
-
-    Parameters:
-        Ts: The element types to check.
-        Parent: The enclosing type (used in the error message).
-    """
-    comptime for i in range(Variadic.size(Ts)):
-        comptime T = Ts[i]
-        _constrained_conforms_to[
-            conforms_to(T, Hashable),
-            Parent=Parent,
-            Element=T,
-            ParentConformsTo="Hashable",
-        ]()
