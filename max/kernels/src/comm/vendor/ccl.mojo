@@ -437,7 +437,7 @@ fn allgather[
 fn broadcast[
     dtype: DType,
     rank: Int,
-    input_origin: Origin[mut=True],
+    input_origin: Origin[mut=False],
     output_origin: Origin[mut=True],
     //,
     ngpus: Int,

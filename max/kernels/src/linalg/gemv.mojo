@@ -136,8 +136,8 @@ fn gemv_kernel[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=True]],
-    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=True]],
+    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=False]],
+    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=False]],
     m: Int,
     n: Int,
     k: Int,
@@ -499,8 +499,8 @@ fn gevm_kernel[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
-    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=True]],
-    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=True]],
+    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=False]],
+    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=False]],
     m: Int,
     n: Int,
     k: Int,

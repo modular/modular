@@ -47,7 +47,7 @@ def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
     input_row_offsets_host_ptr: UnsafePointer[
-        Scalar[DType.uint32], MutAnyOrigin
+        mut=True, Scalar[DType.uint32], _
     ],
     batch_size: Int,
     prompt_lens: List[Int],
