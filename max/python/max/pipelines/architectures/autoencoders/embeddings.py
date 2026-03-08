@@ -18,7 +18,7 @@ from max.dtype import DType
 from max.experimental import nn
 from max.experimental.tensor import Tensor
 
-from ..flux2.layers.embeddings import TimestepEmbedding, Timesteps
+from ..flux2_modulev3.layers.embeddings import TimestepEmbedding, Timesteps
 
 
 class PixArtAlphaCombinedTimestepSizeEmbeddings(nn.Module[..., Tensor]):
