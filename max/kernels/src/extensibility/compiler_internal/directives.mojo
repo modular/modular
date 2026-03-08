@@ -136,6 +136,21 @@ struct StaticTensorSpec[
             OptionalReg[Self.out_compute_lambda_t](None),
         )
 
+    fn __init__(
+        out self, internals: StaticTensorSpecInternal[Self.dtype, Self.rank]
+    ):
+        """
+        Returns a StaticTensorSpec from a StaticTensorSpecInternal.
+        """
+        self.shape = internals.shape
+        self.strides = internals.strides
+        self.alignment = internals.alignment
+        self.address_space = internals.address_space
+        self.exclusive = internals.exclusive
+        self.in_lambda = internals.in_lambda
+        self.out_lambda = internals.out_lambda
+        self.out_compute_lambda = internals.out_compute_lambda
+
     @always_inline
     fn with_layout[
         new_rank: Int, new_shape: DimList, new_strides: DimList
@@ -169,3 +184,46 @@ struct StaticTensorSpec[
     @always_inline
     fn to_layout(self) -> Layout:
         return Layout(IntTuple(self.shape), IntTuple(self.strides))
+
+    fn get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
+        """
+        Returns a StaticTensorSpecInternal from a StaticTensorSpec.
+        """
+        return {
+            self.shape,
+            self.strides,
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+            self.in_lambda,
+            self.out_lambda,
+            self.out_compute_lambda,
+        }
+
+
+@fieldwise_init
+struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
+    # Represents the DimList type (not accessible from KGEN tests).
+    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
+        IndexList[Self.rank]
+    ) capturing -> SIMD[Self.dtype, simd_width]
+    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
+        IndexList[Self.rank], SIMD[Self.dtype, simd_width]
+    ) capturing -> None
+
+    comptime out_compute_lambda_t = fn[
+        simd_width: Int, element_alignment: Int = 1
+    ](IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
+        Self.dtype, simd_width
+    ]
+
+    var shape: DimList
+    var strides: DimList
+
+    var alignment: Int
+    var address_space: AddressSpace
+    var exclusive: Bool
+
+    var in_lambda: OptionalReg[Self.in_lambda_t]
+    var out_lambda: OptionalReg[Self.out_lambda_t]
+    var out_compute_lambda: OptionalReg[Self.out_compute_lambda_t]

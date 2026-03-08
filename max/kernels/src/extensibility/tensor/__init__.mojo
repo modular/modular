@@ -30,6 +30,7 @@ from .managed_tensor_slice import (
     OutputTensor,
     OutputVariadicTensors,
     StaticTensorSpec,
+    StaticTensorSpecList,
     VariadicTensors,
     _FusedComputeOutputTensor,
     foreach,

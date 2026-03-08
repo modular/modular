@@ -23,7 +23,11 @@ from std.sys.intrinsics import strided_load, strided_store
 import std.algorithm
 from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
 from std.builtin.device_passable import DevicePassable
-from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
+from compiler_internal.directives import (
+    StaticTensorSpec,
+    __mogg_intrinsic_attr,
+    StaticTensorSpecInternal,
+)
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
@@ -1209,16 +1213,36 @@ comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput, ...]
 
 
 @fieldwise_init
+struct StaticTensorSpecList[
+    dtype: DType,
+    rank: Int,
+    //,
+    internals_list: Variadic.ValuesOfType[
+        StaticTensorSpecInternal[dtype, rank]
+    ],
+]:
+    """A statically indexable list of data that can be assembled into a
+    StaticTensorSpecList on demand. This handles the complexities that arise
+    with heterogenous specs.
+    """
+
+    fn __getitem__[
+        index: Int
+    ](self, out result: StaticTensorSpec[Self.dtype, Self.rank]):
+        return {Self.internals_list[index]}
+
+
+@fieldwise_init
 struct VariadicTensors[
     mut: Bool,
     input: IO,
-    //,
     dtype: DType,
     rank: Int,
+    //,
     size: Int,
     io_spec: IOSpec[mut, input],
     *,
-    static_specs: InlineArray[StaticTensorSpec[dtype, rank], size],
+    static_specs: StaticTensorSpecList[dtype=dtype, rank=rank, ...],
 ](Sized, TrivialRegisterPassable):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
