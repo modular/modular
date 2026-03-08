@@ -1130,7 +1130,9 @@ class PostprocessAndDecode(nn.Module[..., Tensor]):
             # Shape carriers: lengths encode latent dims as symbolic Dims.
             # Content is never read; only the shapes matter.
             TensorType(
-                DType.float32, shape=["latent_num_frames"], device=DeviceRef.CPU()
+                DType.float32,
+                shape=["latent_num_frames"],
+                device=DeviceRef.CPU(),
             ),
             TensorType(
                 DType.float32, shape=["latent_height"], device=DeviceRef.CPU()
