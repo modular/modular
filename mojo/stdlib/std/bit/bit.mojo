@@ -707,5 +707,7 @@ fn bit_mask[dtype: DType](start: Int, end: Int) -> Scalar[dtype]:
     # When end == bitwidth, shifting 1 left by `end` bits overflows.
     # Use the all-ones complement approach instead.
     if end == bitwidth:
-        return ~Scalar[dtype](0) << start
-    return (Scalar[dtype](1) << end) - (Scalar[dtype](1) << start)
+        return ~Scalar[dtype](0) << Scalar[dtype](start)
+    return (Scalar[dtype](1) << Scalar[dtype](end)) - (
+        Scalar[dtype](1) << Scalar[dtype](start)
+    )
