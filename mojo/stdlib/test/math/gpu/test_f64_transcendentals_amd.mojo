@@ -22,10 +22,7 @@ from std.testing import assert_true, TestSuite
 fn check_unary_ulp[
     name: StaticString,
     kernel_fn: fn(Float64) capturing -> Float64,
-](
-    val: Float64,
-    ctx: DeviceContext,
-) raises:
+](val: Float64, ctx: DeviceContext,) raises:
     var out = ctx.enqueue_create_buffer[DType.float64](1)
     var expected = kernel_fn(val)
 
@@ -58,11 +55,7 @@ fn check_unary_ulp[
 fn check_binary_ulp[
     name: StaticString,
     kernel_fn: fn(Float64, Float64) capturing -> Float64,
-](
-    lhs: Float64,
-    rhs: Float64,
-    ctx: DeviceContext,
-) raises:
+](lhs: Float64, rhs: Float64, ctx: DeviceContext,) raises:
     var out = ctx.enqueue_create_buffer[DType.float64](1)
     var expected = kernel_fn(lhs, rhs)
 

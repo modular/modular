@@ -17,7 +17,21 @@
 from test_utils import ulp_distance
 
 from std.gpu.host import DeviceContext
-from std.math import cbrt, erf, erfc, expm1, gamma, hypot, j0, j1, lgamma, log10, logb, y0, y1
+from std.math import (
+    cbrt,
+    erf,
+    erfc,
+    expm1,
+    gamma,
+    hypot,
+    j0,
+    j1,
+    lgamma,
+    log10,
+    logb,
+    y0,
+    y1,
+)
 from std.testing import assert_true, TestSuite
 
 
