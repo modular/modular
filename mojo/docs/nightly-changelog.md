@@ -340,6 +340,7 @@ This version is still a work in progress.
   `_constrained_conforms_to` checks:
   - `Deque`: `Equatable`, `Writable`
   - `Dict`: `Writable`
+  - `LinkedList`: `Equatable`, `Writable`
   - `InlineArray`: `Writable`
   - `List`: `Equatable`, `Writable`
   - `Optional`: `Writable`
