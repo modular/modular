@@ -1011,6 +1011,15 @@ class LTX2VideoDecoder3d(nn.Module[..., Tensor]):
 
         return hidden_states
 
+    def input_types(self) -> tuple[TensorType, ...]:
+        return (
+            TensorType(
+                self.dtype,
+                shape=["batch_size", self.in_channels, "num_frames", "height", "width"],
+                device=self.device,
+            ),
+        )
+
 
 class AutoencoderKLLTX2Video(nn.Module[[Tensor, Tensor | None, bool], Tensor]):
     """Refactored LTX2 Video Autoencoder."""
