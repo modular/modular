@@ -93,31 +93,24 @@ struct Random[rounds: Int = 10](Copyable, Writable):
         Args:
             writer: The object to write to.
         """
-        writer.write_string("Random[")
-        writer.write(Self.rounds)
-        writer.write_string("](key=")
-        writer.write(self._key)
-        writer.write_string(", counter=")
-        writer.write(self._counter)
-        writer.write_string(")")
+        writer.write(
+            "Random[", Self.rounds, "](key=", self._key,
+            ", counter=", self._counter, ")",
+        )
 
+    @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the detailed representation of this RNG state.
+        """Write the repr of this RNG state.
 
         Args:
             writer: The object to write to.
         """
-
-        @parameter
-        fn fields(mut w: Some[Writer]):
-            w.write_string("key=")
-            w.write(self._key)
-            w.write_string(", counter=")
-            w.write(self._counter)
-
         FormatStruct(writer, "Random").params(
             Named("rounds", Self.rounds)
-        ).fields[FieldsFn=fields]()
+        ).fields(
+            Named("key", self._key),
+            Named("counter", self._counter),
+        )
 
     @always_inline
     fn step(mut self) -> SIMD[DType.uint32, 4]:
@@ -238,31 +231,24 @@ struct NormalRandom[rounds: Int = 10](Copyable, Writable):
         Args:
             writer: The object to write to.
         """
-        writer.write_string("NormalRandom[")
-        writer.write(Self.rounds)
-        writer.write_string("](key=")
-        writer.write(self._rng._key)
-        writer.write_string(", counter=")
-        writer.write(self._rng._counter)
-        writer.write_string(")")
+        writer.write(
+            "NormalRandom[", Self.rounds, "](key=", self._rng._key,
+            ", counter=", self._rng._counter, ")",
+        )
 
+    @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the detailed representation of this RNG state.
+        """Write the repr of this RNG state.
 
         Args:
             writer: The object to write to.
         """
-
-        @parameter
-        fn fields(mut w: Some[Writer]):
-            w.write_string("key=")
-            w.write(self._rng._key)
-            w.write_string(", counter=")
-            w.write(self._rng._counter)
-
         FormatStruct(writer, "NormalRandom").params(
             Named("rounds", Self.rounds)
-        ).fields[FieldsFn=fields]()
+        ).fields(
+            Named("key", self._rng._key),
+            Named("counter", self._rng._counter),
+        )
 
     fn step_normal(
         mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
