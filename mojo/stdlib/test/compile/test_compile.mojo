@@ -17,7 +17,12 @@ from std.gpu.host import *
 from std.memory import stack_allocation
 from std.testing import *
 from std.testing import TestSuite
-from std.sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
+from std.sys.info import (
+    _cdna_3_or_newer,
+    _cdna_4_or_newer,
+    _is_amd_cdna,
+    CompilationTarget,
+)
 from std.sys.compile import SanitizeAddress
 
 
@@ -111,6 +116,26 @@ def test_cross_compile() raises:
 
     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
     assert_true("amdgcn-amd-amdhsa--gfx950" in asm)
+
+
+def test_cross_compile_mi250x() raises:
+    comptime if SanitizeAddress:
+        # TODO: MOCO-2593, this test deadlocks in mojo build in ASAN
+        return
+
+    comptime MI250X_TARGET = get_gpu_target["mi250x"]()
+
+    fn test_kernel():
+        comptime assert _is_amd_cdna(), "test_kernel is only supported on CDNA"
+        comptime assert (
+            not _cdna_3_or_newer()
+        ), "MI250X should be recognized as CDNA2"
+        comptime assert (
+            not _cdna_4_or_newer()
+        ), "MI250X should not be recognized as CDNA4+"
+
+    var asm = compile_info[test_kernel, target=MI250X_TARGET]()
+    assert_true("amdgcn-amd-amdhsa--gfx90a" in asm)
 
 
 def main() raises:
