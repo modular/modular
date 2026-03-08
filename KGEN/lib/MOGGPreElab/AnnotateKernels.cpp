@@ -396,25 +396,6 @@ extractMutInputFromTensorStruct(LIT::StructType structType) {
   return std::make_pair(mut, input);
 }
 
-/// Checks if a parameter of a given type will be present in as an argument
-/// to a KGEN function. Structs with no fields are elided as arguments to KGEN
-/// functions. For example, the IOSpec struct carries only parameters:
-///
-///     @value
-///     struct IOSpec[mut: Bool, input: IO](TrivialRegisterPassable):
-///         ...
-///
-/// Functions parameterized on an IOSpec in Mojo will take a `mut` and an
-/// `input` parameter at the KGEN level, but not an IOSpec parameter.
-/// TODO(GEX-2623): This is only true for KGEN, and cause some issue while
-/// migrating to LIT, where the parameters are still there. Once We moved
-/// completely to LIT, we should remove this and always keep the parameters.
-static bool willBePresentInKgen(KGENModule &kgenModule, LIT::StructType type) {
-  if (auto decl = kgenModule.lookup<LIT::StructDeclOp>(type.getSymbol()))
-    return !decl.getFieldDecls().empty();
-  return true;
-}
-
 static Attribute getUnboundParameters(KGENModule &kgenModule,
                                       LIT::StructType type) {
   Builder builder(type.getContext());
@@ -432,10 +413,6 @@ static Attribute getUnboundParameters(KGENModule &kgenModule,
   result.reserve(allValues.size());
 
   for (auto [decl, value] : llvm::zip(decl.getAllParams(), allValues)) {
-    if (auto structType = sugarDynCast<LIT::StructType>(decl.getType()))
-      if (!willBePresentInKgen(kgenModule, structType))
-        continue;
-
     Attribute stubbedValue = value;
     if (!stubbedValue)
       stubbedValue = builder.getUnitAttr();
@@ -447,16 +424,14 @@ static Attribute getUnboundParameters(KGENModule &kgenModule,
   return builder.getDictionaryAttr(result);
 }
 
-ArrayAttr labelParameters(MLIRContext *ctx, KGENModule &kgenModule,
-                          TypeRange types) {
+static ArrayAttr labelParameters(MLIRContext *ctx, KGENModule &kgenModule,
+                                 TypeRange types) {
   Builder builder(ctx);
 
   SmallVector<Attribute> valueParameters;
   for (Type litType : types) {
     LIT::StructType asStructType = getAsStructType(litType);
-
     Builder builder(litType.getContext());
-
     if (!asStructType) {
       valueParameters.push_back(builder.getUnitAttr());
       continue;
