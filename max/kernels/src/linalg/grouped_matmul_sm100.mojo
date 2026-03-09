@@ -151,10 +151,10 @@ fn load_AB[
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], address_space=AddressSpace.SHARED
+        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], address_space=AddressSpace.SHARED
+        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     mma_mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -268,10 +268,10 @@ fn consumer_main_loop[
 ](
     tmem_addr: UInt32,
     a_smem_base: UnsafePointer[
-        Scalar[a_type], address_space=AddressSpace.SHARED
+        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], address_space=AddressSpace.SHARED
+        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     mma_mbar: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
@@ -416,7 +416,7 @@ fn multi_stage_store_C[
     transpose_c: Bool = False,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], address_space=AddressSpace.SHARED
+        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],

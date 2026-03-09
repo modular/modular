@@ -733,13 +733,13 @@ fn load_AB[
         a_scales_desc_shape,
     ],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], address_space=AddressSpace.SHARED, ...
+        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], address_space=AddressSpace.SHARED, ...
+        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], address_space=AddressSpace.SHARED, ...
+        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -886,7 +886,7 @@ fn multi_stage_reg_epilogue[
         ...,
     ],
     c_smem_base: UnsafePointer[
-        Scalar[c_type], address_space=AddressSpace.SHARED, ...
+        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -1128,7 +1128,7 @@ fn promote_accumulators[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     b_scales_n: Int,
     a_scales_smem_base: UnsafePointer[
-        Scalar[a_scales_type], address_space=AddressSpace.SHARED, ...
+        Scalar[a_scales_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_upper_main_tile: LayoutTensor[
         accum_type,

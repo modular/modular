@@ -139,7 +139,7 @@ fn copy_accum_to_gmem[
     scale_c_coord: Bool = True,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], address_space=AddressSpace.SHARED, ...
+        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -613,7 +613,7 @@ fn multi_stage_store_C[
     scale_c_coord: Bool = True,
 ](
     c_smem_base: UnsafePointer[
-        Scalar[c_type], address_space=AddressSpace.SHARED, ...
+        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
@@ -821,16 +821,16 @@ fn load_AB[
         sfb_dtype, sfb_tile_rank, sfb_tile_shape, sfb_desc_shape
     ],
     a_smem_base: UnsafePointer[
-        Scalar[a_type], address_space=AddressSpace.SHARED, ...
+        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], address_space=AddressSpace.SHARED, ...
+        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], address_space=AddressSpace.SHARED, ...
+        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], address_space=AddressSpace.SHARED, ...
+        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -1027,16 +1027,16 @@ fn consumer_main_loop[
     sfa_tmem: UInt32,
     sfb_tmem: UInt32,
     a_smem_base: UnsafePointer[
-        Scalar[a_type], address_space=AddressSpace.SHARED, ...
+        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     b_smem_base: UnsafePointer[
-        Scalar[b_type], address_space=AddressSpace.SHARED, ...
+        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     sfa_smem_base: UnsafePointer[
-        Scalar[sfa_dtype], address_space=AddressSpace.SHARED, ...
+        Scalar[sfa_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     sfb_smem_base: UnsafePointer[
-        Scalar[sfb_dtype], address_space=AddressSpace.SHARED, ...
+        Scalar[sfb_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
