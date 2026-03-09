@@ -26,7 +26,7 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, LayoutTensor, TileTensor
+from layout import IntTuple, Layout, TileTensor
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 
 

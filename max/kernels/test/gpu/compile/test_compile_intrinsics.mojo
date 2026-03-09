@@ -16,16 +16,13 @@ from std.math import exp2
 from std.gpu.host.compile import _compile_code
 from std.gpu.host.info import A100, MetalM4
 from std.gpu.intrinsics import *
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn kernel[
     dtype: DType, memory: Bool = True
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    ptr: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     val: Scalar[dtype],
 ):
     store_release[memory=memory](ptr, val)
@@ -79,7 +76,7 @@ def test_compile_code() raises:
     )
 
     # https://godbolt.org/z/j9ecfjjP1
-    fn exp_op(output: UnsafePointer[Float32], max_scaled: Int32):
+    fn exp_op(output: UnsafePointer[Float32, MutAnyOrigin], max_scaled: Int32):
         output[] = exp2(
             output[] * 1.44269504088896340736 - max_scaled.cast[DType.float32]()
         )

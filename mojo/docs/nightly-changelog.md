@@ -205,9 +205,9 @@ This version is still a work in progress.
   ```
 
 - `def` functions now allows a `raises` specifier, and support typed errors.
-  `def` will soon *require* an exception specifier to throw, so we strongly
-  recommend changing `def` functions to have an explicit `raises` keyword. To
-  help with migration, the Mojo compiler now produces a warning for `def`
+  `def` will soon *require* an exception specifier to throw, so you must
+  change `def` functions to have an explicit `raises` keyword. To
+  help with migration, the Mojo compiler now produces an error for `def`
   functions that lack a `raises` specifier.
 
   ```mojo
@@ -215,7 +215,7 @@ This version is still a work in progress.
   def foo():        # implicitly raises Error.
   def bar() raises: # was invalid
   # Current behavior
-  def bar():        # Still implicitly raises Error (not recommended; warns)
+  def bar():        # Is now an error - use explicit 'raises'.
   def bar() raises: # Explicit raises Error (recommended)
   # Near future behavior
   def bar():        # Does not raise.
@@ -338,12 +338,14 @@ This version is still a work in progress.
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
+  - `Deque`: `Equatable`, `Writable`
   - `Dict`: `Writable`
-  - `InlineArray`: `Writable`
+  - `InlineArray`: `Copyable`, `Equatable`, `Hashable`, `Writable`
+  - `LinkedList`: `Equatable`, `Writable`
   - `List`: `Equatable`, `Writable`
-  - `Optional`: `Writable`
+  - `Optional`: `Writable`, `Copyable`, `ImplicitlyCopyable`
   - `Set`: `Writable`
-  - `Tuple`: `Writable`
+  - `Tuple`: `Copyable`, `ImplicitlyCopyable`, `Writable`
   - `Variant`: `Writable`
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
@@ -721,6 +723,12 @@ This version is still a work in progress.
   numeric suffix (e.g. `<out>_<kernelfn>_1.ptx`).
 
 ## ❌ Removed
+
+- The `.🔥` (flame) and `📦` (package) emoji file extensions are no longer
+  supported. Use `.mojo` for all Mojo source files and `__init__.mojo` for
+  package initialization files. The emoji extensions were removed
+  to simplify the tooling and improve compatibility across different
+  systems and editors.
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
   for `__moveinit__`/`__del__` arguments as appropriate.

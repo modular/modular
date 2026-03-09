@@ -18,9 +18,8 @@ MMA: Uses BF16 operands (KIND_F16)
 """
 
 from std.math import sqrt
-from std.memory import LegacyUnsafePointer, bitcast
+from std.memory import bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -59,7 +58,7 @@ from std.utils.static_tuple import StaticTuple
 
 fn cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
-](C: LayoutTensor, A: LayoutTensor, B: LayoutTensor):
+](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
     comptime N = C.layout[1].size()
     # layout_a is M x K
@@ -120,7 +119,7 @@ fn tma_umma_kernel_sgs[
     num_threads: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b: LayoutTensor[b_gmem_type, b_layout, MutAnyOrigin],  # FP8 in gmem
+    b: LayoutTensor[b_gmem_type, b_layout, ImmutAnyOrigin],  # FP8 in gmem
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: Int,
 ):
@@ -164,7 +163,11 @@ fn tma_umma_kernel_sgs[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],

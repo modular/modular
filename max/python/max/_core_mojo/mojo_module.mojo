@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
 from std.sys import size_of
 
@@ -46,10 +43,10 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int]
-    var strides: UnsafePointer[Int]
+    var dimensions: UnsafePointer[Int, MutAnyOrigin]
+    var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -70,7 +67,7 @@ fn _mojo_block_hasher[
     dtype: DType,
     //,
 ](
-    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
+    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype], _],
     block_size: Int,
     parent_hash: Int,
 ) -> PythonObject:
@@ -111,9 +108,9 @@ fn mojo_block_hasher(
     parent_hash_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = LegacyUnsafePointer[
-        PyArrayObject[DType.int32], ...
-    ](unchecked_downcast_value=py_array_object)
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], _](
+        unchecked_downcast_value=py_array_object
+    )
 
     # Parse other arguments
     var block_size = Int(py=block_size_obj)

@@ -128,9 +128,9 @@ struct VariadicInputToOutput:
         dtype: DType,
         size: Int,
     ](
-        output: OutputVariadicTensors[dtype, rank=1, size=size, ...],
+        output: OutputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        input: InputVariadicTensors[dtype, rank=1, size=size, ...],
+        input: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
     ):
         comptime for i in range(size):
             for j in range(input[i].size()):
@@ -147,7 +147,7 @@ struct VariadicAdd:
     ](
         output: OutputTensor[dtype=dtype, rank=1, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        input: InputVariadicTensors[dtype, rank=1, size=size, ...],
+        input: InputVariadicTensors[dtype=dtype, rank=1, size=size, ...],
     ):
         for i in range(output.size()):
             output[i] = bias[i]

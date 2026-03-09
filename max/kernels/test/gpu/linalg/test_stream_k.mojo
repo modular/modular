@@ -21,9 +21,7 @@ from layout import TileTensor
 from layout.tile_layout import row_major
 from layout.coord import Coord, Idx
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
 from std.testing import assert_almost_equal
 
 from std.utils import Index, IndexList
@@ -69,13 +67,13 @@ fn mac_loop[
     a_type: DType,
     b_type: DType,
 ](
-    C: UnsafePointer[Scalar[c_type]],
-    A: UnsafePointer[Scalar[a_type]],
-    B: UnsafePointer[Scalar[b_type]],
+    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32],
+    locks: UnsafePointer[Int32, MutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -147,13 +145,13 @@ fn first_wave_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type]],
-    A: UnsafePointer[Scalar[a_type]],
-    B: UnsafePointer[Scalar[b_type]],
+    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32],
+    locks: UnsafePointer[Int32, MutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -217,13 +215,13 @@ fn full_tiles_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type]],
-    A: UnsafePointer[Scalar[a_type]],
-    B: UnsafePointer[Scalar[b_type]],
+    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32],
+    locks: UnsafePointer[Int32, ImmutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -434,10 +432,10 @@ fn run_matmul_stream_k[
 ](ctx: DeviceContext,) raises:
     print("== run_matmul kernel stream_k")
 
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rng_width = 2
     var rand_min = -1 * rng_width

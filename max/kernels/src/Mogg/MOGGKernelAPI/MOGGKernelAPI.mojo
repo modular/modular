@@ -1835,12 +1835,13 @@ struct StaticBroadcastTo:
         x: InputTensor[dtype=dtype, rank=in_rank, ...],
         output_shape: IndexList[out_rank],
         out result: InputTensor[
-            static_spec=x.static_spec.with_layout[out_rank](
+            static_spec=x.static_spec.with_layout[
+                out_rank,
                 output_static_shape,
                 Self.get_view_strides[out_rank, x.rank](
                     x._static_shape, x._static_strides
                 ),
-            )
+            ]()
         ],
     ):
         var x_runtime_strides = Self.build_view[out_rank](x)
@@ -1902,10 +1903,11 @@ struct StaticReshape:
         input: InputTensor[dtype=dtype, ...],
         shape: IndexList[output_rank],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout[output_rank](
+            static_spec=input.static_spec.with_layout[
+                output_rank,
                 output_static_shape,
                 Self.get_view_strides[output_rank](output_static_shape),
-            )
+            ]()
         ],
     ):
         var view_buffer = reshape(
@@ -2016,12 +2018,13 @@ struct Transpose:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         permutations: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout[rank](
+            static_spec=input.static_spec.with_layout[
+                rank,
                 output_static_shape,
                 Self.get_view_strides[static_permutations, rank](
                     input._static_strides
                 ),
-            )
+            ]()
         ],
     ):
         shape, strides = Self.transpose_in_place(input, permutations)
@@ -2110,11 +2113,13 @@ struct Slice:
         stops: InputTensor[rank=1, ...],
         steps: InputTensor[rank=1, ...],
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout_and_alignment[rank](
+            static_spec=input.static_spec.with_layout_and_alignment[
+                rank,
                 output_static_shape,
                 Self.get_view_strides[rank](
                     input._static_strides, static_steps
                 ),
+            ](
                 1,
             )
         ],
@@ -2294,12 +2299,14 @@ struct SliceDim:
         stops: Scalar,
         steps: Scalar,
         out result: InputTensor[
-            static_spec=input.static_spec.with_layout_and_alignment[rank](
+            static_spec=input.static_spec.with_layout_and_alignment[
+                rank,
                 output_static_shape,
                 Self.get_view_strides[rank, axis](
                     input._static_strides,
                     static_step.at[0](),
                 ),
+            ](
                 Self.get_view_alignment[rank, dtype](
                     input._static_strides,
                     axis,
@@ -4453,7 +4460,7 @@ fn concat_shape_impl[
     dtype: DType, rank: Int, size: Int, io_spec: IOSpec
 ](
     axis0: Int,
-    inputs: VariadicTensors[dtype, rank, size, io_spec=io_spec, ...],
+    inputs: VariadicTensors[dtype=dtype, rank=rank, size, io_spec=io_spec, ...],
 ) raises -> IndexList[rank]:
     var axis = normalize_neg_index(axis0, rank)
 
@@ -4512,7 +4519,7 @@ struct Concat:
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         axis: Scalar,
-        inputs: FusedInputVariadicTensors[dtype, rank, ...],
+        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
@@ -4563,7 +4570,7 @@ struct Concat:
         dtype: DType,
         rank: Int,
     ](
-        axis: Scalar, inputs: InputVariadicTensors[dtype, rank, ...]
+        axis: Scalar, inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
     ) raises -> IndexList[rank]:
         return concat_shape_impl(Int(axis), inputs)
 
@@ -4575,7 +4582,9 @@ fn concat_from_list_shape_impl[
 ](
     axis0: Int,
     inputs: List[
-        InputTensor[static_spec=StaticTensorSpec[dtype, rank].create_unknown(),]
+        InputTensor[
+            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
+        ]
     ],
 ) raises -> IndexList[rank]:
     var axis = normalize_neg_index(axis0, rank)
@@ -4623,7 +4632,7 @@ struct Split:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputVariadicTensors[dtype, rank, ...],
+        output: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         split_sizes: InputTensor[rank=1, ...],
         axis: Scalar,
@@ -10071,8 +10080,8 @@ struct DistributedAllReduceSum:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: FusedOutputVariadicTensors[dtype, rank, ...],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10173,8 +10182,8 @@ struct DistributedReduceScatterSum:
         _trace_name: StaticString,
         axis: Int = -1,
     ](
-        outputs: FusedOutputVariadicTensors[dtype, rank, ...],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10275,8 +10284,8 @@ struct DistributedAllGather:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: OutputVariadicTensors[dtype, rank, ...],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10453,8 +10462,8 @@ struct DistributedScatter:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: FusedOutputVariadicTensors[dtype, rank, ...],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10528,7 +10537,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         output: OutputTensor[dtype=output_type, rank=rank, ...],
         output_scales: OutputTensor[dtype=scales_type, rank=rank, ...],
         output_residual: OutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
@@ -10646,7 +10655,7 @@ struct AdvancedIndexingGetItem:
         out_tensor: OutputTensor[dtype=input_type, rank=output_rank, ...],
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         indices: FusedInputVariadicTensors[
-            index_type, index_rank, size=num_index_tensors, ...
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -10700,7 +10709,7 @@ struct AdvancedIndexingGetItem:
     ](
         input_tensor: InputTensor[dtype=input_type, rank=input_rank, ...],
         indices: InputVariadicTensors[
-            index_type, index_rank, size=num_index_tensors, ...
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
     ) -> IndexList[input_rank + index_rank - num_index_tensors]:
         return advanced_indexing_getitem_shape[
@@ -10729,7 +10738,7 @@ struct AdvancedIndexingSetItemInplace:
         ],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            index_type, index_rank, size=num_index_tensors, ...
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -10786,7 +10795,7 @@ struct AdvancedIndexingSetItem:
         input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
         updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
         indices: FusedInputVariadicTensors[
-            index_type, index_rank, size=num_index_tensors, ...
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
         ],
         ctx: DeviceContextPtr,
     ) capturing raises:

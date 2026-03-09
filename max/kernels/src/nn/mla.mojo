@@ -268,7 +268,7 @@ fn flare_mla_decoding[
     var num_keys = k.dim[1]()
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, k.origin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -1431,7 +1431,7 @@ fn flare_mla_prefill[
             max_prompt_len = Int(k_rope.max_prompt_length())
 
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1440,7 +1440,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutAnyOrigin,
+                cache_row_offsets.origin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1449,7 +1449,7 @@ fn flare_mla_prefill[
             ),
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1458,7 +1458,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutAnyOrigin,
+                cache_row_offsets.origin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1588,7 +1588,7 @@ fn flare_mla_prefill[
         var cache_row_offsets_lt = LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1596,7 +1596,7 @@ fn flare_mla_prefill[
             ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1605,7 +1605,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1614,7 +1614,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
@@ -1735,7 +1735,7 @@ fn flare_mla_prefill[
         var cache_row_offsets_lt = LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1743,7 +1743,7 @@ fn flare_mla_prefill[
             ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1752,7 +1752,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1761,14 +1761,14 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
                 ),
             ),
             LayoutTensor[
-                k_rope_scales.dtype, k_rope_scales.layout, MutAnyOrigin
+                k_rope_scales.dtype, k_rope_scales.layout, k_rope_scales.origin
             ](
                 k_rope_scales.ptr,
                 RuntimeLayout[k_rope_scales.layout].row_major(
@@ -2110,7 +2110,7 @@ fn mla_prefill_single_batch[
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: UnsafePointer[mut=True, Scalar[output_type], _],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.

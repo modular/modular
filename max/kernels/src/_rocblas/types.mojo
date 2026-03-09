@@ -11,21 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from std.os import abort
 
 
 @fieldwise_init
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer
+    var _value: OpaquePointer[MutAnyOrigin]
 
     fn __init__(out self):
-        self._value = OpaquePointer()
+        self._value = OpaquePointer[MutAnyOrigin]()
 
 
 @fieldwise_init

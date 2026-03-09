@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import sqrt
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -52,7 +50,7 @@ from std.utils.static_tuple import StaticTuple
 
 fn cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
-](C: LayoutTensor, A: LayoutTensor, B: LayoutTensor):
+](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
     comptime N = C.layout[1].size()
     # layout_a is M x K
@@ -151,7 +149,11 @@ fn tma_umma_kernel_ss[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -382,7 +384,7 @@ fn tma_umma_kernel_ts[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: UInt = 128,
 ](
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -410,7 +412,11 @@ fn tma_umma_kernel_ts[
     ]()
 
     b_smem = rebind[
-        UnsafePointer[Scalar[b_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[b_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[b_type],

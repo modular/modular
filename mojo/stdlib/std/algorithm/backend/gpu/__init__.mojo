@@ -11,4 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .reduction import block_reduce, reduce_kernel, reduce_launch, row_reduce
+from .elementwise import _elementwise_impl_gpu
+from .reduction import (
+    _reduce_generator_gpu,
+    block_reduce,
+    reduce_kernel,
+    reduce_launch,
+    row_reduce,
+)
+from .stencil import _stencil_impl_gpu

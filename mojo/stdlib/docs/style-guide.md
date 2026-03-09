@@ -30,7 +30,7 @@ required to be a leaf dependency.
     > test             # stdlib unit tests
 ```
 
-All Mojo source files must end with the extension `.mojo` or `.🔥`.
+All Mojo source files must end with the extension `.mojo`.
 
 #### Mojo format
 

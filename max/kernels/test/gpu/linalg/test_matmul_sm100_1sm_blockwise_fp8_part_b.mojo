@@ -21,9 +21,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -135,19 +132,19 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         k.value, BLOCK_SCALE_K
     )
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
@@ -169,15 +166,11 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
     var a_scales_host = NDBuffer[scales_type, 2, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_size
-    )
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
     var b_scales_host = NDBuffer[scales_type, 2, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )

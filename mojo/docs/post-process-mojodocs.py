@@ -91,8 +91,8 @@ def demote_all_headings(file_path) -> None:  # noqa: ANN001
                 file.write(line)
 
 
-def assemble_mojo_changelog(base_path: str) -> None:
-    """Build changelog/index.md from nightly-changelog.md and per-version files."""
+def assemble_changelog(base_path: str) -> None:
+    """Assemble changelog/index.md from nightly-changelog.md and per-version files."""
     changelog_dir = os.path.join(base_path, "changelog")
     index_path = os.path.join(changelog_dir, "index.md")
     nightly_path = os.path.join(base_path, "nightly-changelog.md")
@@ -197,6 +197,6 @@ if __name__ == "__main__":
 
     replace_relative_paths(sys.argv[1], "/stdlib")
     remove_docs_domain(sys.argv[1])
-    assemble_mojo_changelog(sys.argv[1])
+    assemble_changelog(sys.argv[1])
     # TODO: Delete the following once we launch the new Mojo website (and fix the links)
     strip_mojo_path_prefix(sys.argv[1])

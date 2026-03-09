@@ -95,7 +95,7 @@ bd //KGEN/tools/mojo -- /path/to/file.mojo
 
 ```mojo
 from linalg.matmul import matmul
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from gpu.host import DeviceContext
 ```
 

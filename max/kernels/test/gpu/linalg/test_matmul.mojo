@@ -28,9 +28,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from test_utils import ulp_distance
 from std.testing import assert_almost_equal
 
@@ -136,10 +133,10 @@ fn test[
     )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[dtype]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
 
     var a_host = LayoutTensor[dtype, a_layout](
         a_host_ptr,

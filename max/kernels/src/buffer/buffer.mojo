@@ -306,7 +306,7 @@ struct NDBuffer[
         ](), "dimensions must all be known"
 
         self.data = ptr
-        self.dynamic_shape = comptime (Self.shape.into_index_list[Self.rank]())
+        self.dynamic_shape = comptime (Self.shape.to_index_list[Self.rank]())
 
         self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
             self.dynamic_shape

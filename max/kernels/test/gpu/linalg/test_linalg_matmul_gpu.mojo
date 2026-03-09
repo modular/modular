@@ -16,9 +16,6 @@ from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -51,7 +48,7 @@ fn _create_host_buffer[
 ](dynamic_shape: IndexList[rank, ...]) raises -> NDBuffer[
     dtype, rank, MutAnyOrigin, shape
 ]:
-    var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
+    var storage_ptr = alloc[Scalar[dtype]](_size(dynamic_shape))
     return NDBuffer[dtype, rank, MutAnyOrigin, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )

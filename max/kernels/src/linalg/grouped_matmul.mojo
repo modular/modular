@@ -17,9 +17,6 @@ from std.sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from std.gpu.primitives.cluster import (
     cluster_sync,
@@ -325,7 +322,11 @@ fn grouped_matmul_kernel_sm100[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            ExternalOrigin[mut=True],
+            address_space=AddressSpace.SHARED,
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -622,7 +623,6 @@ fn grouped_matmul_sm100[
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tensor_tile[
@@ -718,21 +718,18 @@ fn grouped_matmul_amd_kernel_launcher[
     var c = LayoutTensor[
         c_type,
         c_layout,
-        MutAnyOrigin,
         address_space=c_ptr.address_space,
     ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
 
     var a = LayoutTensor[
         a_type,
         a_layout,
-        MutAnyOrigin,
         address_space=a_ptr.address_space,
     ](a_ptr, RuntimeLayout[a_layout](Index(M, K), Index(K, 1)))
 
     var b = LayoutTensor[
         b_type,
         b_layout,
-        MutAnyOrigin,
         address_space=b_ptr.address_space,
     ](b_ptr, RuntimeLayout[b_layout](Index(N, K), Index(K, 1)))
 
@@ -969,7 +966,6 @@ fn grouped_matmul_amd[
     var b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
     var c_tensor = TileTensor(c).to_layout_tensor()

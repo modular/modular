@@ -87,7 +87,7 @@ fn test_index_fp8[
     # Ragged Q tensor: [total_seq_len, num_heads, depth]
     comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
     var q_device = LayoutTensor[DType.float8_e4m3fn, q_layout](
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr.unsafe_ptr().as_immutable(),
         RuntimeLayout[q_layout].row_major(
             Index(batch_size * seq_len, num_heads, depth)
         ),
@@ -103,7 +103,7 @@ fn test_index_fp8[
 
     comptime k_layout = Layout.row_major(UNKNOWN_VALUE, 1, depth)
     var k_device = LayoutTensor[DType.float8_e4m3fn, k_layout](
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr.unsafe_ptr().as_immutable(),
         RuntimeLayout[k_layout].row_major(
             Index(batch_size * num_keys, 1, depth)
         ),
@@ -145,7 +145,7 @@ fn test_index_fp8[
     var cache_row_offsets_device = LayoutTensor[
         DType.uint32, cache_row_offsets_layout
     ](
-        cache_row_offsets_device_ptr.unsafe_ptr(),
+        cache_row_offsets_device_ptr.unsafe_ptr().as_immutable(),
         RuntimeLayout[cache_row_offsets_layout].row_major(
             Index(batch_size + 1)
         ),

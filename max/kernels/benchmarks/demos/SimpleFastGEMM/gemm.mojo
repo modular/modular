@@ -19,9 +19,6 @@ from std.sys.intrinsics import PrefetchOptions
 
 import std.benchmark
 from buffer import NDBuffer
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
@@ -44,7 +41,7 @@ comptime NR = kernel_shape.simd_cols * simd_size
 comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
-fn print_mat(a_ptr: UnsafePointer[Scalar[dtype]], m: Int, n: Int):
+fn print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
     var a = NDBuffer[dtype, 2](a_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
@@ -67,9 +64,9 @@ fn gemm_naive(
 
 
 fn kernel(
-    a_ptr: UnsafePointer[Scalar[dtype]],
-    b_ptr: UnsafePointer[Scalar[dtype]],
-    c_ptr: UnsafePointer[Scalar[dtype]],
+    a_ptr: UnsafePointer[Scalar[dtype], _],
+    b_ptr: UnsafePointer[Scalar[dtype], _],
+    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     n: Int,
     k: Int,
     kc: Int,
@@ -112,8 +109,8 @@ fn kernel(
 
 
 fn pack_B(
-    b_ptr: UnsafePointer[Scalar[dtype]],
-    b2_ptr: UnsafePointer[Scalar[dtype]],
+    b_ptr: UnsafePointer[Scalar[dtype], _],
+    b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     k: Int,
     n: Int,
     kc: Int,
@@ -128,8 +125,8 @@ fn pack_B(
 
 
 fn prepack_B(
-    b_ptr: UnsafePointer[Scalar[dtype]],
-    b2_ptr: UnsafePointer[Scalar[dtype]],
+    b_ptr: UnsafePointer[Scalar[dtype], _],
+    b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     k: Int,
     n: Int,
     kc: Int,
@@ -141,9 +138,9 @@ fn prepack_B(
 
 
 fn gemm(
-    a_ptr: UnsafePointer[Scalar[dtype]],
-    b_ptr: UnsafePointer[Scalar[dtype]],
-    c_ptr: UnsafePointer[Scalar[dtype]],
+    a_ptr: UnsafePointer[Scalar[dtype], _],
+    b_ptr: UnsafePointer[Scalar[dtype], _],
+    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     m: Int,
     n: Int,
     k: Int,
@@ -186,11 +183,11 @@ def main() raises:
     print("x", end="")
     print(k)
 
-    var a_ptr = UnsafePointer[Scalar[dtype]].alloc(m * k, alignment=alignment)
-    var b_ptr = UnsafePointer[Scalar[dtype]].alloc(k * n, alignment=alignment)
-    var b2_ptr = UnsafePointer[Scalar[dtype]].alloc(k * n, alignment=alignment)
-    var c_ptr = UnsafePointer[Scalar[dtype]].alloc(m * n, alignment=alignment)
-    var c2_ptr = UnsafePointer[Scalar[dtype]].alloc(m * n, alignment=alignment)
+    var a_ptr = alloc[Scalar[dtype]](m * k, alignment=alignment)
+    var b_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
+    var b2_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
+    var c_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
+    var c2_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
     var a = NDBuffer[dtype, 1](a_ptr, m * k)
     var b = NDBuffer[dtype, 1](b_ptr, k * n)
     var b2 = NDBuffer[dtype, 1](b2_ptr, k * n)

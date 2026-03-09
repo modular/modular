@@ -240,17 +240,28 @@ fn bench_reduce[
                     IndexList[rank](length),
                 )
             # Run allreduce
-            comptime allreduce_kernel = vendor_ccl.allreduce if use_vendor_ccl else allreduce
-            allreduce_kernel[
-                ngpus=ngpus,
-                use_multimem=use_multimem,
-            ](
-                in_bufs,
-                out_bufs[ctx_idx],
-                rank_sigs,
-                ctx_inner,
-                max_num_blocks,
-            )
+            comptime if use_vendor_ccl:
+                vendor_ccl.allreduce[
+                    ngpus=ngpus,
+                    use_multimem=use_multimem,
+                ](
+                    in_bufs,
+                    out_bufs[ctx_idx],
+                    rank_sigs,
+                    ctx_inner,
+                    max_num_blocks,
+                )
+            else:
+                allreduce[
+                    ngpus=ngpus,
+                    use_multimem=use_multimem,
+                ](
+                    in_bufs,
+                    out_bufs[ctx_idx],
+                    rank_sigs,
+                    ctx_inner,
+                    max_num_blocks,
+                )
 
         b.iter_custom[call_fn](ctx)
 

@@ -295,7 +295,7 @@ struct MHAPosition[
         dtype: DType
     ](
         self,
-        ptr: UnsafePointer[Scalar[dtype], _],
+        ptr: UnsafePointer[mut=True, Scalar[dtype], _],
         out gmem_block: LayoutTensor[
             dtype,
             Self.q_output_gmem_layout,

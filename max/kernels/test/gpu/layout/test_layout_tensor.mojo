@@ -17,9 +17,6 @@ from std.itertools import product
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import blocked_product
 from layout._fillers import arange
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 from std.utils.index import IndexList
@@ -36,7 +33,7 @@ def test_runtime_and_compile_time_dim_and_stride(
         DType.float32,
         layout,
     ](
-        UnsafePointer[Float32](),
+        UnsafePointer[Float32, MutAnyOrigin](),
         RuntimeLayout[layout].row_major(dynamic_shape),
     )
 
@@ -59,7 +56,7 @@ def test_nested_layout_shape() raises:
     comptime smem_layout = blocked_product(base_layout, tiler_layout)
 
     var tensor = LayoutTensor[DType.float32, smem_layout, MutAnyOrigin](
-        UnsafePointer[Float32]()
+        UnsafePointer[Float32, MutAnyOrigin]()
     )
 
     # Shape should be (64, 128) because:

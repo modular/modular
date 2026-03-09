@@ -17,9 +17,7 @@ from std.sys._assembly import inlined_assembly
 from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.compile import _compile_code
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 
 
 fn kernel(x: Int) -> Int:
@@ -49,7 +47,7 @@ def test_compile_code() raises:
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    fn kernel(x: UnsafePointer[Int]):
+    fn kernel(x: UnsafePointer[Int, MutAnyOrigin]):
         x[0] = Int(thread_idx.x)
 
     # CHECK: tid.x
@@ -119,7 +117,7 @@ def test_compile_function_with_path_func() raises:
 def test_short_nvptx_ptr() raises:
     print("== test_short_nvptx_ptr")
 
-    fn do_some_shared_mem_op(src: UnsafePointer[Int32]):
+    fn do_some_shared_mem_op(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
         a[thread_idx.x] = src[0]
         barrier()

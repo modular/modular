@@ -13,16 +13,13 @@
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 
 fn vec_func(
-    in0: UnsafePointer[Float32],
-    in1: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+    in0: UnsafePointer[Float32, ImmutAnyOrigin],
+    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     supplement: Int,
 ):
@@ -36,8 +33,8 @@ fn test(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Allocate the input buffers as sub buffers of a bigger one
-    var in_host = UnsafePointer[Float32].alloc(2 * length)
-    var out_host = UnsafePointer[Float32].alloc(length)
+    var in_host = alloc[Float32](2 * length)
+    var out_host = alloc[Float32](length)
 
     for i in range(length):
         in_host[i] = Float32(i)

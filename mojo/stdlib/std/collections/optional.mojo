@@ -82,10 +82,14 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
+    Copyable where conforms_to(T, Copyable),
     Defaultable,
-    ImplicitlyCopyable,
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable) and conforms_to(
+        T, Copyable
+    ),
     Iterable,
     Iterator,
+    Movable,
     Writable where conforms_to(T, Writable),
 ):
     """A type modeling a value which may or may not be present.
@@ -334,6 +338,9 @@ struct Optional[T: Movable](
             print(value) # Does not reach line
         ```
         """
+        comptime assert conforms_to(
+            Self.T, Copyable
+        ), "Cannot iterate over non-copyable Optional."
         return self.copy()
 
     @always_inline
