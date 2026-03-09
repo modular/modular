@@ -31,8 +31,13 @@ comptime elementwise_compute_lambda_type = fn[
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
-struct KernelConfig:
-    """Static configuration of the matmul inner kernel."""
+@fieldwise_init
+struct KernelConfig[packed_shape: DimList]:
+    """Static configuration of the matmul inner kernel.
+
+    Parameters:
+        packed_shape: The shape of the packed buffer.
+    """
 
     # Static number of rows of the micro kernel.
     var kernel_rows: Int
@@ -43,33 +48,13 @@ struct KernelConfig:
     # Static info on simd vector size.
     var simd_size: Int
 
-    # Static packed shape info of the packed buffer.
-    var packed_shape: DimList
 
-    fn __init__(
-        out self,
-        *,
-        kernel_rows: Int,
-        kernel_cols: Int,
-        simd_size: Int,
-        packed_shape: DimList,
-    ):
-        self.kernel_rows = kernel_rows
-        self.kernel_cols = kernel_cols
-        self.simd_size = simd_size
-        self.packed_shape = packed_shape
-
-
+@fieldwise_init
 struct MicroKernelShape(TrivialRegisterPassable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
-
     var simd_cols: Int
-
-    fn __init__(out self, rows: Int, cols: Int):
-        self.simd_rows = rows
-        self.simd_cols = cols
 
 
 @fieldwise_init
@@ -577,7 +562,7 @@ fn get_kernel_config[
     c_type: DType,
     *,
     kernel_type: Bool = False,
-]() -> KernelConfig:
+]() -> KernelConfig[DimList.create_unknown[3]()]:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
         TODO: Add target dependent configuration parameters.
@@ -588,12 +573,11 @@ fn get_kernel_config[
         a_type, b_type, c_type, kernel_type
     ]()
 
-    return KernelConfig(
-        kernel_rows=kernel_shape.simd_rows,
-        kernel_cols=kernel_shape.simd_cols * simd_size,
-        simd_size=simd_size,
-        packed_shape=DimList.create_unknown[3](),
-    )
+    return {
+        kernel_rows = kernel_shape.simd_rows,
+        kernel_cols = kernel_shape.simd_cols * simd_size,
+        simd_size = simd_size,
+    }
 
 
 @always_inline
