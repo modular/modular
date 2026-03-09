@@ -376,11 +376,10 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOS << "from std.memory import LegacyUnsafePointer as "
+    exprOS << "from std.memory import UnsafePointer as "
            << "__mojo_repl_UnsafePointer\n"
            << "from std.python.python import Python as __mojo_repl_Python\n"
-           << "from std.memory import LegacyUnsafePointer\n"
-           << "comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]\n";
+           << "from std.memory import UnsafePointer\n";
   }
 
   // Extract out the top-level code from the expression code.
@@ -400,7 +399,8 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   for (auto &[name, type] : variables) {
     exprOS << llvm::formatv("  var `{0}`: "
                             "__mojo_repl_UnsafePointer[mut=True, "
-                            "__mojo_repl_UnsafePointer[mut=True, {1}]]\n",
+                            "__mojo_repl_UnsafePointer[mut=True, {1}, "
+                            "MutAnyOrigin], MutAnyOrigin]\n",
                             name, getPersistentVariableTypeName(name));
   }
   if (variables.empty())
