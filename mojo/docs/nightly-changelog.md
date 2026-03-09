@@ -138,6 +138,10 @@ This version is still a work in progress.
    conform to `RegisterPassable` trait instead.
    The decorator will be removed after next release.
 
+- `LegacyUnsafePointer` is now deprecated, use `UnsafePointer` instead.
+  Check the doc strings at `unsafe_pointer.mojo` for guidance on migration.
+  `LegacyUnsafePointer` will be removed after next release.
+
 - Mojo now supports more flexible default arguments and parameters, which can
   mismatch on declared type when their types are parametric.  This allows
   inferring parameters from these when they are used as a default value, for

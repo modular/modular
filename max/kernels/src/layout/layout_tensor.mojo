@@ -2377,7 +2377,12 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn store[
         width: Int, store_alignment: Int = Self.alignment
-    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
+    ](
+        self: LayoutTensor[mut=True, Self.dtype, ...],
+        m: Int,
+        n: Int,
+        val: SIMD[Self.dtype, width],
+    ):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -2450,8 +2455,10 @@ struct LayoutTensor[
     fn store[
         width: Int, store_alignment: Int = Self.alignment
     ](
-        self, coords: IndexList[...], val: SIMD[Self.dtype, width]
-    ) where Self.mut:
+        self: LayoutTensor[mut=True, Self.dtype, ...],
+        coords: IndexList[...],
+        val: SIMD[Self.dtype, width],
+    ):
         """Store a SIMD vector to the tensor at the specified ND coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing

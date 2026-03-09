@@ -38,7 +38,9 @@ from std.python import PythonObject
 from std.builtin.device_passable import DevicePassable
 
 
-from .legacy_unsafe_pointer import _default_invariant
+@always_inline
+fn _default_invariant[mut: Bool]() -> Bool:
+    return is_gpu() and mut == False
 
 
 # ===----------------------------------------------------------------------=== #
@@ -299,8 +301,6 @@ struct UnsafePointer[
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime _UnsafePointerType = Self
-
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         Self.type,
@@ -467,97 +467,6 @@ struct UnsafePointer[
         self = unchecked_downcast_value.unchecked_downcast_value_ptr[T]()
 
     # ===-------------------------------------------------------------------===#
-    # V1 <-> V2 conversion
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline("builtin")
-    @implicit
-    fn __init__(
-        out self,
-        other: LegacyUnsafePointer[
-            Self.type,
-            origin=Self.origin,
-            address_space=Self.address_space,
-        ],
-    ):
-        """Cast a `LegacyUnsafePointer` to an `UnsafePointer`.
-
-        Args:
-            other: The `LegacyUnsafePointer` to cast from.
-
-        Returns:
-            An `UnsafePointer` with the same type, mutability, origin and
-            address space as the original `LegacyUnsafePointer`.
-
-        Notes:
-            This constructor will be removed in a future version of Mojo when
-            `LegacyUnsafePointer` is removed.
-        """
-        self.address = __mlir_op.`pop.pointer.bitcast`[_type=Self._mlir_type](
-            other.address
-        )
-
-    @always_inline("builtin")
-    @implicit
-    fn __init__(
-        other: LegacyUnsafePointer,
-        out self: UnsafePointer[
-            other.type,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-        ],
-    ):
-        """Cast a `LegacyUnsafePointer` to an immutable `UnsafePointer`.
-
-        Args:
-            other: The `LegacyUnsafePointer` to cast from.
-
-        Returns:
-            An `UnsafePointer` with the same type, origin and
-            address space as the original `LegacyUnsafePointer` but immutable.
-
-        Notes:
-            This constructor will be removed in a future version of Mojo when
-            `LegacyUnsafePointer` is removed.
-        """
-        self.address = __mlir_op.`pop.pointer.bitcast`[
-            _type=type_of(self)._mlir_type
-        ](other.address)
-
-    @doc_private
-    @always_inline("builtin")
-    fn _as_legacy(
-        self,
-        out result: LegacyUnsafePointer[
-            Self.type,
-            origin=Self.origin,
-            address_space=Self.address_space,
-        ],
-    ):
-        result = type_of(result)(self.address)
-
-    @always_inline("builtin")
-    fn as_legacy_pointer(
-        self,
-        out result: LegacyUnsafePointer[
-            Self.type,
-            origin=Self.origin,
-            address_space=Self.address_space,
-        ],
-    ):
-        """Explicitly cast this pointer to a `LegacyUnsafePointer`.
-
-        Returns:
-            A `LegacyUnsafePointer` with the same type, mutability, origin, and
-            address space as the original pointer.
-
-        Notes:
-            This function will eventually be deprecated and removed in a future
-            version of Mojo.
-        """
-        result = type_of(result)(self.address)
-
-    # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
@@ -567,11 +476,15 @@ struct UnsafePointer[
 
         Returns:
             A reference to the value.
-
-        Safety:
-            The pointer must not be null and must point to initialized memory.
         """
-        return self._as_legacy()[]
+
+        # We're unsafe, so we can have unsafe things.
+        comptime _ref_type = Pointer[Self.type, Self.origin, Self.address_space]
+        return __get_litref_as_mvalue(
+            __mlir_op.`lit.ref.from_pointer`[_type=_ref_type._mlir_type](
+                self.address
+            )
+        )
 
     @always_inline("nodebug")
     fn __getitem__[
@@ -588,23 +501,7 @@ struct UnsafePointer[
         Returns:
             An offset reference.
         """
-        return self._as_legacy()[offset]
-
-    @deprecated("use `ptr + offset` instead of `ptr.offset(offset)`")
-    @always_inline("nodebug")
-    fn offset[I: Indexer, //](self, idx: I) -> Self:
-        """Returns a new pointer shifted by the specified offset.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            idx: The offset of the new pointer.
-
-        Returns:
-            The offset pointer.
-        """
-        return self + idx
+        return (self + offset)[]
 
     @always_inline("nodebug")
     fn __add__[I: Indexer, //](self, offset: I) -> Self:
@@ -866,23 +763,6 @@ struct UnsafePointer[
         """
         return self.address  # allow kgen.pointer to convert.
 
-    @doc_private
-    @always_inline("builtin")
-    fn __merge_with__[
-        other_type: type_of(
-            LegacyUnsafePointer[
-                Self.type,
-                address_space=Self.address_space,
-                ...,
-            ]
-        ),
-    ](self) -> LegacyUnsafePointer[
-        type=Self.type,
-        origin=origin_of(Self.origin, other_type.origin),
-        address_space=Self.address_space,
-    ]:
-        return self.address  # allow kgen.pointer to convert.
-
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
@@ -894,7 +774,7 @@ struct UnsafePointer[
         Returns:
             Whether the pointer is null.
         """
-        return self._as_legacy().__bool__()
+        return Int(self) != 0
 
     @always_inline
     fn __int__(self) -> Int:
@@ -903,7 +783,7 @@ struct UnsafePointer[
         Returns:
           The address of the pointer as an Int.
         """
-        return self._as_legacy().__int__()
+        return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
@@ -945,15 +825,42 @@ struct UnsafePointer[
     comptime device_type: AnyType = Self
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
-    comptime _LegacyPointerType = LegacyUnsafePointer[
-        Self.type,
-        origin=Self.origin,
-        address_space=Self.address_space,
-    ]
-
     @staticmethod
     fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
-        return Self._LegacyPointerType._is_convertible_to_device_type[T]()
+        comptime if Self.mut:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self._OriginCastType[MutAnyOrigin],
+                    Self._OriginCastType[MutExternalOrigin],
+                    Self._OriginCastType[ImmutAnyOrigin],
+                    Self._OriginCastType[ImmutExternalOrigin],
+                    Self._UnsafePointerType,
+                    Self._UnsafePointerType._OriginCastType[MutAnyOrigin],
+                    Self._UnsafePointerType._OriginCastType[MutExternalOrigin],
+                    Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
+                    Self._UnsafePointerType._OriginCastType[
+                        ImmutExternalOrigin
+                    ],
+                ],
+            ]
+        else:
+            return Variadic.contains[
+                T,
+                Variadic.types[
+                    T=AnyType,
+                    Self,
+                    Self._OriginCastType[ImmutAnyOrigin],
+                    Self._OriginCastType[ImmutExternalOrigin],
+                    Self._UnsafePointerType,
+                    Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
+                    Self._UnsafePointerType._OriginCastType[
+                        ImmutExternalOrigin
+                    ],
+                ],
+            ]
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
@@ -985,13 +892,11 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn swap_pointees[
-        U: Movable, //
+        U: Movable
     ](
-        self: UnsafePointer[U, _],
-        other: UnsafePointer[U, _],
-    ) where (
-        type_of(self).mut
-    ) and (type_of(other).mut):
+        self: UnsafePointer[mut=True, U, _],
+        other: UnsafePointer[mut=True, U, _],
+    ):
         """Swap the values at the pointers.
 
         This function assumes that `self` and `other` _may_ overlap in memory.
@@ -1008,10 +913,38 @@ struct UnsafePointer[
             - `self` and `other` must both point to valid, initialized instances
               of `T`.
         """
-        self._as_legacy().swap_pointees(other._as_legacy())
+
+        comptime if U.__move_ctor_is_trivial:
+            # If `moveinit` is trivial, we can avoid the branch introduced from
+            # checking if the pointers are equal by using temporary stack
+            # values.
+            #
+            # Since `lhs` may overlap with `rhs` we need two temporary stack
+            # values since we cannot call `memcpy` with the potentially
+            # overlapping pointers.
+            #
+            # Even if they are not overlapping, this also produces better llvm
+            # code with only 2 loads and 2 stores. Whereas with only 1 temporary
+            # and a memcpy between the pointers it produces 3 load and 3 stores.
+
+            var self_tmp = UnsafeMaybeUninit[U]()
+            var other_tmp = UnsafeMaybeUninit[U]()
+            memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
+            memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
+
+            memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
+            memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+        else:
+            # If `moveinit` is NOT trivial, we need to check if the pointers are
+            # the same to avoid undefined behavior when moving from rhs to lhs.
+            if self == other:
+                return
+            var tmp = self.take_pointee()
+            self.init_pointee_move_from(other)
+            other.init_pointee_move(tmp^)
 
     @always_inline("nodebug")
-    fn as_noalias_ptr(self) -> Self:
+    fn as_noalias_ptr(self) -> Self._UnsafePointerType:
         """Cast the pointer to a new pointer that is known not to locally alias
         any other pointer. In other words, the pointer transitively does not
         comptime any other memory value declared in the local function context.
@@ -1022,7 +955,7 @@ struct UnsafePointer[
         Returns:
             A noalias pointer.
         """
-        return self._as_legacy().as_noalias_ptr()
+        return __mlir_op.`pop.noalias_pointer_cast`(self.address)
 
     @always_inline("nodebug")
     fn load[
@@ -1045,7 +978,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = alloc[Int32](8)
+        var p = UnsafePointer[Int32].alloc(8)
         p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.load[width=4]()
         print(v)  # => [1, 2, 3, 4]
@@ -1066,13 +999,57 @@ struct UnsafePointer[
         Returns:
             The loaded SIMD vector.
         """
-        return self._as_legacy().load[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ]()
+        _simd_construction_checks[dtype, width]()
+        comptime assert (
+            alignment > 0
+        ), "alignment must be a positive integer value"
+        comptime assert (
+            not volatile or volatile ^ invariant
+        ), "both volatile and invariant cannot be set at the same time"
+
+        comptime if is_nvidia_gpu() and size_of[
+            dtype
+        ]() == 1 and alignment == 1:
+            # LLVM lowering to PTX incorrectly vectorizes loads for 1-byte types
+            # regardless of the alignment that is passed. This causes issues if
+            # this method is called on an unaligned pointer.
+            # TODO #37823 We can make this smarter when we add an `aligned`
+            # trait to the pointer class.
+            var v = SIMD[dtype, width]()
+
+            # intentionally don't unroll, otherwise the compiler vectorizes
+            for i in range(width):
+                v[i] = __mlir_op.`pop.load`[
+                    alignment=alignment._mlir_value,
+                    isVolatile=volatile._mlir_value,
+                    isInvariant=invariant._mlir_value,
+                    isNonTemporal=non_temporal._mlir_value,
+                ]((self + i).address)
+            return v
+        elif dtype == DType.bool and width > 1:
+            # Bool (i1) is sub-byte, so a vector load of SIMD[bool, N]
+            # packs bits. Load as uint8 and convert to bool so each
+            # element occupies its own byte boundary.
+            return rebind[SIMD[dtype, width]](
+                self.bitcast[Scalar[DType.uint8]]()
+                .load[
+                    width=width,
+                    alignment=alignment,
+                    volatile=volatile,
+                    invariant=invariant,
+                    non_temporal=non_temporal,
+                ]()
+                .cast[DType.bool]()
+            )
+
+        var address = self.bitcast[SIMD[dtype, width]]().address
+
+        return __mlir_op.`pop.load`[
+            alignment=alignment._mlir_value,
+            isVolatile=volatile._mlir_value,
+            isInvariant=invariant._mlir_value,
+            isNonTemporal=non_temporal._mlir_value,
+        ](address)
 
     @always_inline("nodebug")
     fn load[
@@ -1084,14 +1061,17 @@ struct UnsafePointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], ...], offset: Scalar) -> SIMD[
+    ](
+        self: UnsafePointer[Scalar[dtype], ...],
+        offset: Scalar,
+    ) -> SIMD[
         dtype, width
     ]:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
             The width and alignment must be positive integer values.
-            The offset must be integer.
+            The offset must be an integer.
 
         Parameters:
             dtype: The data type of SIMD vector elements.
@@ -1107,13 +1087,14 @@ struct UnsafePointer[
         Returns:
             The loaded value.
         """
-        return self._as_legacy().load[
+        comptime assert offset.dtype.is_integral(), "offset must be an integer"
+        return (self + Int(offset)).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
             invariant=invariant,
             non_temporal=non_temporal,
-        ](offset)
+        ]()
 
     @always_inline("nodebug")
     fn load[
@@ -1126,7 +1107,12 @@ struct UnsafePointer[
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
         non_temporal: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], ...], offset: I) -> SIMD[dtype, width]:
+    ](
+        self: UnsafePointer[Scalar[dtype], ...],
+        offset: I,
+    ) -> SIMD[
+        dtype, width
+    ]:
         """Loads the value the pointer points to with the given offset.
 
         Constraints:
@@ -1147,13 +1133,13 @@ struct UnsafePointer[
         Returns:
             The loaded value.
         """
-        return self._as_legacy().load[
+        return (self + offset).load[
             width=width,
             alignment=alignment,
             volatile=volatile,
             invariant=invariant,
             non_temporal=non_temporal,
-        ](offset)
+        ]()
 
     @always_inline("nodebug")
     fn store[
@@ -1166,10 +1152,10 @@ struct UnsafePointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], ...],
+        self: UnsafePointer[mut=True, Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
-    ) where type_of(self).mut:
+    ):
         """Stores a single element value at the given offset.
 
         Constraints:
@@ -1188,12 +1174,9 @@ struct UnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        return self._as_legacy().store[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
-        ](offset, val)
+        (self + offset).store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](val)
 
     @always_inline("nodebug")
     fn store[
@@ -1206,10 +1189,10 @@ struct UnsafePointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], ...],
+        self: UnsafePointer[mut=True, Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
-    ) where type_of(self).mut:
+    ):
         """Stores a single element value at the given offset.
 
         Constraints:
@@ -1227,12 +1210,10 @@ struct UnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        return self._as_legacy().store[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
-        ](offset, val)
+        comptime assert offset_type.is_integral(), "offset must be integer"
+        (self + Int(offset))._store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](val)
 
     @always_inline("nodebug")
     fn store[
@@ -1244,9 +1225,9 @@ struct UnsafePointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], ...],
+        self: UnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
-    ) where type_of(self).mut:
+    ):
         """Stores a single element value `val` at element offset 0.
 
         Specify `alignment` when writing to packed/unaligned memory. Requires a
@@ -1277,11 +1258,8 @@ struct UnsafePointer[
         Args:
             val: The SIMD value to store.
         """
-        return self._as_legacy().store[
-            width=width,
-            alignment=alignment,
-            volatile=volatile,
-            non_temporal=non_temporal,
+        self._store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
         ](val)
 
     @always_inline("nodebug")
@@ -1291,18 +1269,41 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], ...],
+        self: UnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
-    ) where type_of(self).mut:
-        return self._as_legacy()._store[
-            width=width, alignment=alignment, volatile=volatile
-        ](val)
+    ):
+        comptime assert width > 0, "width must be a positive integer value"
+        comptime assert (
+            alignment > 0
+        ), "alignment must be a positive integer value"
+
+        comptime if dtype == DType.bool and width > 1:
+            # Bool (i1) is sub-byte, so a vector store of SIMD[bool, N]
+            # packs bits. Cast to uint8 and store so each element
+            # occupies its own byte boundary.
+            self.bitcast[Scalar[DType.uint8]]()._store[
+                alignment=alignment,
+                volatile=volatile,
+                non_temporal=non_temporal,
+            ](val.cast[DType.uint8]())
+        else:
+            __mlir_op.`pop.store`[
+                alignment=alignment._mlir_value,
+                isVolatile=volatile._mlir_value,
+                isNonTemporal=non_temporal._mlir_value,
+            ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")
     fn strided_load[
         dtype: DType, T: Intable, //, width: Int
-    ](self: UnsafePointer[Scalar[dtype], ...], stride: T) -> SIMD[dtype, width]:
+    ](
+        self: UnsafePointer[Scalar[dtype], ...],
+        stride: T,
+    ) -> SIMD[
+        dtype, width
+    ]:
         """Performs a strided load of the SIMD vector.
 
         Parameters:
@@ -1316,7 +1317,9 @@ struct UnsafePointer[
         Returns:
             A vector which is stride loaded.
         """
-        return self._as_legacy().strided_load[width=width](stride)
+        return strided_load(
+            self, Int(stride), SIMD[DType.bool, width](fill=True)
+        )
 
     @always_inline("nodebug")
     fn strided_store[
@@ -1325,10 +1328,10 @@ struct UnsafePointer[
         //,
         width: Int = 1,
     ](
-        self: UnsafePointer[Scalar[dtype], ...],
+        self: UnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: T,
-    ) where type_of(self).mut:
+    ):
         """Performs a strided store of the SIMD vector.
 
         Parameters:
@@ -1340,7 +1343,9 @@ struct UnsafePointer[
             val: The SIMD value to store.
             stride: The stride between stores.
         """
-        return self._as_legacy().strided_store[width=width](val, stride)
+        strided_store(
+            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
+        )
 
     @always_inline("nodebug")
     fn gather[
@@ -1386,9 +1391,18 @@ struct UnsafePointer[
         Returns:
             The SIMD vector containing the gathered values.
         """
-        return self._as_legacy().gather[width=width, alignment=alignment](
-            offset, mask, default
+        comptime assert (
+            offset.dtype.is_integral()
+        ), "offset type must be an integral type"
+        comptime assert (
+            alignment.is_power_of_two()
+        ), "alignment must be a power of two integer value"
+
+        var base = offset.cast[DType.int]().fma(
+            SIMD[DType.int, width](size_of[dtype]()),
+            SIMD[DType.int, width](Int(self)),
         )
+        return gather[alignment=alignment](base, mask, default)
 
     @always_inline("nodebug")
     fn scatter[
@@ -1398,11 +1412,11 @@ struct UnsafePointer[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: UnsafePointer[Scalar[dtype], ...],
+        self: UnsafePointer[mut=True, Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
-    ) where type_of(self).mut:
+    ):
         """Scatters a SIMD vector into offsets of the current pointer.
 
         This method stores at memory addresses calculated by appropriately
@@ -1433,35 +1447,48 @@ struct UnsafePointer[
             mask: The SIMD vector of boolean values, indicating for each
                 element whether to store at memory or not.
         """
-        return self._as_legacy().scatter[width=width, alignment=alignment](
-            offset, val, mask
+        comptime assert (
+            offset.dtype.is_integral()
+        ), "offset type must be an integral type"
+        comptime assert (
+            alignment.is_power_of_two()
+        ), "alignment must be a power of two integer value"
+
+        var base = offset.cast[DType.int]().fma(
+            SIMD[DType.int, width](size_of[dtype]()),
+            SIMD[DType.int, width](Int(self)),
         )
+        scatter[alignment=alignment](val, base, mask)
 
     @always_inline
-    fn free(
-        self: UnsafePointer[
-            Self.type,
-            _,
-            address_space=AddressSpace.GENERIC,
-        ]
-    ) where type_of(self).mut:
+    fn free(self: UnsafePointer[mut=True, Self.type, ...]):
         """Free the memory referenced by the pointer."""
-        self._as_legacy().free()
+        _free(self)
 
     @always_inline("builtin")
     fn bitcast[
         T: AnyType
     ](self) -> UnsafePointer[T, Self.origin, address_space=Self.address_space,]:
-        """Bitcasts an UnsafePointer to a different type.
+        """Bitcasts a UnsafePointer to a different type.
 
         Parameters:
             T: The target type.
 
         Returns:
-            A new pointer object with the specified type and the same
-            address, mutability, and origin as the original pointer.
+            A new UnsafePointer object with the specified type and the same address,
+            as the original UnsafePointer.
         """
-        return self._as_legacy().bitcast[T]()
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=UnsafePointer[
+                T,
+                Self.origin,
+                address_space=Self.address_space,
+            ]._mlir_type,
+        ](self.address)
+
+    comptime _UnsafePointerType = UnsafePointer[
+        Self.type, Self.origin, address_space=Self.address_space
+    ]
 
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
@@ -1488,7 +1515,10 @@ struct UnsafePointer[
             A pointer with the same type, origin and address space as the
             original pointer, but with the newly specified mutability.
         """
-        return self._as_legacy().mut_cast[target_mut]()
+        comptime assert (
+            target_mut == False or target_mut == Self.mut
+        ), "Cannot safely cast an immutable pointer to mutable"
+        return self.unsafe_mut_cast[target_mut]()
 
     @always_inline("builtin")
     fn unsafe_mut_cast[
@@ -1512,10 +1542,14 @@ struct UnsafePointer[
             Casting the mutability of a pointer is inherently very unsafe.
             Improper usage can lead to undefined behavior. Consider restricting
             types to their proper mutability at the function signature level.
-            For example, taking an `MutUnsafePointer[T, ...]` as an
+            For example, taking an `UnsafePointer[T, mut=True, ...]` as an
             argument over an unbound `UnsafePointer[T, ...]` is preferred.
         """
-        return self._as_legacy().unsafe_mut_cast[target_mut]()
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Self._OriginCastType[
+                Self.origin.unsafe_mut_cast[target_mut]()
+            ]._mlir_type,
+        ](self.address)
 
     @always_inline("builtin")
     fn unsafe_origin_cast[
@@ -1539,7 +1573,9 @@ struct UnsafePointer[
             destruction. Considering parameterizing the origin at the function
             level to avoid unnecessary casts.
         """
-        return self._as_legacy().unsafe_origin_cast[target_origin]()
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Self._OriginCastType[target_origin]._mlir_type,
+        ](self.address)
 
     @always_inline("builtin")
     fn as_immutable(
@@ -1553,7 +1589,7 @@ struct UnsafePointer[
         Returns:
             A pointer with the mutability set to immutable.
         """
-        return self._as_legacy().as_immutable()
+        return self.unsafe_mut_cast[False]()
 
     @always_inline("builtin")
     fn as_any_origin(
@@ -1573,6 +1609,7 @@ struct UnsafePointer[
         `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
+        # TODO: compiler error if using self.unsafe_origin_cast
         return __mlir_op.`pop.pointer.bitcast`[
             _type=UnsafePointer[
                 Self.type,
@@ -1589,16 +1626,22 @@ struct UnsafePointer[
         Self.origin,
         address_space=target_address_space,
     ]:
-        """Casts this pointer to a different address space.
+        """Casts an UnsafePointer to a different address space.
 
         Parameters:
             target_address_space: The address space of the result.
 
         Returns:
-            A new pointer object with the same type and the same address,
-            as the original pointer and the new address space.
+            A new UnsafePointer object with the same type and the same address,
+            as the original UnsafePointer and the new address space.
         """
-        return self._as_legacy().address_space_cast[target_address_space]()
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=UnsafePointer[
+                Self.type,
+                Self.origin,
+                address_space=target_address_space,
+            ]._mlir_type,
+        ](self.address)
 
     @always_inline
     fn destroy_pointee[

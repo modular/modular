@@ -242,7 +242,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](Copyable, _VariantStorage):
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type=__mlir_type.`!kgen.pointer<scalar<ui8>>`
         ](UnsafePointer(to=self._impl).address)
-        return UnsafePointer[mut=True](discr_ptr).bitcast[UInt8]()[]
+        return UnsafePointer[_, origin_of(self)](discr_ptr).bitcast[UInt8]()[]
 
     @always_inline("nodebug")
     fn isa[T: AnyType](self) -> Bool:

@@ -618,8 +618,10 @@ struct TileTensor[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
     ](
-        self, idx: IndexList[_, ...], value: SIMD[Self.dtype, width]
-    ) where Self.mut:
+        self: TileTensor[mut=True, Self.dtype, ...],
+        idx: IndexList[_, ...],
+        value: SIMD[Self.dtype, width],
+    ):
         """Store elements using an IndexList index (for flat layouts).
 
         This enables TileTensor to be used directly with `_elementwise_impl_gpu`

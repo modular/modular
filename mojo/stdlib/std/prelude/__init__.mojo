@@ -166,8 +166,6 @@ from std.iter import (
 from std.memory import (
     alloc,
     AddressSpace,
-    LegacyOpaquePointer,
-    LegacyUnsafePointer,
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,

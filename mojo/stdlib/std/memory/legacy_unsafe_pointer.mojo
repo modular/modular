@@ -132,6 +132,7 @@ struct LegacyUnsafePointer[
         """
         self.address = value
 
+    @deprecated("LegacyUnsafePointer is deprecated. Use UnsafePointer instead.")
     @always_inline("nodebug")
     fn __init__(
         out self,
@@ -222,6 +223,7 @@ struct LegacyUnsafePointer[
     # Factory methods
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("LegacyUnsafePointer is deprecated. Use UnsafePointer instead.")
     @staticmethod
     @always_inline
     fn alloc(
@@ -645,13 +647,27 @@ struct LegacyUnsafePointer[
 
             var self_tmp = UnsafeMaybeUninit[U]()
             var other_tmp = UnsafeMaybeUninit[U]()
-            memcpy(dest=self_tmp.unsafe_ptr(), src=UnsafePointer(self), count=1)
             memcpy(
-                dest=other_tmp.unsafe_ptr(), src=UnsafePointer(other), count=1
+                dest=self_tmp.unsafe_ptr(),
+                src=self.as_unsafe_pointer(),
+                count=1,
+            )
+            memcpy(
+                dest=other_tmp.unsafe_ptr(),
+                src=other.as_unsafe_pointer(),
+                count=1,
             )
 
-            memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
-            memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+            memcpy(
+                dest=self.as_unsafe_pointer(),
+                src=other_tmp.unsafe_ptr(),
+                count=1,
+            )
+            memcpy(
+                dest=other.as_unsafe_pointer(),
+                src=self_tmp.unsafe_ptr(),
+                count=1,
+            )
         else:
             # If `moveinit` is NOT trivial, we need to check if the pointers are
             # the same to avoid undefined behavior when moving from rhs to lhs.
@@ -1027,7 +1043,9 @@ struct LegacyUnsafePointer[
             A vector which is stride loaded.
         """
         return strided_load(
-            UnsafePointer(self), Int(stride), SIMD[DType.bool, width](fill=True)
+            self.as_unsafe_pointer(),
+            Int(stride),
+            SIMD[DType.bool, width](fill=True),
         )
 
     @always_inline("nodebug")
@@ -1053,7 +1071,10 @@ struct LegacyUnsafePointer[
             stride: The stride between stores.
         """
         strided_store(
-            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
+            val,
+            self.as_unsafe_pointer(),
+            Int(stride),
+            SIMD[DType.bool, width](fill=True),
         )
 
     @always_inline("nodebug")
@@ -1176,7 +1197,7 @@ struct LegacyUnsafePointer[
         ]
     ):
         """Free the memory referenced by the pointer."""
-        _free(self)
+        _free(self.as_unsafe_pointer())
 
     @always_inline("builtin")
     fn bitcast[

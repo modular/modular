@@ -198,11 +198,11 @@ fn ep_signal_completion[
     my_rank: Int32,
     dst_rank: Int32,
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt64, MutAnyOrigin], p2p_world_size
     ],
     signal_offset: Int32,
     signal: UInt64,
-    rank_completion_counter: UnsafePointer[Int32, MutExternalOrigin],
+    rank_completion_counter: UnsafePointer[Int32, MutAnyOrigin],
 ) -> None:
     """
     Signals the completion of the communication by writing to the receive count
@@ -1026,14 +1026,14 @@ struct EPLocalSyncCounters[n_experts: Int](
     - combine_wait: 2 * n_experts
     """
 
-    var ptr: UnsafePointer[Int32, MutExternalOrigin]
+    var ptr: UnsafePointer[Int32, MutAnyOrigin]
     """Base pointer to the allocated atomic counter memory."""
 
     comptime device_type: AnyType = Self
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[Int32, _]):
-        self.ptr = UnsafePointer[Int32, MutExternalOrigin](ptr)
+    fn __init__(out self, ptr: UnsafePointer[Int32, MutAnyOrigin]):
+        self.ptr = ptr
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
@@ -1091,7 +1091,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         )
 
     @always_inline
-    fn get_dispatch_async_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+    fn get_dispatch_async_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to dispatch_async kernel atomic counters.
 
         Layout:
@@ -1101,12 +1101,12 @@ struct EPLocalSyncCounters[n_experts: Int](
         return self.ptr
 
     @always_inline
-    fn get_dispatch_wait_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+    fn get_dispatch_wait_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to dispatch_wait kernel atomic counters."""
         return self.ptr + Self.dispatch_async_size()
 
     @always_inline
-    fn get_combine_async_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+    fn get_combine_async_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to combine_async kernel atomic counters.
 
         Note: Returns the same pointer as get_dispatch_wait_ptr() because
@@ -1115,7 +1115,7 @@ struct EPLocalSyncCounters[n_experts: Int](
         return self.ptr + Self.dispatch_async_size()
 
     @always_inline
-    fn get_combine_wait_ptr(self) -> UnsafePointer[Int32, MutExternalOrigin]:
+    fn get_combine_wait_ptr(self) -> UnsafePointer[Int32, MutAnyOrigin]:
         """Returns pointer to combine_wait kernel atomic counters."""
         return self.ptr + Self.dispatch_async_size() + Self.dispatch_wait_size()
 
@@ -1237,11 +1237,11 @@ struct EPDispatchKernel[
     ](
         topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
         recv_count_ptrs: InlineArray[
-            UnsafePointer[UInt64, MutExternalOrigin], Self.p2p_world_size
+            UnsafePointer[UInt64, MutAnyOrigin], Self.p2p_world_size
         ],
-        expert_reserved_counter: UnsafePointer[Int32, MutExternalOrigin],
-        expert_finished_counter: UnsafePointer[Int32, MutExternalOrigin],
-        rank_completion_counter: UnsafePointer[Int32, MutExternalOrigin],
+        expert_reserved_counter: UnsafePointer[Int32, MutAnyOrigin],
+        expert_finished_counter: UnsafePointer[Int32, MutAnyOrigin],
+        rank_completion_counter: UnsafePointer[Int32, MutAnyOrigin],
         my_rank: Int32,
     ) -> None:
         """Auxiliary SM logic for dispatch_kernel.
@@ -1315,12 +1315,12 @@ struct EPDispatchKernel[
             input_type, input_tokens_layout, ImmutAnyOrigin
         ],
         topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
-        send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+        send_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
         recv_buf_ptrs: InlineArray[
-            UnsafePointer[UInt8, MutExternalOrigin], Self.p2p_world_size
+            UnsafePointer[UInt8, MutAnyOrigin], Self.p2p_world_size
         ],
-        expert_reserved_counter: UnsafePointer[Int32, MutExternalOrigin],
-        expert_finished_counter: UnsafePointer[Int32, MutExternalOrigin],
+        expert_reserved_counter: UnsafePointer[Int32, MutAnyOrigin],
+        expert_finished_counter: UnsafePointer[Int32, MutAnyOrigin],
         my_rank: Int32,
     ) -> None:
         """Communication SM logic for dispatch_kernel.
@@ -1506,8 +1506,8 @@ struct EPDispatchKernel[
             DType.uint32, row_offsets_layout, MutAnyOrigin
         ],
         expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
-        recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
-        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+        recv_count_p: UnsafePointer[UInt64, MutAnyOrigin],
+        atomic_counter: UnsafePointer[Int32, MutAnyOrigin],
         my_rank: Int32,
         reserved_shared_expert_tokens: UInt32 = 0,
     ) -> None:
@@ -1620,9 +1620,9 @@ struct EPDispatchKernel[
             DType.uint32, row_offsets_layout, MutAnyOrigin
         ],
         src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-        recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
-        recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
-        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+        recv_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
+        recv_count_p: UnsafePointer[UInt64, MutAnyOrigin],
+        atomic_counter: UnsafePointer[Int32, MutAnyOrigin],
         my_rank: Int32,
     ) -> None:
         """Communication SM logic for dispatch_wait_kernel.
@@ -1801,12 +1801,12 @@ fn dispatch_async_kernel[
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, ImmutAnyOrigin],
     topk_ids: LayoutTensor[DType.int32, topk_ids_layout, ImmutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    send_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt8, MutAnyOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt64, MutAnyOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
@@ -1916,8 +1916,8 @@ fn dispatch_wait_kernel[
     row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
-    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    recv_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutAnyOrigin],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
     maybe_input_tokens: OptionalReg[
@@ -2177,15 +2177,15 @@ struct EPCombineKernel[
             input_type, input_tokens_layout, MutAnyOrigin
         ],
         src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-        send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+        send_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
         recv_buf_ptrs: InlineArray[
-            UnsafePointer[UInt8, MutExternalOrigin], Self.p2p_world_size
+            UnsafePointer[UInt8, MutAnyOrigin], Self.p2p_world_size
         ],
         recv_count_ptrs: InlineArray[
-            UnsafePointer[UInt64, MutExternalOrigin], Self.p2p_world_size
+            UnsafePointer[UInt64, MutAnyOrigin], Self.p2p_world_size
         ],
-        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
-        rank_completion_counter: UnsafePointer[Int32, MutExternalOrigin],
+        atomic_counter: UnsafePointer[Int32, MutAnyOrigin],
+        rank_completion_counter: UnsafePointer[Int32, MutAnyOrigin],
         my_rank: Int32,
     ) -> None:
         """Send processed tokens back to their original ranks.
@@ -2385,8 +2385,8 @@ struct EPCombineKernel[
     @staticmethod
     @always_inline
     fn wait_for_all_arrivals(
-        recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
-        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+        recv_count_p: UnsafePointer[UInt64, MutAnyOrigin],
+        atomic_counter: UnsafePointer[Int32, MutAnyOrigin],
     ) -> None:
         """Auxiliary SM logic for combine_wait_kernel.
 
@@ -2428,8 +2428,8 @@ struct EPCombineKernel[
         output_tokens: LayoutTensor[
             output_type, output_tokens_layout, MutAnyOrigin
         ],
-        recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
-        atomic_counter: UnsafePointer[Int32, MutExternalOrigin],
+        recv_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
+        atomic_counter: UnsafePointer[Int32, MutAnyOrigin],
     ) -> None:
         """Communication SM logic for combine_wait_kernel.
 
@@ -2579,12 +2579,12 @@ fn combine_async_kernel[
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    send_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt8, MutAnyOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt64, MutAnyOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
@@ -2691,8 +2691,8 @@ fn combine_wait_kernel[
     output_tokens: LayoutTensor[
         output_type, output_tokens_layout, MutAnyOrigin
     ],
-    recv_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
-    recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
+    recv_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
+    recv_count_p: UnsafePointer[UInt64, MutAnyOrigin],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
 ):
@@ -2794,12 +2794,12 @@ fn dispatch_kernel[
     row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    send_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt8, MutAnyOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt64, MutAnyOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
@@ -2955,12 +2955,12 @@ fn combine_kernel[
     input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],
     src_info: LayoutTensor[DType.int32, src_info_layout, MutAnyOrigin],
     output_tokens: LayoutTensor[input_type, output_tokens_layout, MutAnyOrigin],
-    send_buf_p: UnsafePointer[UInt8, MutExternalOrigin],
+    send_buf_p: UnsafePointer[UInt8, MutAnyOrigin],
     recv_buf_ptrs: InlineArray[
-        UnsafePointer[UInt8, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt8, MutAnyOrigin], p2p_world_size
     ],
     recv_count_ptrs: InlineArray[
-        UnsafePointer[UInt64, MutExternalOrigin], p2p_world_size
+        UnsafePointer[UInt64, MutAnyOrigin], p2p_world_size
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,

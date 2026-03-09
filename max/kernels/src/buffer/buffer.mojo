@@ -32,8 +32,6 @@ from std.sys.intrinsics import (
 from buffer.dimlist import Dim, DimList
 from std.builtin.device_passable import DevicePassable
 from std.memory import (
-    # Keep LegacyOpaquePointer for DevicePassable trait compatibility
-    LegacyOpaquePointer,
     memset_zero,
     stack_allocation,
 )
