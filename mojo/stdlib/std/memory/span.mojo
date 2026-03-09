@@ -876,7 +876,7 @@ struct Span[
 
     fn count[
         dtype: DType, //
-    ](self: Span[Scalar[dtype]], value: Scalar[dtype]) -> Int:
+    ](self: Span[Scalar[dtype], _], value: Scalar[dtype]) -> Int:
         """Counts the number of occurrences of a value in the Span.
 
         Uses SIMD to count matches in parallel.
