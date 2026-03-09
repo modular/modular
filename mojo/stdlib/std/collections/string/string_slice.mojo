@@ -2217,7 +2217,7 @@ def _unsafe_strlen(
     Notes:
         The length does NOT include the null terminator.
     """
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         var offset = UInt(0)
         while offset < max and ptr[offset]:
             offset += 1
@@ -2225,7 +2225,7 @@ def _unsafe_strlen(
     return _unsafe_strlen_impl(ptr, max)
 
 
-fn _unsafe_strlen_impl(ptr: UnsafePointer[mut=False, Byte], max: UInt) -> UInt:
+fn _unsafe_strlen_impl(ptr: UnsafePointer[mut=False, Byte, _], max: UInt) -> UInt:
     """SIMD-accelerated helper for `_unsafe_strlen`.
 
     Scans for a null byte using SIMD-width blocks, then a scalar tail for any
