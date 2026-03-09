@@ -32,6 +32,12 @@ using namespace LIT;
 // Utilities
 //===----------------------------------------------------------------------===//
 
+/// This is used by `ReferenceElementType` constraint to match a type range
+/// against a single type.
+static bool typeRangeMatches(Type type, TypeRange range) {
+  return llvm::all_of(range, [&](Type e) { return type == e; });
+}
+
 /// Given an insertion point in a block, scan up the parent hierarchy to see if
 /// this block is nested under the TryOp region that will handle a 'raise'd
 /// error, or if this is in a function that is allowed to raise.  This returns
@@ -1976,6 +1982,46 @@ LogicalResult VarDeclOp::verify() {
 // maintaining the origin of the vardecl.
 void VarDeclOp::changeElementType(Type newElementType) {
   getResult().setType(getType().getWithElement(newElementType));
+}
+
+//===----------------------------------------------------------------------===//
+// InitializedVarDeclOp
+//===----------------------------------------------------------------------===//
+
+void InitializedVarDeclOp::build(OpBuilder &b, OperationState &state,
+                                 ValueRange initializers, StringRef name,
+                                 StringRef originName) {
+  assert(!initializers.empty() &&
+         "InitializedVarDeclOp must have at least one initializer");
+  auto originType = b.getType<OriginType>(/*isMutable=*/true);
+  auto originNameAttr = b.getAttr<StringAttr>(originName);
+  auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
+  auto resultType = RefType::get(initializers.front().getType(),
+                                 ParamDeclRefAttr::get(originDecl));
+  build(b, state, resultType, name, originDecl, initializers);
+}
+
+void InitializedVarDeclOp::getAsmResultNames(
+    function_ref<void(Value, StringRef)> setNameFn) {
+  setNameFn(getResult(), getName());
+}
+
+void InitializedVarDeclOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
+  walkDef(getParamDecl(), ParamDefValue());
+}
+
+LogicalResult InitializedVarDeclOp::verify() {
+  if (getInitializers().empty())
+    return emitOpError() << "must have at least one initializer";
+  Type elementType = getType().getElementType();
+  for (Value init : getInitializers()) {
+    if (init.getType() != elementType)
+      return emitOpError() << "initializer type " << init.getType()
+                           << " does not match result element type "
+                           << elementType;
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

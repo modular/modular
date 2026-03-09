@@ -685,25 +685,49 @@ static Value lowerOp(LIT::StructExtractOp op,
                                        b.getIndexAttr(index));
 }
 
+static TypedAttr getAlignmentFromType(Type type, LITTypeLowerer &b) {
+  auto structType = dyn_cast<LIT::StructType>(type);
+  if (!structType)
+    return {};
+
+  StructDecl &decl = b.structDecls.get(structType.getName());
+  if (!decl.minAlignment)
+    return {};
+
+  // Substitute the alignment with struct parameters.
+  ParameterEvaluator evaluator(decl.decls, structType.getParamValues());
+  evaluator.setEvaluationContext(&b.evalContext);
+  return evaluator.getReboundAttribute(decl.minAlignment);
+}
+
 static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   // Lower a lit.var.decl to pop.stack_allocation.
   // Check if the element type is a struct with explicit alignment.
-  TypedAttr alignment;
-  if (auto structType =
-          dyn_cast<LIT::StructType>(op.getType().getElementType())) {
-    StructDecl &decl = b.structDecls.get(structType.getName());
-    if ((alignment = decl.minAlignment)) {
-      // Substitute the alignment with struct parameters.
-      ParameterEvaluator evaluator(decl.decls, structType.getParamValues());
-      evaluator.setEvaluationContext(&b.evalContext);
-      alignment = evaluator.getReboundAttribute(alignment);
-    }
-  }
-
+  TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);
   return POP::StackAllocationOp::create(
       b, op.getLoc(), op.getType().getAsPointerType(),
       /*count=*/1, alignment, /*markedLifetimes=*/true);
+}
+
+static Value lowerOp(InitializedVarDeclOp op,
+                     InitializedVarDeclOpAdaptor adaptor, LITTypeLowerer &b) {
+  // Lower to pop.stack_allocation for N elements, then store each initializer.
+  Type elementType = op.getType().getElementType();
+  int64_t count = op.getNumInitializers();
+  TypedAttr alignment = getAlignmentFromType(elementType, b);
+  Value alloc = POP::StackAllocationOp::create(
+      b, op.getLoc(), op.getType().getAsPointerType(), count, alignment,
+      /*markedLifetimes=*/true);
+  for (auto [i, init] : llvm::enumerate(adaptor.getInitializers())) {
+    Value slotPtr = alloc;
+    if (i) { // Don't create zero offset.
+      auto cst = ParamConstantOp::create(b, op.getLoc(), b.getIndexAttr(i));
+      slotPtr = POP::OffsetOp::create(b, op.getLoc(), alloc, cst);
+    }
+    POP::StoreOp::create(b, op.getLoc(), init, slotPtr);
+  }
+  return alloc;
 }
 
 static Value lowerOp(VarLifetimeStartOp op, VarLifetimeStartOpAdaptor adaptor,
@@ -947,7 +971,8 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
               RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
               RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
               RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp, RefPackExtractOp,
-              VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp>(
+              VarDeclOp, InitializedVarDeclOp, VarLifetimeStartOp,
+              VarLifetimeEndOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });
