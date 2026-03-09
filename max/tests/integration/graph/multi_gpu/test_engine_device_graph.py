@@ -555,9 +555,17 @@ def test_multi_device_debug_verify_replay() -> None:
         graph_key, input0, input1
     )
 
+    verify_input0 = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 20).to(
+        device0
+    )
+    verify_input1 = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 30).to(
+        device1
+    )
+
     # Verify that the captured graphs match eager execution on both devices
-    # This validates that the launch traces on both GPUs are correct
-    model.debug_verify_replay(graph_key, input0, input1)
+    # This validates that the launch traces on both GPUs are correct even if
+    # the eager verification run uses different input buffers.
+    model.debug_verify_replay(graph_key, verify_input0, verify_input1)
 
     # Ensure the captured graphs still work after verification
     model.replay(graph_key, input0, input1)
