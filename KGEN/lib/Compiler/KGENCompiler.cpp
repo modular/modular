@@ -296,6 +296,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   configurePassManager(pm);
+  (void)mlir::applyPassManagerCLOptions(pm);
 
   pm.addPass(createElaborateGenerators(target, elaboratorOptions,
                                        compilationOptions, compileElaboratorAsm,
@@ -526,6 +527,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if constexpr (KGEN::kIsTracingEnabled)
         pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
       configurePassManager(pm);
+      (void)mlir::applyPassManagerCLOptions(pm);
 
       pm.addPass(
           createElaborateGenerators(target, elabOptions, compilationOptions,
