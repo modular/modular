@@ -92,6 +92,8 @@ class EPConfig:
             combine_dtype=self.combine_dtype,
             max_tokens_per_rank=self.max_tokens_per_rank,
             n_experts=self.n_experts,
+            n_nodes=self.n_nodes,
+            n_gpus_per_node=self.n_gpus_per_node,
             top_k=self.top_k,
         )
 
@@ -127,6 +129,8 @@ def estimate_ep_memory_usage(
     combine_dtype: DType,
     max_tokens_per_rank: int,
     n_experts: int,
+    n_nodes: int,
+    n_gpus_per_node: int,
     top_k: int,
 ) -> int:
     """Estimate the EP communication memory usage per device per buffer group.
@@ -141,6 +145,8 @@ def estimate_ep_memory_usage(
         combine_dtype_size: Size in bytes of the combine data type.
         max_tokens_per_rank: Maximum tokens per GPU rank.
         n_experts: Total number of routed experts.
+        n_nodes: Total number of nodes in the distributed setup.
+        n_gpus_per_node: Number of GPUs available per node.
         top_k: Number of experts each token is routed to.
 
     Returns:
@@ -161,7 +167,16 @@ def estimate_ep_memory_usage(
     dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
 
     c_token_size = hidden_size * combine_dtype.size_in_bytes
-    combine_send_buf_size = n_experts * max_tokens_per_rank * c_token_size
+    # When all the devices are on the same node, we skip the combine send buffer
+    # and directly send tokens to each device's recv buffer. Hence, we don't
+    # need to allocate the combine send buffer.
+    combine_send_buf_size = (
+        max_tokens_per_rank
+        * c_token_size
+        * min(n_experts, n_gpus_per_node * n_nodes * top_k)
+        if n_nodes > 1
+        else 0
+    )
     combine_recv_buf_size = top_k * max_tokens_per_rank * c_token_size
 
     return (
