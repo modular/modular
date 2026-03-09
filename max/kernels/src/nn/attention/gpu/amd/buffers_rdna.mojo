@@ -33,7 +33,6 @@ from layout import Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout import blocked_product
 from layout.layout_tensor import (
-    LayoutTensorIter,
     ThreadScope,
     copy_dram_to_local,
     copy_local_to_shared,
@@ -179,19 +178,20 @@ struct KBufferRDNA[
     comptime wtile_dim0 = Self.WN
     comptime wtile_dim1 = Self.BK
 
-    comptime SharedIterType = LayoutTensorIter[
+    comptime SharedTileType = LayoutTensor[
         Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-        circular=True,
     ]
-
-    var smem_iter: Self.SharedIterType
-
-    comptime SharedTileType = Self.SharedIterType.LayoutTensorType
     comptime SharedWarpTileType = Self.SharedTileType.TileType[
         Self.wtile_dim0, Self.wtile_dim1
+    ]
+
+    var smem_ptr: UnsafePointer[
+        Scalar[Self.dtype],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     var bounds: Int
@@ -229,7 +229,7 @@ struct KBufferRDNA[
     ):
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
+        self.smem_ptr = shared_ptr
         comptime stride = Self.GlobalTiledIteratorType.layout.stride[0].value()
         self.bounds = num_b_rows.value() * stride if num_b_rows else Int.MAX
         self.global_iterator = global_tile.tiled_iterator[
@@ -266,7 +266,7 @@ struct KBufferRDNA[
     fn copy_to_shared[
         tile_id: Int = 0
     ](self,):
-        var smem_tile = self.smem_iter.next_unsafe(0)[]
+        var smem_tile = Self.SharedTileType(self.smem_ptr)
         var load_tile_slice = self.load_tile.split[Self.num_stages]()[tile_id]
 
         copy_local_to_shared[
@@ -283,7 +283,7 @@ struct KBufferRDNA[
         k_mma: Int,
     ](self):
         var warp_col = get_rdna_warp_coords[Self.BN, Self.WN]()[1]
-        var smem_tile = self.smem_iter.next_unsafe(0)[]
+        var smem_tile = Self.SharedTileType(self.smem_ptr)
 
         var warp_tile = smem_tile.tile[Self.wtile_dim0, Self.wtile_dim1](
             warp_col, 0
@@ -386,17 +386,18 @@ struct VBufferRDNA[
 
     var mma_tile: Self.MMATileType
 
-    comptime SharedIterType = LayoutTensorIter[
+    comptime SharedTileType = LayoutTensor[
         Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-        circular=True,
     ]
 
-    var smem_iter: Self.SharedIterType
-
-    comptime SharedTileType = Self.SharedIterType.LayoutTensorType
+    var smem_ptr: UnsafePointer[
+        Scalar[Self.dtype],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
 
     comptime GlobalTensorType = LayoutTensor[
         Self.dtype,
@@ -444,7 +445,7 @@ struct VBufferRDNA[
 
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
+        self.smem_ptr = shared_ptr
         self.current_stage = 0
         self.remaining_rows = total_rows.value() if total_rows else Int.MAX
 
@@ -544,7 +545,7 @@ struct VBufferRDNA[
         var thread_row = Int(lane) // threads_per_row
         var thread_col = Int(lane) % threads_per_row
 
-        var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
+        var smem_tensor = Self.SharedTileType(self.smem_ptr)
         var load_tile = self.load_tile.split[Self.num_stages]()[tile_id]
 
         # In shared memory, V is transposed: smem[depth_pos, seq_pos]
@@ -554,7 +555,7 @@ struct VBufferRDNA[
         var smem_col = smem_col_abs % Self.simd_width
 
         comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
-            var smem_tile = smem_iter_tensor.tile[
+            var smem_tile = smem_tensor.tile[
                 Self.pad[Self.depth](),
                 Self.simd_width,
             ](0, smem_chunk).tile[
@@ -590,7 +591,7 @@ struct VBufferRDNA[
         V^T is stored in shared memory as [depth, key] with key split into
         blocks of simd_width=8: block0 has keys 0..7, block1 has keys 8..15.
         """
-        var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
+        var smem_tensor = Self.SharedTileType(self.smem_ptr)
 
         var lane = lane_id() % UInt(16)
 
@@ -599,10 +600,10 @@ struct VBufferRDNA[
         var depth_offset = warp_n_idx * Self.warp_depth_tiles * Self.MMA_M
 
         comptime for depth_idx in range(Self.warp_depth_tiles):
-            var smem_block0 = smem_iter_tensor.tile[
+            var smem_block0 = smem_tensor.tile[
                 Self.pad[Self.depth](), Self.simd_width
             ](0, k_mma * 2)
-            var smem_block1 = smem_iter_tensor.tile[
+            var smem_block1 = smem_tensor.tile[
                 Self.pad[Self.depth](), Self.simd_width
             ](0, k_mma * 2 + 1)
 
