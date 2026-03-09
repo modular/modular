@@ -2456,7 +2456,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         print(StringSlice("+42").zfill(5))  # "+0042"
         ```
         """
-        var length = len(self)
+        var length = self.byte_length()
         if length >= width:
             return String(self)
         var padding = width - length
@@ -2500,7 +2500,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             padding the original string, or the original string if it's already
             at least as wide as the requested width.
         """
-        if len(self) >= width:
+        if self.byte_length() >= width:
             return String(self)
         assert len(fillchar) == 1, "fill char needs to be a one byte literal"
 
