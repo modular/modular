@@ -837,8 +837,8 @@ fn mla_prefill_branch_fp8[
     # copy the k cache to the latent buffer
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     _k_cache_to_buffer(
-        buffer_row_offsets.to_layout_tensor(),
-        cache_offsets.to_layout_tensor(),
+        buffer_row_offsets,
+        cache_offsets,
         k_cache,
         Int32(buffer_length),
         k_latent,
@@ -1631,8 +1631,8 @@ fn mla_prefill_branch_bf16[
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
     _k_cache_to_buffer(
-        buffer_row_offsets.to_layout_tensor(),
-        cache_offsets.to_layout_tensor(),
+        buffer_row_offsets,
+        cache_offsets,
         k_cache,
         Int32(buffer_length_int),
         k_latent,

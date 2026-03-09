@@ -37,6 +37,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    lt_to_tt,
     row_major,
 )
 from layout.tile_layout import RowMajorLayout
@@ -3260,10 +3261,10 @@ fn generic_flare_mla_prefill_ragged_paged_plan[
         task_id=Int(context.get_device_context().id()),
     ):
         mla_prefill_plan(
-            buffer_row_offsets,
-            cache_offsets,
-            buffer_lengths,
-            input_row_offsets,
+            lt_to_tt(buffer_row_offsets),
+            lt_to_tt(cache_offsets),
+            lt_to_tt(buffer_lengths),
+            lt_to_tt(input_row_offsets),
             k,
             buffer_token_size,
             cuda_ctx,
@@ -3305,8 +3306,8 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
         row_major((Idx(buffer_length_int), Idx[latent_dim]())),
     )
     _k_cache_to_buffer(
-        buffer_row_offsets_1d,
-        cache_offsets_1d,
+        lt_to_tt(buffer_row_offsets_1d),
+        lt_to_tt(cache_offsets_1d),
         k,
         Int32(buffer_length_int),
         k_latent_tile,

@@ -77,6 +77,7 @@ from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tile_tensor import TileTensor, lt_to_tt
+from layout.tile_layout import TensorLayout
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -2944,13 +2945,14 @@ fn mla_prefill_single_batch[
 
 
 fn set_buffer_lengths_to_zero[
-    buffer_lengths_layout: Layout
+    BufferLengthsLayoutType: TensorLayout,
 ](
-    buffer_lengths: LayoutTensor[
-        DType.int32, buffer_lengths_layout, MutAnyOrigin
+    buffer_lengths: TileTensor[
+        mut=True, DType.int32, BufferLengthsLayoutType, MutExternalOrigin
     ],
 ):
-    comptime MAX_CHUNKS = Int(buffer_lengths_layout.shape[0])
+    comptime assert buffer_lengths.flat_rank == 1
+    comptime MAX_CHUNKS = buffer_lengths.static_shape[0]
 
     comptime for chunk_idx in range(MAX_CHUNKS):
         buffer_lengths[chunk_idx] = 0
@@ -2960,18 +2962,10 @@ fn set_buffer_lengths_to_zero[
 fn mla_prefill_plan[
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    buffer_lengths: LayoutTensor[
-        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
-    input_row_offsets: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    buffer_row_offsets: TileTensor[mut=True, DType.uint32, ...],
+    cache_offsets: TileTensor[mut=True, DType.uint32, ...],
+    buffer_lengths: TileTensor[mut=True, DType.int32, ...],
+    input_row_offsets: TileTensor[DType.uint32, ...],
     k_cache: cache_t,
     buffer_token_size: UInt32,
     ctx: DeviceContext,
@@ -2988,20 +2982,20 @@ fn mla_prefill_plan[
         2. Cache offsets for each sequence in each chunk
         3. Total buffer lengths for each processing iteration
     """
-    var batch_size: Int = input_row_offsets.dim[0]() - 1
+    var batch_size: Int = Int(input_row_offsets.dim[0]()) - 1
 
     if batch_size == 0:
         # Fill buffer lengths with 0
-        comptime kernel = set_buffer_lengths_to_zero[buffer_lengths.layout]
+        comptime kernel = set_buffer_lengths_to_zero[buffer_lengths.LayoutType,]
         ctx.enqueue_function[kernel, kernel](
             buffer_lengths, grid_dim=1, block_dim=1
         )
     else:
         comptime kernel = mla_prefill_plan_kernel[
-            buffer_row_offsets.layout,
-            cache_offsets.layout,
-            buffer_lengths.layout,
-            input_row_offsets.layout,
+            buffer_row_offsets.LayoutType,
+            cache_offsets.LayoutType,
+            buffer_lengths.LayoutType,
+            input_row_offsets.LayoutType,
             cache_t,
         ]
 
@@ -3009,7 +3003,7 @@ fn mla_prefill_plan[
             buffer_row_offsets,
             cache_offsets,
             buffer_lengths,
-            input_row_offsets.get_immutable(),
+            input_row_offsets.as_immut(),
             k_cache,
             buffer_token_size,
             grid_dim=(ceildiv(batch_size, 128), 1, 1),
@@ -3019,42 +3013,49 @@ fn mla_prefill_plan[
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
 fn mla_prefill_plan_kernel[
-    buffer_row_offsets_layout: Layout,
-    cache_offsets_layout: Layout,
-    buffer_lengths_layout: Layout,
-    input_row_offsets_layout: Layout,
+    BufferRowOffsetsLayoutType: TensorLayout,
+    CacheOffsetsLayoutType: TensorLayout,
+    BufferLengthsLayoutType: TensorLayout,
+    InputRowOffsetsLayoutType: TensorLayout,
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: LayoutTensor[
+    buffer_row_offsets: TileTensor[
+        mut=True,
         DType.uint32,
-        buffer_row_offsets_layout,
-        MutAnyOrigin,
+        BufferRowOffsetsLayoutType,
+        MutExternalOrigin,
     ],
-    cache_offsets: LayoutTensor[
+    cache_offsets: TileTensor[
+        mut=True,
         DType.uint32,
-        cache_offsets_layout,
-        MutAnyOrigin,
+        CacheOffsetsLayoutType,
+        MutExternalOrigin,
     ],
-    buffer_lengths: LayoutTensor[
+    buffer_lengths: TileTensor[
+        mut=True,
         DType.int32,
-        buffer_lengths_layout,
-        MutAnyOrigin,
+        BufferLengthsLayoutType,
+        MutExternalOrigin,
     ],
-    input_row_offsets: LayoutTensor[
+    input_row_offsets: TileTensor[
         DType.uint32,
-        input_row_offsets_layout,
+        InputRowOffsetsLayoutType,
         ImmutExternalOrigin,
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
 ):
+    comptime assert buffer_row_offsets.flat_rank == 2
+    comptime assert cache_offsets.flat_rank == 2
+    comptime assert buffer_lengths.flat_rank == 1
+    comptime assert input_row_offsets.flat_rank == 1
+
     var seq_idx = global_idx.x
     var seq_start_pos = 0
-    var seq_end_pos = 0
-    var batch_size: Int = input_row_offsets.dim[0]() - 1
+    var batch_size: Int = Int(input_row_offsets.dim[0]()) - 1
     var buffer_size: Int = Int(buffer_token_size)
 
-    comptime MAX_CHUNKS = Int(buffer_lengths.layout.shape[0])
+    comptime MAX_CHUNKS = buffer_lengths.static_shape[0]
     comptime page_size = cache_t.page_size_
     comptime assert page_size != 0, "Only PagedKVCache is supported."
 
@@ -3109,7 +3110,7 @@ fn mla_prefill_plan_kernel[
 
     # If this is the last sequence in the batch
     if seq_idx == UInt(batch_size - 1):
-        seq_end_pos = seq_start_pos + curr_seq_len
+        var seq_end_pos = seq_start_pos + curr_seq_len
         var end_chunk = (seq_end_pos + buffer_size - 1) // buffer_size - 1
 
         # Set buffer lengths for all chunks
@@ -3137,13 +3138,13 @@ fn mla_prefill_plan_kernel[
 fn _k_cache_to_buffer[
     dtype: DType,
     cache_t: KVCacheT,
+    BufferRowOffsetsLayoutType: TensorLayout,
+    CacheOffsetsLayoutType: TensorLayout,
 ](
-    buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
+    buffer_row_offsets: TileTensor[
+        DType.uint32, BufferRowOffsetsLayoutType, ...
     ],
-    cache_offsets: LayoutTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    cache_offsets: TileTensor[DType.uint32, CacheOffsetsLayoutType, ...],
     k_cache: cache_t,
     length: Int32,
     buffer: TileTensor[mut=True, dtype=dtype, ...],
@@ -3152,6 +3153,8 @@ fn _k_cache_to_buffer[
     comptime num_heads = cache_t.kv_params.num_heads
     comptime assert num_heads == 1, "num_heads should be equal to 1"
     comptime assert buffer.rank == 2, "buffer should be rank 2"
+    comptime assert buffer_row_offsets.flat_rank == 1
+    comptime assert cache_offsets.flat_rank == 1
 
     @always_inline
     @parameter
@@ -3165,10 +3168,10 @@ fn _k_cache_to_buffer[
             buffer_row_offsets, global_token_idx
         )
 
-        var token_idx = Int(
-            UInt32(global_token_idx)
-            - buffer_row_offsets[batch_idx][0]
-            + cache_offsets[batch_idx][0]
+        var token_idx = (
+            global_token_idx
+            - Int(buffer_row_offsets[batch_idx])
+            + Int(cache_offsets[batch_idx])
         )
 
         var head_dim_idx = idx[1]
