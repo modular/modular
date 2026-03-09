@@ -563,6 +563,8 @@ struct Dict[
     Boolable,
     Copyable,
     Defaultable,
+    Equatable where conforms_to(V, Equatable),
+    Hashable where conforms_to(V, Hashable),
     Iterable,
     Sized,
     Writable where conforms_to(K, Writable) and conforms_to(V, Writable),
@@ -1052,6 +1054,60 @@ struct Dict[
             element.
         """
         return len(self).__bool__()
+
+    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.V, Equatable):
+        """Checks if two dictionaries are equal.
+
+        Two dictionaries are equal if they contain the same keys and the
+        corresponding values are equal.
+
+        Args:
+            other: The dictionary to compare with.
+
+        Returns:
+            True if the dictionaries are equal, False otherwise.
+        """
+        if len(self) != len(other):
+            return False
+
+        for entry in self.items():
+            try:
+                ref other_val = other._find_ref(entry.key)
+                ref lhs = trait_downcast[Equatable](entry.value)
+                ref rhs = trait_downcast[Equatable](other_val)
+                if lhs != rhs:
+                    return False
+            except:
+                return False
+
+        return True
+
+    fn __hash__[
+        H2: Hasher
+    ](self, mut hasher: H2) where conforms_to(Self.V, Hashable):
+        """Hashes the dictionary using the given hasher.
+
+        The hash is order-independent: two dictionaries with the same key-value
+        pairs will have the same hash regardless of insertion order.
+
+        Parameters:
+            H2: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        # XOR with mixing for order-independent hashing (same approach as
+        # Python's frozenset). The mixing step provides bit diffusion so that
+        # entries with similar hashes don't cancel under XOR.
+        var combined = UInt64(0)
+        for entry in self.items():
+            var entry_hasher = H2()
+            trait_downcast[Hashable](entry.key).__hash__(entry_hasher)
+            trait_downcast[Hashable](entry.value).__hash__(entry_hasher)
+            var h = entry_hasher^.finish()
+            h = ((h ^ 89869747) ^ (h << 16)) * 3644798167
+            combined ^= h
+        hasher._update_with_simd(combined)
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
