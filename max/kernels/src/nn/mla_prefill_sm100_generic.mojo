@@ -49,7 +49,7 @@ from layout.tma_async import (
     RaggedTMA3DTile,
 )
 from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import TileTensor
 import std.gpu.primitives.warp as warp
 
 from std.gpu.memory import AddressSpace, external_memory
@@ -734,13 +734,13 @@ fn mla_sm100_prefill_generic[
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
 ](
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q: LayoutTensor[q_type, _, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
@@ -879,7 +879,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     kv_lut: KVType,
     k_rope_lut: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,

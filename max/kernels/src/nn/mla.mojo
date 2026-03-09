@@ -76,7 +76,7 @@ from layout.layout_tensor import (
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from layout.tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor, lt_to_tt
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -1964,13 +1964,13 @@ fn flare_mla_prefill_dispatch[
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](
-            output,
-            q,
+            lt_to_tt(output),
+            lt_to_tt(q),
             k,
             rebind[type_of(k)](v),
             k_rope,
             mask_functor,
-            valid_length,
+            lt_to_tt(valid_length),
             DynamicInt(max_prompt_len),
             scale,
             batch_size,

@@ -19,7 +19,7 @@ from nn.mha_utils import (
 )
 from nn.mha_mask import MHAMask
 from std.gpu.host import DeviceContext
-from layout.layout_tensor import LayoutTensor
+from layout import TileTensor
 from std.gpu.memory import AddressSpace
 from .mla_prefill_sm100_generic import mla_sm100_prefill_generic
 from .mla_prefill_sm100_blockscale import mla_sm100_prefill_blockscale
@@ -41,13 +41,13 @@ fn mla_sm100_prefill[
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q: LayoutTensor[q_type, _, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,

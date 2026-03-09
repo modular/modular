@@ -709,9 +709,9 @@ fn _mla_decode_sm100_dispatch_impl[
                 ragged=ragged,
                 warps_per_head=wph,
             ](
-                o_accum_split,
-                lse_accum_split,
-                output,
+                lt_to_tt(o_accum_split),
+                lt_to_tt(lse_accum_split),
+                lt_to_tt(output),
                 input_row_offsets_ptr,
                 batch_size,
                 q_max_seq_len,

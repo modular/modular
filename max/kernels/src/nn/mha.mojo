@@ -470,6 +470,16 @@ fn q_num_matrix_view_rows[
 
 
 @always_inline
+fn q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
+    # TileTensor overload for the same computation.
+    var num_rows: Int = Int(q.dim[0]())
+
+    comptime for i in range(1, q.rank - 2):
+        num_rows *= Int(q.dim[i]())
+    return num_rows
+
+
+@always_inline
 fn flash_attention_dispatch[
     k_t: MHAOperand,
     v_t: MHAOperand,
