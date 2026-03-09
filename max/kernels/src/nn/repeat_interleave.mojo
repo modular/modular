@@ -21,7 +21,6 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from tensor._indexing import _row_major_strides
 
 from std.utils import IndexList
 

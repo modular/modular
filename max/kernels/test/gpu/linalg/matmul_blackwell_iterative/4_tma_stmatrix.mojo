@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -132,7 +130,11 @@ fn kernel_4[
     comptime c_smem_layout = Layout.row_major(BM, BN)
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -200,7 +202,7 @@ fn kernel_4[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -343,9 +345,19 @@ fn kernel_4[
     comptime for tma_n in range(BN // TMA_BN):
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range(TMA_BN // 16):
-                var d_reg = c_frag.slice[
-                    8, offset=(i + tma_n * (TMA_BN // 16)) * 8
-                ]().cast[DType.bfloat16]()
+                var d_reg = SIMD[DType.bfloat16, 8]()
+
+                comptime for _ei in range(4):
+                    comptime _src_offset = (
+                        i + tma_n * (TMA_BN // 16)
+                    ) * 8 + 2 * _ei
+                    var pair = SIMD[DType.float32, 2](
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset]),
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset + 1]),
+                    )
+                    var casted = pair.cast[DType.bfloat16]()
+                    d_reg[2 * _ei] = casted[0]
+                    d_reg[2 * _ei + 1] = casted[1]
 
                 var st_matrix_args = RuntimeTuple[
                     IntTuple(
@@ -573,9 +585,9 @@ def test_blackwell_kernel_4[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)

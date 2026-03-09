@@ -21,16 +21,13 @@ from std.benchmark import (
     ThroughputMeasure,
     keep,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn test[N: Int = 1024 * 1024]() -> UInt32:
     # seed(0)
     comptime alignment = 64
     comptime type = DType.uint32
-    var x = UnsafePointer[Scalar[type]].alloc(N, alignment=alignment)
+    var x = alloc[Scalar[type]](N, alignment=alignment)
     randint[type](x, N, 0, 255)
     var s: UInt32 = 0
     for i in range(N):

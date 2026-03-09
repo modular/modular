@@ -4,7 +4,7 @@ const path = require('path');
 const maxSidebars = {
   maxConceptsSidebar : [
     "max/intro",
-    'max/changelog',
+    'max/changelog/index',
     'max/faq',
     {
       label : "Get started",

@@ -25,9 +25,6 @@ from std.benchmark import (
 )
 from std.gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse, human_readable_size
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal, assert_true
 
 from std.utils import IndexList
@@ -183,7 +180,7 @@ fn bench_p2p(
     length_in_elements = length_in_bytes // size_of[dtype]()
 
     # Create host buffers for verification
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(length_in_elements)
+    var host_ptr = alloc[Scalar[dtype]](length_in_elements)
 
     # Initialize source data with known pattern
     iota(host_ptr, length_in_elements)

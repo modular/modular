@@ -20,9 +20,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -95,16 +92,12 @@ fn test[
     comptime c_ref_layout = Layout.row_major(UNKNOWN_VALUE, actual_N)
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(lora_c_size)
-    var c_ref_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_ref_size)
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_experts
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](lora_c_size)
+    var c_ref_host_ptr = alloc[Scalar[c_type]](c_ref_size)
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
 
     var a_host = LayoutTensor[a_type, a_layout](
         a_host_ptr,

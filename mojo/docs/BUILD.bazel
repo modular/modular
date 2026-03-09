@@ -72,10 +72,6 @@ pkg_files(
         ],
     ),
     prefix = "mojo",
-    renames = {
-        "changelog.md": "_nightly-changelog.md",
-        "changelog-released.md": "changelog.md",
-    },
     strip_prefix = strip_prefix.from_pkg(""),
 )
 

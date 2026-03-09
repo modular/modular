@@ -299,7 +299,7 @@ struct Q4sym[
         ), "Only support fully divisible dimensions right now."
 
         var blob_output_ptr = output_tensor.ptr
-        var base_block_ptr = UnsafePointer(blob_output_ptr).bitcast[
+        var base_block_ptr = blob_output_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
@@ -346,7 +346,10 @@ struct Q4sym[
             DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
+            mut=True,
+            Self.float_dtype,
+            address_space=AddressSpace.GENERIC,
+            ...,
         ],
         output_shape: IndexList[output_tensor.rank],
     ):
@@ -373,7 +376,7 @@ struct Q4sym[
         # TODO: check contiguous inputs and outputs
 
         var uint8_input_ptr = input_tensor.ptr
-        var base_block_ptr = UnsafePointer(uint8_input_ptr).bitcast[
+        var base_block_ptr = uint8_input_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 

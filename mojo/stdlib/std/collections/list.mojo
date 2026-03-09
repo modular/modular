@@ -97,10 +97,10 @@ struct List[T: Copyable](
     Boolable,
     Copyable,
     Defaultable,
-    Equatable,
+    Equatable where conforms_to(T, Equatable),
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(T, Writable),
 ):
     """A dynamically-allocated and resizable list.
 
@@ -435,11 +435,8 @@ struct List[T: Copyable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Checks if two lists are equal.
-
-        Constraints:
-            `T` must conform to `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -455,13 +452,6 @@ struct List[T: Copyable](
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Equatable),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="Equatable",
-        ]()
-
         if len(self) != len(other):
             return False
 
@@ -475,14 +465,8 @@ struct List[T: Copyable](
         return True
 
     @always_inline
-    fn __ne__[
-        U: Equatable & Copyable, //
-    ](self: List[U, ...], other: List[U, ...]) -> Bool:
+    fn __ne__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Checks if two lists are not equal.
-
-        Parameters:
-            U: The type of the elements in the list. Must implement the
-               trait `Equatable`.
 
         Args:
             other: The list to compare with.
@@ -637,7 +621,7 @@ struct List[T: Copyable](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.T, Writable):
         """Returns a string representation of a `List`.
 
         Returns:
@@ -651,7 +635,7 @@ struct List[T: Copyable](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
         """Returns a string representation of a `List`.
 
         Returns:
@@ -663,9 +647,7 @@ struct List[T: Copyable](
 
     fn _write_self_to[
         f: fn(Self.T, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.T, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
         @parameter
@@ -676,11 +658,10 @@ struct List[T: Copyable](
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this list to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -688,11 +669,10 @@ struct List[T: Copyable](
         self._write_self_to[f=fmt.write_to[Self.T]](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this list to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.

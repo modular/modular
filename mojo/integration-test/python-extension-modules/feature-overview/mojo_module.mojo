@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
 
 from std.python import Python, PythonObject
@@ -147,7 +144,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
     fn change_name(
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
-        var self0 = LegacyUnsafePointer[Self, ...](
+        var self0 = UnsafePointer[Self, ...](
             unchecked_downcast_value=self_
         ).unsafe_mut_cast[True]()
 
@@ -199,7 +196,7 @@ fn incr_int__wrapper(
 ) raises -> PythonObject:
     check_arguments_arity(1, py_args, "incr_int")
 
-    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "incr_int", py_args, 0
     )
 
@@ -214,11 +211,13 @@ fn add_to_int__wrapper(
 ) raises -> PythonObject:
     check_arguments_arity(2, py_args, "add_to_int")
 
-    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "add_to_int", py_args, 0
     )
 
-    var arg_1: UnsafePointer[Int] = check_and_get_or_convert_arg[Int](
+    var arg_1: UnsafePointer[Int, MutAnyOrigin] = check_and_get_or_convert_arg[
+        Int
+    ](
         "add_to_int",
         py_args,
         1,

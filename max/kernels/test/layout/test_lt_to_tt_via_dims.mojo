@@ -13,6 +13,14 @@
 """Step-by-step tests for lt_to_tt via _DimsToCoordLike (the working path)."""
 
 from buffer import Dim, DimList
+from layout import (
+    Layout,
+    LayoutTensor,
+    UNKNOWN_VALUE,
+    RuntimeLayout,
+    TileTensor,
+    lt_to_tt,
+)
 from layout.coord import (
     _DimsToCoordLike,
     Coord,
@@ -20,8 +28,12 @@ from layout.coord import (
     ComptimeInt,
     RuntimeInt,
 )
+from layout.int_tuple import IntTuple
 from layout.tile_layout import Layout as InternalLayout
-from layout import TileTensor
+from layout.tile_tensor import LTToTTLayout
+from std.memory import UnsafePointer
+from std.utils.index import Index
+from std.testing import assert_equal
 
 
 # ============================================================
@@ -78,7 +90,6 @@ fn test_tiletensor_type_from_dims() raises:
 
 fn test_dimlist_from_layout_shape() raises:
     print("--- test_dimlist_from_layout_shape ---")
-    from layout import Layout
 
     # Public layout with static dims
     comptime lt_layout = Layout.row_major(4, 8)
@@ -89,8 +100,6 @@ fn test_dimlist_from_layout_shape() raises:
     comptime shape_dim1 = lt_layout.shape[1].value()
 
     # Convert to Dim: UNKNOWN_VALUE (-1) becomes Dim(), others become Dim(N)
-    from layout import UNKNOWN_VALUE
-
     comptime d0 = Dim(shape_dim0) if shape_dim0 != UNKNOWN_VALUE else Dim()
     comptime d1 = Dim(shape_dim1) if shape_dim1 != UNKNOWN_VALUE else Dim()
     comptime shape_dims = DimList(d0, d1)
@@ -110,7 +119,6 @@ fn test_dimlist_from_layout_shape() raises:
 
 fn test_dimlist_from_dynamic_layout_shape() raises:
     print("--- test_dimlist_from_dynamic_layout_shape ---")
-    from layout import Layout, UNKNOWN_VALUE
 
     # Public layout with one dynamic dim
     comptime lt_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
@@ -136,7 +144,6 @@ fn test_dimlist_from_dynamic_layout_shape() raises:
 
 fn test_tiletensor_type_from_public_layout() raises:
     print("--- test_tiletensor_type_from_public_layout ---")
-    from layout import Layout, UNKNOWN_VALUE
 
     comptime lt_layout = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
 
@@ -178,9 +185,6 @@ fn test_tiletensor_type_from_public_layout() raises:
 
 fn test_lt_to_tt_function() raises:
     print("--- test_lt_to_tt_function ---")
-    from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout
-    from std.memory import UnsafePointer
-    from std.utils.index import Index
 
     @parameter
     fn _int_to_dim(value: Int) -> Dim:
@@ -269,7 +273,101 @@ fn test_lt_to_tt_function() raises:
     print("  PASSED")
 
 
-def main() raises:
+# ============================================================
+# Step 7: Generalized lt_to_tt from layout.tile_tensor
+# ============================================================
+
+
+fn test_generalized_lt_to_tt() raises:
+    print("--- test_generalized_lt_to_tt ---")
+
+    # --- 2D static layout ---
+    comptime static_2d = Layout.row_major(4, 8)
+    var arr_2d = InlineArray[Float32, 32](fill=1.0)
+    var lt_2d = LayoutTensor[DType.float32, static_2d](arr_2d.unsafe_ptr())
+    var tt_2d = lt_to_tt(lt_2d)
+    assert_equal(tt_2d.rank, 2)
+    assert_equal(Int(tt_2d.dim[0]()), 4)
+    assert_equal(Int(tt_2d.dim[1]()), 8)
+    print("  2D static: PASSED")
+
+    # --- 2D dynamic layout ---
+    comptime dynamic_2d = Layout.row_major[dims=DimList(Dim(), Dim(8))]()
+    var arr_2d_dyn = InlineArray[Float32, 24](fill=2.0)
+    var lt_2d_dyn = LayoutTensor[DType.float32, dynamic_2d](
+        arr_2d_dyn.unsafe_ptr(),
+        RuntimeLayout[dynamic_2d].row_major(Index(3, 8)),
+    )
+    var tt_2d_dyn = lt_to_tt(lt_2d_dyn)
+    assert_equal(tt_2d_dyn.rank, 2)
+    assert_equal(Int(tt_2d_dyn.dim[0]()), 3)
+    assert_equal(Int(tt_2d_dyn.dim[1]()), 8)
+    print("  2D dynamic: PASSED")
+
+    # --- 1D dynamic layout ---
+    comptime dynamic_1d = Layout(UNKNOWN_VALUE)
+    var arr_1d = InlineArray[UInt32, 5](fill=42)
+    var lt_1d = LayoutTensor[DType.uint32, dynamic_1d](
+        arr_1d.unsafe_ptr(),
+        RuntimeLayout[dynamic_1d](Index(5), Index(1)),
+    )
+    var tt_1d = lt_to_tt(lt_1d)
+    assert_equal(tt_1d.rank, 1)
+    assert_equal(Int(tt_1d.dim[0]()), 5)
+    print("  1D dynamic: PASSED")
+
+    # --- 4D mixed layout (matching kv_cache pattern) ---
+    # Shape: (UNKNOWN, UNKNOWN, 8, 128), strides row-major from known dims
+    comptime shape_4d = IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, 8, 128)
+    comptime layout_4d = Layout.row_major(shape_4d)
+    # Verify the strides we expect from row_major with unknown leading dims:
+    #   stride[3] = 1, stride[2] = 128, stride[1] = 1024, stride[0] = UNKNOWN
+    comptime assert layout_4d.stride[3].value() == 1
+    comptime assert layout_4d.stride[2].value() == 128
+    comptime assert layout_4d.stride[1].value() == 1024
+
+    # Verify the TileTensor layout types
+    comptime TTLayout4D = LTToTTLayout[layout_4d]
+    comptime assert TTLayout4D.rank == 4
+    # dim 0 and 1 are dynamic (UNKNOWN_VALUE in shape)
+    comptime assert not TTLayout4D._shape_types[0].is_static_value
+    comptime assert not TTLayout4D._shape_types[1].is_static_value
+    # dim 2 and 3 are static
+    comptime assert TTLayout4D._shape_types[2].is_static_value
+    comptime assert TTLayout4D._shape_types[3].is_static_value
+    comptime assert TTLayout4D._shape_types[2].static_value == 8
+    comptime assert TTLayout4D._shape_types[3].static_value == 128
+    # stride 0 is dynamic, strides 1-3 are static
+    comptime assert not TTLayout4D._stride_types[0].is_static_value
+    comptime assert TTLayout4D._stride_types[1].is_static_value
+    comptime assert TTLayout4D._stride_types[1].static_value == 1024
+    comptime assert TTLayout4D._stride_types[2].static_value == 128
+    comptime assert TTLayout4D._stride_types[3].static_value == 1
+
+    # Construct a 4D LayoutTensor and convert
+    comptime num_blocks = 2
+    comptime max_seq_len = 16
+    comptime num_elements = num_blocks * max_seq_len * 8 * 128
+    var arr_4d = InlineArray[Float32, num_elements](fill=3.0)
+    var lt_4d = LayoutTensor[DType.float32, layout_4d](
+        arr_4d.unsafe_ptr(),
+        RuntimeLayout[layout_4d](
+            Index(num_blocks, max_seq_len, 8, 128),
+            Index(max_seq_len * 8 * 128, 8 * 128, 128, 1),
+        ),
+    )
+    var tt_4d = lt_to_tt(lt_4d)
+    assert_equal(tt_4d.rank, 4)
+    assert_equal(Int(tt_4d.dim[0]()), num_blocks)
+    assert_equal(Int(tt_4d.dim[1]()), max_seq_len)
+    assert_equal(Int(tt_4d.dim[2]()), 8)
+    assert_equal(Int(tt_4d.dim[3]()), 128)
+    print("  4D mixed: PASSED")
+
+    print("  ALL PASSED")
+
+
+fn main() raises:
     test_dims_to_coord_like_static()
     test_dims_to_coord_like_dynamic()
     test_tiletensor_type_from_dims()
@@ -277,4 +375,5 @@ def main() raises:
     test_dimlist_from_dynamic_layout_shape()
     test_tiletensor_type_from_public_layout()
     test_lt_to_tt_function()
+    test_generalized_lt_to_tt()
     print("=== ALL TESTS PASSED ===")

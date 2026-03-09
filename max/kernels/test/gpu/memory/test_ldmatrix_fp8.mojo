@@ -17,25 +17,24 @@ from std.gpu import WARP_SIZE, barrier, lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma
 from std.gpu.compute.mma_util import store_matrix_d
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, TileTensor
 from layout.runtime_layout import RuntimeLayout
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 from std.testing import assert_almost_equal
 
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 
 fn test_ldmatrix_fp8[
     input_type: DType,
 ](
-    c_ptr: UnsafePointer[Float32],
-    a_ptr: UnsafePointer[Scalar[input_type]],
-    b_ptr: UnsafePointer[Scalar[input_type]],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: UnsafePointer[Scalar[input_type], ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[input_type], ImmutAnyOrigin],
 ):
     comptime accum_type = get_accum_type[input_type]()
     comptime mma_shape = get_mma_shape[input_type, accum_type]()
@@ -95,10 +94,10 @@ fn check_ldmatrix_fp8[
     comptime N = mma_shape[1]
     comptime K = mma_shape[2]
 
-    var a_host = UnsafePointer[Scalar[input_type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[input_type]].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Scalar[input_type]](M * K)
+    var b_host = alloc[Scalar[input_type]](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     comptime for m in range(M):
         comptime for k in range(K):
@@ -134,40 +133,43 @@ fn check_ldmatrix_fp8[
     # Run naive matmul.
     comptime BLOCK_DIM = 16
 
-    # Create LayoutTensors directly
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
 
-    var c_tensor_ref = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        c_device_ref,
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    var c_ref_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
     )
-
-    var a_tensor = LayoutTensor[input_type, layout, MutAnyOrigin](
-        a_device,
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-
-    var b_tensor = LayoutTensor[input_type, layout, MutAnyOrigin](
-        b_device,
-        RuntimeLayout[layout].row_major(
-            IndexList[2](N, K)
-        ),  # N x K for transpose_b=True
-    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(N), Idx(K))),
+    )  # N x K for transpose_b=True
 
     comptime kernel = matmul_kernel_naive[
         DType.float32,
         input_type,
         input_type,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
         transpose_b=True,
     ]
     ctx.enqueue_function_experimental[kernel](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,

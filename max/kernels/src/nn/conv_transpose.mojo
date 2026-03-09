@@ -1679,7 +1679,7 @@ fn _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            {},
+            OpaquePointer[ExternalOrigin[mut=True]](),
             0,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,

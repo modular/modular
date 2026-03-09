@@ -155,12 +155,7 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
     fn _is_row_major(
         shape: IndexList[Self.rank], strides: IndexList[Self.rank]
     ) -> Bool:
-        var expected = 1
-        for i in reversed(range(Self.rank)):
-            if strides[i] != expected:
-                return False
-            expected *= shape[i]
-        return True
+        return shape.get_row_major_strides() == strides
 
     fn __copyinit__(out self, copy: Self):
         self.data = copy.data

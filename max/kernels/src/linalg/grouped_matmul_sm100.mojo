@@ -13,11 +13,8 @@
 
 from std.collections import Optional
 from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
-
 from std.bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -169,10 +166,10 @@ fn load_AB[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -279,10 +276,10 @@ fn consumer_main_loop[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -322,9 +319,11 @@ fn consumer_main_loop[
 @always_inline
 fn stsm_helper[
     swizzle: Swizzle,
+    vec_dtype: DType,
+    vec_size: Int,
     transpose_c: Bool = False,
 ](
-    vec: SIMD[_, _],
+    vec: InlineArray[Scalar[vec_dtype], vec_size],
     dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
@@ -361,23 +360,21 @@ fn stsm_helper[
         Int(lane)
     )
 
-    # Helper function to slice a range of SIMD vector.
-    # LLVM extract intrinsic generates bad code on GPU.
-    @always_inline
-    fn slice[offset: Int, size: Int](v: SIMD) -> SIMD[v.dtype, size]:
-        var tmp = SIMD[v.dtype, size]()
-
-        comptime for i in range(size):
-            tmp[i] = v[i + offset]
-        return tmp
-
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_tile_offset
         var offset = swizzle(stsm_lane_offset + UInt32(n_offset))
-        var v = slice[i * stsmx4_lane_size, stsmx4_lane_size](vec).cast[
-            dst.dtype
-        ]()
+        var v = SIMD[dst.dtype, stsmx4_lane_size]()
+        comptime cast_width = 4 // size_of[Scalar[dst.dtype]]()
+        comptime for k in range(stsmx4_lane_size // cast_width):
+            var src = SIMD[vec_dtype, cast_width]()
+            comptime for _j in range(cast_width):
+                src[_j] = rebind[Scalar[vec_dtype]](
+                    vec[i * stsmx4_lane_size + k * cast_width + _j]
+                )
+            var casted = src.cast[dst.dtype]()
+            comptime for _j in range(cast_width):
+                v[k * cast_width + _j] = casted[_j]
         st_matrix[simd_width=4, transpose=transpose_c](
             dst.ptr.unsafe_mut_cast[True]() + offset,
             bitcast[DType.float32, 4](v),
@@ -416,10 +413,10 @@ fn multi_stage_store_C[
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -484,6 +481,8 @@ fn multi_stage_store_C[
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
     var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
+    comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
+
     comptime for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
@@ -526,10 +525,10 @@ fn multi_stage_store_C[
             ](2 * Int(warp_id) + 1, 0).reshape[Layout.row_major(stageN, 16)]()
 
             # Pack the upper frag to shared memory
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 upper_frag, c_smem_warp_tile_upper
             )
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 lower_frag, c_smem_warp_tile_lower
             )
 
@@ -545,10 +544,10 @@ fn multi_stage_store_C[
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](1, 0)
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 upper_frag, c_smem_warp_tile_upper
             )
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 lower_frag, c_smem_warp_tile_lower
             )
 
@@ -1204,7 +1203,6 @@ fn grouped_matmul_sm100_persistent[
     a_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * M, K),
-        MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
 

@@ -13,13 +13,6 @@
 
 from std.hashlib.hasher import Hasher
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-
 from std.sys import (
     get_defined_int,
     get_defined_bool,
@@ -514,7 +507,7 @@ fn _vendor_blas_fallback_disabled() -> Bool:
     comptime globally_disabled = get_defined_bool[
         "MODULAR_DISABLE_VENDOR_FALLBACK", False
     ]()
-    comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
+    comptime bench_disabled = not get_defined_bool["use_vendor_blas", False]()
     return globally_disabled or bench_disabled
 
 
@@ -530,7 +523,7 @@ fn create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host_ptr = UnsafePointer[UInt32].alloc(num_blocks)
+    var host_ptr = alloc[UInt32](num_blocks)
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -581,7 +574,7 @@ fn get_hilbert_lut_with_cache(
 
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
     ](StringSlice(key_str).unsafe_ptr(), key_str.byte_length())
 
     if cached_ptr:

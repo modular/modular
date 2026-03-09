@@ -130,8 +130,9 @@ fn matmul_dispatch_sm90[
     comptime if _vendor_blas_fallback_disabled():
         if _dispatch():
             return DISPATCH_HIT
-        else:
-            raise Error("Mojo SM90 matmul dispatch failed.")
+        # On any miss (unsupported config or no tuning for this shape), return
+        # DISPATCH_MISS so the caller can fall back to vendor BLAS or other paths.
+        return DISPATCH_MISS
 
     return _dispatch()
 

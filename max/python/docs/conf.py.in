@@ -1,4 +1,11 @@
+import ast
+import importlib
+import inspect
+import logging
+
 from docutils import nodes, utils
+
+logger = logging.getLogger(__name__)
 
 # -- Project information -----------------------------------------------------
 
@@ -20,6 +27,7 @@ source_suffix = ".rst"
 extensions = ["sphinx.ext.autodoc",
               "sphinx.ext.napoleon",
               "sphinx.ext.intersphinx",
+              "sphinx.ext.linkcode",
               "sphinx_markdown_builder",]
 
 markdown_anchor_signatures_docusaurus = True
@@ -51,8 +59,8 @@ napoleon_custom_sections = [("Configuration", "params_style")]
 
 # Link to other libraries for API links such as "pathlib.Path"
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/", None),
-    "numpy": ("https://numpy.org/doc/stable/", None)
+    "python": ("https://docs.python.org/", "../PYTHON_OBJECTS_INV"),
+    "numpy": ("https://numpy.org/doc/stable/", "../NUMPY_OBJECTS_INV")
 }
 
 # templates_path = ["_templates"]
@@ -94,8 +102,209 @@ def code_link_role(name, rawtext, text, lineno, inliner, options={}, content=[])
     reference_node += code_node
     return [reference_node], []
 
+_GITHUB_BASE = "https://github.com/modular/modular/blob/main"
+
+
+def _source_url(source_file, lineno, end_lineno):
+    """Build a GitHub URL from an absolute source path and line range."""
+    # The marker is always present for files within the max package (both in
+    # the source tree and in Bazel's sandbox).  We don't guard against it
+    # missing because every caller already has a module-level fallback URL
+    # and this function is only reached for successfully-resolved objects.
+    marker = "max/python/"
+    idx = source_file.find(marker)
+    rel_path = source_file[idx:] if idx != -1 else source_file
+    return f"{_GITHUB_BASE}/{rel_path}#L{lineno}-L{end_lineno}"
+
+
+def _resolve_relative_import(module_name, from_module, level, is_package):
+    """Resolve a relative import to an absolute module name.
+
+    For example, in package ``max.engine``, ``from .api import X`` (level=1,
+    from_module='api') resolves to ``max.engine.api``.
+
+    Args:
+        module_name: Fully-qualified name of the module containing the import.
+        from_module: The ``module`` field of the ``ImportFrom`` AST node
+            (e.g. ``'api'`` for ``from .api import X``), or ``None`` for
+            bare ``from . import X`` statements.
+        level: Number of leading dots (1 = current package, 2 = parent, …).
+        is_package: Whether *module_name* is a package (``__init__.py``).
+            Packages treat level-1 as "self"; plain modules treat it as
+            "parent".
+    """
+    if level == 0:
+        return from_module
+    parts = module_name.split(".")
+    # Plain modules live *inside* their parent package, so strip the
+    # module name first to get the package, then climb (level - 1) more.
+    if not is_package:
+        parts = parts[:-1]
+    up = level - 1
+    if up > len(parts):
+        return None
+    base = ".".join(parts[: len(parts) - up]) if up else ".".join(parts)
+    return f"{base}.{from_module}" if from_module else base
+
+
+def _search_ast_nodes(body, parts):
+    """Recursively search a list of AST statement nodes for a symbol definition.
+
+    Args:
+        body: A list of AST nodes (e.g. ``tree.body`` or ``class_node.body``).
+        parts: Dotted name split into components (e.g. ``['Class', 'attr']``).
+
+    Returns:
+        ``(lineno, end_lineno)`` or ``None``.
+    """
+    name, *rest = parts
+    for node in body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == name:
+                if rest:
+                    return _search_ast_nodes(node.body, rest)
+                return node.lineno, node.end_lineno or node.lineno
+        elif not rest:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == name:
+                        return node.lineno, node.end_lineno or node.lineno
+            elif isinstance(node, ast.AnnAssign):
+                if isinstance(node.target, ast.Name) and node.target.id == name:
+                    return node.lineno, node.end_lineno or node.lineno
+    return None
+
+
+def _resolve_via_ast(module_name, fullname, _depth=0):
+    """Locate a symbol's source via AST when inspect-based resolution fails.
+
+    Handles type aliases, constants, class attributes, and symbols
+    re-exported through chains of ``__init__.py`` files.
+
+    Returns:
+        ``(file_path, lineno, end_lineno)`` or ``None``.
+    """
+    if _depth > 5:
+        return None
+
+    try:
+        mod = importlib.import_module(module_name)
+    except Exception:
+        return None
+
+    mod_file = getattr(mod, "__file__", None)
+    if not mod_file:
+        return None
+
+    is_package = hasattr(mod, "__path__")
+    parts = fullname.split(".")
+
+    try:
+        with open(mod_file) as f:
+            tree = ast.parse(f.read())
+    except Exception:
+        return None
+
+    # Try finding the symbol directly in the module's source
+    result = _search_ast_nodes(tree.body, parts)
+    if result:
+        return mod_file, result[0], result[1]
+
+    # For re-exports, follow the import chain to the defining module
+    top_name = parts[0]
+    for node in ast.iter_child_nodes(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            if (alias.asname or alias.name) != top_name:
+                continue
+            resolved = _resolve_relative_import(
+                module_name, node.module, node.level, is_package
+            )
+            if not resolved:
+                continue
+            # Recurse into the resolved module to handle multi-level re-exports
+            new_fullname = ".".join([alias.name] + parts[1:])
+            result = _resolve_via_ast(resolved, new_fullname, _depth + 1)
+            if result:
+                return result
+
+    return None
+
+
+def linkcode_resolve(domain, info):
+    """Resolve a Python object to a GitHub source URL with line range.
+
+    Called by ``sphinx.ext.linkcode`` for every documented API member. Uses a
+    two-phase strategy:
+
+    1. **Inspect** -- import the module, walk to the object via ``getattr``,
+       and use ``inspect.getsourcelines`` to get the file and line range.
+       Handles descriptors (property/classmethod/staticmethod) and decorated
+       functions.
+    2. **AST fallback** -- if inspect fails (type aliases, constants, class
+       attributes, or C-extension symbols re-exported from ``__init__.py``),
+       parse the source with ``ast`` and search for the definition, following
+       import chains through re-export layers.
+    """
+    if domain != 'py':
+        return None
+
+    module_name = info.get("module", "")
+    fullname = info.get("fullname", "")
+    if not module_name:
+        return None
+
+    fallback = f"{_GITHUB_BASE}/max/python/{module_name.replace('.', '/')}.py"
+
+    try:
+        # Walk the dotted name to find the live object (e.g. module.Class.method)
+        mod = importlib.import_module(module_name)
+        # Refine fallback using the module's actual file (handles packages
+        # where the file is __init__.py rather than {module}.py)
+        if hasattr(mod, "__file__") and mod.__file__:
+            marker = "max/python/"
+            idx = mod.__file__.find(marker)
+            if idx != -1:
+                fallback = f"{_GITHUB_BASE}/{mod.__file__[idx:]}"
+        obj = mod
+        for part in fullname.split("."):
+            obj = getattr(obj, part, None)
+            if obj is None:
+                break
+
+        if obj is not None:
+            # Unwrap descriptors (property, classmethod, staticmethod) to get
+            # the underlying function that has real source location info.
+            if isinstance(obj, property):
+                obj = obj.fget
+            elif isinstance(obj, (classmethod, staticmethod)):
+                obj = obj.__func__
+            # Strip decorators to reach the actual function with source info
+            obj = inspect.unwrap(obj)
+            source_file = inspect.getfile(obj)
+            # Get line range so GitHub highlights the entire definition
+            source_lines, lineno = inspect.getsourcelines(obj)
+            end_lineno = lineno + len(source_lines) - 1
+            return _source_url(source_file, lineno, end_lineno)
+    except Exception:
+        logger.debug(
+            "linkcode: could not resolve source for %s.%s",
+            module_name,
+            fullname,
+            exc_info=True,
+        )
+
+    # AST-based fallback for type aliases, constants, class attributes,
+    # and symbols re-exported through __init__.py files.
+    ast_result = _resolve_via_ast(module_name, fullname)
+    if ast_result:
+        return _source_url(*ast_result)
+
+    return fallback
+
+
 def setup(app):
-    import inspect
     from sphinx.util import inspect as sphinx_inspect
 
     app.connect("autodoc-process-docstring", process_links)

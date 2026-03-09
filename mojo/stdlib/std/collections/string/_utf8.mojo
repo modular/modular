@@ -14,7 +14,7 @@
 """Implement UTF-8 utils."""
 
 from std.base64._b64encode import _sub_with_saturation
-from std.sys import is_compile_time, simd_width_of
+from std.sys import is_run_in_comptime_interpreter, simd_width_of
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
@@ -256,7 +256,7 @@ fn _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
     U+40000..U+FFFFF   | F1..F3     | 80..BF      | 80..BF     | 80..BF      |
     U+100000..U+10FFFF | F4         | 80..**8F**  | 80..BF     | 80..BF      |
     """
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _is_valid_utf8_comptime(span)
     else:
         return _is_valid_utf8_runtime(span)

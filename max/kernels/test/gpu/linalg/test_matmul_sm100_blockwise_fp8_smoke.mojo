@@ -26,9 +26,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -102,10 +99,10 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Allocate host memory
-    a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
-    b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
-    c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    a_host_ptr = alloc[Scalar[a_type]](M * K)
+    b_host_ptr = alloc[Scalar[b_type]](N * K)
+    c_host_ptr = alloc[Scalar[c_type]](M * N)
+    c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
 
     a_host = NDBuffer[a_type, 2](a_host_ptr, DimList(M, K))
     b_host = NDBuffer[b_type, 2](b_host_ptr, DimList(N, K))
@@ -117,10 +114,8 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_shape_k * M
-    )
-    b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
+    a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_shape_k * M)
+    b_scales_host_ptr = alloc[Scalar[scales_type]](
         b_scales_shape_n * b_scales_shape_k
     )
 

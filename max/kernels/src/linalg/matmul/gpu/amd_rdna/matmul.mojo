@@ -25,7 +25,7 @@ from std.sys.info import _is_amd_rdna2_or_earlier
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx,
+    block_idx_int as block_idx,
     global_idx,
     lane_id,
     thread_idx_int as thread_idx,
@@ -146,8 +146,8 @@ fn _naive_matmul_kernel[
     comptime assert a.flat_rank == 2, "a must have flat_rank == 2"
     comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
 
-    var block_m_offset = Int(block_idx.y) * BLOCK_M
-    var block_n_offset = Int(block_idx.x) * BLOCK_N
+    var block_m_offset = block_idx.y * BLOCK_M
+    var block_n_offset = block_idx.x * BLOCK_N
     var tid = thread_idx.x
 
     # 128 threads handle 64*64 = 4096 elements → 32 elements per thread
@@ -211,8 +211,8 @@ fn _wmma_matmul_kernel[
     comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
 
     # Block coordinates
-    var block_n = Int(block_idx.x)
-    var block_m = Int(block_idx.y)
+    var block_n = block_idx.x
+    var block_m = block_idx.y
 
     var block_m_offset = block_m * BLOCK_M
     var block_n_offset = block_n * BLOCK_N

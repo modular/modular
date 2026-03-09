@@ -75,11 +75,14 @@ fn blockwise_fp8_matmul[
         USE_LEGACY_BLOCKWISE_FP8: If True, use legacy kernel instead of structured.
     """
 
-    # Legacy kernel path disabled -- incompatible with TileTensor API.
-    # To re-enable, update sm100_warp_specialized_blockwise_fp8 to accept TileTensor.
-    comptime assert not get_defined_bool[
-        "USE_LEGACY_BLOCKWISE_FP8", False
-    ](), "Legacy blockwise FP8 kernel not supported with TileTensor API"
+    comptime if get_defined_bool["USE_LEGACY_BLOCKWISE_FP8", False]():
+        sm100_warp_specialized_blockwise_fp8[
+            transpose_b=transpose_b,
+            a_scales_type=a_scales_type,
+            b_scales_type=b_scales_type,
+            config=config,
+        ](c, a, b, a_scales, b_scales, ctx)
+        return
 
     comptime assert transpose_b, "Only support transposed B"
     comptime assert (

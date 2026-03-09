@@ -177,7 +177,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         a_stride: Int,
         b_ptr: UnsafePointer[Scalar[Self.dtype], _],
-        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         c_stride: Int,
         accumulate: Bool = False,
     ):
@@ -235,7 +235,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     fn _pack_buffer_transposed[
         input_b_fn: Self._input_fn_type, static_k: Int
     ](
-        packed_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        packed_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         N: Int,
         dynamic_k: Int,
     ):
@@ -291,6 +291,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                         )
 
         tile[process_tile, tile_sizes, tile_sizes](0, 0, N, K)
+        _ = transpose_buffer
 
         if aligned_n != N:
             for k in range(K):
@@ -301,19 +302,19 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     fn _pack_buffer[
         input_b_fn: Self._input_fn_type
     ](
-        packed_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        packed_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         N: Int,
         K: Int,
     ):
         var output_ptr = packed_ptr
         var aligned_n = align_up(N, Self.simd_width)
 
-        for k in range(K):
+        for _k in range(K):
 
             @parameter
             @always_inline
             fn packed_copy[_simd_width: Int](idx: Int):
-                var val = input_b_fn[_simd_width](idx, k)
+                var val = input_b_fn[_simd_width](idx, _k)
                 output_ptr.store(idx, val)
 
             tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
@@ -331,7 +332,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         N: Int,
         dynamic_k: Int,
         a_ptr: UnsafePointer[Scalar[Self.dtype], _],
-        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
     ):
         var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
         var cn_ptr = c_ptr
@@ -348,11 +349,11 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 end: Int,
                 mut accum: InlineArray[SIMD[Self.dtype, _simd_width], tile_n],
             ):
-                for k in range(start, end, _simd_width):
-                    var a_data = a_ptr.load[width=_simd_width](k)
+                for _k in range(start, end, _simd_width):
+                    var a_data = a_ptr.load[width=_simd_width](_k)
 
                     comptime for nn in range(tile_n):
-                        var b_data = input_b_fn[_simd_width](n + nn, k)
+                        var b_data = input_b_fn[_simd_width](n + nn, _k)
                         accum[nn] = b_data.fma(a_data, accum[nn])
 
             @parameter
@@ -404,7 +405,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         N: Int,
         K: Int,
         a_ptr: UnsafePointer[Scalar[Self.dtype], _],
-        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         accumulate: Bool = False,
     ):
         var cn_ptr = c_ptr
@@ -441,8 +442,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         K: Int,
         a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         a_stride: Int,
-        packed_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        packed_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         c_stride: Int,
         accumulate: Bool = False,
     ) raises:
@@ -477,9 +478,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 Int32(c_stride),
                 Float32(1.0),
                 Float32(1.0) if accumulate else Float32(0.0),
-                rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr),
-                rebind[UnsafePointer[Float32, ImmutAnyOrigin]](a_ptr),
-                rebind[UnsafePointer[Float32, MutAnyOrigin]](packed_ptr),
+                c_ptr.bitcast[Float32](),
+                a_ptr.bitcast[Float32](),
+                packed_ptr.bitcast[Float32](),
             )
 
         Self._matmul_packed(
@@ -534,9 +535,12 @@ struct _FlashAttentionConfig[
 struct _FlashAttention[
     dtype: DType,
     rank: Int,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     input_q_ptr_fn: fn(IndexList[rank]) capturing -> UnsafePointer[
-        Scalar[dtype], ImmutAnyOrigin
+        Scalar[dtype],
+        q_origin,
     ],
     input_k_fn: fn[simd_width: Int, rank: Int](
         idx: IndexList[rank]
@@ -551,7 +555,7 @@ struct _FlashAttention[
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
     output_ptr_fn: fn(IndexList[rank]) capturing -> UnsafePointer[
-        Scalar[dtype], MutAnyOrigin
+        Scalar[dtype], output_origin
     ],
     q_length_fn: fn(batch: Int) capturing -> Int,
     kv_length_fn: fn(batch: Int) capturing -> Int,
@@ -572,10 +576,10 @@ struct _FlashAttention[
             m: Int, n: Int, score_vec: SIMD[Self.dtype, simd_width]
         ) capturing -> SIMD[Self.dtype, simd_width],
     ](
-        qk_block_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-        o_block_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-        max_vals: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-        sum_vals: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        qk_block_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        o_block_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        max_vals: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        sum_vals: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         count_m: Int,
         count_n: Int,
         kv_seq_cnt: Int,
@@ -595,7 +599,7 @@ struct _FlashAttention[
 
         comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
         for m in range(count_m):
-            var qk_row = LayoutTensor[Self.dtype, layout_1d](
+            var qk_row = LayoutTensor[Self.dtype, layout_1d, _](
                 qk_row_ptr,
                 RuntimeLayout[layout_1d].row_major(IndexList[1](kv_seq_cnt)),
             )
@@ -864,8 +868,8 @@ struct _FlashAttention[
                     Self._online_softmax[mask_2d_fn](
                         qk_block_ptr,
                         o_block_ptr,
-                        max_vals.ptr.as_unsafe_pointer(),
-                        sum_vals.ptr.as_unsafe_pointer(),
+                        max_vals.ptr,
+                        sum_vals.ptr,
                         count_m,
                         count_n,
                         kv_seq_cnt,
@@ -928,6 +932,8 @@ fn _flash_attention[
     dtype: DType,
     rank: Int,
     mask_rank: Int,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     input_k_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
@@ -939,12 +945,14 @@ fn _flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
+    ],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     sink_weights: OptionalReg[
@@ -962,17 +970,17 @@ fn _flash_attention[
     @parameter
     fn input_q_ptr_fn(
         coords: IndexList[rank],
-    ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[dtype], q_origin]:
         var idx = q._offset(coords)
-        return (q.ptr + idx).as_unsafe_pointer()
+        return q.ptr + idx
 
     @always_inline
     @parameter
     fn output_ptr_fn(
         coords: IndexList[rank],
-    ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[dtype], output_origin]:
         var idx = output._offset(coords)
-        return (output.ptr + idx).as_unsafe_pointer()
+        return output.ptr + idx
 
     @always_inline
     @parameter
@@ -1028,6 +1036,8 @@ fn flash_attention[
     dtype: DType,
     rank: Int,
     mask_rank: Int,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     input_k_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
@@ -1039,12 +1049,14 @@ fn flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
+    ],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     sink_weights: OptionalReg[
@@ -1083,7 +1095,7 @@ fn flash_attention_split_kv[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
@@ -1214,6 +1226,8 @@ fn flash_attention_split_kv[
 fn _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     mask_fn: fn[simd_width: Int, mask_rank: Int](
         idx: IndexList[mask_rank],
@@ -1222,12 +1236,14 @@ fn _flash_attention_kv_cache[
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
+    ],
     k: cache_t,
     v: cache_t,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
     ],
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -1247,17 +1263,17 @@ fn _flash_attention_kv_cache[
     @parameter
     fn input_q_ptr_fn(
         coords: IndexList[4],
-    ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[dtype], q_origin]:
         var idx = q._offset(coords)
-        return (q.ptr + idx).as_unsafe_pointer()
+        return q.ptr + idx
 
     @always_inline
     @parameter
     fn output_ptr_fn(
         coords: IndexList[4],
-    ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[dtype], output_origin]:
         var idx = output._offset(coords)
-        return (output.ptr + idx).as_unsafe_pointer()
+        return output.ptr + idx
 
     @always_inline
     @__copy_capture(max_seq_len)
@@ -1281,12 +1297,14 @@ fn _flash_attention_kv_cache[
 fn _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     input_q_ptr_fn: fn(IndexList[4]) capturing -> UnsafePointer[
-        Scalar[dtype], ImmutAnyOrigin
+        Scalar[dtype], q_origin
     ],
     output_ptr_fn: fn(IndexList[4]) capturing -> UnsafePointer[
-        Scalar[dtype], MutAnyOrigin
+        Scalar[dtype], output_origin
     ],
     q_length_fn: fn(batch: Int) capturing -> Int,
     kv_length_fn: fn(batch: Int) capturing -> Int,
@@ -1366,9 +1384,15 @@ fn _flash_attention_kv_cache[
 
 
 fn flash_attention_kv_cache[
-    dtype: DType, cache_t: KVCacheT, //
+    dtype: DType,
+    cache_t: KVCacheT,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
+    //,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
+    ],
     k: cache_t,
     v: cache_t,
     mask: LayoutTensor[
@@ -1376,7 +1400,7 @@ fn flash_attention_kv_cache[
     ],
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
     ],
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -1402,15 +1426,19 @@ fn flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
+    ],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
     ],
     sink_weights: OptionalReg[
         LayoutTensor[
@@ -1440,9 +1468,13 @@ fn flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask,
+    q_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
+    ],
     q_input_row_offsets: LayoutTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -1454,7 +1486,7 @@ fn flash_attention_kv_cache[
     mask: mask_t,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
     ],
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -1493,25 +1525,25 @@ fn flash_attention_kv_cache[
     @parameter
     fn input_q_ptr_fn(
         idx: IndexList[4],
-    ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[dtype], q_origin]:
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         var out_idx = q._offset(flat_idx)
-        return (q.ptr + out_idx).as_unsafe_pointer()
+        return q.ptr + out_idx
 
     @always_inline
     @parameter
     fn output_ptr_fn(
         idx: IndexList[4],
-    ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[dtype], output_origin]:
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         var out_idx = output._offset(flat_idx)
-        return (output.ptr + out_idx).as_unsafe_pointer()
+        return output.ptr + out_idx
 
     comptime mask_rank = 4
     var num_batches = q_input_row_offsets.dim[0]() - 1

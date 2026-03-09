@@ -18,9 +18,6 @@ from layout._fillers import arange, random
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils import IndexList
 
 
@@ -37,7 +34,7 @@ def test_fill_and_print() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = alloc[Float32](dynamic_layout.size())
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -69,7 +66,7 @@ def test_set_and_get_items() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = alloc[Float32](dynamic_layout.size())
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -104,7 +101,7 @@ def test_tile() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = alloc[Float32](dynamic_layout.size())
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -153,7 +150,7 @@ fn test_tile_and_distribute():
         RuntimeTuple[layout.stride](8, 1).cast[DType.int64](),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = alloc[Float32](dynamic_layout.size())
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -259,7 +256,7 @@ fn test_tile_and_vectorize():
         RuntimeTuple[layout.stride, element_type=DType.int32](16, 1),
     )
 
-    var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var storage = alloc[Float32](dynamic_layout.size())
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -486,7 +483,7 @@ fn test_copy_from():
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout)
+    ](alloc[Float32](dynamic_layout.size()), dynamic_layout)
     arange(src_tensor)
 
     var dst_tensor = LayoutTensor[
@@ -494,9 +491,7 @@ fn test_copy_from():
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout).fill(
-        0
-    )
+    ](alloc[Float32](dynamic_layout.size()), dynamic_layout).fill(0)
     print(dst_tensor)
     dst_tensor.copy_from(src_tensor)
     print(dst_tensor)
@@ -523,7 +518,7 @@ fn test_linspace_fill():
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout)
+    ](alloc[Float32](dynamic_layout.size()), dynamic_layout)
     arange(src_tensor)
 
     # CHECK: ----source-tensor----
@@ -588,7 +583,7 @@ fn test_random_fill():
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout)
+    ](alloc[Float32](dynamic_layout.size()), dynamic_layout)
     random(src_tensor)
     var sum: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
@@ -622,7 +617,7 @@ fn test_iterator():
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
-    var ptr = UnsafePointer[Float32].alloc(dynamic_layout.size())
+    var ptr = alloc[Float32](dynamic_layout.size())
     var tensor = LayoutTensor[
         DType.float32,
         layout,
@@ -692,7 +687,7 @@ fn test_iterator():
         element_type=DType.int32,
         linear_idx_type=DType.int32,
     ].row_major(IndexList[2, element_type=DType.int32](M, N))
-    var ptr1 = UnsafePointer[Scalar[type]].alloc(M * N)
+    var ptr1 = alloc[Scalar[type]](M * N)
 
     var tensor1 = LayoutTensor[
         type,
@@ -722,7 +717,7 @@ fn test_iterator():
 fn test_split():
     print("== test_split")
 
-    var ptr = UnsafePointer[Float32].alloc(16)
+    var ptr = alloc[Float32](16)
 
     comptime layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var dynamic_layout_2x4 = RuntimeLayout[

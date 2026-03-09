@@ -20,7 +20,7 @@ from collections.abc import Callable, Iterator
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import numpy.typing as npt
-from max.driver import CPU, DLPackArray, is_virtual_device_mode
+from max.driver import CPU, Buffer, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 
 from ..buffer_utils import cast_dlpack_to
@@ -68,12 +68,12 @@ class Weights(Protocol):
 
     @property
     def name(self) -> str:
-        """Get the current weight name or prefix.
+        """The current weight name or prefix.
 
         Returns:
             The hierarchical name built from attribute and index access.
             For example, if accessed as ``weights.model.layers[0]``,
-            returns "model.layers.0".
+            returns ``"model.layers.0"``.
         """
         ...
 
@@ -82,7 +82,7 @@ class Weights(Protocol):
     def __getitem__(self: _Self, idx: int | str) -> _Self: ...
 
     def exists(self) -> bool:
-        """Check if a weight with this exact name exists.
+        """Checks if a weight with this exact name exists.
 
         .. code-block:: python
 
@@ -92,13 +92,13 @@ class Weights(Protocol):
                 print("Classifier weight not found")
 
         Returns:
-            True if a weight with the current hierarchical name exists
-            in the loaded weights, False otherwise.
+            ``True`` if a weight with the current hierarchical name exists
+            in the loaded weights, ``False`` otherwise.
         """
         ...
 
     def items(self: _Self) -> Iterator[tuple[str, _Self]]:
-        """Iterate through all weights that start with the current prefix.
+        """Iterates through all weights that start with the current prefix.
 
         .. code-block:: python
 
@@ -113,7 +113,7 @@ class Weights(Protocol):
         ...
 
     def data(self) -> WeightData:
-        """Get weight data with metadata.
+        """Returns weight data with metadata.
 
         .. code-block:: python
 
@@ -125,7 +125,7 @@ class Weights(Protocol):
             fp16_data = weight_data.astype(DType.float16)
 
         Returns:
-            A WeightData object containing the tensor data along with
+            A :class:`WeightData` object containing the tensor data along with
             metadata like name, dtype, shape, and quantization encoding.
 
         Raises:
@@ -140,7 +140,7 @@ class Weights(Protocol):
         quantization_encoding: QuantizationEncoding | None = None,
         device: DeviceRef = DeviceRef.CPU(),
     ) -> Weight:
-        """Create a Weight object for this tensor.
+        """Creates a :class:`Weight` object for this tensor.
 
         .. code-block:: python
 
@@ -162,7 +162,7 @@ class Weights(Protocol):
             device: Target device for the weight (CPU or GPU).
 
         Returns:
-            A Weight object that can be added to a graph using
+            A :class:`Weight` object that can be added to a graph using
             ``graph.add_weight()``.
         """
         ...
@@ -210,6 +210,14 @@ class WeightData(DLPackArray):
 
     def __dlpack_device__(self) -> Any:
         return self.data.__dlpack_device__()
+
+    def to_buffer(self) -> Buffer:
+        """Mutates the data into a Buffer."""
+        # We store the result of Buffer.from_dlpack because it may copy the
+        # data.
+        if not isinstance(self.data, Buffer):
+            self.data = Buffer.from_dlpack(self.data)
+        return self.data
 
     @classmethod
     def from_numpy(cls, arr: npt.NDArray[Any], name: str) -> WeightData:
@@ -279,7 +287,7 @@ WeightsAdapter = Callable[..., dict[str, WeightData]]
 """Type alias for functions that adapt weight formats to WeightData dictionaries.
 
 WeightsAdapter functions are used by pipeline architectures to convert between
-different checkpoint formats (e.g., HuggingFace, PyTorch) and MAX's internal
+different checkpoint formats (for example, HuggingFace, PyTorch) and MAX's internal
 format. They take model configuration and return a dictionary mapping weight
 names to WeightData objects.
 """

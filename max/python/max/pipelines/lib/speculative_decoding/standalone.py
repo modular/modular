@@ -26,7 +26,7 @@ from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
 
 from ..sampling import SamplerInputs, apply_logits_processors
-from .base import SpeculativeDecodingPipelineBase
+from .base import SpeculativeDecodingPipelineBase, compute_max_num_draft_steps
 
 logger = logging.getLogger("max.pipelines")
 
@@ -45,7 +45,6 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         model: PipelineModel[TextContext],
         batch: list[TextContext],
         replica_batches: list[list[TextContext]],
-        num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
         draft_inputs: ModelInputs | None = None,
@@ -53,34 +52,26 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_draft_offsets: Buffer | None = None,
     ) -> tuple[ModelInputs, int]:
         """Prepares batch inputs and KV cache for draft or target model."""
-        kv_manager = (
-            self._draft_kv_manager if is_draft else self._target_kv_manager
-        )
+        kv_manager = self._target_kv_manager
 
-        # Claim cache rows
-        # Build request_id -> replica_idx mapping from replica_batches
-        request_to_replica: dict[RequestID, int] = {}
-        for r_idx, replica_batch in enumerate(replica_batches):
-            for ctx in replica_batch:
-                request_to_replica[ctx.request_id] = r_idx
-
-        for i, context in enumerate(batch):  # noqa: B007
-            # Calculate num_steps.
-            num_steps = self.calculate_num_steps(
-                model, model.huggingface_config, num_steps, context, is_draft
+        if is_draft:
+            num_steps = compute_max_num_draft_steps(
+                replica_batches,
+                desired_num_draft_steps=self._num_draft_steps,
+                max_seq_len=self._max_seq_len,
+                is_draft=True,
             )
-            replica_idx = request_to_replica.get(context.request_id, 0)
-            if not kv_manager.contains(
-                context.request_id, replica_idx=replica_idx
-            ):
-                kv_manager.claim(context.request_id, replica_idx=replica_idx)
-            self._draft_replica_idx[context.request_id] = replica_idx
+        else:
+            num_steps = 1
 
-        for ctx in batch:
-            r_idx = self._draft_replica_idx.get(ctx.request_id, 0)
-            kv_manager.alloc(ctx, replica_idx=r_idx, num_steps=num_steps)
         kv_cache_inputs = kv_manager.runtime_inputs([batch], num_steps)
         if is_draft:
+            # Huge hack alert!
+            # Swap out the target kv cache buffers for the draft kv cache buffers
+            for replica_input, draft_blocks in zip(
+                kv_cache_inputs.inputs, self._draft_kv_buffers, strict=True
+            ):
+                replica_input.blocks = draft_blocks
             return (
                 model.prepare_initial_token_inputs(
                     replica_batches=replica_batches,
@@ -115,15 +106,15 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> tuple[int, Buffer, Buffer, ModelInputs, Buffer | None]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
-        sampler_inputs = SamplerInputs.create(batch, self.draft_devices[0])
+        sampler_inputs = SamplerInputs.create(batch, self.devices[0])
 
         # Generate tensor for generated tokens.
         generated_tokens = Buffer.zeros(
-            (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.int64, device=self.devices[0]
         )
 
         generated_logits = Buffer.zeros(
-            (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.float32, device=self.devices[0]
         )
 
         # Multi-step execution
@@ -133,7 +124,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Buffer.zeros(
                 (num_steps, len(batch), self.vocab_size),
                 dtype=DType.float32,
-                device=self.draft_devices[0],
+                device=self.devices[0],
             )
             if self._needs_all_draft_logits
             else None
@@ -165,7 +156,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             # Increment cache lengths.
             assert curr_step_inputs.kv_cache_inputs is not None
             curr_step_inputs.kv_cache_inputs = (
-                self._draft_kv_manager.increment_cache_lengths(
+                self._target_kv_manager.increment_cache_lengths(
                     curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
@@ -202,19 +193,17 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         with reserve_token_space_for_batch(
             context_batch, num_draft_tokens_generated
         ):
-            target_inputs, _target_num_steps = self.prepare_batch(
+            target_inputs, target_num_steps = self.prepare_batch(
                 self._target_model,
                 context_batch,
                 replica_batches,
-                # num steps in this scenario is 1, as we are only
-                # generating at one token beyond the draft tokens.
-                num_steps=1,
                 draft_inputs=draft_inputs,
                 return_n_logits=num_draft_tokens_generated + 1,
                 is_draft=False,
                 merged_draft_tokens=merged_draft_tokens,
                 merged_draft_offsets=merged_draft_offsets,
             )
+            assert target_num_steps == 1
 
         # Generate target tokens.
         target_outputs = self._target_model.execute(model_inputs=target_inputs)
@@ -228,12 +217,12 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self._call_rejection_sampler(
-                draft_tokens,
-                draft_logits,
-                target_outputs.logits,
-                target_outputs.logit_offsets,
-                all_draft_logits,
+            self._rejection_runner.run(
+                draft_tokens=draft_tokens,
+                draft_logits=draft_logits,
+                target_logits=target_outputs.logits,
+                target_logit_offsets=target_outputs.logit_offsets,
+                all_draft_logits=all_draft_logits,
                 context_batch=context_batch,
             )
         )
@@ -256,11 +245,22 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         context_batch = inputs.flat_batch
         replica_batches = inputs.batches
 
+        # Allocate enough kv for 2 * num_draft_steps
+        # This ensures we have enough to verify upwards of num_draft_steps tokens
+        # and then generate num_draft_steps more tokens.
+        # TODO: move this logic to the scheduler
+        for context in context_batch:
+            for replica_idx in range(len(replica_batches)):
+                self._target_kv_manager.alloc(
+                    context,
+                    replica_idx=replica_idx,
+                    num_steps=2 * self._num_draft_steps,
+                )
+
         draft_inputs, draft_num_steps = self.prepare_batch(
             self._draft_model,
             context_batch,
             replica_batches,
-            self._num_draft_steps,
             return_n_logits=1,
             is_draft=True,
         )
@@ -313,6 +313,5 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         # Maybe commit blocks into prefix cache
         self._target_kv_manager.step([context_batch])
-        self._draft_kv_manager.step([context_batch])
 
         return res

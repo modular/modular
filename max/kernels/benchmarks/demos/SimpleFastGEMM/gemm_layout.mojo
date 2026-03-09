@@ -19,9 +19,6 @@ from std.sys import align_of, simd_width_of
 import std.benchmark
 from buffer import NDBuffer
 from layout import *
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime MR = 6
 comptime NR = 64
@@ -146,9 +143,9 @@ fn gemm[
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
 fn gemm_export_dynamic(
-    a_ptr: UnsafePointer[Scalar[dtype]],
-    b_packed_ptr: UnsafePointer[Scalar[dtype]],
-    c_ptr: UnsafePointer[Scalar[dtype]],
+    a_ptr: UnsafePointer[Scalar[dtype], _],
+    b_packed_ptr: UnsafePointer[Scalar[dtype], _],
+    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     M: Int,
 ):
     comptime N = 1024
@@ -178,11 +175,11 @@ fn main():
     print(K)
 
     # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
-    var a_ptr = UnsafePointer[Float32].alloc(M * K, alignment=alignment)
-    var b_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
-    var b_packed_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
-    var c_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
-    var c2_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
+    var a_ptr = alloc[Float32](M * K, alignment=alignment)
+    var b_ptr = alloc[Float32](K * N, alignment=alignment)
+    var b_packed_ptr = alloc[Float32](K * N, alignment=alignment)
+    var c_ptr = alloc[Float32](M * N, alignment=alignment)
+    var c2_ptr = alloc[Float32](M * N, alignment=alignment)
 
     var a = NDBuffer[dtype, 2](a_ptr, (M, K))
 

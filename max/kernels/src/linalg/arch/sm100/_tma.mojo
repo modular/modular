@@ -387,12 +387,10 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    comptime if mode in (
+    comptime assert mode in (
         SwizzleMode._128B,
         SwizzleMode._64B,
         SwizzleMode._32B,
         SwizzleMode.NONE,
-    ):
-        return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
-    else:
-        comptime assert False, "Only support 32B, 64B, 128B, or no swizzle"
+    ), "Only support 32B, 64B, 128B, or no swizzle"
+    return Swizzle(Int(mode), log2_floor(16 // type_size), 3)

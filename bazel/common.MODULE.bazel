@@ -15,7 +15,7 @@ bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_java", version = "9.1.0")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
@@ -63,10 +63,6 @@ single_version_override(
     module_name = "rules_cc",
     patch_strip = 1,
     patches = [
-        # https://github.com/bazelbuild/bazel/pull/26925
-        "//bazel/public-patches:rules_cc_dsym_feature.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/535
-        "//bazel/public-patches:rules_cc_allowlists.patch",
         # https://github.com/bazelbuild/rules_cc/pull/527
         "//bazel/public-patches:rules_cc_textual_hdrs.patch",
         # https://github.com/bazelbuild/rules_cc/pull/578
@@ -381,9 +377,9 @@ use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 
 http_archive(
     name = "bazel_clang_tidy",
-    sha256 = "a1d55ba339bf6952c77e5e48c13a4c86b5c63349bf6bd321e0c01e342d31fc3b",
-    strip_prefix = "bazel_clang_tidy-3897fd6fb52c7dd6b99058f13eabba7a4127baa2",
-    url = "https://github.com/erenon/bazel_clang_tidy/archive/3897fd6fb52c7dd6b99058f13eabba7a4127baa2.tar.gz",
+    sha256 = "96da6e935ccc91045cf928dbc57f22508a2729c51f7fb3f56178017b0deb9b3c",
+    strip_prefix = "bazel_clang_tidy-c4d35e0d0b838309358e57a2efed831780f85cd0",
+    url = "https://github.com/erenon/bazel_clang_tidy/archive/c4d35e0d0b838309358e57a2efed831780f85cd0.tar.gz",
 )
 
 http_archive(
@@ -528,9 +524,9 @@ http_archive(
 http_archive(
     name = "sphinx-markdown-builder",
     build_file = "//bazel/public-patches:sphinx-markdown-builder.BUILD",
-    integrity = "sha256-hYIjXHXV+dtu8zeRVcWLoAzomwlL6mL2RgD+LsT4p7Q=",
-    strip_prefix = "sphinx-markdown-builder-0.7.10",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/python/sphinx-markdown-builder/bc944a9b5a1c4706506ee465bb311db49bb648be.zip",
+    integrity = "sha256-AT4fMP40arW8wq0oaW008j6AIo4bF63DE8OfNn2f9Qk=",
+    strip_prefix = "sphinx-markdown-builder-0.7.11",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/python/sphinx-markdown-builder/8360213fde3916e8597cbe25f59532ab2a8ce6a8.zip",
 )
 
 # https://github.com/scottamain/sphinx-click
@@ -550,4 +546,30 @@ http_file(
     urls = [
         "https://files.pythonhosted.org/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl",
     ],
+)
+
+# Intersphinx oject inventory for Python
+http_archive(
+    name = "python-objects-inv",
+    build_file_content = """
+filegroup(
+    name = "python-objects-inv",
+    srcs = ["max/python/docs/inventories/python/objects.inv"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/python-objects-inv/3.14/e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5/python-objects-inv.tar.gz",
+)
+
+# Intersphinx oject inventory for Numpy
+http_archive(
+    name = "numpy-objects-inv",
+    build_file_content = """
+filegroup(
+    name = "numpy-objects-inv",
+    srcs = ["max/python/docs/inventories/numpy/objects.inv"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
 )

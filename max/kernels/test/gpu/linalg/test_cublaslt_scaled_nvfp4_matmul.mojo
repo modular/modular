@@ -15,9 +15,6 @@ from std.math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
@@ -135,15 +132,11 @@ fn test_block_scaled_nvfp4_cublaslt[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
     var a_scales_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_size
-    )
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
     var b_scales_host = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
@@ -164,11 +157,11 @@ fn test_block_scaled_nvfp4_cublaslt[
     var b_size = n.value * (k.value // 2)
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[input_dtype]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[input_dtype]](a_size)
     var a_host = NDBuffer[input_dtype, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[input_dtype]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[input_dtype]](b_size)
     var b_host = NDBuffer[input_dtype, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )

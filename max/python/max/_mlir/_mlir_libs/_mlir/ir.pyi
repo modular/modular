@@ -1158,6 +1158,12 @@ class SymbolTable:
         """
 
 class BlockArgumentList(Sequence[BlockArgument]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: BlockArgumentList, /) -> list[BlockArgument]: ...
     @property
     def types(self) -> list[Type]:
@@ -1189,9 +1195,21 @@ class BlockList:
         """
 
 class BlockSuccessors(Sequence[Block]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: BlockSuccessors, /) -> list[Block]: ...
 
 class BlockPredecessors(Sequence[Block]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: BlockPredecessors, /) -> list[Block]: ...
 
 class OperationIterator:
@@ -1255,14 +1273,32 @@ class OpOperandIterator:
         """Returns the next operand in the iteration."""
 
 class OpOperandList(Sequence[Value]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: OpOperandList, /) -> list[Value]: ...
     def __setitem__(self, index: int, value: Value) -> None:
         """Sets the operand at the specified index to a new value."""
 
 class OpOperands(Sequence[OpOperand]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: OpOperands, /) -> list[OpOperand]: ...
 
 class OpResultList(Sequence[OpResult]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: OpResultList, /) -> list[OpResult]: ...
     @property
     def types(self) -> list[Type]:
@@ -1273,6 +1309,12 @@ class OpResultList(Sequence[OpResult]):
         """Returns the operation that owns this result list."""
 
 class OpSuccessors(Sequence[Block]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: OpSuccessors, /) -> list[Block]: ...
     def __setitem__(self, index: int, block: Block) -> None:
         """Sets the successor block at the specified index."""
@@ -1285,6 +1327,12 @@ class RegionIterator:
         """Returns the next region in the iteration."""
 
 class RegionSequence(Sequence[Region]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: RegionSequence, /) -> list[Region]: ...
     def __iter__(self) -> RegionIterator:
         """Returns an iterator over the regions in the sequence."""
@@ -1640,6 +1688,12 @@ class AffineMap:
     def results(self) -> AffineExprList: ...
 
 class AffineExprList(Sequence[AffineExpr]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(self, arg: AffineExprList, /) -> list[AffineExpr]: ...
 
 class IntegerSet:
@@ -1696,6 +1750,12 @@ class IntegerSetConstraint:
     def is_eq(self) -> bool: ...
 
 class IntegerSetConstraintList(Sequence[IntegerSetConstraint]):
+    def __getitem__(self, key, /):
+        """Return self[key]."""
+
+    def __len__(self, /):
+        """Return len(self)."""
+
     def __add__(
         self, arg: IntegerSetConstraintList, /
     ) -> list[IntegerSetConstraint]: ...

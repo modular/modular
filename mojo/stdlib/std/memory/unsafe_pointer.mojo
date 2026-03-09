@@ -1033,6 +1033,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
         """Loads `width` elements from the value the pointer points to.
 
@@ -1060,6 +1061,7 @@ struct UnsafePointer[
             alignment: The minimal alignment (bytes) of the address.
             volatile: Whether the operation is volatile.
             invariant: Whether the load is from invariant memory.
+            non_temporal: Whether the load has no temporal locality (streaming).
 
         Returns:
             The loaded SIMD vector.
@@ -1069,6 +1071,7 @@ struct UnsafePointer[
             alignment=alignment,
             volatile=volatile,
             invariant=invariant,
+            non_temporal=non_temporal,
         ]()
 
     @always_inline("nodebug")
@@ -1080,6 +1083,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], ...], offset: Scalar) -> SIMD[
         dtype, width
     ]:
@@ -1095,6 +1099,7 @@ struct UnsafePointer[
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
             invariant: Whether the memory is load invariant.
+            non_temporal: Whether the load has no temporal locality (streaming).
 
         Args:
             offset: The offset to load from.
@@ -1107,6 +1112,7 @@ struct UnsafePointer[
             alignment=alignment,
             volatile=volatile,
             invariant=invariant,
+            non_temporal=non_temporal,
         ](offset)
 
     @always_inline("nodebug")
@@ -1119,6 +1125,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], ...], offset: I) -> SIMD[dtype, width]:
         """Loads the value the pointer points to with the given offset.
 
@@ -1132,6 +1139,7 @@ struct UnsafePointer[
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
             invariant: Whether the memory is load invariant.
+            non_temporal: Whether the load has no temporal locality (streaming).
 
         Args:
             offset: The offset to load from.
@@ -1144,6 +1152,7 @@ struct UnsafePointer[
             alignment=alignment,
             volatile=volatile,
             invariant=invariant,
+            non_temporal=non_temporal,
         ](offset)
 
     @always_inline("nodebug")
@@ -1155,6 +1164,7 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
         self: UnsafePointer[Scalar[dtype], ...],
         offset: I,
@@ -1172,13 +1182,17 @@ struct UnsafePointer[
             width: The size of the SIMD vector.
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
+            non_temporal: Whether the store has no temporal locality (streaming).
 
         Args:
             offset: The offset to store to.
             val: The value to store.
         """
         return self._as_legacy().store[
-            width=width, alignment=alignment, volatile=volatile
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            non_temporal=non_temporal,
         ](offset, val)
 
     @always_inline("nodebug")
@@ -1190,6 +1204,7 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
         self: UnsafePointer[Scalar[dtype], ...],
         offset: Scalar[offset_type],
@@ -1206,13 +1221,17 @@ struct UnsafePointer[
             width: The size of the SIMD vector.
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
+            non_temporal: Whether the store has no temporal locality (streaming).
 
         Args:
             offset: The offset to store to.
             val: The value to store.
         """
         return self._as_legacy().store[
-            width=width, alignment=alignment, volatile=volatile
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            non_temporal=non_temporal,
         ](offset, val)
 
     @always_inline("nodebug")
@@ -1223,6 +1242,7 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
         self: UnsafePointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -1252,12 +1272,16 @@ struct UnsafePointer[
             width: The number of elements to store.
             alignment: The minimal alignment (bytes) of the address.
             volatile: Whether the operation is volatile.
+            non_temporal: Whether the store has no temporal locality (streaming).
 
         Args:
             val: The SIMD value to store.
         """
         return self._as_legacy().store[
-            width=width, alignment=alignment, volatile=volatile
+            width=width,
+            alignment=alignment,
+            volatile=volatile,
+            non_temporal=non_temporal,
         ](val)
 
     @always_inline("nodebug")

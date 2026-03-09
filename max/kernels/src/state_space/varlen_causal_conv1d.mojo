@@ -39,7 +39,11 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 
 from std.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, thread_idx_int as thread_idx
+from std.gpu import (
+    block_dim,
+    block_idx_int as block_idx,
+    thread_idx_int as thread_idx,
+)
 
 from std.memory import UnsafePointer, memcpy
 
@@ -619,9 +623,9 @@ fn causal_conv1d_varlen_states_gpu[
         states_dim_stride: Stride for dimension in states.
         states_seqlen_stride: Stride for sequence in states.
     """
-    var batch_idx = Int(block_idx.z)
-    var block_row = Int(block_idx.y)
-    var block_col = Int(block_idx.x)
+    var batch_idx = block_idx.z
+    var block_row = block_idx.y
+    var block_col = block_idx.x
     var tid_row = thread_idx.y
     var tid_col = thread_idx.x
 
@@ -721,8 +725,8 @@ fn causal_conv1d_varlen_fwd_gpu[
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
-    var batch_idx = Int(block_idx.x)
-    var dim_block_idx = Int(block_idx.y)
+    var batch_idx = block_idx.x
+    var dim_block_idx = block_idx.y
     var tid = thread_idx.x
 
     var d = dim_block_idx * BLOCK_DIM + tid
@@ -891,8 +895,8 @@ fn causal_conv1d_varlen_update_gpu[
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
-    var batch_idx = Int(block_idx.x)
-    var dim_block_idx = Int(block_idx.y)
+    var batch_idx = block_idx.x
+    var dim_block_idx = block_idx.y
     var tid = thread_idx.x
 
     var d = dim_block_idx * BLOCK_DIM + tid

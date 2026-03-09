@@ -12,13 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceBuffer, DeviceContext
-from std.memory import LegacyUnsafePointer, OwnedPointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import OwnedPointer
 from std.testing import *
 
 
-fn kernel(res: UnsafePointer[UInt32]):
+fn kernel(res: UnsafePointer[UInt32, MutAnyOrigin]):
     res[] = 0
 
 
@@ -28,7 +26,7 @@ def test_function_error(ctx: DeviceContext) raises:
     # CHECK: test_function_error
     print("== test_function_error")
     try:
-        var ptr = UnsafePointer[UInt32].alloc(1)
+        var ptr = alloc[UInt32](1)
         var ptr_owned = OwnedPointer[UInt32](unsafe_from_raw_pointer=ptr)
         var res_host = DeviceBuffer[DType.uint32](
             ctx, ptr_owned.unsafe_ptr(), 1, owning=False
@@ -37,9 +35,11 @@ def test_function_error(ctx: DeviceContext) raises:
             res_host, block_dim=(1), grid_dim=(1)
         )
         ctx.synchronize()
+
+        _ = ptr_owned^
     except e:
         # The error should point to the ctx.enqueue_function call in sync mode.
-        # CHECK: max/kernels/test/gpu/device_context/test_function_error_sync_mode.mojo:36:45 failed calling 'test_function_error_sync_mode::kernel' on device cuda:0 with error 'CUDA call failed: CUDA_ERROR_ILLEGAL_ADDRESS (an illegal memory access was encountered)'
+        # CHECK: max/kernels/test/gpu/device_context/test_function_error_sync_mode.mojo:{{.*}} failed calling 'test_function_error_sync_mode::kernel' on device cuda:0 with error 'CUDA call failed: CUDA_ERROR_ILLEGAL_ADDRESS (an illegal memory access was encountered)'
         print(e)
 
 

@@ -20,8 +20,7 @@ from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import H100
-from layout import Layout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import Layout, TileTensor
 from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger
 from std.bit import log2_floor
@@ -189,9 +188,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     b_device: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
+    var a = TileTensor(a_device).to_layout_tensor()
+    var b = TileTensor(b_device).to_layout_tensor()
+    var c = TileTensor(c_device).to_layout_tensor()
 
     comptime N_static = c_shape.get[1]()
     comptime K_static = a_shape.get[1]()
@@ -627,32 +626,30 @@ fn _get_c_smem_layout[
     comptime min_wg_bn = 16
     comptime MIN_WG_BN = min_wg_bn if size_of[c_type]() == 2 else BN // 4
 
-    comptime if available_smem_size > (
+    comptime assert available_smem_size > (
         pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
-    ):
+    ), (
+        "There is not enough SMEM to fit the pipeline yet alone the"
+        " output tile!"
+        + " available_smem_size: "
+        + String(available_smem_size)
+        + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
+        + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
+    )
 
-        fn _get_max_wg_bn() capturing -> Int:
-            var WG_BN = MAX_WG_BN
-            while (
-                available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
-                or BN % WG_BN != 0
-            ) and WG_BN > MIN_WG_BN:
-                WG_BN //= 2
-            return WG_BN
+    fn _get_max_wg_bn() capturing -> Int:
+        var WG_BN = MAX_WG_BN
+        while (
+            available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
+            or BN % WG_BN != 0
+        ) and WG_BN > MIN_WG_BN:
+            WG_BN //= 2
+        return WG_BN
 
-        comptime max_wg_bn = _get_max_wg_bn()
-        return Layout.row_major(
-            max_wg_bn, WG_BM
-        ) if swapAB else Layout.row_major(WG_BM, max_wg_bn)
-    else:
-        comptime assert False, (
-            "There is not enough SMEM to fit the pipeline yet alone the"
-            " output tile!"
-            + " available_smem_size: "
-            + String(available_smem_size)
-            + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
-            + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
-        )
+    comptime max_wg_bn = _get_max_wg_bn()
+    return Layout.row_major(max_wg_bn, WG_BM) if swapAB else Layout.row_major(
+        WG_BM, max_wg_bn
+    )
 
 
 fn warp_specialize_gemm_with_multicasting_splitk[
@@ -678,9 +675,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     b_device: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
+    var a = TileTensor(a_device).to_layout_tensor()
+    var b = TileTensor(b_device).to_layout_tensor()
+    var c = TileTensor(c_device).to_layout_tensor()
 
     var M = c.dim[0]()
     comptime N = c_shape.get[1]()

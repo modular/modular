@@ -14,7 +14,7 @@
 from std.algorithm.functional import elementwise
 from std.random import Random
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor._indexing import _dot_prod, _row_major_strides
+from tensor._indexing import _dot_prod
 
 from std.utils import IndexList
 
@@ -55,7 +55,7 @@ fn random_uniform[
     if lower_bound > upper_bound:
         raise Error("lower_bound must be less than upper_bound")
 
-    var strides = _row_major_strides(shape)
+    var strides = shape.get_row_major_strides()
     var delta = Float32(upper_bound - lower_bound)
 
     @parameter

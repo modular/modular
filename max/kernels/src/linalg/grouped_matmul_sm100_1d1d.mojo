@@ -106,7 +106,7 @@ from linalg.matmul.gpu.sm100.matmul import (
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
-from internal_utils import ufloordiv
+from std.math.uutils import ufloordiv
 
 # Use WarpRole without scheduler warp for grouped matmul
 comptime WarpRole = _WarpRole[has_scheduler=False]
@@ -171,10 +171,16 @@ fn copy_accum_to_gmem[
     # every element in tmem is 4 bytes, so bits being 256 means 8 elements stored across N
     # repeated 4 times is 8*4 = 32, enough to move elements into the width of our 128x32 tile
     comptime rep_frag_size = repeat * fragment_size
-    var upper_frag_partial: SIMD[accum_type, rep_frag_size]
-    var lower_frag_partial = SIMD[accum_type, rep_frag_size]()
-    var upper_frag_casted: SIMD[epilogue_dtype, rep_frag_size]
-    var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
+    var upper_frag_partial: InlineArray[Scalar[accum_type], rep_frag_size]
+    var lower_frag_partial = InlineArray[Scalar[accum_type], rep_frag_size](
+        uninitialized=True
+    )
+    var upper_frag_casted = InlineArray[Scalar[epilogue_dtype], rep_frag_size](
+        uninitialized=True
+    )
+    var lower_frag_casted = InlineArray[Scalar[epilogue_dtype], rep_frag_size](
+        uninitialized=True
+    )
     var scale = expert_scale.cast[accum_type]()
 
     comptime is_lower_frag_required = not (cta_group == 1 and BM == 64)
@@ -206,7 +212,6 @@ fn copy_accum_to_gmem[
             pack=False,
             width=rep_frag_size,
         ](stage_tmem_addr)
-        upper_frag_partial = upper_frag_partial * scale
 
         comptime if is_lower_frag_required:
             lower_frag_partial = tcgen05_ld[
@@ -217,17 +222,34 @@ fn copy_accum_to_gmem[
                 pack=False,
                 width=rep_frag_size,
             ](stage_tmem_addr + (16 << 16))
-            lower_frag_partial = lower_frag_partial * scale
 
         tcgen05_load_wait()
 
         comptime if stage == num_stages - 1:
             accum_arrive[cta_group](mma_output_pipeline, mma_output_stage)
 
-        upper_frag_casted = upper_frag_partial.cast[epilogue_dtype]()
+        # Fused scale + cast using Blackwell-supported SIMD widths.
+        comptime cast_width = 4 // size_of[Scalar[epilogue_dtype]]()
+        var scale_vec = SIMD[accum_type, cast_width](scale)
+
+        comptime for _i in range(rep_frag_size // cast_width):
+            comptime offset = _i * cast_width
+            var src = SIMD[accum_type, cast_width]()
+            comptime for _j in range(cast_width):
+                src[_j] = upper_frag_partial[offset + _j]
+            var scaled = (src * scale_vec).cast[epilogue_dtype]()
+            comptime for _j in range(cast_width):
+                upper_frag_casted[offset + _j] = scaled[_j]
 
         comptime if is_lower_frag_required:
-            lower_frag_casted = lower_frag_partial.cast[epilogue_dtype]()
+            comptime for _i in range(rep_frag_size // cast_width):
+                comptime offset = _i * cast_width
+                var src = SIMD[accum_type, cast_width]()
+                comptime for _j in range(cast_width):
+                    src[_j] = lower_frag_partial[offset + _j]
+                var scaled = (src * scale_vec).cast[epilogue_dtype]()
+                comptime for _j in range(cast_width):
+                    lower_frag_casted[offset + _j] = scaled[_j]
 
         comptime if elementwise_compute_lambda_fn:
             comptime if register_based_epilogue:
@@ -269,10 +291,10 @@ fn copy_accum_to_gmem[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
 
-                stsm_helper[swizzle, UInt(stageN), transpose_c](
+                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
                     upper_frag_casted, c_smem_warp_tile_upper
                 )
-                stsm_helper[swizzle, UInt(stageN), transpose_c](
+                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
             else:
@@ -282,7 +304,7 @@ fn copy_accum_to_gmem[
                     Layout.row_major(stageN, swizzle_width)
                 ]()
 
-                stsm_helper[swizzle, UInt(stageN), transpose_c](
+                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
                     upper_frag_casted, c_smem_warp_tile_upper
                 )
 
@@ -303,7 +325,7 @@ fn copy_accum_to_gmem[
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](0, 0)
-            stsm_helper[swizzle, UInt(stageN), transpose_c](
+            stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
                 upper_frag_casted, c_smem_warp_tile_upper
             )
 
@@ -312,7 +334,7 @@ fn copy_accum_to_gmem[
             ](1, 0)
 
             comptime if is_lower_frag_required:
-                stsm_helper[swizzle, UInt(stageN), transpose_c](
+                stsm_helper[swizzle, UInt(stageN), transpose_c=transpose_c](
                     lower_frag_casted, c_smem_warp_tile_lower
                 )
 

@@ -19,9 +19,6 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # Additional imports for testing
 from internal_utils import (
@@ -157,11 +154,11 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var a_scales_size = bs * (K // BLOCK_SCALE_K) * M
     var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 3, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 3, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
@@ -197,15 +194,11 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
     var a_scales_host = NDBuffer[DType.float32, 3, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
+    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
     var b_scales_host = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
@@ -394,11 +387,11 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var a_scales_size = bs * (K // BLOCK_SCALE_K) * M_aligned_for_scales
     var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 3, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 3, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
@@ -434,15 +427,11 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
     var a_scales_host = NDBuffer[DType.float32, 3, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
+    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
     var b_scales_host = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
