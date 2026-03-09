@@ -146,10 +146,9 @@ fn matmul_dispatch_sm100[
             ](c, a, b, ctx)
             if status:
                 return
-            else:
-                raise Error("Heuristic and outliers dispatch failed.")
-        else:
-            comptime assert False, "Unsupported shape for benchmarking mode."
+            # Heuristic had no config for this (N,K) or m; fall through to normal
+        # When vendor fallback is disabled but shape is not the benchmarking path,
+        # fall through to normal SM100 dispatch.
 
     var epilogue_type = String("None")
 
