@@ -45,4 +45,10 @@ from .tile_layout import (
 )
 from .runtime_layout import RuntimeLayout
 from .runtime_tuple import RuntimeTuple
-from .tile_tensor import TileTensor, flatten_leading, stack_allocation, lt_to_tt
+from .tile_tensor import (
+    TileTensor,
+    flatten_leading,
+    stack_allocation,
+    lt_to_tt,
+    LTToTTLayout,
+)

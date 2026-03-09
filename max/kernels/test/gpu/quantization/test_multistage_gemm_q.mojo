@@ -41,9 +41,7 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulKernels
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
 from std.memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
@@ -72,7 +70,7 @@ fn repack_Q4_0_for_sm8x[
     repack_layout: Layout,
     scales_type: DType,
 ](
-    q_weight: LayoutTensor[DType.uint8, q_layout, MutAnyOrigin],
+    q_weight: LayoutTensor[DType.uint8, q_layout, ImmutAnyOrigin],
     q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutAnyOrigin],
 ):
     comptime group_size = 32
@@ -259,7 +257,7 @@ fn create_ref_b[
     group_size: Int,
     pack_factor: Int,
 ](
-    b_packed: LayoutTensor[type_q, b_q_layout, MutAnyOrigin],
+    b_packed: LayoutTensor[type_q, b_q_layout, ImmutAnyOrigin],
     b_out: LayoutTensor[type_b, b_layout, MutAnyOrigin],
 ):
     comptime WARP_SIZE = 32
@@ -421,12 +419,12 @@ fn test_repack_Q4_0_for_sm8x(
     fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
-    fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[UInt8]):
+    fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[mut=True, UInt8, _]):
         var k_groups = ceildiv(K, 32)
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
 
-        for n in range(N):
-            for k in range(k_groups):
+        for _ in range(N):
+            for _ in range(k_groups):
                 block_ptr[].base_scale = random_float16()
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
@@ -459,16 +457,10 @@ fn test_repack_Q4_0_for_sm8x(
     var repacked_b_size = n.value * ((k.value // group_size) * group_bytes)
     var dequan_size = k.value * n.value
 
-    var gguf_b_host_ptr = UnsafePointer[Scalar[DType.uint8]].alloc(gguf_b_size)
-    var repacked_b_host_ptr = UnsafePointer[Scalar[DType.uint8]].alloc(
-        repacked_b_size
-    )
-    var gguf_dequan_ref_host_ptr = UnsafePointer[Scalar[DType.bfloat16]].alloc(
-        dequan_size
-    )
-    var repacked_dequan_host_ptr = UnsafePointer[Scalar[DType.bfloat16]].alloc(
-        dequan_size
-    )
+    var gguf_b_host_ptr = alloc[Scalar[DType.uint8]](gguf_b_size)
+    var repacked_b_host_ptr = alloc[Scalar[DType.uint8]](repacked_b_size)
+    var gguf_dequan_ref_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
+    var repacked_dequan_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
 
     var gguf_b_host = NDBuffer[DType.uint8, 2](
         gguf_b_host_ptr, dynamic_gguf_b_shape
@@ -669,10 +661,10 @@ fn test_quantized[
     var b_ref_size = n.value * k.value
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[a_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[a_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[a_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[a_type]](c_size)
 
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape

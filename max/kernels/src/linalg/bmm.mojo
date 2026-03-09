@@ -53,16 +53,13 @@ from layout.coord import (
     coord_to_index_list,
 )
 from std.logger import Logger
-from std.memory import LegacyUnsafePointer, memset_zero
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.gpu.host.info import B200, H100
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
-
+from std.memory import memset_zero
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
@@ -628,7 +625,7 @@ fn _batched_matmul_cpu[
                 c.data + batch * c_stride_between_batches,
                 IndexList[2](c.dim[1](), c.dim[2]()),
             )
-            var a_view = NDBuffer[a_type, 2, MutAnyOrigin](
+            var a_view = NDBuffer[a_type, 2, a.origin, ...](
                 a.data + batch * a_stride_between_batches,
                 IndexList[2](a.dim[1](), a.dim[2]()),
             )
@@ -639,17 +636,6 @@ fn _batched_matmul_cpu[
             comptime alignment = align_of[SIMD[c_type, simd_size]]()
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
-            var a_packed_ptr = UnsafePointer[Scalar[a_type]]()
-            if use_i8mm:
-                a_packed_ptr = UnsafePointer[Scalar[a_type]].alloc(
-                    mh * kh, alignment=alignment
-                )
-            var a_packed = NDBuffer[a_type, 2](
-                a_packed_ptr, IndexList[2](mh, kh)
-            )
-
-            if use_i8mm:
-                packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
 
             var b_view = NDBuffer[b_type, 2](
                 b.data + batch * b_stride_between_batches,
@@ -683,22 +669,52 @@ fn _batched_matmul_cpu[
             ):
                 return
 
-            _submatmul_sequential_sync[
-                config,
-                transpose_b,
-                b_packed=False,
-                elementwise_lambda_fn=Optional[
-                    matmul_elementwise_epilogue_type
-                ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
-                saturated_vnni=saturated_vnni,
-            ](
-                c_view,
-                a_packed if use_i8mm else a_view,
-                b_view,
-                GemmShape(sub_matmul_config.shape),
-                GemmShape(sub_matmul_config.offset),
-            )
-            a_packed_ptr.free()
+            comptime if use_i8mm:
+                a_packed_ptr = alloc[Scalar[a_type]](
+                    mh * kh, alignment=alignment
+                )
+                var a_packed = NDBuffer[a_type, 2](
+                    a_packed_ptr,
+                    IndexList[2](mh, kh),
+                )
+                packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
+
+                _submatmul_sequential_sync[
+                    config,
+                    transpose_b,
+                    b_packed=False,
+                    elementwise_lambda_fn=Optional[
+                        matmul_elementwise_epilogue_type
+                    ](
+                        elementwise_lambda_2d
+                    ) if elementwise_epilogue_fn else None,
+                    saturated_vnni=saturated_vnni,
+                ](
+                    c_view,
+                    a_packed,
+                    b_view,
+                    GemmShape(sub_matmul_config.shape),
+                    GemmShape(sub_matmul_config.offset),
+                )
+                a_packed_ptr.free()
+            else:
+                _submatmul_sequential_sync[
+                    config,
+                    transpose_b,
+                    b_packed=False,
+                    elementwise_lambda_fn=Optional[
+                        matmul_elementwise_epilogue_type
+                    ](
+                        elementwise_lambda_2d
+                    ) if elementwise_epilogue_fn else None,
+                    saturated_vnni=saturated_vnni,
+                ](
+                    c_view,
+                    a_view,
+                    b_view,
+                    GemmShape(sub_matmul_config.shape),
+                    GemmShape(sub_matmul_config.offset),
+                )
             _ = batch_coords
 
     sync_parallelize[task_func](num_tasks)
@@ -1266,7 +1282,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         * UInt(b_scales_tensor.dim(2))
     )
 
-    var c = LayoutTensor[c_type, c_2d_layout, MutAnyOrigin](
+    var c = LayoutTensor[c_type, c_2d_layout](
         c_tensor.ptr_at_offset(Index(block_idx.z, 0, 0)),
         RuntimeLayout[c_2d_layout](
             Index(c_tensor.dim(1), c_tensor.dim(2)),
@@ -1274,9 +1290,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         ),
     )
 
-    var b_scales = LayoutTensor[
-        b_scales_type, b_scales_2d_layout, MutAnyOrigin
-    ](
+    var b_scales = LayoutTensor[b_scales_type, b_scales_2d_layout](
         b_scales_ptr,
         RuntimeLayout[b_scales_2d_layout].row_major(
             IndexList[2](b_scales_tensor.dim(1), b_scales_tensor.dim(2)),
@@ -1557,26 +1571,26 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
 
     for batch in range(B):
         # Create 2D LayoutTensor views
-        var c_view = LayoutTensor[c_type, c_layout_2d, MutAnyOrigin](
+        var c_view = LayoutTensor[c_type, c_layout_2d, c.origin](
             c.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[c_layout_2d](
                 Index(M, N), Index(c.stride(1), c.stride(2))
             ),
         )
-        var a_view = LayoutTensor[a_type, a_layout_2d, MutAnyOrigin](
+        var a_view = LayoutTensor[a_type, a_layout_2d, a.origin](
             a.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[a_layout_2d](
                 Index(M, K), Index(a.stride(1), a.stride(2))
             ),
         )
-        var b_view = LayoutTensor[b_type, b_layout_2d, MutAnyOrigin](
+        var b_view = LayoutTensor[b_type, b_layout_2d, b.origin](
             b.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[b_layout_2d](
                 Index(N, K), Index(b.stride(1), b.stride(2))
             ),
         )
         var a_scales_view = LayoutTensor[
-            a_scales_type, a_scales_layout_2d, MutAnyOrigin
+            a_scales_type, a_scales_layout_2d, a_scales.origin
         ](
             a_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[a_scales_layout_2d](
@@ -1587,7 +1601,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
         var b_scales_view = LayoutTensor[
             b_scales_type,
             b_scales_layout_2d,
-            MutAnyOrigin,
+            b_scales.origin,
         ](
             b_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[b_scales_layout_2d](

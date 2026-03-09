@@ -13,9 +13,7 @@
 """GPU tests for RMSNorm with fused residual connection."""
 
 from std.math import sqrt
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.random import rand, Random
@@ -33,7 +31,7 @@ def main() raises:
 fn compute_rms_ref[
     dtype: DType
 ](
-    data_ptr: UnsafePointer[Scalar[dtype]], size: Int, eps: Scalar[dtype]
+    data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Scalar[dtype]
 ) -> Scalar[DType.float32]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()
@@ -57,11 +55,11 @@ fn run_rms_norm_fused_residual_gpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var input_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var residual_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var output_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var residual_output_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var input_h = alloc[Scalar[dtype]](rows * cols)
+    var residual_h = alloc[Scalar[dtype]](rows * cols)
+    var output_h = alloc[Scalar[dtype]](rows * cols)
+    var residual_output_h = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](cols)
 
     # Initialize input data
     rand[dtype](input_h, rows * cols)
@@ -193,7 +191,7 @@ fn run_rms_norm_fused_residual_gpu[
     # Verify results
     for r in range(rows):
         # Compute expected residual output: dropout(input) + residual
-        var sum_ptr = UnsafePointer[Scalar[dtype]].alloc(cols)
+        var sum_ptr = alloc[Scalar[dtype]](cols)
         for c in range(cols):
             var idx = r * cols + c
             var input_val = input_h[idx]

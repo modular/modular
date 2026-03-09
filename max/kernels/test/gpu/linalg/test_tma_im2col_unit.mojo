@@ -37,11 +37,8 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile_im2col,
 )
-from std.memory import LegacyUnsafePointer
+from std.memory import alloc
 from std.utils.index import Index, IndexList
-
-# Create a mutable UnsafePointer alias for host memory operations
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # ============================================================================
@@ -59,7 +56,7 @@ fn im2col_load_kernel[
     BK: Int,
 ](
     act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
-    output_ptr: UnsafePointer[Scalar[dtype]],
+    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     k_coord: UInt,
     m_coord: UInt,
 ):
@@ -132,7 +129,7 @@ fn im2col_load_kernel[
 fn im2col_reference[
     dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
     input: NDBuffer[dtype, 4],  # NHWC
     batch: Int,
     in_height: Int,
@@ -270,7 +267,7 @@ fn run_im2col_test[
 
     # Allocate input tensor
     comptime input_size = batch * in_height * in_width * in_channels
-    var input_host = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var input_host = alloc[Scalar[dtype]](input_size)
 
     # Initialize with sequential pattern
     for i in range(input_size):
@@ -325,9 +322,9 @@ fn run_im2col_test[
 
     # Allocate output buffer
     comptime tile_size = BM * BK
-    var output_host = UnsafePointer[Scalar[dtype]].alloc(tile_size)
+    var output_host = alloc[Scalar[dtype]](tile_size)
     var output_device = ctx.enqueue_create_buffer[dtype](tile_size)
-    var ref_host = UnsafePointer[Scalar[dtype]].alloc(tile_size)
+    var ref_host = alloc[Scalar[dtype]](tile_size)
 
     # Compute reference on CPU for tile at (k=0, m=0)
     var input_nd_host = NDBuffer[dtype, 4, _, static_shape](

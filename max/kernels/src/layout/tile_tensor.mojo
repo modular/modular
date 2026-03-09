@@ -2700,32 +2700,6 @@ fn _int_to_dim(value: Int) -> Dim:
     return Dim()
 
 
-comptime _LTDims1[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-)
-comptime _LTDims2[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-)
-comptime _LTDims3[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-    _int_to_dim(it[2].value()),
-)
-comptime _LTDims4[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-    _int_to_dim(it[2].value()),
-    _int_to_dim(it[3].value()),
-)
-comptime _LTDims5[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-    _int_to_dim(it[2].value()),
-    _int_to_dim(it[3].value()),
-    _int_to_dim(it[4].value()),
-)
-
 comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
     it[idx].value()
 )

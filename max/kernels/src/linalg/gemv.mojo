@@ -58,10 +58,7 @@ from layout import (
     TileTensor,
 )
 from std.logger import Logger
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
+from std.memory import stack_allocation
 from std.utils import IndexList
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
@@ -138,9 +135,9 @@ fn gemv_kernel[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type]],
-    a: UnsafePointer[Scalar[a_type]],
-    b: UnsafePointer[Scalar[b_type]],
+    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=False]],
+    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=False]],
     m: Int,
     n: Int,
     k: Int,
@@ -501,9 +498,9 @@ fn gevm_kernel[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type]],
-    a: UnsafePointer[Scalar[a_type]],
-    b: UnsafePointer[Scalar[b_type]],
+    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=False]],
+    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=False]],
     m: Int,
     n: Int,
     k: Int,
@@ -771,7 +768,7 @@ fn gemv_gpu_dispatch[
                 var b_tensor_n_major = LayoutTensor[
                     b.type,
                     b_layout_template,
-                    MutAnyOrigin,
+                    b.origin,
                     address_space=aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 

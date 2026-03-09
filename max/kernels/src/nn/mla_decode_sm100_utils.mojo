@@ -115,13 +115,13 @@ fn tma_tile_qo[
     depth: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     rows: Int,
     out res: QOTMATile[dtype, BM, BK, swizzle_mode],
 ) raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, depth)
     var rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, depth))
-    var tensor = LayoutTensor[dtype, layout, MutAnyOrigin](ptr, rt_layout)
+    var tensor = LayoutTensor[dtype, layout](ptr, rt_layout)
 
     res = rebind[QOTMATile[dtype, BM, BK, swizzle_mode]](
         create_tensor_tile[

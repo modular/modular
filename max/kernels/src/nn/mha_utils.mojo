@@ -422,7 +422,7 @@ fn _copy_frag_to_smem_nvidia[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space=AddressSpace.SHARED, ...
+        mut=True, type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, _, address_space=AddressSpace.LOCAL
@@ -521,7 +521,7 @@ fn _copy_frag_to_smem_amd[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space=AddressSpace.SHARED, ...
+        mut=True, type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, _, address_space=AddressSpace.LOCAL
@@ -601,7 +601,7 @@ fn _copy_frag_to_smem[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space=AddressSpace.SHARED, ...
+        mut=True, type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, _, address_space=AddressSpace.LOCAL
@@ -705,7 +705,7 @@ fn dispatch_materialized_mask[
     //,
     callback_fn: callback_fn_type,
 ](
-    mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
+    mask_nd: LayoutTensor[mut=False, dtype, layout, _],
     start_pos_nd: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin

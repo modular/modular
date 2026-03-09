@@ -89,14 +89,14 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, ...],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
         a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[mut=False, b_scales_type, b_scales_layout, ...],
     num_iters: UInt,
 ):
     comptime assert transpose_b, "Only support transposed B"
@@ -597,7 +597,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime a_layout_tensor_3D = LayoutTensor[
         a_type,
         _3D_layout[a.layout, a.rank],
-        MutAnyOrigin,
+        a.origin,
         address_space=a.address_space,
         element_layout=a.element_layout,
         layout_int_type=a.layout_int_type,
@@ -609,7 +609,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime b_layout_tensor_3D = LayoutTensor[
         b_type,
         _3D_layout[b.layout, b.rank],
-        MutAnyOrigin,
+        b.origin,
         address_space=b.address_space,
         element_layout=b.element_layout,
         layout_int_type=b.layout_int_type,
@@ -621,7 +621,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime a_scales_layout_tensor_3D = LayoutTensor[
         a_scales_type,
         _3D_layout[a_scales.layout, a_scales.rank],
-        MutAnyOrigin,
+        a_scales.origin,
         address_space=a_scales.address_space,
         element_layout=a_scales.element_layout,
         layout_int_type=a_scales.layout_int_type,
@@ -663,7 +663,6 @@ fn matmul_sm100_blockwise_scaled_fp8[
 
     var a_scales_dim0 = a_scales_3D.dim(1)
     var a_scales_dim1 = a_scales_3D.dim(2)
-    var b_scales_dim0 = b_scales.dim(0)
     var b_scales_dim1 = b_scales.dim(1)
 
     if (

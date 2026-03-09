@@ -14,7 +14,7 @@
 
 
 from std.algorithm.functional import elementwise, unswitch
-from layout import Layout, LayoutTensor, TileTensor
+from layout import Layout, TileTensor
 from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils.index import IndexList

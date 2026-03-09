@@ -568,6 +568,17 @@ class SpeculativeDecodingPipelineBase(
         assert target_cache_mem is not None
         cache_mem = target_cache_mem + draft_cache_mem
 
+        target_cache_mem = (
+            self._target_model.kv_cache_config._available_cache_memory
+        )
+        draft_cache_mem = (
+            self._draft_model.kv_cache_config._available_cache_memory
+        )
+        # These should have been set during memory estimation.
+        assert draft_cache_mem is not None
+        assert target_cache_mem is not None
+        cache_mem = target_cache_mem + draft_cache_mem
+
         target_kv_params = self._target_model.kv_params
         assert isinstance(target_kv_params, KVCacheParams)
         draft_kv_params = self._draft_model.kv_params

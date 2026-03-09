@@ -772,7 +772,7 @@ fn mla_sm100_prefill_generic[
         decoding=False,
     ](
         ctx,
-        q.ptr.as_unsafe_pointer(),
+        q.ptr,
         num_rows_q,
     )
 

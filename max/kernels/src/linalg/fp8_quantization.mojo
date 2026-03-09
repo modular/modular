@@ -40,9 +40,7 @@ from layout import (
     row_major,
 )
 from std.logger import Logger
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from std.algorithm import elementwise
@@ -651,7 +649,7 @@ fn matmul_dynamic_scaled_fp8[
             var c_dummy = NDBuffer[
                 DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
             ](
-                UnsafePointer[Scalar[DType.float32]](),
+                UnsafePointer[Scalar[DType.float32], MutExternalOrigin](),
                 IndexList[2](M, N),
             )
 

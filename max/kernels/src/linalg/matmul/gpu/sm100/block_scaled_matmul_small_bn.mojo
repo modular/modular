@@ -13,9 +13,6 @@
 
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import align_of, env_get_bool, simd_width_of, size_of
 
 from std.bit import next_power_of_two, prev_power_of_two
@@ -524,7 +521,7 @@ fn consumer_main_loop[
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     load_sfb_mbars: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     sfb_load_pipe_consumer_state: PipelineState[num_group_pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
@@ -2318,7 +2315,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime sfa_5d_layout = scales_5d_layout[sfa_layout]
     comptime sfb_5d_layout = scales_5d_layout[sfb_layout]
 
-    var sfa_5d_tensor = LayoutTensor[sfa_dtype, sfa_5d_layout, MutAnyOrigin](
+    var sfa_5d_tensor = LayoutTensor[sfa_dtype, sfa_5d_layout, ...](
         a_scales_tensor.ptr,
         RuntimeLayout[sfa_5d_layout].row_major(
             IndexList[5](
@@ -2340,7 +2337,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             ),
         ),
     )
-    var sfb_5d_tensor = LayoutTensor[sfb_dtype, sfb_5d_layout, MutAnyOrigin](
+    var sfb_5d_tensor = LayoutTensor[sfb_dtype, sfb_5d_layout, ...](
         b_scales_tensor.ptr,
         RuntimeLayout[sfb_5d_layout].row_major(
             IndexList[5](

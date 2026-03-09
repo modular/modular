@@ -25,7 +25,6 @@ Usage:
 """
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
 from std.sys import get_defined_int, size_of
 from std.time import perf_counter_ns
 
@@ -64,8 +63,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # =============================================================================
@@ -169,11 +166,11 @@ fn bench_grouped_block_scaled_gemm[
     )
 
     # Allocate tensors
-    var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var sfa_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
-    var sfb_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
+    var a_host = alloc[Scalar[a_type]](a_size)
+    var b_host = alloc[Scalar[b_type]](b_size)
+    var c_host = alloc[Scalar[c_type]](c_size)
+    var sfa_host = alloc[Scalar[scales_dtype]](a_scales_total)
+    var sfb_host = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -262,7 +259,7 @@ fn bench_grouped_block_scaled_gemm[
     var sfb_template = TileTensor(b_scales_5d_nd)
 
     # Setup pointer arrays
-    var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
+    var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
         problem_sizes_host[g * 4 + 0] = Int32(M)
         problem_sizes_host[g * 4 + 1] = Int32(n.value)
@@ -274,11 +271,11 @@ fn bench_grouped_block_scaled_gemm[
     )
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
-    var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var b_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var c_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfa_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfb_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
+    var a_ptrs_host = alloc[UInt64](max_groups)
+    var b_ptrs_host = alloc[UInt64](max_groups)
+    var c_ptrs_host = alloc[UInt64](max_groups)
+    var sfa_ptrs_host = alloc[UInt64](max_groups)
+    var sfb_ptrs_host = alloc[UInt64](max_groups)
 
     for g in range(max_groups):
         a_ptrs_host[g] = UInt64(Int(a_device.unsafe_ptr()))

@@ -17,10 +17,6 @@ from std.gpu import block_idx
 from std.gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from std.utils.index import Index, IndexList
 
 
@@ -47,9 +43,7 @@ def test(ctx: DeviceContext) raises:
     comptime offset_shape = DimList(group_len + 1)
 
     # Host allocation
-    var host_group_offsets_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        group_len + 1
-    )
+    var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)
     host_group_offsets_ptr[0] = 0
     host_group_offsets_ptr[1] = 18
     host_group_offsets_ptr[2] = 24

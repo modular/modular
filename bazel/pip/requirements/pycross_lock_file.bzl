@@ -148,7 +148,7 @@ PINS = {
     "simpy": "simpy@4.1.1",
     "slack-sdk": "slack-sdk@3.40.1",
     "soundfile": "soundfile@0.12.1",
-    "sphinx": "sphinx@7.4.7",
+    "sphinx": "sphinx@8.1.3",
     "sqlalchemy": "sqlalchemy@2.0.44",
     "sse-starlette": "sse-starlette@2.1.2",
     "sseclient-py": "sseclient-py@1.8.0",
@@ -9012,7 +9012,7 @@ def targets():
         testonly = "soxr" in _TESTONLY_DEPS,
     )
 
-    _sphinx_7_4_7_deps = [
+    _sphinx_8_1_3_deps = [
         ":alabaster@0.7.16",
         ":babel@2.15.0",
         ":docutils@0.20.1",
@@ -9042,14 +9042,14 @@ def targets():
     })
 
     native.alias(
-        name = "_wheel_sphinx@7.4.7",
-        actual = "@pycross_lock_file_wheel_sphinx_7.4.7_py3_none_any//file",
+        name = "_wheel_sphinx@8.1.3",
+        actual = "@pycross_lock_file_wheel_sphinx_8.1.3_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "sphinx@7.4.7",
-        deps = _sphinx_7_4_7_deps,
-        wheel = ":_wheel_sphinx@7.4.7",
+        name = "sphinx@8.1.3",
+        deps = _sphinx_8_1_3_deps,
+        wheel = ":_wheel_sphinx@8.1.3",
         testonly = "sphinx" in _TESTONLY_DEPS,
     )
 
@@ -26260,12 +26260,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_sphinx_7.4.7_py3_none_any",
+        name = "pycross_lock_file_wheel_sphinx_8.1.3_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/0d/ef/153f6803c5d5f8917dbb7f7fcf6d34a871ede3296fa89c2c703f5f8a6c8e/sphinx-7.4.7-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/26/60/1ddff83a56d33aaf6f10ec8ce84b4c007d9368b21008876fceda7e7381ef/sphinx-8.1.3-py3-none-any.whl",
         ],
-        sha256 = "c2419e2135d11f1951cd994d6eb18a1835bd8fdd8429f9ca375dc1f3281bd239",
-        downloaded_file_path = "sphinx-7.4.7-py3-none-any.whl",
+        sha256 = "09719015511837b76bf6e03e42eb7595ac8c2e41eeb9c29c5b755c6b677992a2",
+        downloaded_file_path = "sphinx-8.1.3-py3-none-any.whl",
     )
 
     maybe(

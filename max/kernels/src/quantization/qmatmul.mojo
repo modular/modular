@@ -44,7 +44,8 @@ comptime K_BATCH_SIZE = 512
 def matmul_qint4_pack_b[
     group_size: Int
 ](
-    b: LayoutTensor[DType.uint8, ...], b_rot: LayoutTensor[DType.uint8, ...]
+    b: LayoutTensor[DType.uint8, ...],
+    b_rot: LayoutTensor[mut=True, DType.uint8, ...],
 ) raises:
     comptime assert b.rank == 2
     comptime assert b_rot.rank == 2
@@ -119,8 +120,8 @@ fn _quantize_a_buffer[
     aq_interleave: Int = group_size,
 ](
     a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    a_quant: LayoutTensor[aq_type, ...],
-    a_scale: LayoutTensor[DType.float32, ...],
+    a_quant: LayoutTensor[mut=True, aq_type, ...],
+    a_scale: LayoutTensor[mut=True, DType.float32, ...],
 ):
     """Converts a floating point buffer to a symmetrically quantized
     representation. The data is in a packed layout that can be efficiently
@@ -391,8 +392,8 @@ trait _MatmulQInt4Kernel:
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         ...
 
@@ -438,8 +439,8 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -576,8 +577,8 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -739,8 +740,8 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -850,8 +851,8 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         group_size: Int, dtype: DType, aq_type: DType
     ](
         a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
