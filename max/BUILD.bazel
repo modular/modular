@@ -1,5 +1,5 @@
 load("@mojo//:mojo.bzl", "max_aliases")
-load("//bazel:api.bzl", "modular_cc_library", "pkg_files", "py_repl", "requirement")
+load("//bazel:api.bzl", "modular_cc_library", "py_repl", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 # gazelle:default_visibility //max:consumers
@@ -60,7 +60,7 @@ modular_cc_library(
     tags = ["clang-tidy-is-c-tu"],
 )
 
-pkg_files(
+filegroup(
     name = "API.c.headers",
     srcs = glob(["include/max/c/*.h"]),
 )
