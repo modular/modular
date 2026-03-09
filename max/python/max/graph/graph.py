@@ -941,11 +941,16 @@ class Graph:
         with self._block(block), _location():
             expected_output_types = expected_output_types or []
 
-            results = block_fn() or []
+            results = block_fn()
+            if results is None:
+                results = []
 
             results = (
                 list(results) if isinstance(results, Iterable) else [results]
             )
+            results = [
+                r if isinstance(r, Value) else TensorValue(r) for r in results
+            ]
             result_types = [result.type for result in results]
             if result_types != expected_output_types:
                 raise TypeError(
