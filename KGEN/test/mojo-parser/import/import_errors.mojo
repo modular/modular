@@ -137,3 +137,138 @@ comptime x = S[test_package]()
 
 struct S[a: AnyType]: # expected-note {{'S' declared here}}
     pass
+
+# // -----
+
+# Import statements are only supported at module or function scope; they should
+# be rejected with a clear diagnostic in struct, trait, and extension bodies.
+
+struct StructWithFromImport:
+    # expected-error @below {{import statements are only supported at module or function scope}}
+    from std.collections import Dict
+
+    fn method(self):
+        pass
+
+# // -----
+
+struct StructWithImport:
+    # expected-error @below {{import statements are only supported at module or function scope}}
+    import std.collections
+
+    fn method(self):
+        pass
+
+# // -----
+
+trait TraitWithFromImport:
+    # expected-error @below {{import statements are only supported at module or function scope}}
+    from std.collections import Dict
+
+    fn method(self):
+        pass
+
+# // -----
+
+trait TraitWithImport:
+    # expected-error @below {{import statements are only supported at module or function scope}}
+    import std.collections
+
+    fn method(self):
+        pass
+
+# // -----
+
+struct Foo:
+    pass
+
+__extension Foo:
+    # expected-error @below {{import statements are only supported at module or function scope}}
+    from std.collections import Dict
+
+    fn method(self):
+        pass
+
+# // -----
+
+struct Bar:
+    pass
+
+__extension Bar:
+    # expected-error @below {{import statements are only supported at module or function scope}}
+    import std.collections
+
+    fn method(self):
+        pass
+
+# // -----
+
+# Imports inside runtime control flow (if/while) within a function are rejected.
+
+fn importInIf(x: Int):
+    if x > 0:
+        # expected-error @below {{import statements are only supported at module or function scope}}
+        from std.collections import Dict
+
+# // -----
+
+fn importInWhile():
+    while True:
+        # expected-error @below {{import statements are only supported at module or function scope}}
+        from std.collections import Dict
+
+# // -----
+
+# Imports inside comptime control flow are allowed: branches are folded
+# immediately so the import lands directly in the function body block.
+
+fn importInComptimeIf():
+    comptime if True:
+        from std.collections import Dict
+
+# // -----
+
+fn importInComptimeIfFalse():
+    comptime if False:
+        from std.collections import Dict
+
+# // -----
+
+# Runtime for loop: rejected.
+
+@fieldwise_init
+struct _Range(TrivialRegisterPassable, Iterator):
+    comptime Element = Int
+    fn __iter__(self) -> Self: return self
+    fn __next__(mut self) raises StopIteration -> Int: raise StopIteration()
+    fn __len__(self) -> Int: return 0
+
+fn importInFor():
+    for _ in _Range():
+        # expected-error @below {{import statements are only supported at module or function scope}}
+        from std.collections import Dict
+
+# // -----
+
+# Comptime for loop: allowed.
+
+@fieldwise_init
+struct _CRange(TrivialRegisterPassable, Iterator):
+    comptime Element = Int
+    fn __iter__(self) -> Self: return self
+    fn __next__(mut self) raises StopIteration -> Int: raise StopIteration()
+    fn __len__(self) -> Int: return 0
+
+fn importInComptimeFor():
+    comptime for _ in _CRange():
+        from std.collections import Dict
+
+# // -----
+
+# Imports inside a nested function (closure) are allowed: the nested fn
+# body is its own function scope.
+
+fn importInNestedFn():
+    fn inner():
+        from std.collections import Dict
+    inner()
