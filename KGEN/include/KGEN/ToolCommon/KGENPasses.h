@@ -52,7 +52,6 @@ class KGENCallOpInterface;
 class KGENDialect;
 class FuncOp;
 class GeneratorOp;
-class PackageLinkOp;
 class SymbolConstantAttr;
 struct ExportedSymbol;
 

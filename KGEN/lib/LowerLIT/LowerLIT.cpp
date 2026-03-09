@@ -554,34 +554,6 @@ LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
   return success();
 }
 
-/// Add a link directive that shadows the package's name if the package was
-/// precompiled. If this package is a source package, do nothing.
-static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
-                                             SymbolTable &symtab) {
-  // If the package wasn't compiled for anything, we currently treat it as a
-  // "source package." This means that there are no link directives to insert.
-  // FIXME: Once "source packages" no longer exist, insert a link directive
-  // regardless, and compile for the build target on-demand.
-  if (!package.getPostParseModuleAttr())
-    return success();
-
-  // We have at least some pre-compiled bytecode available, so insert a link
-  // directive.
-  OpBuilder b(package.getContext());
-  auto linkOp = PackageLinkOp::create(
-      b, package.getLoc(), package.getSymNameAttr(),
-      package.getPostParseModuleAttr(), package.getDependenciesAttr());
-
-  // Insert the link op into the symbol table right where the package was. Don't
-  // erase the package op cause we need to do some cleanup still, but we do
-  // still want to remove it from the symbol table.
-  auto iter = package->getIterator();
-  symtab.remove(package);
-  symtab.insert(linkOp, iter);
-
-  return success();
-}
-
 LogicalResult
 LITLowerer::lowerAllStructs(Block *moduleBody,
                             Block::iterator mainSymbolTablePosIter,
@@ -695,13 +667,6 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
               if (failed(lowerModuleDecl(fileBody, opSymTableIt,
                                          /*isTopLevel=*/false)))
                 return failure();
-
-              // If the package has already been compiled, insert a link
-              // directive.
-              if constexpr (std::is_same_v<decltype(op), LIT::PackageOp>)
-                if (failed(
-                        addPackageLinkDirective(op, getTopLevelSymbolTable())))
-                  return failure();
 
               // Inline the remaining body of the file into the parent.
               op->getBlock()->getOperations().splice(

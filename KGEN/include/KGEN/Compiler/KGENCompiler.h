@@ -19,7 +19,6 @@
 #include "mlir/Pass/PassManager.h"
 
 namespace M::KGEN {
-class PackageLinkOp;
 
 class KGENCompiler {
 public:
