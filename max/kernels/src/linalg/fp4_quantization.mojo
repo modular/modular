@@ -1340,9 +1340,11 @@ fn block_scaled_matmul[
         # Index(7168, 2048),
     ]
 
-    comptime Llama_NK = [
+    comptime Llama_NK_256 = [
         Index(16384, 2048),
     ]
+
+    comptime Llama_NK_1 = [Index(2304, 16384), Index(6656, 16384)]
 
     @always_inline
     @parameter
@@ -1393,12 +1395,9 @@ fn block_scaled_matmul[
                 )
 
                 if status == DISPATCH_HIT:
-                    logger.info(
-                        "Executing Mojo SM100 Block Scaled matmul kernel"
-                    )
                     return
 
-        comptime if static_NK in Llama_NK:
+        comptime if static_NK in Llama_NK_256:
             if m <= 256:
                 var status = heuristic_and_outliers_dispatch[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -1416,12 +1415,27 @@ fn block_scaled_matmul[
                 )
 
                 if status == DISPATCH_HIT:
-                    logger.info(
-                        "Executing Mojo SM100 Block Scaled matmul kernel"
-                    )
                     return
 
-        logger.info("Executing Block Scaled matmul kernel")
+        comptime if static_NK in Llama_NK_1:
+            if m == 1:
+                var status = heuristic_and_outliers_dispatch[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level=pdl_level,
+                ](
+                    c_tt,
+                    a_tt,
+                    b_tt,
+                    a_scales,
+                    b_scales,
+                    tensor_sf,
+                    ctx,
+                )
+
+                if status == DISPATCH_HIT:
+                    return
 
         block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,

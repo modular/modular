@@ -77,6 +77,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
+    num_accum_pipeline_stages: Int = 0,
+    num_clc_pipeline_stages: Int = 2,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
@@ -308,7 +310,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
-        num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
+        num_accum_pipeline_stages=num_accum_pipeline_stages if num_accum_pipeline_stages
+        > 0 else (1 if mma_shape[1] in (192, 256) else 2),
+        num_clc_pipeline_stages=num_clc_pipeline_stages,
     )
 
     comptime K_phys = k.dim.get()
@@ -514,3 +518,83 @@ def main() raises:
                         static[2560](),
                         static[8192](),
                     )
+
+        # Llama 3.1 405B TP8 shape tests (matching tuning configs)
+        # Uses M=128 because swapAB with M=1 causes TMA descriptor errors
+        # (effective N after swap is too small for TMA box dimensions).
+        comptime llama_bts = Index(128, 32, BK)
+        comptime llama_mma = Index(256, 64, MMA_K)
+
+        # cluster(4,1,1), accum_stages=1, K=16384
+        comptime for n_val in [2304, 6656, 13312]:
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scales_dtype,
+                llama_bts,
+                llama_mma,
+                cluster_shape=StaticTuple[Int32, 3](4, 1, 1),
+                cta_group=2,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=0,
+                swapAB=True,
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                num_accum_pipeline_stages=1,
+                num_clc_pipeline_stages=0,
+            ](
+                ctx,
+                dynamic(128),
+                static[n_val](),
+                static[16384](),
+            )
+
+        # cluster(2,1,1), accum_stages=2, N=7168, K=16384
+        test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            dtype,
+            dtype,
+            out_dtype,
+            scales_dtype,
+            llama_bts,
+            llama_mma,
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cta_group=2,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=0,
+            swapAB=True,
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ](
+            ctx,
+            dynamic(128),
+            static[7168](),
+            static[16384](),
+        )
+
+        # cluster(2,1,1), accum_stages=4, N=16384
+        comptime for k_val in [2048, 6656]:
+            test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                dtype,
+                dtype,
+                out_dtype,
+                scales_dtype,
+                llama_bts,
+                llama_mma,
+                cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                cta_group=2,
+                a_swizzle=swizzle,
+                b_swizzle=swizzle,
+                block_swizzle_size=0,
+                swapAB=True,
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                num_accum_pipeline_stages=4,
+                num_clc_pipeline_stages=0,
+            ](
+                ctx,
+                dynamic(128),
+                static[16384](),
+                static[k_val](),
+            )
