@@ -64,6 +64,19 @@ void checkDeprecationAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
                              CallSyntax syntax = CallSyntax::kDirectCall,
                              llvm::SMLoc fixitLoc = {});
 
+/// Check if accessing the given declaration should emit a warning for
+/// unqualified use of a leaf import name. This fires when the declaration is
+/// a wrapper created for `import a.b` without `as` and the user writes `b`
+/// instead of `a.b`.
+///
+/// \param decl The declaration being accessed
+/// \param useLoc Location of the use site (for warning emission)
+/// \param shared SharedState for diagnostics
+/// \param range Source range to highlight in the diagnostic
+void checkLeafImportAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
+                            SharedState &shared, M::SourceRange range,
+                            llvm::SMLoc fixitLoc = {});
+
 /// Unified function to check for both deprecation and stability warnings.
 /// This should be the primary entry point for callers who want to check
 /// both types of warnings at once.
@@ -71,6 +84,7 @@ void checkDeprecationAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
 /// This function combines the checks for:
 /// 1. Deprecation warnings (from @deprecated decorator)
 /// 2. Stability warnings (from missing @stable decorator in opted-in packages)
+/// 3. Unqualified leaf import warnings (using `b` from `import a.b`)
 ///
 /// \param decl The declaration being accessed
 /// \param useLoc Location of the use site (for warning emission)

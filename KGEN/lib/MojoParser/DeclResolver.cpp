@@ -611,16 +611,31 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   return failure();
 }
 
-LogicalResult DeclResolver::importModule(ASTDecl &dest,
-                                         PackageOp currentPackage,
-                                         StringAttr moduleName,
-                                         StringAttr importName, SMLoc loc,
-                                         SMLoc importNameLoc) {
+LogicalResult
+DeclResolver::importModule(ASTDecl &dest, PackageOp currentPackage,
+                           StringAttr moduleName, StringAttr importName,
+                           SMLoc loc, SMLoc importNameLoc, bool isLeafBinding) {
   ASTDecl &module = shared.importModule(moduleName, currentPackage, loc);
   shared.notifyListenerOnModuleImport(module, moduleName, loc);
   shared.notifyListenerOnRef(&module, importName, importNameLoc);
 
-  return aliasImportDecls(&module, importName,
+  ASTDecl *aliasingDecl = &module;
+
+  // For `import a.b` without `as`, wrap the leaf binding `b` so that
+  // we can catch unqualified uses of `b` and emit a deprecation warning.
+  if (isLeafBinding) {
+    ASTDecl &wrapper =
+        createUnlistedDecl(module.getIfOperation(), module.getLoc(), &dest,
+                           LexerCursor(), LexerCursor(), /*indentation=*/-1);
+    // Mark the wrapper as fully resolved so that the resolver never attempts
+    // to resolve its body (which would fail because the wrapper is not
+    // registered in moduleStates).
+    wrapper.resolvedness = DeclResolvedness::body;
+    shared.deprecatedLeafImportModuleNames[&wrapper] = moduleName;
+    aliasingDecl = &wrapper;
+  }
+
+  return aliasImportDecls(aliasingDecl, importName,
                           /*declName=*/StringAttr(), moduleName, importNameLoc,
                           dest, false);
 }
