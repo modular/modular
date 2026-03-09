@@ -98,6 +98,9 @@ modular_cc_binary(
 modular_py_binary(
     name = "sphinx",
     srcs = ["sphinx.py"],
+    # .pyi stubs for the _core C extension so that linkcode_resolve() in
+    # conf.py can map nanobind symbols to their stub definitions on GitHub.
+    data = ["//max/python/max:_core_pyi_stubs"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         # Each invocation has different deps depending on what you are doing.

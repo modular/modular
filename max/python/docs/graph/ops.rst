@@ -13,4 +13,4 @@ graphs.
    :imported-members:
    :members:
    :undoc-members:
-   :exclude-members: TensorValue, DType, Graph
+   :exclude-members: TensorValue, DType, Graph, Callable
