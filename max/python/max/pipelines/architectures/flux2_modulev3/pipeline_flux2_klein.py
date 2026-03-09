@@ -17,8 +17,11 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from max.dtype import DType
 from max.experimental.tensor import Tensor
+from max.graph import TensorType
 from max.pipelines.core import PixelContext
+from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
 from ..qwen3.text_encoder import Qwen3TextEncoderKleinModel
@@ -57,6 +60,49 @@ class Flux2KleinPipeline(Flux2Pipeline):
         "text_encoder": Qwen3TextEncoderKleinModel,
         "transformer": Flux2Pipeline.components["transformer"],
     }
+
+    def init_remaining_components(self) -> None:
+        """Initialize derived attributes, including the compiled CFG combine."""
+        super().init_remaining_components()
+        self.build_cfg_combine()
+
+    def build_cfg_combine(self) -> None:
+        """Compile the CFG combine formula with symbolic shapes."""
+        dtype = self.transformer.config.dtype
+        device = self.transformer.devices[0]
+        self.__dict__["cfg_combine"] = max_compile(
+            self.cfg_combine,
+            input_types=[
+                TensorType(
+                    dtype,
+                    shape=["batch", "seq", "channels"],
+                    device=device,
+                ),
+                TensorType(
+                    dtype,
+                    shape=["batch", "seq", "channels"],
+                    device=device,
+                ),
+                TensorType(DType.float32, shape=[], device=device),
+            ],
+        )
+
+    def cfg_combine(
+        self,
+        noise_pred: Tensor,
+        neg_noise_pred: Tensor,
+        guidance_scale: Tensor,
+    ) -> Tensor:
+        """Apply CFG formula: neg + scale * (pos - neg).
+
+        Computation is done in f32 (promoted by guidance_scale) and
+        the result is cast back to the input dtype (typically bf16).
+        """
+        input_dtype = noise_pred.dtype
+        diff = noise_pred - neg_noise_pred
+        scaled = guidance_scale * diff
+        result = neg_noise_pred + scaled
+        return result.cast(input_dtype)
 
     @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2KleinModelInputs:  # type: ignore[override]
@@ -175,7 +221,17 @@ class Flux2KleinPipeline(Flux2Pipeline):
             if hasattr(dts_seq, "driver_tensor"):
                 dts_seq = dts_seq.driver_tensor
 
-        # 5) Denoising loop.
+        # 5) Prepare guidance scale tensor for compiled CFG combine.
+        guidance_scale_tensor: Tensor | None = None
+        if do_cfg:
+            guidance_scale_tensor = Tensor.full(
+                [],
+                model_inputs.guidance_scale,
+                device=self.transformer.devices[0],
+                dtype=DType.float32,
+            )
+
+        # 6) Denoising loop.
         is_img2img = image_latents is not None
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
@@ -220,18 +276,18 @@ class Flux2KleinPipeline(Flux2Pipeline):
                                 negative_text_ids,
                                 guidance,
                             )[0]
-                        neg_noise_pred = Tensor.from_dlpack(neg_noise_pred)
-                        noise_pred = Tensor.from_dlpack(noise_pred)
-                        noise_pred = (
-                            neg_noise_pred
-                            + model_inputs.guidance_scale
-                            * (noise_pred - neg_noise_pred)
-                        )
+                        with Tracer("cfg_combine"):
+                            assert guidance_scale_tensor is not None
+                            noise_pred = self.cfg_combine(
+                                noise_pred,
+                                neg_noise_pred,
+                                guidance_scale_tensor,
+                            )
 
                     with Tracer("scheduler_step"):
                         latents = self.scheduler_step(latents, noise_pred, dt)
 
-        # 6) Decode final outputs.
+        # 7) Decode final outputs.
         with Tracer("decode_outputs"):
             images = self.decode_latents(
                 latents,
