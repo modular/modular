@@ -135,7 +135,7 @@ def test_member_access() raises:
     # MOCO-2006: This crashed because it was trying to synthesize the vardecl in
     # the package.
     # expected-error @+1 {{dynamic type values not permitted yet}}
-    localvar = builtin.Int
+    localvar = std.builtin.Int
 
 ##===----------------------------------------------------------------------===##
 # Conversions
