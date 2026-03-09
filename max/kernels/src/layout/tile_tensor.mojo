@@ -74,7 +74,7 @@ struct TileTensor[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
+    linear_idx_type: DType = _get_index_type(address_space),
     element_size: Int = 1,
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     """A tensor type with trait-based layouts supporting nested and hierarchical
@@ -2512,16 +2512,8 @@ fn _vectorize[
     ](data_layout_tensor.ptr, new_layout)
 
 
-fn _get_index_type[
-    LayoutType: TensorLayout
-](address_space: AddressSpace) -> DType:
-    """Returns int32 for shared/constant GPU memory or small known layouts,
-    int64 otherwise."""
-    comptime if LayoutType.all_dims_known and LayoutType.static_cosize <= Int(
-        max_finite[DType.int32]()
-    ):
-        return DType.int32
-
+fn _get_index_type(address_space: AddressSpace) -> DType:
+    """Returns int32 for shared/constant GPU memory, int64 otherwise."""
     if address_space in (
         AddressSpace.SHARED,
         AddressSpace.CONSTANT,
