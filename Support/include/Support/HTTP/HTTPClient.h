@@ -238,26 +238,7 @@ public:
   HTTPClient(HTTPContextRef ctx);
   virtual ~HTTPClient();
 
-  /// Blocking call that executes the HTTPRequest and writes the response to the
-  /// provided ostream. Returns a HTTPResponse.
-  ///
-  /// Request `timeout` and `maxLength` can specified to limit requests.
-  /// A `timeout` and `maxLength` of zero will not limit the request.
-  HTTPResponse executeRequest(
-      const HTTPRequest &request, raw_ostream &os,
-      std::chrono::milliseconds timeout = std::chrono::milliseconds::zero(),
-      size_t maxLength = 0);
-
 protected:
-  /// Core implementation of executeRequest. This includes all the calls to
-  /// libcurl. The separation is so the base class can implement any state
-  /// checking that needs to happen before the actual network request, while
-  /// allowing subclasses to implement the network request any way they like.
-  virtual HTTPResponse executeRequestImpl(
-      const HTTPRequest &request, raw_ostream &os,
-      std::chrono::milliseconds timeout = std::chrono::milliseconds::zero(),
-      size_t maxLength = 0);
-
 private:
   HTTPContextRef context;
   void *curl = nullptr;
