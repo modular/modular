@@ -41,6 +41,7 @@ from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.repr import repr
 from std.compile import get_type_name
 import std.format._utils as fmt
+from std.hashlib.hasher import Hasher
 from std.memory import UnsafeMaybeUninit
 
 # ===-----------------------------------------------------------------------===#
@@ -120,10 +121,17 @@ struct _InlineArrayIter[
 
 
 struct InlineArray[ElementType: Copyable, size: Int](
-    Copyable,
+    Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     DevicePassable,
+    Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
+    ImplicitlyCopyable where conforms_to(
+        ElementType, ImplicitlyCopyable
+    ) and conforms_to(ElementType, Copyable),
+    ImplicitlyDestructible,
     Iterable,
+    Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
 ):
@@ -554,6 +562,58 @@ struct InlineArray[ElementType: Copyable, size: Int](
             size parameter used when creating the array.
         """
         return Self.size
+
+    @always_inline
+    fn __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
+        """Compares two arrays for equality.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if all elements are equal, False otherwise.
+        """
+        comptime for i in range(Self.size):
+            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
+                Equatable
+            ](other.unsafe_get(i)):
+                return False
+        return True
+
+    @always_inline
+    fn __ne__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
+        """Compares two arrays for inequality.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if any elements are not equal, False otherwise.
+        """
+        comptime for i in range(Self.size):
+            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
+                Equatable
+            ](other.unsafe_get(i)):
+                return True
+        return False
+
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Hashes the elements of the array using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        comptime for i in range(Self.size):
+            trait_downcast[Hashable](self.unsafe_get(i)).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
     # Methods

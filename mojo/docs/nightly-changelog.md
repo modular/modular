@@ -340,12 +340,12 @@ This version is still a work in progress.
   `_constrained_conforms_to` checks:
   - `Deque`: `Equatable`, `Writable`
   - `Dict`: `Writable`
+  - `InlineArray`: `Copyable`, `Equatable`, `Hashable`, `Writable`
   - `LinkedList`: `Equatable`, `Writable`
-  - `InlineArray`: `Writable`
   - `List`: `Equatable`, `Writable`
   - `Optional`: `Writable`, `Copyable`, `ImplicitlyCopyable`
   - `Set`: `Writable`
-  - `Tuple`: `Writable`
+  - `Tuple`: `Copyable`, `ImplicitlyCopyable`, `Writable`
   - `Variant`: `Writable`
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
