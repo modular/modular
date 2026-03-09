@@ -75,6 +75,8 @@ def test_stats() -> None:
     stats = accel.stats
     assert "free_memory" in stats
     assert "total_memory" in stats
+    assert "graph_mem_reserved" in stats
+    assert "graph_mem_used" in stats
 
 
 def test_accelerator_can_access_self() -> None:
