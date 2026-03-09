@@ -263,13 +263,13 @@ struct TileWriterThreadwise[
         alignment=Self.dst_alignment,
     ]
     var dst: Self.DstType
-    var thread_idx: UInt
+    var thread_idx: Int
 
     @always_inline
     fn __init__(
         out self,
         dst: Self.DstType,
-        thread_idx: UInt,
+        thread_idx: Int,
     ):
         """Initialize the threadwise tile writer.
 
@@ -324,7 +324,7 @@ struct TileWriterThreadwise[
                     Slice(0, dst_width),
                 ]()
 
-                var casted_thread_idx = Int(self.thread_idx)
+                var casted_thread_idx = self.thread_idx
 
                 var rows = self.dst.dim(0)
                 var cols = self.dst.dim(1) // Self.simd_size
@@ -371,7 +371,7 @@ struct TileWriterThreadwise[
 
                 # Only first half of threads participate
                 comptime num_threads = Self.thread_layout.size()
-                if self.thread_idx < UInt(num_threads // 2):
+                if self.thread_idx < (num_threads // 2):
                     copy_sram_to_dram[
                         thread_layout=half_thread_layout,
                         swizzle=swizzle,
@@ -810,7 +810,7 @@ struct RegisterToGMemWriter[
         var gmem_frag, gmem_offset_coords_raw, gmem_offset = (
             warp_tile.vectorize[1, 2]().distribute_with_offset[
                 Layout.row_major(8, 4)
-            ](self.thread_info.lane_id)
+            ](Int(self.thread_info.lane_id))
         )
 
         var gmem_offset_coords = IndexList[2](

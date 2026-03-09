@@ -34,7 +34,7 @@ from std.gpu import (
     global_idx,
     grid_dim,
     warp_id,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx_int as thread_idx,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc

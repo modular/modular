@@ -19,7 +19,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx,
-    lane_id,
+    lane_id_int as lane_id,
     warp_id,
 )
 from std.gpu.sync import (
@@ -774,7 +774,7 @@ fn write_output_fragments[
         N: Total N dimension of the output matrix.
     """
     # Warp lane coordinates
-    var lane_crd = idx2crd[output_thread_layout](Int(lane_id()))
+    var lane_crd = idx2crd[output_thread_layout](lane_id())
 
     # c_gmem_fragment tile coordinates for this thread (vectorized)
     var thread_tile_m: Int = warp_tile_m + lane_crd[0]

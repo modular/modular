@@ -24,11 +24,15 @@ from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import lane_id as get_lane_id
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
+from std.gpu import (
+    block_idx,
+    lane_id_int as lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
+)
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *

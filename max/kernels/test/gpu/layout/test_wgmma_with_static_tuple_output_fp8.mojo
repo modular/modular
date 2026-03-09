@@ -13,7 +13,7 @@
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
-from std.gpu import barrier, warp_id, lane_id
+from std.gpu import barrier, warp_id, lane_id_int as lane_id
 from std.gpu.host import DeviceContext
 
 # from testing import assert_almost_equal

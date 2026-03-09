@@ -18,7 +18,7 @@ from std.gpu import (
     barrier,
     warp_id as get_warp_id,
     block_idx,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute

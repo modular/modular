@@ -20,7 +20,7 @@ from std.gpu import (
     block_dim,
     grid_dim,
     barrier,
-    lane_id,
+    lane_id_int as lane_id,
     WARP_SIZE,
 )
 from std.gpu.memory import async_copy_wait_all

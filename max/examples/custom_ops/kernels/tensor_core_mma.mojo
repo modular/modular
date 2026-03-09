@@ -25,7 +25,7 @@ from std.gpu import (
     barrier,
     block_dim,
     block_idx,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
     warp_id,
 )

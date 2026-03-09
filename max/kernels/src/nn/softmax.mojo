@@ -29,7 +29,7 @@ from std.gpu import (
     barrier,
     block_idx,
     grid_dim,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
     warp_id,
 )
@@ -1413,7 +1413,7 @@ fn _online_softmax_iter_for_mma_output[
                 Int(num_rowwise_lanes), stride=Int(rowwise_lanes_stride)
             ](score_frag_rowmax[col_tile, row])
 
-    var coords = idx2crd[warp_layout](Int(lane_id))
+    var coords = idx2crd[warp_layout](lane_id)
     var lane_contains_first_column = coords[1] == 0
     var lane_row = coords[0]
 
@@ -1915,7 +1915,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                     address_space=AddressSpace.SHARED,
                 ](o_smem_ptr_write)
                 .vectorize[1, frag_size]()
-                .distribute[Layout.row_major(WARP_SIZE, 1)](UInt(lane))
+                .distribute[Layout.row_major(WARP_SIZE, 1)](Int(lane))
             )
             # after distribute and vectorize, the shape should be
             # WM * WN // (2*frag_size * WARP_SIZE), 1
@@ -1946,7 +1946,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                 address_space=AddressSpace.SHARED,
             ](o_smem_ptr_reduce)
             .vectorize[1, frag_size]()
-            .distribute[Layout.row_major(WARP_SIZE, 1)](UInt(lane))
+            .distribute[Layout.row_major(WARP_SIZE, 1)](Int(lane))
         )
 
         comptime for i in range(o_smem_reduce.layout.size()):

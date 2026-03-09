@@ -134,7 +134,7 @@ fn wgmma_kernel_rs[
     var th_local_res = (
         c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id())
+        .distribute[Layout.row_major(8, 4)](Int(lane_id()))
     )
 
     for i in range(num_output_regs):
@@ -218,7 +218,7 @@ fn wgmma_kernel_ss[
     var th_local_res = (
         c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id())
+        .distribute[Layout.row_major(8, 4)](Int(lane_id()))
     )
 
     for i in range(num_output_regs):

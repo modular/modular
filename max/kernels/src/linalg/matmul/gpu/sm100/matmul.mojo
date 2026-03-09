@@ -197,7 +197,7 @@ fn f32_frag_to_smem[
     # alias swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
     # var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4), swizzle=swizzle](lane_id())
     var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
-        lane_id()
+        Int(lane_id())
     )
     comptime assert (
         2 * dst_frag.layout.size() == vec_size
@@ -527,11 +527,11 @@ fn shared_memory_epilogue[
     )
     var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
+    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
 
     var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
         1, Int(simd_size)
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
+    ]().distribute[distribute_layout, swizzle=swizzle](Int(lane_id()))
 
     comptime fragment_size = c_smem_upper_frag.layout.size()
 

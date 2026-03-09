@@ -26,7 +26,7 @@ The SM100 epilogue pipeline flows as:
 
 from std.sys import align_of, simd_width_of
 
-from std.gpu import WARP_SIZE, lane_id, warp_id
+from std.gpu import WARP_SIZE, lane_id_int as lane_id, warp_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
@@ -191,7 +191,7 @@ fn store_fragment_to_smem[
             Coord(Idx[8](), Idx[2](), Idx[2]()),
             Coord(Idx[stride0](), Idx[8 * stride1](), Idx[8 * stride0]()),
         )
-        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane_id))))
+        stsm_lane_offset = UInt32(trans_layout(Idx(lane_id)))
     else:
         stsm_lane_offset = (
             UInt32(lane_id & 15) * UInt32(stride0) + UInt32(lane_id >> 4) * 8
@@ -267,7 +267,7 @@ fn store_fragment_to_smem[
             Coord(Idx[8](), Idx[2](), Idx[2]()),
             Coord(Idx[stride0](), Idx[8 * stride1](), Idx[8 * stride0]()),
         )
-        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane_id))))
+        stsm_lane_offset = UInt32(trans_layout(Idx(lane_id)))
     else:
         stsm_lane_offset = (
             UInt32(lane_id & 15) * UInt32(stride0) + UInt32(lane_id >> 4) * 8
@@ -2056,7 +2056,7 @@ fn shared_memory_epilogue_transpose[
         )
         comptime thread_layout_new = row_major[1, 8, 1, 4]()
         var lane = lane_id()
-        var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](Int(lane))
+        var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](lane)
         comptime thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
 
         comptime for iter_i in range(result.shape[1][3].value()):
@@ -2126,7 +2126,7 @@ fn shared_memory_epilogue_transpose[
         # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
         comptime assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
         comptime thread_layout = Layout.row_major(min(16, Int(stageN)), 1, 2)
-        comptime thread_bound = UInt(thread_layout.cosize())
+        comptime thread_bound = thread_layout.cosize()
         var lane = lane_id()
         if lane < thread_bound:
             comptime result = zipped_divide(
@@ -2134,9 +2134,7 @@ fn shared_memory_epilogue_transpose[
             )
             # Use new Layout for idx2crd operations
             comptime thread_layout_new = row_major[min(16, Int(stageN)), 1, 2]()
-            var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](
-                Int(lane)
-            )
+            var crd = thread_layout_new.idx2crd[out_dtype=DType.uint32](lane)
             comptime thread_shape = IntTuple(UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
             comptime layout_2d_new = row_major[Int(stageN), swizzle_dim]()
 
@@ -2245,7 +2243,7 @@ fn shared_memory_epilogue[
 
     comptime fragment_size = c_smem_upper_frag.layout.size()
 
-    var lane_row, lane_col = divmod(lane_id(), distribute_cols)
+    var lane_row, lane_col = divmod(UInt(lane_id()), distribute_cols)
     var col = lane_col * simd_size
     upper_row += lane_row
     lower_row += lane_row

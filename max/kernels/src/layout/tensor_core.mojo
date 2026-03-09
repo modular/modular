@@ -46,6 +46,7 @@ Supported Matrix Shapes:
 """
 
 from std.math import align_down
+from std.math.uutils import umod
 from std.collections import OptionalReg
 from std.sys import (
     has_nvidia_gpu_accelerator,
@@ -64,7 +65,11 @@ from std.sys.info import (
 )
 
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx
+from std.gpu import (
+    WARP_SIZE,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
+)
 from std.gpu.intrinsics import lop, ds_read_tr16_b64
 from std.gpu.compute.mma import (
     get_amd_bf8_dtype,
@@ -1216,7 +1221,7 @@ struct TensorCore[
         ](0, Int(mma_tile_coord_k))
 
         var vec = bitcast[DType.int32, 4](
-            mma_tile.vectorize[1, 4]()[0, Int(thread_idx.x % UInt(WARP_SIZE))]
+            mma_tile.vectorize[1, 4]()[0, umod(thread_idx.x, WARP_SIZE)]
         )
 
         comptime for i in range(0, num_frags, 2):
@@ -1309,7 +1314,7 @@ fn _load_matrix_frag[
     comptime row_size = mma_tile.stride[0]()
     comptime num_mat_per_row = row_size // simd_size
 
-    var lane: UInt = lane_id()
+    var lane: UInt = UInt(lane_id())
 
     # We load 4 matrices a time for max throughput. Each matrix has 8 vectors
     # and each thread loads one vector. The 4 matrices for 16x8x8 and 16x8x16
@@ -1606,7 +1611,7 @@ fn _load_tr16_b64_row[
     )
 
     comptime thread_layout = Layout.row_major(4, 4)
-    var lane_in_row = lane_id() % 16
+    var lane_in_row = umod(lane_id(), 16)
     var dist_result = tile.vectorize[1, 4]().distribute_with_offset[
         thread_layout
     ](lane_in_row)

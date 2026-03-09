@@ -126,7 +126,7 @@ fn test_tile_and_distribute():
                 print("----thread[", thread_id, "]----")
                 var distributed_masked_tensor = tensor_2x2_masked.distribute[
                     Layout.row_major(2, 2)
-                ](UInt(thread_id))
+                ](thread_id)
                 print(distributed_masked_tensor)
 
 

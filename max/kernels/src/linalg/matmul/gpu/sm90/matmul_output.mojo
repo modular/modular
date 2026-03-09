@@ -105,7 +105,7 @@ struct MatmulTileWriter[
     var smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128]
     var warp_group_thread_idx: UInt
     var local_warp_group_idx: UInt
-    var local_thread_idx: UInt
+    var local_thread_idx: Int
     var block_y: Int
     var block_x: Int
 
@@ -116,7 +116,7 @@ struct MatmulTileWriter[
         smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128],
         warp_group_thread_idx: UInt,
         local_warp_group_idx: UInt,
-        local_thread_idx: UInt,
+        local_thread_idx: Int,
         block_y: Int,
         block_x: Int,
     ):
@@ -404,9 +404,9 @@ struct MatmulTileWriter[
                 comptime if Self.use_tma_store and not is_partial_tile:
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
 
-                    if self.local_thread_idx < UInt(Self.WG_BN // TMA_BN):
+                    if self.local_thread_idx < (Self.WG_BN // TMA_BN):
                         var smem_offset = self.smem_tile.ptr + (
-                            Self.WG_BM * TMA_BN * Int(self.local_thread_idx)
+                            Self.WG_BM * TMA_BN * self.local_thread_idx
                         )
                         comptime tma_smem_layout = Layout.row_major(
                             tma_tile_shape[0], tma_tile_shape[1]
@@ -419,7 +419,7 @@ struct MatmulTileWriter[
                             UInt(
                                 self.block_x * Self.BN
                                 + tile_idx * Self.WG_BN
-                                + Int(self.local_thread_idx * UInt(TMA_BN))
+                                + self.local_thread_idx * TMA_BN
                             ),
                             UInt(self.block_y * Self.BM),
                         )
