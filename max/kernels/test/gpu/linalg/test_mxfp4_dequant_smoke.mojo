@@ -17,10 +17,7 @@ for several shapes and scale values. Target runtime: < 30s on H100.
 """
 
 from std.math import ceildiv
-from std.memory import bitcast, LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
+from std.memory import bitcast
 from std.gpu.host import DeviceContext
 from layout import TileTensor
 from layout.tile_layout import row_major
@@ -44,9 +41,9 @@ fn _e8m0_to_float32(bits: UInt8) -> Float32:
 fn _cpu_dequant_mxfp4[
     out_dtype: DType = DType.bfloat16
 ](
-    expected: UnsafePointer[Scalar[out_dtype]],
-    input_data: UnsafePointer[Scalar[DType.uint8]],
-    scales_data: UnsafePointer[Scalar[DType.uint8]],
+    expected: UnsafePointer[mut=True, Scalar[out_dtype], _],
+    input_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
+    scales_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
     num_rows: Int,
     num_cols: Int,
 ):
@@ -104,9 +101,9 @@ fn test_mxfp4_dequant[
     comptime out_size = num_rows * num_cols
 
     # Allocate and fill host input
-    var in_host = UnsafePointer[Scalar[DType.uint8]].alloc(in_size)
-    var scales_host = UnsafePointer[Scalar[DType.uint8]].alloc(scales_size)
-    var expected_host = UnsafePointer[Scalar[out_dtype]].alloc(out_size)
+    var in_host = alloc[UInt8](in_size)
+    var scales_host = alloc[UInt8](scales_size)
+    var expected_host = alloc[Scalar[out_dtype]](out_size)
 
     for row in range(num_rows):
         for col in range(packed_cols):

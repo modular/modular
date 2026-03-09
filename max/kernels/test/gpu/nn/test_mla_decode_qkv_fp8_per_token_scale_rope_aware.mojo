@@ -36,10 +36,6 @@ Layout:
   - Output: [total_q_tokens, num_heads, 512] bfloat16
 """
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from std.collections import Optional, OptionalReg
 from std.math import ceildiv
 from std.random import randn, seed
@@ -81,8 +77,8 @@ comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 
 
 fn create_interleaved_q_data(
-    q_host_fp8: UnsafePointer[Scalar[DType.float8_e4m3fn]],
-    q_ref_bf16: UnsafePointer[Scalar[DType.bfloat16]],
+    q_host_fp8: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
+    q_ref_bf16: UnsafePointer[mut=True, BFloat16, _],
     total_q_tokens: Int,
     num_heads: Int,
 ) raises:
@@ -90,8 +86,8 @@ fn create_interleaved_q_data(
     # Generate random BF16 content and rope data
     var content_size = total_q_tokens * num_heads * V_DEPTH
     var rope_size = total_q_tokens * num_heads * ROPE_DIM
-    var content_bf16 = UnsafePointer[Scalar[DType.bfloat16]].alloc(content_size)
-    var rope_bf16 = UnsafePointer[Scalar[DType.bfloat16]].alloc(rope_size)
+    var content_bf16 = alloc[BFloat16](content_size)
+    var rope_bf16 = alloc[BFloat16](rope_size)
     randn[DType.bfloat16](
         content_bf16, content_size, mean=0.0, standard_deviation=0.5
     )
@@ -130,7 +126,7 @@ fn create_interleaved_q_data(
 
 
 fn create_interleaved_kv_block_data(
-    blocks_host: UnsafePointer[Scalar[DType.float8_e4m3fn]],
+    blocks_host: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
     block_elems: Int,
     total_pages: Int,
     page_size: Int,
@@ -145,12 +141,8 @@ fn create_interleaved_kv_block_data(
     """
     # Generate random BF16 for all content and rope, then pack
     var num_tokens = total_pages * page_size * KV_NUM_HEADS
-    var content_bf16 = UnsafePointer[Scalar[DType.bfloat16]].alloc(
-        num_tokens * V_DEPTH
-    )
-    var rope_bf16 = UnsafePointer[Scalar[DType.bfloat16]].alloc(
-        num_tokens * ROPE_DIM
-    )
+    var content_bf16 = alloc[BFloat16](num_tokens * V_DEPTH)
+    var rope_bf16 = alloc[BFloat16](num_tokens * ROPE_DIM)
     randn[DType.bfloat16](
         content_bf16, num_tokens * V_DEPTH, mean=0.0, standard_deviation=0.5
     )
@@ -181,8 +173,8 @@ fn create_interleaved_kv_block_data(
 
 
 fn extract_bf16_kv_from_block(
-    blocks_host: UnsafePointer[Scalar[DType.float8_e4m3fn]],
-    k_bf16_out: UnsafePointer[Scalar[DType.bfloat16]],
+    blocks_host: UnsafePointer[mut=False, Scalar[DType.float8_e4m3fn], _],
+    k_bf16_out: UnsafePointer[mut=True, Scalar[DType.bfloat16], _],
     physical_page: Int,
     tok_in_page: Int,
     kv_dim2: Int,
@@ -275,7 +267,7 @@ fn run_test[
         * Int(kv_params.head_size)
     )
 
-    var blocks_host = UnsafePointer[Scalar[fp8_type]].alloc(block_elems)
+    var blocks_host = alloc[Scalar[fp8_type]](block_elems)
 
     # Fill with interleaved FP8 content + BF16 rope data
     create_interleaved_kv_block_data(
@@ -329,27 +321,25 @@ fn run_test[
         * Int(kv_params.num_heads)
         * head_dim_gran
     )
-    var scales_host = UnsafePointer[Scalar[DType.float32]].alloc(scales_elems)
+    var scales_host = alloc[Scalar[DType.float32]](scales_elems)
     for i in range(scales_elems):
         scales_host[i] = Scalar[DType.float32](1.0)
 
     # -------------------------------------------------------------------
     # Step 1c: Create per-Q-token scales (all 1.0)
     # -------------------------------------------------------------------
-    var q_scales_host = UnsafePointer[Scalar[DType.float32]].alloc(
-        total_q_tokens
-    )
+    var q_scales_host = alloc[Scalar[DType.float32]](total_q_tokens)
     for i in range(total_q_tokens):
         q_scales_host[i] = Scalar[DType.float32](1.0)
 
     # Cache lengths and lookup table
-    var cache_lengths_host = UnsafePointer[UInt32].alloc(batch_size)
+    var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = UnsafePointer[UInt32].alloc(lut_size)
+    var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
 
@@ -366,17 +356,17 @@ fn run_test[
     # Step 2: Q tensor (ragged: [total_q_tokens, num_heads, 640] FP8)
     # -------------------------------------------------------------------
     var q_size = total_q_tokens * num_heads * PHYSICAL_DIM
-    var q_host_fp8 = UnsafePointer[Scalar[fp8_type]].alloc(q_size)
+    var q_host_fp8 = alloc[Scalar[fp8_type]](q_size)
     # Full BF16 reference Q: [total_q_tokens, num_heads, 576]
     var q_ref_size = total_q_tokens * num_heads * LOGICAL_DEPTH
-    var q_ref_bf16 = UnsafePointer[Scalar[bf16_type]].alloc(q_ref_size)
+    var q_ref_bf16 = alloc[Scalar[bf16_type]](q_ref_size)
 
     create_interleaved_q_data(q_host_fp8, q_ref_bf16, total_q_tokens, num_heads)
 
     # -------------------------------------------------------------------
     # Step 3: input_row_offsets (batch_size + 1 elements)
     # -------------------------------------------------------------------
-    var row_offsets_host = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var row_offsets_host = alloc[UInt32](batch_size + 1)
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
@@ -385,7 +375,7 @@ fn run_test[
     # Step 4: Output tensor [total_q_tokens, num_heads, V_DEPTH=512] BF16
     # -------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = UnsafePointer[Scalar[bf16_type]].alloc(out_size)
+    var out_host = alloc[Scalar[bf16_type]](out_size)
 
     # -------------------------------------------------------------------
     # Step 5: Copy to device
@@ -520,7 +510,7 @@ fn run_test[
 
     # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
     var q_scale_ptr = rebind[
-        UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
+        UnsafePointer[mut=True, Scalar[DType.float32], MutAnyOrigin]
     ](q_scales_device.unsafe_ptr())
 
     # -------------------------------------------------------------------
@@ -571,7 +561,7 @@ fn run_test[
         # Extract contiguous BF16 K for this batch from paged blocks
         # K shape: [ref_num_keys, KV_NUM_HEADS, LOGICAL_DEPTH=576]
         var k_b_size = ref_num_keys * KV_NUM_HEADS * LOGICAL_DEPTH
-        var k_b_host = UnsafePointer[Scalar[bf16_type]].alloc(k_b_size)
+        var k_b_host = alloc[Scalar[bf16_type]](k_b_size)
 
         var page_base_b = 0
         for bi in range(b):
@@ -594,13 +584,13 @@ fn run_test[
 
         # Q for this batch: BF16 [1, 1, num_heads, LOGICAL_DEPTH=576]
         var q_b_size = 1 * num_heads * LOGICAL_DEPTH
-        var q_b_host = UnsafePointer[Scalar[bf16_type]].alloc(q_b_size)
+        var q_b_host = alloc[Scalar[bf16_type]](q_b_size)
         for i in range(q_b_size):
             q_b_host[i] = q_ref_bf16[b * num_heads * LOGICAL_DEPTH + i]
 
         # Reference output: [1, 1, num_heads, LOGICAL_DEPTH=576] (full depth)
         var ref_b_size = 1 * num_heads * LOGICAL_DEPTH
-        var ref_b_host = UnsafePointer[Scalar[bf16_type]].alloc(ref_b_size)
+        var ref_b_host = alloc[Scalar[bf16_type]](ref_b_size)
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[bf16_type](k_b_size)
@@ -847,7 +837,7 @@ fn run_test_with_scales[
         * Int(kv_params.head_size)
     )
 
-    var blocks_host = UnsafePointer[Scalar[fp8_type]].alloc(block_elems)
+    var blocks_host = alloc[Scalar[fp8_type]](block_elems)
 
     # Fill with interleaved FP8 content + BF16 rope data
     create_interleaved_kv_block_data(
@@ -900,7 +890,7 @@ fn run_test_with_scales[
         * Int(kv_params.num_heads)
         * head_dim_gran
     )
-    var scales_host = UnsafePointer[Scalar[DType.float32]].alloc(scales_elems)
+    var scales_host = alloc[Scalar[DType.float32]](scales_elems)
 
     # Fill with non-trivial per-token scales.
     # scale(token) = palette[(page * PAGE_SIZE + tok_in_page) * 3]
@@ -937,9 +927,7 @@ fn run_test_with_scales[
     # -------------------------------------------------------------------
     # Step 1c: Create per-Q-token scales (sigma_Q)
     # -------------------------------------------------------------------
-    var q_scales_host = UnsafePointer[Scalar[DType.float32]].alloc(
-        total_q_tokens
-    )
+    var q_scales_host = alloc[Scalar[DType.float32]](total_q_tokens)
     for i in range(total_q_tokens):
         q_scales_host[i] = _scale_palette((i + 42) * 5)
     print("  sigma_Q values:")
@@ -988,13 +976,13 @@ fn run_test_with_scales[
             cur_page += 1
 
     # Cache lengths and lookup table
-    var cache_lengths_host = UnsafePointer[UInt32].alloc(batch_size)
+    var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = UnsafePointer[UInt32].alloc(lut_size)
+    var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
 
@@ -1011,10 +999,10 @@ fn run_test_with_scales[
     # Step 2: Q tensor (ragged: [total_q_tokens, num_heads, 640] FP8)
     # -------------------------------------------------------------------
     var q_size = total_q_tokens * num_heads * PHYSICAL_DIM
-    var q_host_fp8 = UnsafePointer[Scalar[fp8_type]].alloc(q_size)
+    var q_host_fp8 = alloc[Scalar[fp8_type]](q_size)
     # Full BF16 reference Q: [total_q_tokens, num_heads, 576]
     var q_ref_size = total_q_tokens * num_heads * LOGICAL_DEPTH
-    var q_ref_bf16 = UnsafePointer[Scalar[bf16_type]].alloc(q_ref_size)
+    var q_ref_bf16 = alloc[Scalar[bf16_type]](q_ref_size)
 
     create_interleaved_q_data(q_host_fp8, q_ref_bf16, total_q_tokens, num_heads)
 
@@ -1051,7 +1039,7 @@ fn run_test_with_scales[
     # -------------------------------------------------------------------
     # Step 3: input_row_offsets (batch_size + 1 elements)
     # -------------------------------------------------------------------
-    var row_offsets_host = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var row_offsets_host = alloc[UInt32](batch_size + 1)
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
@@ -1060,7 +1048,7 @@ fn run_test_with_scales[
     # Step 4: Output tensor [total_q_tokens, num_heads, V_DEPTH=512] BF16
     # -------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = UnsafePointer[Scalar[bf16_type]].alloc(out_size)
+    var out_host = alloc[Scalar[bf16_type]](out_size)
 
     # -------------------------------------------------------------------
     # Step 5: Copy to device
@@ -1199,7 +1187,7 @@ fn run_test_with_scales[
 
     # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
     var q_scale_ptr = rebind[
-        UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
+        UnsafePointer[mut=True, Scalar[DType.float32], MutAnyOrigin]
     ](q_scales_device.unsafe_ptr())
 
     # -------------------------------------------------------------------
@@ -1266,7 +1254,7 @@ fn run_test_with_scales[
         # applying sigma_KV[t] per token.
         # K shape: [ref_num_keys, KV_NUM_HEADS, LOGICAL_DEPTH=576]
         var k_b_size = ref_num_keys * KV_NUM_HEADS * LOGICAL_DEPTH
-        var k_b_host = UnsafePointer[Scalar[bf16_type]].alloc(k_b_size)
+        var k_b_host = alloc[Scalar[bf16_type]](k_b_size)
 
         var page_base_b = 0
         for bi in range(b):
@@ -1306,7 +1294,7 @@ fn run_test_with_scales[
         # Q for this batch: BF16 [1, 1, num_heads, LOGICAL_DEPTH=576]
         # Apply sigma_Q to Q
         var q_b_size = 1 * num_heads * LOGICAL_DEPTH
-        var q_b_host = UnsafePointer[Scalar[bf16_type]].alloc(q_b_size)
+        var q_b_host = alloc[Scalar[bf16_type]](q_b_size)
         for i in range(q_b_size):
             q_b_host[i] = (
                 q_ref_bf16[b * num_heads * LOGICAL_DEPTH + i].cast[
@@ -1317,7 +1305,7 @@ fn run_test_with_scales[
 
         # Reference output: [1, 1, num_heads, LOGICAL_DEPTH=576] (full depth)
         var ref_b_size = 1 * num_heads * LOGICAL_DEPTH
-        var ref_b_host = UnsafePointer[Scalar[bf16_type]].alloc(ref_b_size)
+        var ref_b_host = alloc[Scalar[bf16_type]](ref_b_size)
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[bf16_type](k_b_size)
