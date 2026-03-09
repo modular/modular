@@ -25,6 +25,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.interfaces import (
     PipelineTask,
+    PipelineTokenizer,
     TextGenerationContext,
     TextGenerationRequest,
     TokenBuffer,
@@ -45,7 +46,10 @@ from max.pipelines import (
     upper_bounded_default,
 )
 from max.pipelines.lib import PipelineModelWithKVCache
-from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
+from max.pipelines.lib.interfaces import (
+    ArchConfig,
+    ArchConfigWithAttentionKVCache,
+)
 from transformers import AutoConfig
 
 
@@ -299,6 +303,59 @@ class DummyTextTokenizer(TextTokenizer):
             self, encoded: npt.NDArray[np.integer[Any]], **kwargs
         ) -> str:
             return "".join([chr(i) for i in encoded])
+
+
+@dataclass(kw_only=True)
+class DummyPixelArchConfig(ArchConfig):
+    max_seq_len: int = 123
+
+    def get_max_seq_len(self) -> int:
+        return self.max_seq_len
+
+    @classmethod
+    def initialize(
+        cls, pipeline_config: PipelineConfig
+    ) -> DummyPixelArchConfig:
+        return cls()
+
+
+class DummyPixelTokenizer(
+    PipelineTokenizer[
+        TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
+    ]
+):
+    init_kwargs: dict[str, Any] = {}
+
+    def __init__(self, **kwargs: Any) -> None:
+        type(self).init_kwargs = kwargs
+
+    @property
+    def eos(self) -> int:
+        return 0
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        return False
+
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
+        return TextContext(
+            request_id=request.request_id,
+            max_length=16,
+            tokens=TokenBuffer(np.array([], dtype=np.int64)),
+            log_probabilities=0,
+            log_probabilities_echo=False,
+            sampling_params=request.sampling_params,
+        )
+
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = False
+    ) -> npt.NDArray[np.integer[Any]]:
+        return np.array([], dtype=np.int64)
+
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs: Any
+    ) -> str:
+        return ""
 
 
 @dataclass(kw_only=True)

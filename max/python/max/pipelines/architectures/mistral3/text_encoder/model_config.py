@@ -24,6 +24,7 @@ from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
+from typing_extensions import Self
 
 # Mapping from HuggingFace config keys to our config keys
 _HF_KEY_MAP = {
@@ -31,8 +32,8 @@ _HF_KEY_MAP = {
 }
 
 
-class Mistral3TextEncoderConfigBase(MAXModelConfigBase):
-    """Base configuration for Mistral3 text encoder."""
+class Mistral3TextEncoderConfig(MAXModelConfigBase):
+    """Configuration for Mistral3 text encoder."""
 
     hidden_size: int = 5120
     num_attention_heads: int = 32
@@ -53,15 +54,14 @@ class Mistral3TextEncoderConfigBase(MAXModelConfigBase):
         """Compute attention scale factor."""
         return math.sqrt(1.0 / self.head_dim)
 
-
-class Mistral3TextEncoderConfig(Mistral3TextEncoderConfigBase):
-    @staticmethod
-    def generate(
+    @classmethod
+    def initialize_from_config(
+        cls,
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
-    ) -> Mistral3TextEncoderConfigBase:
-        """Generate configuration from a dictionary.
+    ) -> Self:
+        """Initialize configuration from a dictionary.
 
         Args:
             config_dict: Configuration dictionary (may contain text_config nested).
@@ -69,14 +69,14 @@ class Mistral3TextEncoderConfig(Mistral3TextEncoderConfigBase):
             devices: List of devices.
 
         Returns:
-            Mistral3TextEncoderConfigBase instance.
+            Initialized Mistral3 text encoder configuration.
         """
         text_config = config_dict.get("text_config", config_dict)
 
         init_dict = {}
         for key, value in text_config.items():
             mapped_key = _HF_KEY_MAP.get(key, key)
-            if mapped_key in Mistral3TextEncoderConfigBase.__annotations__:
+            if mapped_key in cls.model_fields:
                 init_dict[mapped_key] = value
 
         # Compute head_dim if not provided
@@ -92,4 +92,4 @@ class Mistral3TextEncoderConfig(Mistral3TextEncoderConfigBase):
             }
         )
 
-        return Mistral3TextEncoderConfigBase(**init_dict)
+        return cls(**init_dict)

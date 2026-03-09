@@ -19,9 +19,10 @@ from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
+from typing_extensions import Self
 
 
-class Flux2ConfigBase(MAXModelConfigBase):
+class Flux2Config(MAXModelConfigBase):
     patch_size: int = 1
     in_channels: int = 128
     out_channels: int | None = None
@@ -40,18 +41,17 @@ class Flux2ConfigBase(MAXModelConfigBase):
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
 
-
-class Flux2Config(Flux2ConfigBase):
-    @staticmethod
-    def generate(
+    @classmethod
+    def initialize_from_config(
+        cls,
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
-    ) -> Flux2ConfigBase:
+    ) -> Self:
         init_dict = {
             key: value
             for key, value in config_dict.items()
-            if key in Flux2ConfigBase.__annotations__
+            if key in cls.model_fields
         }
         init_dict.update(
             {
@@ -59,4 +59,4 @@ class Flux2Config(Flux2ConfigBase):
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
-        return Flux2ConfigBase(**init_dict)
+        return cls(**init_dict)

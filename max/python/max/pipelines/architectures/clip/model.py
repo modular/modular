@@ -38,7 +38,7 @@ class ClipModel(ComponentModel):
             devices,
             weights,
         )
-        self.config = ClipConfig.generate(
+        self.config = ClipConfig.initialize_from_config(
             config,
             encoding,
             devices,

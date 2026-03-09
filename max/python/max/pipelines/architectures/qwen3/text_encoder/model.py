@@ -56,7 +56,7 @@ class Qwen3TextEncoderModel(ComponentModel):
             weights: Model weights.
         """
         super().__init__(config, encoding, devices, weights)
-        self.config = Qwen3TextEncoderConfig.generate(
+        self.config = Qwen3TextEncoderConfig.initialize_from_config(
             config,
             encoding,
             devices,
