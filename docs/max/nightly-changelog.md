@@ -1,19 +1,14 @@
-# MAX unreleased changelog
+# Nightly: v26.2
 
-This is a list of UNRELEASED MAX changes.
+This version is still a work in progress.
 
-When we cut a release, these notes move to `changelog-released.md` and that's
-what we publish.
+## Highlights {#26-2-highlights}
 
-## UNRELEASED
-
-### Highlights {#26-2-highlights}
-
-### Documentation {#26-2-docs}
+## Documentation {#26-2-docs}
 
 - Removed `--cache-strategy` cli flag.
 
-### MAX models {#26-2-models}
+## MAX models {#26-2-models}
 
 - Add support for Olmo3ForCausalLM architecture.
 - Add support for Qwen/Qwen3-30B-A3B-Instruct-2507 which is a MOE model.
@@ -23,7 +18,7 @@ what we publish.
 - Implement multi-GPU support (tensor parallelism) for GPT-OSS.
 - Common MAX models like Qwen 2.5 can now run on AMD RDNA consumer GPUs.
 
-### MAX framework {#26-2-max}
+## MAX framework {#26-2-max}
 
 - To support use on an expanded range of older NVIDIA hardware and driver
   versions, you can now set the `MODULAR_NVPTX_COMPILER_PATH` environment
@@ -52,7 +47,7 @@ what we publish.
 - Fixed Mojo and MAX compatibility with NVIDIA unified memory systems, like
   the Jetson series or the DGX Spark.
 
-#### Inference server {#26-2-max-serve}
+### Inference server {#26-2-max-serve}
 
 - Enabled overlap scheduling for select model architectures like
   `LlamaForCausalLM_Legacy` by default. This optimization reduces CPU overhead
@@ -61,9 +56,9 @@ what we publish.
   models. This feature is very experimental! You can forcibly disable it via
   `--no-enable-overlap-scheduler --force`.
 
-#### `max` CLI {#26-2-max-cli}
+### `max` CLI {#26-2-max-cli}
 
-#### Python API {#26-2-max-python}
+### Python API {#26-2-max-python}
 
 - `Tensor.constant()` is deprecated. Use the `Tensor(data, dtype=...,
   device=...)` constructor directly, matching PyTorch's `torch.tensor()`
@@ -84,7 +79,7 @@ what we publish.
   available as `max.graph.ops.prod`, `max.experimental.functional.prod`, and
   `Tensor.prod()`.
 
-### Breaking changes {#26-2-breaking}
+## Breaking changes {#26-2-breaking}
 
 - **`PipelineConfig.max_length` has been removed**. The `max_length` parameter
   now resides at the model configuration level as **`MAXModelConfig.max_length`**
@@ -131,17 +126,17 @@ what we publish.
     `from max.nn.module_v3 import Module, Linear` to
     `from max.experimental.nn import Module, Linear`.
 
-#### Mojo API {#26-2-max-mojo}
+### Mojo API {#26-2-max-mojo}
 
-#### Custom ops {#26-2-custom-ops}
+### Custom ops {#26-2-custom-ops}
 
-### MAX kernels {#26-2-max-kernels}
+## MAX kernels {#26-2-max-kernels}
 
 <!-- Please place Layout/LayoutTensor changes under "Library changes" in the
      **Mojo changelog**, since the layout package is packaged with and
      documented alongside Mojo. -->
 
-### Mojo language {#26-2-mojo}
+## Mojo language {#26-2-mojo}
 
 For all the updates to the Mojo language, standard library, and tools,
 including all GPU programming and `Layout`/`LayoutTensor` changes, see the [Mojo
