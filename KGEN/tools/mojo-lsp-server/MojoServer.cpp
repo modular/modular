@@ -37,6 +37,7 @@
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -816,6 +817,13 @@ void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
         };
         DiagHandlerContext handlerCtx(*this);
         sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
+        // Clear the handler when this scope exits (normally or via exception).
+        // The handler holds a raw pointer to the stack-allocated `handlerCtx`;
+        // leaving it registered after `handlerCtx` is destroyed would cause
+        // later LSP operations that emit diagnostics to dereference a dangling
+        // pointer.
+        llvm::scope_exit clearDiagHandler(
+            [&] { sourceMgr.setDiagHandler(nullptr, nullptr); });
         context = std::make_unique<Context>(*this);
 
         auto started = std::chrono::steady_clock::now();
