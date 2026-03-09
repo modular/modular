@@ -25,7 +25,7 @@ import .test
       `
 alias Value = 10
 
-fn foo(a: LegacyUnsafePointer[mut=True, Float32]) -> Float32:
+fn foo(a: UnsafePointer[mut=True, Float32, MutAnyOrigin]) -> Float32:
   var variable = 15
   fn inner_fn():
     return
@@ -51,7 +51,7 @@ trait trait_name:
       {
         name: "foo",
         kind: SymbolKind.Function,
-        detail: "foo(a: LegacyUnsafePointer[Float32]) -> Float32",
+        detail: "foo(a: UnsafePointer[Float32, MutAnyOrigin]) -> Float32",
         children: [
           { name: "inner_fn", kind: SymbolKind.Function, detail: "inner_fn()" },
         ],
