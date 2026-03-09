@@ -24,7 +24,7 @@ from std.sys import (
     bit_width_of,
     is_amd_gpu,
     is_apple_gpu,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -937,7 +937,7 @@ fn log[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return log(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _log_base[27](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -974,7 +974,7 @@ fn log2[
         Vector containing result of performing log base 2 on x.
     """
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         comptime if size_of[dtype]() < size_of[DType.float32]():
             return log2(x.cast[DType.float32]()).cast[dtype]()
 
@@ -1141,6 +1141,18 @@ fn tanh[
                 instruction="tanh.approx.f32", constraints="=f,f"
             ](x)
 
+    comptime if dtype == DType.float64 and not is_gpu():
+        # For float64 on CPU, use the expm1-based identity for full accuracy:
+        #   tanh(x) = -expm1(-2|x|) / (expm1(-2|x|) + 2)
+        # expm1 computes e^y - 1 accurately even for small |y|, avoiding the
+        # catastrophic cancellation that occurs in (e^y - 1) computed naively.
+        # This matches the accuracy of FreeBSD/Cephes libm tanh for float64.
+        # Clamp at ±20: tanh(±20) rounds to exactly ±1 in float64.
+        var xc64 = x.clamp(-20, 20)
+        var x_abs = abs(xc64)
+        var e = expm1((-2) * x_abs)
+        return copysign((-e) / (e + 2), xc64)
+
     var xc = x.clamp(-9, 9)
     var x_squared = xc * xc
 
@@ -1267,7 +1279,7 @@ fn iota[
 
     comptime step_dtype = dtype if dtype.is_integral() else DType.int
     var step: SIMD[step_dtype, width]
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         step = 0
 
         comptime for i in range(width):
@@ -1401,7 +1413,7 @@ fn align_down(value: Int, alignment: Int) -> Int:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return (value // alignment) * alignment
 
 
@@ -1418,7 +1430,7 @@ fn align_down(value: UInt, alignment: UInt) -> UInt:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return (value // alignment) * alignment
 
 
@@ -1440,7 +1452,7 @@ fn align_up(value: Int, alignment: Int) -> Int:
         Closest multiple of the alignment that is greater than or equal to the
         input value. In other words, ceiling(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return ceildiv(value, alignment) * alignment
 
 
@@ -1457,7 +1469,7 @@ fn align_up(value: UInt, alignment: UInt) -> UInt:
         Closest multiple of the alignment that is greater than or equal to the
         input value. In other words, ceiling(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return ceildiv(value, alignment) * alignment
 
 
@@ -1710,7 +1722,7 @@ fn cos[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return cos(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _llvm_unary_fn["llvm.cos"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -1753,7 +1765,7 @@ fn sin[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return sin(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _llvm_unary_fn["llvm.sin"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -3189,9 +3201,9 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(
-        0 <= n <= (12 if is_32bit() else 20), "input value causes an overflow"
-    )
+    assert (
+        0 <= n <= (12 if is_32bit() else 20)
+    ), "input value causes an overflow"
     return table[n]
 
 

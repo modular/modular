@@ -257,21 +257,16 @@ fn non_max_suppression[
     var num_boxes = boxes.layout.shape[1]().value()
     var num_classes = scores.layout.shape[1]().value()
 
-    debug_assert(
-        boxes.layout.shape[2]().value() == 4,
-        (
-            "boxes must be specified with the 2D coords representing the"
-            " diagonal corners"
-        ),
+    assert boxes.layout.shape[2]().value() == 4, (
+        "boxes must be specified with the 2D coords representing the"
+        " diagonal corners"
     )
-    debug_assert(
-        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value(),
-        "dim 0 of boxes and scores must be equal",
-    )
-    debug_assert(
-        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value(),
-        "boxes and scores must contain the same number of boxes",
-    )
+    assert (
+        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value()
+    ), "dim 0 of boxes and scores must be equal"
+    assert (
+        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value()
+    ), "boxes and scores must contain the same number of boxes"
 
     if max_output_boxes_per_class == 0:
         return
@@ -367,6 +362,4 @@ fn non_max_suppression[
                         return False
                 return True
 
-            debug_assert(
-                sorted(), "NonMaxSuppression boxes not sorted correctly"
-            )
+            assert sorted(), "NonMaxSuppression boxes not sorted correctly"

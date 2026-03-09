@@ -550,10 +550,7 @@ def test_kv_cache_ragged_rope(
     # when running with pytest-xdist parallel workers.
     from max.kv_cache import PagedKVCacheManager
     from max.nn.kernels import fused_qk_ragged_rope
-    from max.nn.kv_cache import (
-        KVCacheParams,
-        PagedCacheValues,
-    )
+    from max.nn.kv_cache import KVCacheParams, PagedCacheValues
     from test_common.context_utils import create_text_context
 
     num_q_heads = 32
@@ -599,11 +596,6 @@ def test_kv_cache_ragged_rope(
         session=session,
         max_batch_size=128,
     )
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    blocks_type = kv_symbolic_inputs.kv_blocks
-    cache_lengths_type = kv_symbolic_inputs.cache_lengths
-    lookup_table_type = kv_symbolic_inputs.lookup_table
-    is_cache_empty_type = kv_symbolic_inputs.max_lengths
 
     mrope_section = [16, 24, 24]
 
@@ -612,10 +604,7 @@ def test_kv_cache_ragged_rope(
             input_type,
             input_row_offsets_type,
             freqs_cis_type,
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            is_cache_empty_type,
+            *kv_params.get_symbolic_inputs()[0],
         ]
 
         if use_position_ids:
@@ -634,9 +623,13 @@ def test_kv_cache_ragged_rope(
             freqs_cis = g.inputs[2]
 
             kv_start = 4 if use_position_ids else 3
-            blocks, cache_lengths, lookup_table, is_cache_empty = g.inputs[
-                kv_start:
-            ]
+            (
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+                _attention_dispatch_metadata,
+            ) = g.inputs[kv_start:]
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
@@ -688,12 +681,14 @@ def test_kv_cache_ragged_rope(
 
     # Build provided_inputs with correct indices based on use_position_ids
     offset = 1 if use_position_ids else 0
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
         3 + offset: kv_runtime_inputs.blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
         6 + offset: kv_runtime_inputs.max_lengths,
+        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
     }
 
     if use_position_ids:

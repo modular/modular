@@ -234,13 +234,6 @@ def test_tuple_size_parse_time() raises:
     func_with_where_clause((1, 3, 2))
 
 
-def test_tuple_conforms_copyable() raises:
-    assert_true(conforms_to(Tuple[], Copyable))
-    assert_true(conforms_to(Tuple[Int], Copyable))
-    assert_true(conforms_to(Tuple[Int, String], Copyable))
-    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Copyable))
-
-
 def test_tuple_works_with_non_copyable_types() raises:
     var tuple = (MoveOnly[Int](42), 55)
     var moved = tuple^
@@ -307,6 +300,31 @@ def test_tuple_assert_not_equal() raises:
     assert_not_equal((1, 2), (1, 3))
     assert_not_equal((1, "foo"), (1, "bar"))
     assert_not_equal((1, 2, 3), (1, 2))
+
+
+def test_tuple_conditional_conformances() raises:
+    # Copyable conformance is conditional on all element types being Copyable.
+    assert_true(conforms_to(Tuple[], Copyable))
+    assert_true(conforms_to(Tuple[Int], Copyable))
+    assert_true(conforms_to(Tuple[Int, String], Copyable))
+    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Copyable))
+
+    # ImplicitlyCopyable conformance is conditional on all element types being
+    # ImplicitlyCopyable (and Copyable).
+    assert_true(conforms_to(Tuple[], ImplicitlyCopyable))
+    assert_true(conforms_to(Tuple[Int], ImplicitlyCopyable))
+    assert_true(conforms_to(Tuple[Int, String], ImplicitlyCopyable))
+
+    # Writable conformance is conditional on all element types being Writable.
+    assert_true(conforms_to(Tuple[Int], Writable))
+    assert_true(conforms_to(Tuple[Int, String], Writable))
+    assert_true(conforms_to(Tuple[], Writable))
+
+    # TODO(MOCO-3413): Enable negative test cases when conforms_to evaluates
+    # where clauses correctly.
+    # assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
+    # assert_false(conforms_to(Tuple[MoveOnly[Int]], ImplicitlyCopyable))
+    # assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
 
 
 def test_tuple_assert_equal_failure_message() raises:

@@ -14,8 +14,8 @@ from std.gpu.memory import AddressSpace
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from layout._layout import TensorLayout, row_major
-from layout import Coord, Idx, TileTensor
+from layout.tile_layout import TensorLayout
+from layout import Coord, Idx, TileTensor, row_major
 from layout.tma_async import SharedMemBarrier, PipelineState
 from std.utils.static_tuple import StaticTuple
 from structured_kernels.tile_types import (
@@ -34,9 +34,6 @@ from std.gpu.primitives.cluster import elect_one_sync
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import *
 from std.gpu.sync import named_barrier
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
 
 from linalg.structuring import SMemPtr
@@ -98,7 +95,7 @@ struct AdvanceAfterWorkContextSplitK[
     state_origin: MutOrigin,
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -187,7 +184,7 @@ struct WaitAndAdvanceContextSplitK[
 struct WorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -287,7 +284,7 @@ struct WorkIteratorSplitK[
 struct SchedulerWorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32],
+    cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -371,8 +368,8 @@ struct SchedulerWorkIteratorSplitK[
 struct TileScheduler[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
-        dtype = DType.uint32
+    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+        dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
@@ -395,7 +392,7 @@ struct TileScheduler[
     comptime ClcBarrierArray = Self.UnderlyingScheduler.ClcBarrierArray
     comptime ThrottleBarrierArray = Self.UnderlyingScheduler.ThrottleBarrierArray
 
-    var locks_ptr: UnsafePointer[Int32]
+    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var scheduler: Self.UnderlyingScheduler
     var total_k_tiles: UInt32
     var k_tiles_per_split: UInt32
@@ -422,7 +419,7 @@ struct TileScheduler[
         clc_full: Self.ClcBarrierArray,
         clc_empty: Self.ClcBarrierArray,
         clc_throttle: Self.ThrottleBarrierArray,
-        locks_ptr: UnsafePointer[UInt8],
+        locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
     ):
         """Initialize from typed barrier arrays."""
         self.scheduler = Self.UnderlyingScheduler(
@@ -860,7 +857,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     fn wait_eq(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -874,7 +871,7 @@ struct TileScheduler[
     @staticmethod
     @always_inline
     fn wait_lt(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -885,7 +882,7 @@ struct TileScheduler[
     @staticmethod
     @always_inline
     fn arrive_set(
-        lock_ptr: UnsafePointer[Int32],
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,

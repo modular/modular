@@ -20,7 +20,7 @@ import math
 import pytest
 import torch
 import torch.nn as nn
-from conftest import TorchEncoder, TorchPatchEmbed
+from conftest import TorchEncoder, TorchPatchEmbed, TorchPatchMergerMLP
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -31,6 +31,7 @@ from max.pipelines.architectures.kimik2_5.layers.vision.data_processing import (
 from max.pipelines.architectures.kimik2_5.layers.vision.transformer import (
     Transformer,
 )
+from max.pipelines.architectures.kimik2_5.model_config import VisionConfig
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
@@ -50,6 +51,7 @@ INIT_POS_EMB_HEIGHT = 64
 INIT_POS_EMB_WIDTH = 64
 INIT_POS_EMB_TIME = 4
 MERGE_KERNEL_SIZE = (2, 2)
+DECODER_HIDDEN_SIZE = 7168
 VT_NUM_LAYERS = 2
 
 
@@ -91,10 +93,11 @@ def _torch_tpool_patch_merger(
     grid_thws: torch.Tensor,
     merge_kernel_size: tuple[int, int],
 ) -> list[torch.Tensor]:
-    """Torch reference for tpool_patch_merger (from modeling_kimi_k25.py).
+    """Torch reference for tpool_patch_merger; math matches HuggingFace reference.
 
-    Returns a list of flat [new_H*new_W*kH*kW, D] tensors per video,
-    matching the flat row layout of the Mojo GPU kernel.
+    Reference: https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/blob/main/modeling_kimi_k25.py
+    (tpool_patch_merger). Temporal pooling then spatial reshape. Returns one tensor per
+    video of shape (new_h * new_w, kH * kW, D) for PatchMergerMLP.
     """
     d_model = x.size(-1)
     outputs = []
@@ -105,7 +108,8 @@ def _torch_tpool_patch_merger(
         new_h, new_w = h // kH, w // kW
         reshaped = seq.view(t, new_h, kH, new_w, kW, d_model)
         reshaped = reshaped.permute(0, 1, 3, 2, 4, 5).contiguous().mean(dim=0)
-        outputs.append(reshaped.view(new_h * new_w * kH * kW, -1))
+        # Match reference: (new_h, new_w, kH, kW, D) -> (new_h*new_w, kH*kW, D)
+        outputs.append(reshaped.view(new_h * new_w, kH * kW, -1))
         pre_sum += t * h * w
     return outputs
 
@@ -133,6 +137,11 @@ class TorchTransformer(nn.Module):
             rope_theta=ROPE_THETA,
         )
         self.merge_kernel_size = MERGE_KERNEL_SIZE
+        self.patch_merger = TorchPatchMergerMLP(
+            mm_hidden_size=HIDDEN_DIM,
+            decoder_hidden_size=DECODER_HIDDEN_SIZE,
+            merge_kernel_size=MERGE_KERNEL_SIZE,
+        )
 
     def forward(
         self,
@@ -142,10 +151,11 @@ class TorchTransformer(nn.Module):
     ) -> torch.Tensor:
         hidden = self.patch_embed(pixel_values, grid_thws)
         hidden = self.encoder(hidden, input_row_offsets, grid_thws)
+        # List of (n_spatial_i, kH*kW, D) per video; cat to (total_n_spatial, kH*kW, D)
         merged = _torch_tpool_patch_merger(
             hidden, grid_thws, self.merge_kernel_size
         )
-        return torch.cat(merged, dim=0)
+        return self.patch_merger(torch.cat(merged, dim=0))
 
 
 def _create_transformer_weights(
@@ -153,43 +163,52 @@ def _create_transformer_weights(
 ) -> dict[str, torch.Tensor]:
     """Creates weights for Transformer matching MAX state_dict keys.
 
-    The Transformer stores sub-layers as ``patch_embed_shards`` and
-    ``encoder_shards`` (lists), so single-device keys are prefixed with
-    ``patch_embed_shards.0.`` and ``encoder_shards.0.``.
+    Weight names follow the Transformer's registered sublayers:
+    ``patch_embed``, ``encoder``, and ``patch_merger``.
     """
     weights: dict[str, torch.Tensor] = {}
-    weights["patch_embed_shards.0.proj.weight"] = _generate_tensor(
+    weights["patch_embed.proj.weight"] = _generate_tensor(
         (HIDDEN_DIM, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
     )
-    weights["patch_embed_shards.0.proj.bias"] = _generate_tensor((HIDDEN_DIM,))
-    weights["patch_embed_shards.0.pos_emb.weight"] = _generate_tensor(
+    weights["patch_embed.proj.bias"] = _generate_tensor((HIDDEN_DIM,))
+    weights["patch_embed.pos_emb.weight"] = _generate_tensor(
         (INIT_POS_EMB_HEIGHT, INIT_POS_EMB_WIDTH, HIDDEN_DIM)
     )
     for i in range(num_layers):
         for k, v in _create_encoder_layer_weights().items():
-            weights[f"encoder_shards.0.blocks.{i}.{k}"] = v
-    weights["encoder_shards.0.norm.weight"] = _generate_tensor((HIDDEN_DIM,))
-    weights["encoder_shards.0.norm.bias"] = _generate_tensor((HIDDEN_DIM,))
+            weights[f"encoder.blocks.{i}.{k}"] = v
+    weights["encoder.norm.weight"] = _generate_tensor((HIDDEN_DIM,))
+    weights["encoder.norm.bias"] = _generate_tensor((HIDDEN_DIM,))
+    # PatchMergerMLP: input_dim = HIDDEN_DIM * (kH * kW), hidden_size = DECODER_HIDDEN_SIZE
+    merger_input_dim = HIDDEN_DIM * (
+        MERGE_KERNEL_SIZE[0] * MERGE_KERNEL_SIZE[1]
+    )
+    weights["patch_merger.pre_norm.weight"] = _generate_tensor((HIDDEN_DIM,))
+    weights["patch_merger.pre_norm.bias"] = _generate_tensor((HIDDEN_DIM,))
+    weights["patch_merger.linear1.weight"] = _generate_tensor(
+        (merger_input_dim, merger_input_dim)
+    )
+    weights["patch_merger.linear1.bias"] = _generate_tensor((merger_input_dim,))
+    weights["patch_merger.linear2.weight"] = _generate_tensor(
+        (DECODER_HIDDEN_SIZE, merger_input_dim)
+    )
+    weights["patch_merger.linear2.bias"] = _generate_tensor(
+        (DECODER_HIDDEN_SIZE,)
+    )
     return weights
 
 
 def _remap_transformer_keys_for_torch(
     state_dict: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
-    """Remaps MAX Transformer keys to torch reference keys.
+    """Remaps MAX Transformer weight keys to torch reference naming.
 
-    Changes:
-    - patch_embed_shards.0.* -> patch_embed.*
-    - encoder_shards.0.* -> encoder.*
-    - .attn. -> . (strip attention namespace)
+    Strips the attention namespace so encoder.blocks.i.attn.* -> encoder.blocks.i.*
+    for the TorchEncoder / TorchPatchEmbed reference.
     """
     remapped: dict[str, torch.Tensor] = {}
     for k, v in state_dict.items():
-        new_k = k
-        new_k = new_k.replace("patch_embed_shards.0.", "patch_embed.")
-        new_k = new_k.replace("encoder_shards.0.", "encoder.")
-        new_k = new_k.replace(".attn.", ".")
-        remapped[new_k] = v
+        remapped[k.replace(".attn.", ".")] = v
     return remapped
 
 
@@ -209,24 +228,27 @@ def _build_and_run_transformer(
     device = Accelerator(0)
     device_ref = DeviceRef.from_device(device)
 
-    vision_tower = Transformer(
-        patch_size=PATCH_SIZE,
-        in_channels=IN_CHANNELS,
-        hidden_dim=HIDDEN_DIM,
-        num_heads=NUM_HEADS,
-        mlp_dim=MLP_DIM,
-        num_layers=num_layers,
+    vision_config = VisionConfig(
+        dtype=MAX_DTYPE,
+        devices=[device_ref],
         init_pos_emb_height=INIT_POS_EMB_HEIGHT,
-        init_pos_emb_width=INIT_POS_EMB_WIDTH,
         init_pos_emb_time=INIT_POS_EMB_TIME,
+        init_pos_emb_width=INIT_POS_EMB_WIDTH,
+        merge_kernel_size=list(MERGE_KERNEL_SIZE),
+        mm_hidden_size=HIDDEN_DIM,
+        patch_size=PATCH_SIZE,
+        projector_ln_eps=1e-5,
+        text_hidden_size=DECODER_HIDDEN_SIZE,
+        vt_hidden_size=HIDDEN_DIM,
+        vt_intermediate_size=MLP_DIM,
+        vt_num_attention_heads=NUM_HEADS,
+        vt_num_hidden_layers=num_layers,
+        in_channels=IN_CHANNELS,
         rope_max_height=ROPE_MAX_HEIGHT,
         rope_max_width=ROPE_MAX_WIDTH,
         rope_theta=ROPE_THETA,
-        merge_kernel_size=MERGE_KERNEL_SIZE,
-        dtype=MAX_DTYPE,
-        devices=[device_ref],
-        has_bias=True,
     )
+    vision_tower = Transformer(vision_config)
     vision_tower.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[device])
@@ -276,9 +298,9 @@ def _build_and_run_transformer(
             [max_seq_len_in],
             [position_ids_in],
             [],
-            max_h=max_h,
-            max_w=max_w,
-            total_output_patches=total_output_patches,
+            max_h,
+            max_w,
+            total_output_patches,
         )
         graph.output(outs[0])
 
@@ -327,9 +349,9 @@ def test_transformer(
 
     max_seq_len = torch.tensor([max(seq_lens)], dtype=torch.uint32)
 
+    total_output_patches = sum(h * w for _, h, w in grid_thws)
     max_h = max(h for _, h, _ in grid_thws)
     max_w = max(w for _, _, w in grid_thws)
-    total_output_patches = sum(h * w for _, h, w in grid_thws)
 
     max_output = _build_and_run_transformer(
         state_dict,

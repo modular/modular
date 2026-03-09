@@ -98,6 +98,8 @@ modular_py_library(
         "//max/python/max/entrypoints:gpu-query",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",
@@ -109,6 +111,5 @@ modular_py_library(
         "//max/python/max/serve:debug",
         "//max/python/max/serve/mocks",
         "//max/python/max/support",
-        "//max/python/max/torch",
     ],
 )

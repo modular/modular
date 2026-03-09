@@ -98,15 +98,14 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
-    comptime if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
-        comptime assert (
-            False
-        ), "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
+    comptime assert not _has_type[DType.float16](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ), "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
 
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
     # ===------------------------------------------------------------------===#
-    elif _has_type[
+    comptime if _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.size, b.size, c.size, d.size

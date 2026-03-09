@@ -21,8 +21,14 @@ from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
-from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+    row_major,
+)
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -714,7 +720,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype](),
+                simd_width=simd_width_of[dtype](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
@@ -827,7 +833,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simd_width_of[dtype, target=compile_target](),
+                simd_width=simd_width_of[dtype, target=compile_target](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -886,13 +892,11 @@ fn scatter_nd_generator[
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1119,13 +1123,11 @@ fn scatter_nd[
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
 ](
-    data: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
-    indices: TileTensor[
-        indices_type, address_space = AddressSpace.GENERIC, ...
-    ],
-    updates: TileTensor[output_type, address_space = AddressSpace.GENERIC, ...],
+    data: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    indices: TileTensor[indices_type, address_space=AddressSpace.GENERIC, ...],
+    updates: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1134,7 +1136,7 @@ fn scatter_nd[
         output_type,
         indices_type,
         single_thread_blocking_override,
-        oob_index_strategy = ScatterOobIndexStrategy.UNDEFINED,
+        oob_index_strategy=ScatterOobIndexStrategy.UNDEFINED,
         target=target,
         reduce_fn=None,
     ](data, indices, updates, output, context)
@@ -1598,10 +1600,9 @@ fn _gather_nd_impl[
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
     var indices_shape = coord_to_index_list(indices.layout.shape_coord())
-    debug_assert(
-        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims,
-        "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims",
-    )
+    assert (
+        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims
+    ), "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims"
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
@@ -1637,16 +1638,14 @@ fn _gather_nd_impl[
             data_idx[src_start + i] = output_idx[output_start + i]
 
         comptime for i in range(data.rank):
-            debug_assert(
-                data_idx[i] >= 0 and data_idx[i] < Int(data.dim[i]()),
-                "data index out of bounds",
-            )
+            assert data_idx[i] >= 0 and data_idx[i] < Int(
+                data.dim[i]()
+            ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            debug_assert(
-                output_idx[i] >= 0 and output_idx[i] < Int(output.dim[i]()),
-                "output index out of bounds",
-            )
+            assert output_idx[i] >= 0 and output_idx[i] < Int(
+                output.dim[i]()
+            ), "output index out of bounds"
 
         var data_coord = Coord(data_idx)
         var output_coord = Coord(output_idx)
@@ -1694,9 +1693,7 @@ fn _gather_nd_impl[
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
     else:
-        debug_assert(
-            Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        )
+        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[
@@ -1765,10 +1762,9 @@ fn scatter_set_constant[
     comptime assert (
         indices.flat_rank == 2
     ), "scatter_set: indices must have rank 2"
-    debug_assert(
-        Int(indices.dim[1]()) == 2,
-        "scatter_set: indices must have shape [total_seq_len, 2]",
-    )
+    assert (
+        Int(indices.dim[1]()) == 2
+    ), "scatter_set: indices must have shape [total_seq_len, 2]"
 
     @always_inline
     @parameter

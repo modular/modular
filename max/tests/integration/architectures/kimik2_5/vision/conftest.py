@@ -318,6 +318,35 @@ class TorchEncoderBlock(nn.Module):
         return x
 
 
+class TorchPatchMergerMLP(nn.Module):
+    """PyTorch reference for PatchMergerMLP.
+
+    Math matches HuggingFace reference (modeling_kimi_k25.py PatchMergerMLP):
+    pre_norm over last dim, reshape to (N, mm_hidden_size * kH * kW), then
+    Linear -> GELU -> Linear to decoder_hidden_size.
+    """
+
+    def __init__(
+        self,
+        mm_hidden_size: int,
+        decoder_hidden_size: int,
+        merge_kernel_size: tuple[int, int],
+        eps: float = 1e-5,
+    ) -> None:
+        super().__init__()
+        input_dim = mm_hidden_size * merge_kernel_size[0] * merge_kernel_size[1]
+        self.pre_norm = nn.LayerNorm(mm_hidden_size, eps=eps)
+        self.linear1 = nn.Linear(input_dim, input_dim)
+        self.linear2 = nn.Linear(input_dim, decoder_hidden_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.pre_norm(x)
+        x = x.reshape(x.shape[0], -1)
+        x = self.linear1(x)
+        x = F.gelu(x)
+        return self.linear2(x)
+
+
 class TorchEncoder(nn.Module):
     """PyTorch reference for the full vision encoder."""
 
@@ -352,4 +381,5 @@ class TorchEncoder(nn.Module):
         rope_freqs_cis = self.rope_2d.get_freqs_cis(grid_thws, device=x.device)
         for block in self.blocks:
             x = block(x, input_row_offsets, rope_freqs_cis)
-        return self.norm(x)
+        x = self.norm(x)
+        return x

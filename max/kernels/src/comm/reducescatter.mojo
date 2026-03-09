@@ -17,8 +17,8 @@ from std.collections import InlineArray
 from std.collections.optional import Optional
 from std.builtin.variadics import Variadic
 
-from layout import Coord, TileTensor, Idx
-from layout._layout import TensorLayout, Layout, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout, Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -81,9 +81,9 @@ fn _load_reduce[
         return multimem_ld_reduce[
             dtype,
             simd_width=simd_width,
-            reduction = ReduceOp.ADD,
-            scope = Scope.GPU,
-            consistency = Consistency.RELAXED,
+            reduction=ReduceOp.ADD,
+            scope=Scope.GPU,
+            consistency=Consistency.RELAXED,
             accum_type=accum_type,
         ]((ptrs[0] + elem_idx).address_space_cast[AddressSpace.GLOBAL]())
     else:
@@ -114,7 +114,7 @@ fn _load_reduce[
 struct ReduceScatterConfig[
     dtype: DType,
     ngpus: Int,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
 ](TrivialRegisterPassable):
@@ -233,14 +233,14 @@ fn _reduce_scatter_flat_impl[
         # float32 accumulator for numerical stability.
         var reduced_result = _load_reduce[
             ngpus,
-            simd_width = config.simd_width,
-            alignment = config.alignment,
-            accum_type = config.accum_type,
+            simd_width=config.simd_width,
+            alignment=config.alignment,
+            accum_type=config.accum_type,
             use_multimem=use_multimem,
         ](idx, src_ptrs)
 
         # Apply epilogue and store result.
-        output_lambda[width = config.simd_width, alignment = config.alignment](
+        output_lambda[width=config.simd_width, alignment=config.alignment](
             out_buf.layout.idx2crd(idx - config.rank_start(my_rank)),
             reduced_result,
         )
@@ -254,7 +254,7 @@ fn _reduce_scatter_impl[
     //,
     *,
     output_lambda: elementwise_epilogue_type,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
 ](
@@ -334,7 +334,7 @@ fn _reducescatter_kernel[
     for coalesced access, reduces, and writes to its output.
     When use_multimem is True, uses hardware-accelerated multimem reduction.
     """
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     var my_sig = rank_sigs[my_rank]
     var threads_per_gpu = Int(grid_dim.x) * BLOCK_SIZE
 
@@ -481,7 +481,7 @@ fn _reducescatter_p2p[
         axis_size: Number of units along the scatter axis.
         unit_numel: Number of elements per unit.
     """
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime BLOCK_SIZE = 256
     comptime num_buffers = 1 if use_multimem else ngpus
 
@@ -587,7 +587,7 @@ fn reducescatter[
         Error: If input buffer size is not a multiple of SIMD width.
     """
     comptime assert ngpus >= 2, "reducescatter requires at least 2 GPUs"
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     # Validate axis and rank combination.
     # TODO(KERN-2526): generalize to higher dims & multimem support

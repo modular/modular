@@ -164,6 +164,11 @@ trait IntableRaising:
         ...
 
 
+trait _FromInt:
+    fn __init__(out self, *, from_int: Int):
+        ...
+
+
 @lldb_formatter_wrapping_type
 struct Int(
     Absable,
@@ -188,6 +193,7 @@ struct Int(
     TrivialRegisterPassable,
     Truncable,
     Writable,
+    _FromInt,
 ):
     """This type represents an integer value."""
 
@@ -259,7 +265,7 @@ struct Int(
             value: The init value.
         """
         self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
-            _type = __mlir_type.index
+            _type=__mlir_type.index
         ](value)
 
     @always_inline("builtin")
@@ -299,6 +305,11 @@ struct Int(
         """
         self = value.__int__()
 
+    @doc_private
+    @always_inline("nodebug")
+    fn __init__(out self, *, from_int: Int):
+        self = from_int
+
     # ===------------------------------------------------------------------=== #
     # Operator dunders
     # ===------------------------------------------------------------------=== #
@@ -314,7 +325,7 @@ struct Int(
             True if this Int is less-than the RHS Int and False otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate slt>`
+            pred=__mlir_attr.`#index<cmp_predicate slt>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -329,7 +340,7 @@ struct Int(
             otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate sle>`
+            pred=__mlir_attr.`#index<cmp_predicate sle>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -343,7 +354,7 @@ struct Int(
             True if this Int is equal to the RHS Int and False otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate eq>`
+            pred=__mlir_attr.`#index<cmp_predicate eq>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -357,7 +368,7 @@ struct Int(
             True if this Int is non-equal to the RHS Int and False otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate ne>`
+            pred=__mlir_attr.`#index<cmp_predicate ne>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -371,7 +382,7 @@ struct Int(
             True if this Int is greater than the RHS Int and False otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate sgt>`
+            pred=__mlir_attr.`#index<cmp_predicate sgt>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
@@ -386,7 +397,7 @@ struct Int(
             otherwise.
         """
         return __mlir_op.`index.cmp`[
-            pred = __mlir_attr.`#index<cmp_predicate sge>`
+            pred=__mlir_attr.`#index<cmp_predicate sge>`
         ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")

@@ -103,8 +103,8 @@ def test_array_int() raises:
     test_init_fill_scalars[
         Int64.dtype,
         Int8.dtype,
-        sizes= [1, 32, 64, 129, 256, 512, 768, 1000],
-        batch_sizes= [1, 8, 32, 64, 128],
+        sizes=[1, 32, 64, 129, 256, 512, 768, 1000],
+        batch_sizes=[1, 8, 32, 64, 128],
     ]()
 
     test_init_fill[2048, 512](Int64.MAX)
@@ -441,6 +441,23 @@ def _test_inline_array_iter_bounds[
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(0, upper.value())
+
+
+struct NonWritable(Copyable):
+    """A simple type that does not conform to Writable."""
+
+    var value: Int
+
+
+def test_inline_array_conditional_conformances() raises:
+    assert_true(conforms_to(InlineArray[Int, 3], Writable))
+    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
+    # `where` clause on conditional conformances — it sees that
+    # `InlineArray` has a conformance for `Writable` and returns True
+    # without checking whether the condition holds for the concrete
+    # `ElementType`. The type checker at call sites *does* enforce the
+    # condition correctly.
+    # assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
 
 
 def test_inline_array_iter_bounds() raises:

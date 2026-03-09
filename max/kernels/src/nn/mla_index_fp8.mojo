@@ -15,9 +15,17 @@
 from std.sys import size_of
 from std.math import ceildiv
 
-from layout import Idx, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    RuntimeLayout,
+    TileTensor,
+    TensorLayout,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout.layout_tensor import LayoutTensor
-from layout._layout import row_major
+from layout.tile_layout import TensorLayout
 
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -39,14 +47,14 @@ from std.utils.index import Index
 
 
 fn apply_mask_kernel[
-    output_layout: Layout,
-    valid_length_layout: Layout,
     mask_t: MHAMask,
+    ScoresLayoutType: TensorLayout,
+    scores_origin: MutOrigin,
+    VLLayoutType: TensorLayout,
+    vl_origin: ImmutOrigin,
 ](
-    output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
-    valid_length: LayoutTensor[
-        DType.uint32, valid_length_layout, ImmutAnyOrigin
-    ],
+    output: TileTensor[DType.float32, ScoresLayoutType, scores_origin],
+    valid_length: TileTensor[DType.uint32, VLLayoutType, vl_origin],
     mask: mask_t,
     max_num_keys: Int,
 ):
@@ -55,8 +63,8 @@ fn apply_mask_kernel[
     var seq_idx = block_idx.y * 16 + thread_idx.x
     var key_idx = block_idx.z * 16 + thread_idx.y
 
-    var start_of_seq = valid_length[batch_idx][0]
-    var end_of_seq = valid_length[batch_idx + 1][0]
+    var start_of_seq = valid_length.ptr[Int(batch_idx)]
+    var end_of_seq = valid_length.ptr[Int(batch_idx) + 1]
     var seq_len = end_of_seq - start_of_seq
 
     if seq_idx >= UInt(seq_len) or key_idx >= UInt(max_num_keys):
@@ -76,15 +84,14 @@ fn apply_mask_kernel[
 
 
 fn fill_invalid_topk_kernel[
-    input_row_offsets_layout: Layout,
-    cache_lengths_layout: Layout,
+    IROLayoutType: TensorLayout,
+    iro_origin: ImmutOrigin,
+    cache_lengths_layout: TensorLayout,
     use_causal_mask: Bool,
 ](
     output_indices: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    input_row_offsets: LayoutTensor[
-        DType.uint32, input_row_offsets_layout, ImmutAnyOrigin
-    ],
-    cache_lengths: LayoutTensor[
+    input_row_offsets: TileTensor[DType.uint32, IROLayoutType, iro_origin],
+    cache_lengths: TileTensor[
         DType.uint32, cache_lengths_layout, ImmutAnyOrigin
     ],
     total_seq_len: Int,
@@ -107,6 +114,8 @@ fn fill_invalid_topk_kernel[
     Without causal masking, each token can see all keys in the batch:
         num_keys = cache_len + seq_len
     """
+    comptime assert cache_lengths.flat_rank == 1
+
     var token_idx = Int(block_idx.x)
     var k_idx = Int(thread_idx.x)
 
@@ -123,19 +132,19 @@ fn fill_invalid_topk_kernel[
 
     # Find which batch this token belongs to by scanning row_offsets
     var batch_idx = 0
-    var batch_size = input_row_offsets.dim[0]() - 1
+    var batch_size = Int(input_row_offsets.dim[0]()) - 1
     for b in range(batch_size):
-        var q_end = Int(input_row_offsets[b + 1][0])
+        var q_end = Int(input_row_offsets.ptr[b + 1])
         if token_idx < q_end:
             batch_idx = b
             break
 
-    var q_start = Int(input_row_offsets[batch_idx][0])
-    var q_end = Int(input_row_offsets[batch_idx + 1][0])
+    var q_start = Int(input_row_offsets.ptr[batch_idx])
+    var q_end = Int(input_row_offsets.ptr[batch_idx + 1])
     var seq_len = q_end - q_start
     var local_seq_idx = token_idx - q_start
 
-    var cache_len = Int(cache_lengths[batch_idx][0])
+    var cache_len = Int(cache_lengths[batch_idx])
 
     # Compute num_keys based on mask type
     var num_keys: Int
@@ -167,29 +176,16 @@ fn fill_invalid_topk_kernel[
 @always_inline
 fn mla_indexer_ragged_float8_paged[
     dtype: DType,
-    q_layout: Layout,
-    qs_layout: Layout,
-    output_layout: Layout,
     KCollectionT: KVCollectionT,
     num_heads: Int,
     depth: Int,
     top_k: Int,
     mask_str: StaticString,
 ](
-    output_indices: LayoutTensor[
-        mut=True,
-        DType.int32,
-        output_layout,
-        address_space = AddressSpace.GENERIC,
-        ...,
-    ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space = AddressSpace.GENERIC, ...
-    ],
-    input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
-    ],
+    output_indices: TileTensor[DType.int32, ...],
+    q: TileTensor[dtype, ...],
+    q_s: TileTensor[DType.float32, ...],
+    input_row_offsets: TileTensor[DType.uint32, ...],
     k_collection: KCollectionT,
     layer_idx: UInt32,
     ctx: DeviceContext,
@@ -234,8 +230,8 @@ fn mla_indexer_ragged_float8_paged[
         mask_str == MaskName.NULL.name or mask_str == MaskName.CAUSAL.name
     ), "mask_str must be either MaskName.NULL or MaskName.CAUSAL"
 
-    var batch_size = input_row_offsets.dim[0]() - 1
-    var total_seq_len = q.dim[0]()
+    var batch_size = Int(input_row_offsets.dim[0]()) - 1
+    var total_seq_len = Int(q.dim[0]())
 
     var k_cache = k_collection.get_key_cache(Int(layer_idx))
 
@@ -252,26 +248,31 @@ fn mla_indexer_ragged_float8_paged[
     var scores_buf = ctx.enqueue_create_buffer[DType.float32](scores_size)
     scores_buf.enqueue_fill(-Float32.MAX)
 
-    # Reshape scores as [total_seq_len, max_num_keys] for topk
-    comptime scores_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var scores_runtime_layout = RuntimeLayout[scores_layout].row_major(
-        Index(total_seq_len, max_num_keys)
+    var scores_tile = TileTensor(
+        scores_buf.unsafe_ptr(),
+        row_major((Idx(total_seq_len), Idx(max_num_keys))),
     )
-    var scores_tensor = LayoutTensor[
-        DType.float32, scores_layout, MutAnyOrigin
-    ](scores_buf.unsafe_ptr(), scores_runtime_layout)
 
-    # Create valid_length tensor from input_row_offsets
+    # Convert TileTensor inputs to LayoutTensor for fp8_index_kernel,
+    # which uses LayoutTensor-specific APIs (tile, vectorize, copy_dram_to_sram).
+    var q_lt = q.to_layout_tensor()
+    var q_s_lt = q_s.to_layout_tensor()
+
+    comptime valid_length_layout = Layout.row_major(UNKNOWN_VALUE)
     var valid_length = LayoutTensor[
         DType.uint32,
-        type_of(input_row_offsets).layout,
+        valid_length_layout,
         ImmutAnyOrigin,
     ](
-        input_row_offsets.ptr,
-        RuntimeLayout[type_of(input_row_offsets).layout].row_major(
-            input_row_offsets.runtime_layout.shape.value.canonicalize()
+        rebind[UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin]](
+            input_row_offsets.ptr
+        ),
+        RuntimeLayout[valid_length_layout].row_major(
+            Index(Int(input_row_offsets.dim[0]()))
         ),
     )
+
+    var scores_lt = scores_tile.to_layout_tensor()
 
     var k_operand = KVCacheMHAOperand(k_cache)
     var ks_operand = KVCacheScalesMHAOperand(k_cache)
@@ -286,9 +287,9 @@ fn mla_indexer_ragged_float8_paged[
     # Output is [total_seq_len, max_num_keys] with one score per (token, key) pair.
     comptime kernel = fp8_index_kernel[
         dtype,
-        scores_layout,
-        q.layout,
-        qs_layout,
+        scores_lt.layout,
+        q_lt.layout,
+        q_s_lt.layout,
         type_of(k_operand),
         type_of(ks_operand),
         block_tile_shape,
@@ -298,9 +299,9 @@ fn mla_indexer_ragged_float8_paged[
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        scores_tensor,
-        q,
-        q_s,
+        scores_lt,
+        q_lt,
+        q_s_lt,
         k_operand,
         ks_operand,
         valid_length,
@@ -324,14 +325,16 @@ fn mla_indexer_ragged_float8_paged[
             @parameter
             fn apply_mask_dispatch[mask_t: MHAMask](mask: mask_t) raises:
                 comptime mask_kernel = apply_mask_kernel[
-                    scores_layout,
-                    type_of(valid_length).layout,
                     mask_t,
+                    scores_tile.LayoutType,
+                    scores_tile.origin,
+                    input_row_offsets.LayoutType,
+                    ImmutOrigin(input_row_offsets.origin),
                 ]
 
                 ctx.enqueue_function[mask_kernel, mask_kernel](
-                    scores_tensor,
-                    valid_length,
+                    scores_tile,
+                    input_row_offsets.as_immut(),
                     mask,
                     max_num_keys,
                     grid_dim=(
@@ -343,12 +346,6 @@ fn mla_indexer_ragged_float8_paged[
                 )
 
             dispatch_mask[mask_str, apply_mask_dispatch]()
-
-    # Compute top-k indices from scores [total_seq_len, max_num_keys]
-    var scores_tile = TileTensor(
-        scores_buf.unsafe_ptr(),
-        row_major((Idx(total_seq_len), Idx(max_num_keys))),
-    )
 
     # Compute effective_k - the actual number of values we can select.
     # If top_k > max_num_keys, we can only select max_num_keys values.
@@ -365,8 +362,12 @@ fn mla_indexer_ragged_float8_paged[
 
     # Output indices tile - use top_k stride to match output buffer layout.
     # topk_gpu will write effective_k values at the start of each row.
+    # Use rebind to convert parametric origin from TileTensor `...` to concrete
+    # MutAnyOrigin, matching how topk.mojo handles pointer rebinding.
     var topk_idxs_tile = TileTensor(
-        output_indices.ptr.bitcast[Scalar[DType.int32]](),
+        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+            output_indices.ptr
+        ),
         row_major((Idx(total_seq_len), Idx(top_k))),
     )
 
@@ -387,8 +388,9 @@ fn mla_indexer_ragged_float8_paged[
     comptime use_causal_mask = mask_str != MaskName.NULL.name
 
     comptime fill_kernel = fill_invalid_topk_kernel[
-        type_of(valid_length).layout,
-        type_of(cache_lengths).layout,
+        input_row_offsets.LayoutType,
+        ImmutOrigin(input_row_offsets.origin),
+        type_of(cache_lengths).LayoutType,
         use_causal_mask,
     ]
 
@@ -396,8 +398,10 @@ fn mla_indexer_ragged_float8_paged[
     block_size = min(block_size, 1024)  # Cap at max threads per block
 
     ctx.enqueue_function[fill_kernel, fill_kernel](
-        output_indices.ptr.bitcast[Scalar[DType.int32]](),
-        valid_length,
+        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+            output_indices.ptr
+        ),
+        input_row_offsets.as_immut(),
         cache_lengths,
         total_seq_len,
         top_k,

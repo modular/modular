@@ -370,7 +370,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[_, element_type = DType.int64],
+    shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -438,7 +438,7 @@ fn _reduce_generator_gpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_type = DType.int64],
+    shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     ctx: DeviceContext,
@@ -494,7 +494,7 @@ fn _reduce_generator_cpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_type = DType.int64],
+    shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -570,7 +570,7 @@ fn _reduce_generator_wrapper[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[_, element_type = DType.int64],
+    shape: IndexList[_, element_type=DType.int64],
     init: Scalar,
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -625,7 +625,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[_, element_type = DType.int64],
+    shape: IndexList[_, element_type=DType.int64],
     init: Scalar,
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -699,7 +699,7 @@ fn _reduce_along_inner_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_type = DType.int64],
+    shape: IndexList[_, element_type=DType.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -867,7 +867,7 @@ fn _reduce_along_outer_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_type = DType.int64],
+    shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -1029,7 +1029,7 @@ fn max[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1144,7 +1144,7 @@ fn min[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1269,7 +1269,7 @@ fn sum[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1450,7 +1450,7 @@ fn product[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1527,7 +1527,7 @@ fn mean[dtype: DType](src: Span[Scalar[dtype], _]) raises -> Scalar[dtype]:
         If the operation fails.
     """
 
-    debug_assert(len(src) != 0, "input must not be empty")
+    assert len(src) != 0, "input must not be empty"
 
     @parameter
     @always_inline
@@ -1554,7 +1554,7 @@ fn mean[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[_, element_type = DType.int64],
+    input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     output_shape: type_of(input_shape),
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -1735,7 +1735,7 @@ fn variance[
         If the operation fails.
     """
 
-    debug_assert(len(src) > 1, "input length must be greater than 1")
+    assert len(src) > 1, "input length must be greater than 1"
 
     @parameter
     @always_inline
@@ -1920,8 +1920,8 @@ fn cumsum[
         src: The buffer of elements for which the cumulative sum is computed.
     """
 
-    debug_assert(len(src) != 0, "Input must not be empty")
-    debug_assert(len(dst) != 0, "Output must not be empty")
+    assert len(src) != 0, "Input must not be empty"
+    assert len(dst) != 0, "Output must not be empty"
 
     comptime simd_width = simd_width_of[dtype]()
 

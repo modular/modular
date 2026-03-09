@@ -775,6 +775,14 @@ class PipelineRegistry:
                     )
                 tokenizer_kwargs["secondary_max_length"] = secondary_max_length
 
+            # Pass per-architecture default for num_inference_steps
+            # when the pipeline class declares one.
+            default_steps = getattr(
+                arch.pipeline_model, "default_num_inference_steps", None
+            )
+            if default_steps is not None:
+                tokenizer_kwargs["default_num_inference_steps"] = default_steps
+
             tokenizer = arch.tokenizer(**tokenizer_kwargs)
 
             # Pixel generation pipeline only needs pipeline_config and pipeline_model

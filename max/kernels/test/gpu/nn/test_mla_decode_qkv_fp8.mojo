@@ -26,9 +26,6 @@ The test:
 6. Compares results with tolerances accounting for FP8 quantization
 """
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.collections import Optional
 from std.math import ceildiv, isclose
 from std.random import randn
@@ -82,8 +79,8 @@ fn host_cast_fp8_to_bf16[
     fp8_t: DType,
     bf16_t: DType,
 ](
-    src: UnsafePointer[Scalar[fp8_t]],
-    dst: UnsafePointer[Scalar[bf16_t]],
+    src: UnsafePointer[Scalar[fp8_t], _],
+    dst: UnsafePointer[mut=True, Scalar[bf16_t], _],
     size: Int,
 ):
     """Cast FP8 data to BF16 element-by-element on the host."""
@@ -96,8 +93,8 @@ fn host_quantize_bf16_to_fp8[
     bf16_t: DType,
     fp8_t: DType,
 ](
-    src: UnsafePointer[Scalar[bf16_t]],
-    dst: UnsafePointer[Scalar[fp8_t]],
+    src: UnsafePointer[Scalar[bf16_t], _],
+    dst: UnsafePointer[mut=True, Scalar[fp8_t], _],
     size: Int,
 ):
     """Quantize BF16 data to FP8 element-by-element on the host."""
@@ -172,14 +169,14 @@ fn test[
     )
 
     # Allocate memory: BF16 reference Q and K, then quantize to FP8.
-    var q_bf16_ptr = UnsafePointer[Scalar[output_type]].alloc(q_size)
-    var q_fp8_ptr = UnsafePointer[Scalar[q_type]].alloc(q_size)
-    var q_bf16_dequant_ptr = UnsafePointer[Scalar[output_type]].alloc(q_size)
-    var k_fp8_ptr = UnsafePointer[Scalar[kv_type]].alloc(k_size)
-    var k_bf16_ptr = UnsafePointer[Scalar[output_type]].alloc(k_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[output_type]].alloc(o_size)
+    var q_bf16_ptr = alloc[Scalar[output_type]](q_size)
+    var q_fp8_ptr = alloc[Scalar[q_type]](q_size)
+    var q_bf16_dequant_ptr = alloc[Scalar[output_type]](q_size)
+    var k_fp8_ptr = alloc[Scalar[kv_type]](k_size)
+    var k_bf16_ptr = alloc[Scalar[output_type]](k_size)
+    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
 
     # Q: create as BF16, quantize to FP8, dequant back for reference
     randn[output_type](q_bf16_ptr, q_size)
@@ -303,7 +300,7 @@ fn test[
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        UnsafePointer[UInt32](),
+        UnsafePointer[UInt32, MutAnyOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
@@ -408,7 +405,7 @@ fn test[
                 type_of(k_operand),
                 output_type,
                 output_layout,
-                MaterializedMask[mask3d.dtype, mask3d.layout],
+                MaterializedMask[mask3d.dtype, mask3d.layout, mask3d.origin],
                 null_valid_length.layout,
                 config=config,
                 depth=depth,
@@ -436,7 +433,7 @@ fn test[
                 type_of(k_operand),
                 output_type,
                 output_layout,
-                MaterializedMask[mask4d.dtype, mask4d.layout],
+                MaterializedMask[mask4d.dtype, mask4d.layout, mask4d.origin],
                 null_valid_length.layout,
                 config=config,
                 depth=depth,
@@ -566,9 +563,7 @@ fn test[
     print("  Reference completed.")
 
     # Copy reference output to host
-    var ref_full_output_ptr = UnsafePointer[Scalar[output_type]].alloc(
-        ref_full_o_size
-    )
+    var ref_full_output_ptr = alloc[Scalar[output_type]](ref_full_o_size)
     ctx.enqueue_copy(ref_full_output_ptr, output_ref_full_device_ptr)
     ctx.synchronize()
 
@@ -654,9 +649,9 @@ fn bench[
     var o_size = batch_size * num_heads * seq_len * v_depth
 
     # Allocate and fill FP8 Q and K
-    var q_bf16_ptr = UnsafePointer[Scalar[output_type]].alloc(q_size)
-    var q_fp8_ptr = UnsafePointer[Scalar[q_type]].alloc(q_size)
-    var k_fp8_ptr = UnsafePointer[Scalar[kv_type]].alloc(k_size)
+    var q_bf16_ptr = alloc[Scalar[output_type]](q_size)
+    var q_fp8_ptr = alloc[Scalar[q_type]](q_size)
+    var k_fp8_ptr = alloc[Scalar[kv_type]](k_size)
 
     randn[output_type](q_bf16_ptr, q_size)
     host_quantize_bf16_to_fp8[bf16_t=output_type, fp8_t=q_type](
@@ -709,7 +704,7 @@ fn bench[
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        UnsafePointer[UInt32](),
+        UnsafePointer[UInt32, MutAnyOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
@@ -849,7 +844,7 @@ fn test_decoding[
     ](seq_len, num_keys, ctx)
 
 
-def main():
+def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:

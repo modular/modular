@@ -39,7 +39,7 @@ from max.pipelines.lib.speculative_decoding import (
 @dataclass
 class SpeculativeDecodingSetup:
     model_name: str
-    tokenizer: PipelineTokenizer
+    tokenizer: PipelineTokenizer  # type: ignore[type-arg]
     pipeline: StandaloneSpeculativeDecodingPipeline
     context1: TextContext
     context2: TextContext
@@ -155,7 +155,6 @@ def test_speculative_decoding_no_rejection(
         pipeline._draft_model,
         context_batch,
         [context_batch],
-        num_steps,
         return_n_logits=1,
         is_draft=True,
     )
@@ -235,7 +234,6 @@ def test_speculative_decoding_partial_rejection(
         pipeline._draft_model,
         context_batch,
         [context_batch],
-        num_steps,
         return_n_logits=1,
         is_draft=True,
     )
@@ -258,6 +256,7 @@ def test_speculative_decoding_partial_rejection(
 
     # Permute to [batch, num_steps, vocab] and set large logit values for half the tokens in the first batch.
     # Then permute back to the expected shape
+    assert all_draft_logits is not None
     all_draft_logits_host = np.permute_dims(
         np.copy(all_draft_logits.to_numpy()), [1, 0, 2]
     )

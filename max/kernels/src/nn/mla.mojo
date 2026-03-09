@@ -13,6 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, recip
+from std.math.uutils import ufloordiv
 from nn.mha_utils import DynamicInt
 from std.math.constants import log2e
 from std.sys import (
@@ -43,7 +44,7 @@ from std.gpu import (
     block_idx,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import (
     DeviceContext,
@@ -75,6 +76,7 @@ from layout.layout_tensor import (
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -132,14 +134,12 @@ fn flare_mla_decoding[
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[
-        mut=True, _, address_space = AddressSpace.GENERIC, ...
-    ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, _, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: cache_t,
     mask_functor: mask_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -196,10 +196,10 @@ fn flare_mla_decoding[
             )
         )
 
-    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
         "flare_mla_decoding",
         Trace[
-            TraceLevel.OP, target = ctx.default_device_info.api
+            TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
@@ -216,7 +216,7 @@ fn flare_mla_decoding[
         var k_operand = KVCacheMHAOperand(k)
 
         flare_mla_decoding_dispatch[
-            kv_num_heads = Int(kv_num_heads),
+            kv_num_heads=Int(kv_num_heads),
             config=config,
             ragged=ragged,
             decoding_warp_split_k=decoding_warp_split_k,
@@ -248,11 +248,9 @@ fn flare_mla_decoding[
     },
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[
-        mut=True, _, address_space = AddressSpace.GENERIC, ...
-    ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
-    k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[mut=True, _, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
+    k: LayoutTensor[address_space=AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
@@ -270,7 +268,7 @@ fn flare_mla_decoding[
     var num_keys = k.dim[1]()
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, k.origin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -331,12 +329,12 @@ fn flare_mla_decoding_dispatch[
     _use_valid_length: Bool = True,
     decoding_warp_split_k: Bool = False,
 ](
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    output: LayoutTensor[address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
     k: k_t,
     mask_functor: mask_t,
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
@@ -400,9 +398,9 @@ fn flare_mla_decoding_dispatch[
                 mask_t,
                 valid_length.layout,
                 config=config,
-                depth = Int(depth),
-                num_heads = Int(num_heads),
-                group = Int(group),
+                depth=Int(depth),
+                num_heads=Int(num_heads),
+                group=Int(group),
                 ragged=ragged,
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
@@ -445,9 +443,9 @@ fn flare_mla_decoding_dispatch[
                 mask_t,
                 valid_length.layout,
                 config=config,
-                depth = Int(depth),
-                num_heads = Int(num_heads),
-                group = Int(group),
+                depth=Int(depth),
+                num_heads=Int(num_heads),
+                group=Int(group),
                 ragged=ragged,
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
@@ -519,15 +517,15 @@ fn flare_mla_decoding_dispatch[
             output.dtype,
             mask_t,
             valid_length.layout,
-            BM = UInt(BM),
-            BN = UInt(BN),
-            BK = UInt(BK),
-            WM = UInt(WM),
-            WN = UInt(WN),
+            BM=UInt(BM),
+            BN=UInt(BN),
+            BK=UInt(BK),
+            WM=UInt(WM),
+            WN=UInt(WN),
             depth=depth,
             num_heads=num_heads,
-            num_threads = UInt(num_threads),
-            num_pipeline_stages = UInt(num_pipeline_stages),
+            num_threads=UInt(num_threads),
+            num_pipeline_stages=UInt(num_pipeline_stages),
             group=group,
             ragged=ragged,
             _use_valid_length=_use_valid_length,
@@ -705,8 +703,8 @@ fn mla_decoding[
             Int(group),
             True,
             False,
-            q_depth = Int(depth),
-            output_depth = Int(depth_v),
+            q_depth=Int(depth),
+            output_depth=Int(depth_v),
         ](
             attention_config,
             output_ptr + output_batch_offset,
@@ -727,8 +725,8 @@ fn mla_decoding[
             num_partitions,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -786,7 +784,7 @@ fn mla_decoding_single_batch[
     ), "mla_decoding doesn't support warp split-k."
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp.broadcast(UInt(ufloordiv(tid, WARP_SIZE)))
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -797,14 +795,14 @@ fn mla_decoding_single_batch[
     comptime q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -814,7 +812,7 @@ fn mla_decoding_single_batch[
                     q_type,
                     Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -836,7 +834,7 @@ fn mla_decoding_single_batch[
         k_type,
         Layout(IntTuple(Int(BN), Int(BK)), IntTuple(Int(nope_dim), 1)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var kv_nope_smem_iter = IteratorTypeKV(
@@ -850,7 +848,7 @@ fn mla_decoding_single_batch[
         k_type,
         Layout.row_major(Int(BK), Int(nope_dim)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -863,7 +861,7 @@ fn mla_decoding_single_batch[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var k_rope_smem_iter = IteratorTypeK(
@@ -886,7 +884,7 @@ fn mla_decoding_single_batch[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
     comptime num_output_rows = num_m_mmas * UInt(WN_O // MMA_N)  # num_n_mmas
@@ -896,7 +894,7 @@ fn mla_decoding_single_batch[
             accum_type,
             Layout.row_major(Int(num_output_rows_full), p_frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0.0)
@@ -924,7 +922,7 @@ fn mla_decoding_single_batch[
         k_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
@@ -934,7 +932,7 @@ fn mla_decoding_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * Int(num_warps_n), Int(BM)),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     comptime kv_num_heads = 1
@@ -973,7 +971,7 @@ fn mla_decoding_single_batch[
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
             swizzle=True,
-            num_threads = Int(num_threads),
+            num_threads=Int(num_threads),
         ](
             q_smem_tile.vectorize[1, simd_size](),
             q_gmem_iter[].vectorize[1, simd_size](),
@@ -1000,12 +998,12 @@ fn mla_decoding_single_batch[
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
+            element_type=DType.int32, linear_idx_type=DType.int32
         ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
+            RuntimeTuple[kv_gmem_layout.shape, element_type=DType.int32](
                 kv_tile_num_rows, Int(depth)
             ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[kv_gmem_layout.stride, element_type=DType.int32](
                 kv_num_heads * Int(depth), 1
             ),
         )
@@ -1015,9 +1013,9 @@ fn mla_decoding_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             k_ptr,
             kv_runtime_layout,
@@ -1045,7 +1043,7 @@ fn mla_decoding_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_rope_layout,
                 swizzle=True,
-                num_threads = Int(num_threads),
+                num_threads=Int(num_threads),
             ](
                 k_rope_smem_tile.vectorize[1, simd_size](),
                 k_gmem_iter.next(Int(nope_dim // BK) + Int(k_id))[].vectorize[
@@ -1065,7 +1063,7 @@ fn mla_decoding_single_batch[
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=True,
-            static_num_iters = Int(nope_dim // BK),
+            static_num_iters=Int(nope_dim // BK),
         ](
             p_reg_tile,
             q_smem_iter,
@@ -1087,7 +1085,7 @@ fn mla_decoding_single_batch[
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
-            static_num_iters = Int(rope_dim // BK),
+            static_num_iters=Int(rope_dim // BK),
         ](
             p_reg_tile,
             q_smem_iter.next_unsafe(
@@ -1143,7 +1141,7 @@ fn mla_decoding_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32](
+                                IndexList[4, element_type=DType.uint32](
                                     Int(block_idx.z),
                                     Int(score_head_idx),
                                     Int(score_row_with_start_pos),
@@ -1163,10 +1161,10 @@ fn mla_decoding_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     score_row, Int(score_col)
                                 ),
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     seq_len,
                                     Int(num_keys),
                                 ),
@@ -1175,11 +1173,11 @@ fn mla_decoding_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     num_keys,
                     kv_tile_start_row,
                 ),
-                Index[dtype = DType.uint32](1, BN),
+                Index[dtype=DType.uint32](1, BN),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -1237,7 +1235,7 @@ fn mla_decoding_single_batch[
             False,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
-            static_num_iters = Int(BN // BK),
+            static_num_iters=Int(BN // BK),
         ](
             output_reg_tile,
             p_smem_iter,
@@ -1280,13 +1278,13 @@ fn mla_decoding_single_batch[
     # Write to global memory.
     comptime if output_type.is_half_float():
         comptime swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size = Int(nope_dim), access_size=MMA_N
+            num_rows=MMA_M // 2, row_size=Int(nope_dim), access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(Int(BM), Int(nope_dim)),
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[Int(WM), WN_O](
@@ -1294,7 +1292,7 @@ fn mla_decoding_single_batch[
         )
 
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
@@ -1307,7 +1305,7 @@ fn mla_decoding_single_batch[
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
-            thread_layout = Layout.row_major(
+            thread_layout=Layout.row_major(
                 WARP_SIZE * simd_size // WN_O, WN_O // simd_size
             ),
             swizzle=swizzle,
@@ -1317,7 +1315,7 @@ fn mla_decoding_single_batch[
         )
 
     else:
-        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
             output_gmem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -1340,20 +1338,20 @@ fn flare_mla_prefill[
     //,
 ](
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -1418,10 +1416,10 @@ fn flare_mla_prefill[
             )
         )
 
-    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
         "flare_mla_prefill",
         Trace[
-            TraceLevel.OP, target = ctx.default_device_info.api
+            TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
@@ -1433,7 +1431,7 @@ fn flare_mla_prefill[
             max_prompt_len = Int(k_rope.max_prompt_length())
 
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1442,7 +1440,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutAnyOrigin,
+                cache_row_offsets.origin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1451,7 +1449,7 @@ fn flare_mla_prefill[
             ),
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1460,7 +1458,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutAnyOrigin,
+                cache_row_offsets.origin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1489,9 +1487,9 @@ fn flare_mla_prefill[
         )
 
         flare_mla_prefill_dispatch[
-            kv_num_heads = Int(kv_num_heads),
+            kv_num_heads=Int(kv_num_heads),
             q_depth=q_depth,
-            cache_depth = Int(cache_depth),
+            cache_depth=Int(cache_depth),
             config=mha_config,
         ](
             output,
@@ -1517,23 +1515,19 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
 ](
-    output: LayoutTensor[
-        mut=True, _, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, _, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
-    k_rope: LayoutTensor[
-        mut=False, _, address_space = AddressSpace.GENERIC, ...
-    ],
+    k: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    k_rope: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -1580,10 +1574,10 @@ fn flare_mla_prefill[
             )
         )
 
-    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
         "flare_mla_prefill",
         Trace[
-            TraceLevel.OP, target = ctx.default_device_info.api
+            TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
@@ -1594,7 +1588,7 @@ fn flare_mla_prefill[
         var cache_row_offsets_lt = LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1602,7 +1596,7 @@ fn flare_mla_prefill[
             ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1611,7 +1605,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1620,7 +1614,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
@@ -1674,26 +1668,22 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
 ](
-    output: LayoutTensor[
-        mut=True, _, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, _, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
-    k_rope: LayoutTensor[
-        mut=False, _, address_space = AddressSpace.GENERIC, ...
-    ],
+    k: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    k_rope: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
     k_rope_scales: LayoutTensor[
-        mut=False, _, address_space = AddressSpace.GENERIC, ...
+        mut=False, _, address_space=AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -1731,10 +1721,10 @@ fn flare_mla_prefill[
             )
         )
 
-    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
         "flare_mla_prefill",
         Trace[
-            TraceLevel.OP, target = ctx.default_device_info.api
+            TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
@@ -1745,7 +1735,7 @@ fn flare_mla_prefill[
         var cache_row_offsets_lt = LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1753,7 +1743,7 @@ fn flare_mla_prefill[
             ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1762,7 +1752,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1771,14 +1761,14 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
                 ),
             ),
             LayoutTensor[
-                k_rope_scales.dtype, k_rope_scales.layout, MutAnyOrigin
+                k_rope_scales.dtype, k_rope_scales.layout, k_rope_scales.origin
             ](
                 k_rope_scales.ptr,
                 RuntimeLayout[k_rope_scales.layout].row_major(
@@ -1844,17 +1834,17 @@ fn flare_mla_prefill_dispatch[
     _ndbuffer_mha_operand: Bool = False,
 ](
     output: LayoutTensor[
-        mut=True, output_type, address_space = AddressSpace.GENERIC, ...
+        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
     q: LayoutTensor[
-        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+        mut=False, dtype, q_layout, address_space=AddressSpace.GENERIC, ...
     ],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
     valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: Int,
     scale: Float32,
@@ -1908,7 +1898,7 @@ fn flare_mla_prefill_dispatch[
 
         mla_sm100_prefill[
             config=config,
-            group = Int(group),
+            group=Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
@@ -1940,7 +1930,7 @@ fn flare_mla_prefill_dispatch[
             mask_t,
             valid_length.layout,
             config,
-            group = Int(group),
+            group=Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
@@ -2097,8 +2087,8 @@ fn mla_prefill[
             k_rope,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -2120,7 +2110,7 @@ fn mla_prefill_single_batch[
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: UnsafePointer[mut=True, Scalar[output_type], _],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
@@ -2157,7 +2147,7 @@ fn mla_prefill_single_batch[
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    var tid: Int = Int(thread_idx.x)
+    var tid: Int = thread_idx.x
     var warp_id = UInt32(warp.broadcast(tid // WARP_SIZE))
     var lane = UInt32(lane_id())
 
@@ -2170,14 +2160,14 @@ fn mla_prefill_single_batch[
     comptime q_smem_size = BM * UInt(q_depth)
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -2187,7 +2177,7 @@ fn mla_prefill_single_batch[
                     q_type,
                     Layout.row_major(Int(BM), Int(BK)),
                     q_smem.origin,
-                    address_space = AddressSpace.SHARED,
+                    address_space=AddressSpace.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -2202,7 +2192,7 @@ fn mla_prefill_single_batch[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
@@ -2215,7 +2205,7 @@ fn mla_prefill_single_batch[
         v_type,
         Layout.row_major(Int(BK), Int(depth)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -2240,18 +2230,16 @@ fn mla_prefill_single_batch[
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
-        ](
-            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
+        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
+            RuntimeTuple[q_gmem_layout.shape, element_type=DType.int32](
                 Int(q_tile_num_rows), q_depth
             ),
-            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[q_gmem_layout.stride, element_type=DType.int32](
                 Int(num_heads * UInt(q_depth)), 1
             ),
         ),
@@ -2282,7 +2270,7 @@ fn mla_prefill_single_batch[
         accum_type,
         Layout.row_major(Int(num_m_mmas * num_n_mmas), p_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
     var output_reg_tile = (
@@ -2290,7 +2278,7 @@ fn mla_prefill_single_batch[
             accum_type,
             Layout.row_major(Int(num_m_mmas * num_n_mmas_output), p_frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -2318,7 +2306,7 @@ fn mla_prefill_single_batch[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
         _,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -2329,7 +2317,7 @@ fn mla_prefill_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * Int(num_warps_n), Int(BM)),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
@@ -2358,7 +2346,7 @@ fn mla_prefill_single_batch[
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
             swizzle=True,
-            num_threads = Int(num_threads),
+            num_threads=Int(num_threads),
         ](
             q_smem_tile.vectorize[1, simd_size](),
             q_gmem_iter[].vectorize[1, simd_size](),
@@ -2385,11 +2373,11 @@ fn mla_prefill_single_batch[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     Int(UInt32(kv_tile_start_row) + cache_start_pos),
                 ),
-                Index[dtype = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype=DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -2404,12 +2392,12 @@ fn mla_prefill_single_batch[
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
+            element_type=DType.int32, linear_idx_type=DType.int32
         ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
+            RuntimeTuple[kv_gmem_layout.shape, element_type=DType.int32](
                 kv_tile_num_rows, Int(depth)
             ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[kv_gmem_layout.stride, element_type=DType.int32](
                 Int(num_heads * depth), 1
             ),
         )
@@ -2417,9 +2405,9 @@ fn mla_prefill_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             k.block_paged_ptr[Int(BN)](
                 UInt32(batch_idx),
@@ -2436,9 +2424,9 @@ fn mla_prefill_single_batch[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             v.block_paged_ptr[Int(BN)](
                 UInt32(batch_idx),
@@ -2459,12 +2447,12 @@ fn mla_prefill_single_batch[
         )
 
         var k_rope_runtime_layout = RuntimeLayout[
-            element_type = DType.int32, linear_idx_type = DType.int32
+            element_type=DType.int32, linear_idx_type=DType.int32
         ](
-            RuntimeTuple[k_rope_gmem_layout.shape, element_type = DType.int32](
+            RuntimeTuple[k_rope_gmem_layout.shape, element_type=DType.int32](
                 kv_tile_num_rows, cache_depth
             ),
-            RuntimeTuple[k_rope_gmem_layout.stride, element_type = DType.int32](
+            RuntimeTuple[k_rope_gmem_layout.stride, element_type=DType.int32](
                 Int(cache_num_heads * UInt(cache_depth)), 1
             ),
         )
@@ -2472,9 +2460,9 @@ fn mla_prefill_single_batch[
         var k_rope_gmem_block = LayoutTensor[
             k_rope_type,
             k_rope_gmem_layout,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked = not not_last_iter,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
+            masked=not not_last_iter,
         ](
             k_rope.block_paged_ptr[Int(BN)](
                 UInt32(batch_idx),
@@ -2520,7 +2508,7 @@ fn mla_prefill_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
                 swizzle=True,
-                num_threads = Int(num_threads),
+                num_threads=Int(num_threads),
             ](
                 k_smem_tile.vectorize[1, simd_size](),
                 k_gmem_iter[].vectorize[1, simd_size](),
@@ -2538,7 +2526,7 @@ fn mla_prefill_single_batch[
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
                 swizzle=True,
-                num_threads = Int(num_threads),
+                num_threads=Int(num_threads),
             ](
                 k_smem_tile.vectorize[1, simd_size](),
                 k_rope_gmem_iter[].vectorize[1, simd_size](),
@@ -2563,8 +2551,8 @@ fn mla_prefill_single_batch[
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
-            static_num_iters = q_depth // Int(BK),
-            k_group_size = config.k_group_size,
+            static_num_iters=q_depth // Int(BK),
+            k_group_size=config.k_group_size,
         ](
             p_reg_tile,
             q_smem_iter,
@@ -2623,7 +2611,7 @@ fn mla_prefill_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type = DType.uint32](
+                                IndexList[4, element_type=DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -2643,10 +2631,10 @@ fn mla_prefill_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -2655,11 +2643,11 @@ fn mla_prefill_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     UInt32(kv_tile_start_row) + cache_start_pos,
                 ),
-                Index[dtype = DType.uint32](Int(BM), Int(BN)),
+                Index[dtype=DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -2718,8 +2706,8 @@ fn mla_prefill_single_batch[
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_v_layout,
-                swizzle = v_smem_tile.dtype.is_half_float(),
-                num_threads = Int(num_threads),
+                swizzle=v_smem_tile.dtype.is_half_float(),
+                num_threads=Int(num_threads),
             ](
                 v_smem_tile.vectorize[1, simd_size](),
                 v_tensor.vectorize[1, simd_size](),
@@ -2756,8 +2744,8 @@ fn mla_prefill_single_batch[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
-                static_num_iters = Int(BN // BK),
-                k_group_size = config.k_group_size,
+                static_num_iters=Int(BN // BK),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2788,8 +2776,8 @@ fn mla_prefill_single_batch[
                 False,  # transpose_b
                 swizzle_a=False,
                 prefetch_init=False,
-                static_num_iters = Int(BN // BK),
-                k_group_size = config.k_group_size,
+                static_num_iters=Int(BN // BK),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -2809,20 +2797,20 @@ fn mla_prefill_single_batch[
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
     var output_gemm_runtime_layout = RuntimeLayout[
-        element_type = DType.int32, linear_idx_type = DType.int32
+        element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
+        RuntimeTuple[output_gmem_layout.shape, element_type=DType.int32](
             Int(q_tile_num_rows), Int(depth)
         ),
-        RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
+        RuntimeTuple[output_gmem_layout.stride, element_type=DType.int32](
             Int(num_heads * depth), 1
         ),
     )
     var output_gmem_tile = LayoutTensor[
         output_type,
         output_gmem_layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
         masked=True,
     ](
         output_ptr + Int(output_offset),
@@ -2847,20 +2835,20 @@ fn mla_prefill_single_batch[
     # Write to global memory.
     comptime if output_type.is_half_float():
         comptime swizzle = make_swizzle[
-            num_rows = MMA_M // 2, row_size = Int(depth), access_size=MMA_N
+            num_rows=MMA_M // 2, row_size=Int(depth), access_size=MMA_N
         ]()
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(Int(BM), Int(depth)),
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[Int(WM), Int(depth)](
             Int(warp_y), Int(warp_x)
         )
         copy_local_to_shared[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+            thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
@@ -2873,7 +2861,7 @@ fn mla_prefill_single_batch[
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
         copy_sram_to_dram[
-            thread_layout = Layout.row_major(
+            thread_layout=Layout.row_major(
                 Int(num_threads * UInt(simd_size) // depth),
                 Int(depth // UInt(simd_size)),
             ),
@@ -2883,7 +2871,7 @@ fn mla_prefill_single_batch[
             accum_smem_tile.vectorize[1, simd_size](),
         )
     else:
-        copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
             output_gmem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -2912,16 +2900,16 @@ fn mla_prefill_plan[
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     buffer_lengths: LayoutTensor[
-        mut=True, DType.int32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -3090,30 +3078,26 @@ fn _k_cache_to_buffer[
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     k_cache: cache_t,
     length: Int32,
-    buffer: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    buffer: TileTensor[mut=True, dtype=dtype, ...],
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads
     comptime assert num_heads == 1, "num_heads should be equal to 1"
+    comptime assert buffer.rank == 2, "buffer should be rank 2"
 
     @always_inline
     @parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
-    fn copy_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    fn copy_fn[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
 
-        var idx = rebind[IndexList[2]](idx_arg)
         var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
@@ -3134,16 +3118,14 @@ fn _k_cache_to_buffer[
             ).cast[dtype]()
         )
 
-        buffer.store(idx, cache_val)
+        buffer.store_linear(idx, cache_val)
 
     var launch_shape = IndexList[2](
         Int(length),
-        buffer.dim[1](),
+        Int(buffer.dim[1]()),
     )
-    comptime target_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
+    comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    _elementwise_impl_gpu[func=copy_fn, simd_width = UInt(target_simd_width)](
+    _elementwise_impl_gpu[func=copy_fn, simd_width=UInt(target_simd_width)](
         launch_shape, context
     )

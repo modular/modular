@@ -24,7 +24,7 @@ Supports two write modes:
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx
+from std.gpu import WARP_SIZE, lane_id, thread_idx_int as thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
@@ -37,8 +37,8 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout._layout import row_major
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
@@ -55,7 +55,7 @@ from ..structured_kernels.epilogue_components import (
     tma_wait_pipelined,
 )
 from structured_kernels.barriers import WarpGroupBarrier
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 
@@ -150,8 +150,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn write[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -164,11 +165,13 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM."""
-        Self._write_impl[c_layout, c_desc_layout, cluster_size](
+        Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
 
@@ -177,8 +180,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn _write_impl[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -191,7 +195,9 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Internal implementation for writing accumulated register tiles."""
@@ -208,15 +214,33 @@ struct BlockwiseFP8TileWriter[
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
 
-            # Cast from accum_type to c_type, then write to SMEM
+            # Cast from accum_type to c_type in SIMD chunks of at
+            # least 4 bytes for efficient hardware cast instructions.
             comptime frag_size = Self.epc.fragment_size * Self.repeats
+            var upper_st = InlineArray[Scalar[Self.c_type], frag_size](
+                uninitialized=True
+            )
+            var lower_st = InlineArray[Scalar[Self.c_type], frag_size](
+                uninitialized=True
+            )
+
+            comptime cast_width = 4 // size_of[Scalar[Self.c_type]]()
+            comptime for _chunk in range(
+                Self.fragments_per_stage // cast_width
+            ):
+                comptime offset = _chunk * cast_width
+                var casted_u = upper_frag.slice[
+                    cast_width, offset=offset
+                ]().cast[Self.c_type]()
+                var casted_l = lower_frag.slice[
+                    cast_width, offset=offset
+                ]().cast[Self.c_type]()
+                comptime for _j in range(cast_width):
+                    upper_st[offset + _j] = casted_u[_j]
+                    lower_st[offset + _j] = casted_l[_j]
             smem_writer.write_fragments[Self.repeats](
-                rebind[SIMD[Self.c_type, frag_size]](
-                    upper_frag.cast[Self.c_type]()
-                ),
-                rebind[SIMD[Self.c_type, frag_size]](
-                    lower_frag.cast[Self.c_type]()
-                ),
+                rebind[InlineArray[Scalar[Self.c_type], frag_size]](upper_st),
+                rebind[InlineArray[Scalar[Self.c_type], frag_size]](lower_st),
                 c_smem_tile,
             )
 
@@ -242,7 +266,7 @@ struct BlockwiseFP8TileWriter[
                 Self.stageN,  # stage_contiguous_size
                 Self.c_swizzle,
             ]
-            StoreExec.execute[c_layout, c_desc_layout](
+            StoreExec.execute[c_rank, c_tile_shape, c_desc_shape](
                 c_smem_tile,
                 store_coords,
                 c_tma_op,
@@ -251,8 +275,9 @@ struct BlockwiseFP8TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                c_layout,
-                c_desc_layout,
+                c_rank,
+                c_tile_shape,
+                c_desc_shape,
                 stage == Self.num_stages - 1,
             ](c_tma_op)
 
@@ -356,18 +381,47 @@ struct BlockwiseFP8TileWriter[
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 Self.data_paths, Self.stageN
             ](0, 0)
+            # Cast in SIMD chunks of at least 4 bytes for efficient
+            # hardware cast instructions.
+            var upper_st = InlineArray[
+                Scalar[Self.c_type], Self.fragments_per_stage
+            ](uninitialized=True)
+
+            comptime cast_width = 4 // size_of[Scalar[Self.c_type]]()
+            comptime for _chunk in range(
+                Self.fragments_per_stage // cast_width
+            ):
+                comptime offset = _chunk * cast_width
+                var casted = upper_frag.slice[cast_width, offset=offset]().cast[
+                    Self.c_type
+                ]()
+                comptime for _j in range(cast_width):
+                    upper_st[offset + _j] = casted[_j]
             stsm_helper[
-                swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
-            ](upper_frag.cast[Self.c_type](), c_smem_warp_tile_upper)
+                swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
+            ](upper_st, c_smem_warp_tile_upper)
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 Self.data_paths, Self.stageN
             ](1, 0)
 
             comptime if Self.is_lower_frag_required:
+                var lower_st = InlineArray[
+                    Scalar[Self.c_type], Self.fragments_per_stage
+                ](uninitialized=True)
+
+                comptime for _chunk in range(
+                    Self.fragments_per_stage // cast_width
+                ):
+                    comptime offset = _chunk * cast_width
+                    var casted = lower_frag.slice[
+                        cast_width, offset=offset
+                    ]().cast[Self.c_type]()
+                    comptime for _j in range(cast_width):
+                        lower_st[offset + _j] = casted[_j]
                 stsm_helper[
-                    swizzle, UInt(Self.stageN), swizzle_mode = Self.c_swizzle
-                ](lower_frag.cast[Self.c_type](), c_smem_warp_tile_lower)
+                    swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
+                ](lower_st, c_smem_warp_tile_lower)
 
             named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
 
@@ -439,8 +493,8 @@ struct BlockwiseFP8TileWriter[
             comptime for j in range(zipped.shape[1][0].value()):
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
-                    element_type = DType.uint32,
-                ](Int(thread_idx.x), j)
+                    element_type=DType.uint32,
+                ](thread_idx.x, j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
                     zipped.shape,
@@ -453,9 +507,9 @@ struct BlockwiseFP8TileWriter[
                 ) * UInt32(
                     simd_size
                 )
-                var cmem_crd = split_layout_new.idx2crd[
-                    out_dtype = DType.uint32
-                ](Int(linear_idx))
+                var cmem_crd = split_layout_new.idx2crd[out_dtype=DType.uint32](
+                    Int(linear_idx)
+                )
                 var local_i = cmem_crd[0].value()
                 var local_j = cmem_crd[1].value()
                 var coord_m = m_abs + UInt32(i * TMA_BM)

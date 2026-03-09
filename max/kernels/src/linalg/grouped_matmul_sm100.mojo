@@ -77,6 +77,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
 )
 
@@ -135,10 +136,12 @@ struct WarpRole(TrivialRegisterPassable):
 fn load_AB[
     a_type: DType,
     b_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     num_pipeline_stages: UInt,
@@ -149,27 +152,27 @@ fn load_AB[
     cta_group: Int = 1,
 ](
     expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem: LayoutTensorIter[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -192,10 +195,10 @@ fn load_AB[
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
 
     var stage = producer_phase.index()
     var phase = producer_phase.phase()
@@ -265,21 +268,21 @@ fn consumer_main_loop[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -319,10 +322,12 @@ fn consumer_main_loop[
 @always_inline
 fn stsm_helper[
     swizzle: Swizzle,
+    vec_dtype: DType,
+    vec_size: Int,
     transpose_c: Bool = False,
 ](
-    vec: SIMD[_, _],
-    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
+    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -350,7 +355,7 @@ fn stsm_helper[
 
     var lane = lane_id()
     comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-        layout, element_type = DType.uint32, linear_idx_type = DType.uint32
+        layout, element_type=DType.uint32, linear_idx_type=DType.uint32
     ]
     var stsm_lane_offset = UInt32(
         (lane & 15) * UInt(stride0) + (lane >> 4)
@@ -358,23 +363,21 @@ fn stsm_helper[
         Int(lane)
     )
 
-    # Helper function to slice a range of SIMD vector.
-    # LLVM extract intrinsic generates bad code on GPU.
-    @always_inline
-    fn slice[offset: Int, size: Int](v: SIMD) -> SIMD[v.dtype, size]:
-        var tmp = SIMD[v.dtype, size]()
-
-        comptime for i in range(size):
-            tmp[i] = v[i + offset]
-        return tmp
-
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_tile_offset
         var offset = swizzle(stsm_lane_offset + UInt32(n_offset))
-        var v = slice[i * stsmx4_lane_size, stsmx4_lane_size](vec).cast[
-            dst.dtype
-        ]()
+        var v = SIMD[dst.dtype, stsmx4_lane_size]()
+        comptime cast_width = 4 // size_of[Scalar[dst.dtype]]()
+        comptime for k in range(stsmx4_lane_size // cast_width):
+            var src = SIMD[vec_dtype, cast_width]()
+            comptime for _j in range(cast_width):
+                src[_j] = rebind[Scalar[vec_dtype]](
+                    vec[i * stsmx4_lane_size + k * cast_width + _j]
+                )
+            var casted = src.cast[dst.dtype]()
+            comptime for _j in range(cast_width):
+                v[k * cast_width + _j] = casted[_j]
         st_matrix[simd_width=4, transpose=transpose_c](
             dst.ptr.unsafe_mut_cast[True]() + offset,
             bitcast[DType.float32, 4](v),
@@ -385,9 +388,10 @@ fn stsm_helper[
 fn multi_stage_store_C[
     c_type: DType,
     c_smem_layout: Layout,
-    c_layout: Layout,
+    c_tile_rank: Int,
+    c_tile_shape: IndexList[c_tile_rank],
     c_tensor_layout: Layout,
-    c_desc_layout: Layout,
+    c_desc_shape: IndexList[c_tile_rank],
     num_accum_pipeline_stages: Int,
     /,
     *,
@@ -405,17 +409,17 @@ fn multi_stage_store_C[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, address_space=AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -480,6 +484,8 @@ fn multi_stage_store_C[
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
     var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
+    comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
+
     comptime for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
@@ -522,10 +528,10 @@ fn multi_stage_store_C[
             ](2 * Int(warp_id) + 1, 0).reshape[Layout.row_major(stageN, 16)]()
 
             # Pack the upper frag to shared memory
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 upper_frag, c_smem_warp_tile_upper
             )
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 lower_frag, c_smem_warp_tile_lower
             )
 
@@ -541,10 +547,10 @@ fn multi_stage_store_C[
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 data_paths, stageN
             ](1, 0)
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 upper_frag, c_smem_warp_tile_upper
             )
-            stsm_helper[swizzle, transpose_c](
+            stsm_helper[swizzle, transpose_c=transpose_c](
                 lower_frag, c_smem_warp_tile_lower
             )
 
@@ -740,13 +746,16 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     b_type: DType,
     c_type: DType,
     expert_m: Int,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
+    c_tile_rank: Int,
+    c_tile_shape_param: IndexList[c_tile_rank],
     c_tensor_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
+    c_desc_shape: IndexList[c_tile_rank],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
@@ -763,11 +772,13 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     transpose_c: Bool = False,
 ](
     num_active_experts: Int,
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    c_tma_op: TMATensorTile[
+        c_type, c_tile_rank, c_tile_shape_param, c_desc_shape
+    ],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
 ):
@@ -809,10 +820,10 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
 
     # keep the physical SMEM buffer BM x MMA_N
     comptime a_smem_layout = tile_layout_k_major[
@@ -826,7 +837,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     base_ptr_smem = external_memory[
         Scalar[a_type],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]()
 
@@ -844,7 +855,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         a_smem_base,
@@ -855,7 +866,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](
         b_smem_base,
@@ -866,7 +877,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
 
@@ -937,7 +948,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape = Index(
+        cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         a_swizzle=a_swizzle,
@@ -948,9 +959,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     b_offsets_tensor = from_ndbuffer_row_major(b_offsets)
     var scheduler = TileScheduler[
         static_MN=expert_m,
-        cluster = Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
+        cluster=Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
         cta_group=cta_group,
-        tile_shape = Index(
+        tile_shape=Index(
             block_tile_shape[0], block_tile_shape[1], block_tile_shape[2]
         ),
         swapAB=transpose_c,
@@ -1063,7 +1074,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
-                        cluster_shape = Index(
+                        cluster_shape=Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
                         ),
                     ](
@@ -1195,8 +1206,7 @@ fn grouped_matmul_sm100_persistent[
     a_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * M, K),
-        MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ](b.data)
 
     b_tensor = from_ndbuffer_row_major(a)
@@ -1207,11 +1217,11 @@ fn grouped_matmul_sm100_persistent[
 
     _grouped_matmul_sm100_persistent[
         c_type=c_type,
-        c_layout = type_of(c_tensor).layout,
+        c_layout=type_of(c_tensor).layout,
         a_type=b_type,
-        a_layout = type_of(a_tensor).layout,
+        a_layout=type_of(a_tensor).layout,
         b_type=a_type,
-        b_layout = type_of(b_tensor).layout,
+        b_layout=type_of(b_tensor).layout,
         transpose_b=transpose_b,
         config=new_config,
         expert_m=M,
@@ -1392,17 +1402,20 @@ fn _grouped_matmul_sm100_persistent[
         b_type,
         c_type,
         expert_m,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).rank,
+        type_of(c_tma_op).tile_shape,
         c_device.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
+        type_of(c_tma_op).desc_shape,
         config.block_tile_shape,
         config.mma_shape,
         transpose_b=transpose_b,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(cluster_shape[0]),
             Int32(cluster_shape[1]),
             Int32(cluster_shape[2]),

@@ -25,7 +25,6 @@ from std.memory import stack_allocation
 from std.testing import assert_equal
 from buffer.dimlist import DimList, Dim
 from std.utils.index import Index, IndexList
-from std.memory import LegacyUnsafePointer
 from buffer.buffer import NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from std.gpu.memory import (
@@ -36,7 +35,6 @@ from std.gpu.memory import (
 )
 from std.math import recip
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout.layout_tensor import LayoutTensorIter
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.utils.static_tuple import StaticTuple
@@ -83,7 +81,7 @@ def test_nvfp4_quantization[
     comptime input_static_shape = DimList(m.dim, n.dim)
     var input_dynamic_shape = IndexList[2](m.value, n.value)
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var host_ptr = alloc[Scalar[dtype]](M * N)
     var host_buffer = NDBuffer[dtype, 2, _, input_static_shape](
         host_ptr, input_dynamic_shape
     )
@@ -91,16 +89,12 @@ def test_nvfp4_quantization[
     comptime output_static_shape = DimList(m.dim, ceildiv(n.dim, 2))
     var output_dynamic_shape = IndexList[2](m.value, ceildiv(n.value, 2))
 
-    var host_ptr_output = UnsafePointer[Scalar[out_dtype]].alloc(
-        M * ceildiv(N, 2)
-    )
+    var host_ptr_output = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
     var host_buffer_output = NDBuffer[out_dtype, 2, _, output_static_shape](
         host_ptr_output, output_dynamic_shape
     )
 
-    var host_ptr_output_ref = UnsafePointer[Scalar[out_dtype]].alloc(
-        M * ceildiv(N, 2)
-    )
+    var host_ptr_output_ref = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
     var host_buffer_output_ref = NDBuffer[out_dtype, 2, _, output_static_shape](
         host_ptr_output_ref, output_dynamic_shape
     )
@@ -153,16 +147,12 @@ def test_nvfp4_quantization[
         * SF_ATOM_K
     )
 
-    var scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        scales_total
-    )
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_total)
     var scales_host = NDBuffer[scales_dtype, 5, _, static_scales_shape](
         scales_host_ptr, dynamic_scales_shape
     )
 
-    var scales_host_ptr_ref = UnsafePointer[Scalar[scales_dtype]].alloc(
-        scales_total
-    )
+    var scales_host_ptr_ref = alloc[Scalar[scales_dtype]](scales_total)
     var scales_host_ref = NDBuffer[scales_dtype, 5, _, static_scales_shape](
         scales_host_ptr_ref, dynamic_scales_shape
     )
@@ -243,11 +233,11 @@ def test_nvfp4_quantization[
             ](row_idx, col_idx)
 
             var output_fp32 = cast_uint_to_fp4e2m1[
-                out_dtype = DType.float32,
+                out_dtype=DType.float32,
                 out_width=SF_VECTOR_SIZE,
             ](output_vector)
             var output_fp32_ref = cast_uint_to_fp4e2m1[
-                out_dtype = DType.float32,
+                out_dtype=DType.float32,
                 out_width=SF_VECTOR_SIZE,
             ](output_vector_ref)
 

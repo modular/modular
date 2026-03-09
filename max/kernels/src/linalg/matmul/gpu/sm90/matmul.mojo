@@ -20,8 +20,7 @@ from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import H100
-from layout import Layout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import Layout, TileTensor
 from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger
 from std.bit import log2_floor
@@ -189,9 +188,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     b_device: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
+    var a = TileTensor(a_device).to_layout_tensor()
+    var b = TileTensor(b_device).to_layout_tensor()
+    var c = TileTensor(c_device).to_layout_tensor()
 
     comptime N_static = c_shape.get[1]()
     comptime K_static = a_shape.get[1]()
@@ -328,14 +327,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         2,
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
     ]()
 
     comptime if use_tma_store:
         c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
-            __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+            __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
         ](ctx, c)
 
     var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
@@ -379,10 +378,10 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        partitioned_multicast = config.partitioned_multicast,
+        partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level = config.pdl_level(),
+        pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         hilbert_swizzle=hilbert_swizzle,
@@ -450,12 +449,15 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
             comptime if schedule != MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_regular[].run_persistent[
-                    a_tma_op.layout,
-                    b_tma_op.layout,
-                    c_tma_op.layout,
-                    a_tma_op.desc_layout,
-                    b_tma_op.desc_layout,
-                    c_tma_op.desc_layout,
+                    type_of(a_tma_op).rank,
+                    type_of(b_tma_op).rank,
+                    type_of(c_tma_op).rank,
+                    type_of(a_tma_op).tile_shape,
+                    type_of(b_tma_op).tile_shape,
+                    type_of(c_tma_op).tile_shape,
+                    type_of(a_tma_op).desc_shape,
+                    type_of(b_tma_op).desc_shape,
+                    type_of(c_tma_op).desc_shape,
                     grid_shape=grid_shape_adjusted,
                     schedule=schedule,
                 ]
@@ -478,12 +480,15 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 comptime kernel = matmul_kernel_regular[
                     hilbert_swizzle=hilbert_swizzle
                 ].run[
-                    a_tma_op.layout,
-                    b_tma_op.layout,
-                    c_tma_op.layout,
-                    a_tma_op.desc_layout,
-                    b_tma_op.desc_layout,
-                    c_tma_op.desc_layout,
+                    type_of(a_tma_op).rank,
+                    type_of(b_tma_op).rank,
+                    type_of(c_tma_op).rank,
+                    type_of(a_tma_op).tile_shape,
+                    type_of(b_tma_op).tile_shape,
+                    type_of(c_tma_op).tile_shape,
+                    type_of(a_tma_op).desc_shape,
+                    type_of(b_tma_op).desc_shape,
+                    type_of(c_tma_op).desc_shape,
                 ]
 
                 ctx.enqueue_function[kernel, kernel](
@@ -519,12 +524,15 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
             comptime if schedule == MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_swapAB.run[
-                    a_tma_op.layout,
-                    b_tma_op.layout,
-                    c_tma_op.layout,
-                    a_tma_op.desc_layout,
-                    b_tma_op.desc_layout,
-                    c_tma_op.desc_layout,
+                    type_of(a_tma_op).rank,
+                    type_of(b_tma_op).rank,
+                    type_of(c_tma_op).rank,
+                    type_of(a_tma_op).tile_shape,
+                    type_of(b_tma_op).tile_shape,
+                    type_of(c_tma_op).tile_shape,
+                    type_of(a_tma_op).desc_shape,
+                    type_of(b_tma_op).desc_shape,
+                    type_of(c_tma_op).desc_shape,
                 ]
 
                 ctx.enqueue_function[kernel, kernel](
@@ -551,8 +559,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             swapAB == False
         ), "swapAB is not supported for unaligned kernel"
         comptime kernel = matmul_kernel_regular[].run_unaligned[
-            c_tma_op.desc_layout,
-            c_tma_op.layout,
+            type_of(c_tma_op).rank,
+            type_of(c_tma_op).tile_shape,
+            type_of(c_tma_op).desc_shape,
         ]
 
         ctx.enqueue_function[kernel, kernel](
@@ -617,32 +626,30 @@ fn _get_c_smem_layout[
     comptime min_wg_bn = 16
     comptime MIN_WG_BN = min_wg_bn if size_of[c_type]() == 2 else BN // 4
 
-    comptime if available_smem_size > (
+    comptime assert available_smem_size > (
         pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
-    ):
+    ), (
+        "There is not enough SMEM to fit the pipeline yet alone the"
+        " output tile!"
+        + " available_smem_size: "
+        + String(available_smem_size)
+        + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
+        + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
+    )
 
-        fn _get_max_wg_bn() capturing -> Int:
-            var WG_BN = MAX_WG_BN
-            while (
-                available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
-                or BN % WG_BN != 0
-            ) and WG_BN > MIN_WG_BN:
-                WG_BN //= 2
-            return WG_BN
+    fn _get_max_wg_bn() capturing -> Int:
+        var WG_BN = MAX_WG_BN
+        while (
+            available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
+            or BN % WG_BN != 0
+        ) and WG_BN > MIN_WG_BN:
+            WG_BN //= 2
+        return WG_BN
 
-        comptime max_wg_bn = _get_max_wg_bn()
-        return Layout.row_major(
-            max_wg_bn, WG_BM
-        ) if swapAB else Layout.row_major(WG_BM, max_wg_bn)
-    else:
-        comptime assert False, (
-            "There is not enough SMEM to fit the pipeline yet alone the"
-            " output tile!"
-            + " available_smem_size: "
-            + String(available_smem_size)
-            + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
-            + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
-        )
+    comptime max_wg_bn = _get_max_wg_bn()
+    return Layout.row_major(max_wg_bn, WG_BM) if swapAB else Layout.row_major(
+        WG_BM, max_wg_bn
+    )
 
 
 fn warp_specialize_gemm_with_multicasting_splitk[
@@ -668,9 +675,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     b_device: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
+    var a = TileTensor(a_device).to_layout_tensor()
+    var b = TileTensor(b_device).to_layout_tensor()
+    var c = TileTensor(c_device).to_layout_tensor()
 
     var M = c.dim[0]()
     comptime N = c_shape.get[1]()
@@ -749,7 +756,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
     ](ctx, c)
 
     comptime scheduler = SplitKTileScheduler[
@@ -818,10 +825,10 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
-        partitioned_multicast = config.partitioned_multicast,
+        partitioned_multicast=config.partitioned_multicast,
         use_tma_store=use_tma_store,
         promotion_frequency=1,
-        pdl_level = config.pdl_level(),
+        pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
     ]
@@ -833,12 +840,15 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ), "requested SMEM size exceeds 227KB limit."
 
     comptime kernel = matmul_kernel.run_splitk[
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
+        type_of(a_tma_op).rank,
+        type_of(b_tma_op).rank,
+        type_of(c_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(b_tma_op).tile_shape,
+        type_of(c_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).desc_shape,
         splits=splits,
         raster_order=raster_order,
     ]

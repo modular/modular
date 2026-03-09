@@ -75,20 +75,27 @@ modular_py_test(
         "test.resources:gpu-memory": "23",
     },
     gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = [
+        # Used as a pytest plugin
+        "//max/tests/integration/test_common:registry",
+    ],
     tags = [
         "gpu",
         "manual",  # TODO(AITLIB-293)
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",
     ],
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common",
-        requirement("numpy"),
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:lora_utils",
+        "//max/tests/integration/test_common:registry",
         requirement("pytest-asyncio"),
     ],
 )

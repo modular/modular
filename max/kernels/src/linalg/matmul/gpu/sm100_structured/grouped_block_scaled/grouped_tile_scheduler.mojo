@@ -38,7 +38,6 @@ from std.math import ceildiv
 from std.gpu import block_idx, block_id_in_cluster, grid_dim, thread_idx
 from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from std.gpu.memory import fence_async_view_proxy
-from layout import Layout, LayoutTensor
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 

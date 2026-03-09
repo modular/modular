@@ -159,10 +159,10 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
     # `long long` is 64 bits on all common platforms (LP64, LLP64, ILP32).
 
-    comptime if is_64bit() or is_32bit():
-        return DType.uint64 if unsigned else DType.int64
-    else:
-        comptime assert False, "size of C `long long` is unknown on this target"
+    comptime assert (
+        is_64bit() or is_32bit()
+    ), "size of C `long long` is unknown on this target"
+    return DType.uint64 if unsigned else DType.int64
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1051,10 +1051,10 @@ fn _external_call_const[
     var loaded_pack = args.get_loaded_kgen_pack()
 
     return __mlir_op.`pop.external_call`[
-        func = _get_kgen_string[callee](),
-        resAttrs = __mlir_attr.`[{llvm.noundef}]`,
-        funcAttrs = __mlir_attr.`["willreturn"]`,
-        memory = __mlir_attr[
+        func=_get_kgen_string[callee](),
+        resAttrs=__mlir_attr.`[{llvm.noundef}]`,
+        funcAttrs=__mlir_attr.`["willreturn"]`,
+        memory=__mlir_attr[
             `#llvm.memory_effects<other = none, `,
             `argMem = none, `,
             `inaccessibleMem = none, `,

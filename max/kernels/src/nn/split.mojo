@@ -18,8 +18,14 @@ from std.sys.info import _current_target
 from std.algorithm import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
-from layout import Coord, CoordLike, TileTensor, coord_to_index_list
-from layout._layout import row_major, TensorLayout
+from layout import (
+    Coord,
+    CoordLike,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
 
 from std.utils import IndexList, StaticTuple
 

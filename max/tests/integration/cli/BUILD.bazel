@@ -73,6 +73,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_pipelines_cli_lightweight",
+    size = "large",
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
         "//max/python/max/entrypoints:pipelines",
@@ -109,7 +110,6 @@ modular_py_test(
     deps = [
         "//max/python/max/entrypoints:pipelines",
         "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common",
         requirement("transformers"),
         requirement("gguf"),
         requirement("safetensors"),

@@ -38,7 +38,7 @@ from std.gpu import (
     grid_dim,
     warp_id,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory, fence_mbarrier_init
@@ -46,8 +46,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
@@ -258,13 +257,15 @@ fn grouped_matmul_kernel_sm100[
     c_type: DType,
     a_layout: Layout,
     b_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
     c_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -272,8 +273,8 @@ fn grouped_matmul_kernel_sm100[
     num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
     expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -324,11 +325,11 @@ fn grouped_matmul_kernel_sm100[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -339,28 +340,28 @@ fn grouped_matmul_kernel_sm100[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime a_size = a_smem_layout.size()
@@ -383,9 +384,9 @@ fn grouped_matmul_kernel_sm100[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
-    var c_frag = SIMD[
-        accum_type, c_frag_size
-    ]()  # array of accumulator elements
+    var c_frag: InlineArray[
+        Scalar[accum_type], c_frag_size
+    ]  # array of accumulator elements
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -484,7 +485,7 @@ fn grouped_matmul_kernel_sm100[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -504,8 +505,8 @@ fn grouped_matmul_kernel_sm100[
         c_type,
         c_gmem_layout,
         MutAnyOrigin,
-        layout_int_type = DType.int32,
-        address_space = AddressSpace.GENERIC,
+        layout_int_type=DType.int32,
+        address_space=AddressSpace.GENERIC,
     ]
 
     # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
@@ -614,21 +615,20 @@ fn grouped_matmul_sm100[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tensor = from_ndbuffer_row_major(a)
+    a_tensor = TileTensor(a).to_layout_tensor()
     a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_tensor)
-    c_tensor = from_ndbuffer_row_major(c)
+    c_tensor = TileTensor(c).to_layout_tensor()
 
     comptime block_dim = 128
     comptime smem_use = (
@@ -641,13 +641,15 @@ fn grouped_matmul_sm100[
         c_type,
         type_of(a_tensor).layout,
         type_of(b_tensor).layout,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
         type_of(c_tensor).layout,
         block_tile_shape,
         mma_shape,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
         a_swizzle,
         b_swizzle,
         c_swizzle,
@@ -715,22 +717,19 @@ fn grouped_matmul_amd_kernel_launcher[
     var c = LayoutTensor[
         c_type,
         c_layout,
-        MutAnyOrigin,
-        address_space = c_ptr.address_space,
+        address_space=c_ptr.address_space,
     ](c_ptr, RuntimeLayout[c_layout](Index(M, N), Index(N, 1)))
 
     var a = LayoutTensor[
         a_type,
         a_layout,
-        MutAnyOrigin,
-        address_space = a_ptr.address_space,
+        address_space=a_ptr.address_space,
     ](a_ptr, RuntimeLayout[a_layout](Index(M, K), Index(K, 1)))
 
     var b = LayoutTensor[
         b_type,
         b_layout,
-        MutAnyOrigin,
-        address_space = b_ptr.address_space,
+        address_space=b_ptr.address_space,
     ](b_ptr, RuntimeLayout[b_layout](Index(N, K), Index(K, 1)))
 
     @always_inline
@@ -790,7 +789,7 @@ fn grouped_matmul_amd_kernel_launcher[
             comptime threads_per_block = 256
             comptime elements_per_thread = ceildiv(BM * BN, threads_per_block)
 
-            var tid = Int(thread_idx.x)
+            var tid: Int = thread_idx.x
             var thread_start = tid * elements_per_thread
             var thread_end = min(thread_start + elements_per_thread, BM * BN)
 
@@ -818,7 +817,7 @@ fn grouped_matmul_amd_kernel_launcher[
                         epilogue[
                             dtype=c_type,
                             width=width,
-                            alignment = align_of[SIMD[c_type, width]](),
+                            alignment=align_of[SIMD[c_type, width]](),
                         ]((Int(local_row), Int(local_col)), zero_vec)
                     else:
                         for i in range(actual_width):
@@ -886,7 +885,7 @@ fn dispatch_amd_matmul_by_block_shape[
                     b_type,
                     transpose_b,
                     K,
-                    pdl_level = PDLLevel(),
+                    pdl_level=PDLLevel(),
                 ](block_shape_list[i])
                 launcher_fn[config]()
                 return
@@ -962,14 +961,13 @@ fn grouped_matmul_amd[
     comptime BK = block_tile_shape[2]
     comptime assert K % BK == 0
 
-    var a_tensor = from_ndbuffer_row_major(a)
+    var a_tensor = TileTensor(a).to_layout_tensor()
     var b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutAnyOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ](b.data)
-    var c_tensor = from_ndbuffer_row_major(c)
+    var c_tensor = TileTensor(c).to_layout_tensor()
 
     comptime block_dim = 256
 

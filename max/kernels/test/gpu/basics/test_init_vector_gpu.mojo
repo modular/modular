@@ -18,10 +18,8 @@ from buffer import DimList, NDBuffer
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from internal_utils import InitializationType, Timer, init_vector_launch
-from std.memory import LegacyUnsafePointer
 from std.utils.index import IndexList
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 
@@ -30,7 +28,7 @@ fn test_vec_init[
     dtype: DType, block_dim: Int = 256
 ](length: Int, init_type: InitializationType, context: DeviceContext) raises:
     var timer = Timer()
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
+    var out_host = alloc[Scalar[dtype]](length)
     var out_device = context.enqueue_create_buffer[dtype](length)
     timer.measure("create-buffer")
 
@@ -47,7 +45,7 @@ fn test_vec_init[
         InitializationType.one,
         InitializationType.arange,
     ]:
-        var verification_ptr = UnsafePointer[Scalar[dtype]].alloc(length)
+        var verification_ptr = alloc[Scalar[dtype]](length)
         var verification_data = NDBuffer[dtype, 1](
             verification_ptr, IndexList[1](length)
         )

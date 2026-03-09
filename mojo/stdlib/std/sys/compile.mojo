@@ -16,19 +16,23 @@ from .defines import get_defined_int, get_defined_string, is_defined
 from std.collections.string.string_slice import _get_kgen_string
 
 # ===----------------------------------------------------------------------=== #
-# is_compile_time
+# is_run_in_comptime_interpreter
 # ===----------------------------------------------------------------------=== #
 
 
 @always_inline("nodebug")
-fn is_compile_time() -> Bool:
-    """Returns true if the current code is executed at compile time, false
-    otherwise.
+fn is_run_in_comptime_interpreter() -> Bool:
+    """Returns true if the current code is being interpreted during compilation
+    time. This is often used to provide a different code execution path for the
+    comptime evaluation in the interpreter from generated runtime code, e.g.:
+    runtime code path uses GPU intrinsics while comptime interpreter code path
+    uses simplified CPU host logic for GPU kernels. Returns false otherwise.
 
     Returns:
-        A boolean value indicating whether the code is being compiled.
+        A boolean value indicating whether it is currently running in the
+        comptime interpreter or not.
     """
-    return __mlir_op.`kgen.is_compile_time`()
+    return __mlir_op.`kgen.is_run_in_comptime_interpreter`()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -48,8 +52,8 @@ fn codegen_unreachable[cond: Bool, msg: StaticString, *extra: StaticString]():
 
     """
     __mlir_op.`kgen.codegen.reachable`[
-        cond = (not cond).__mlir_i1__(),
-        message = _get_kgen_string[msg, extra](),
+        cond=(not cond).__mlir_i1__(),
+        message=_get_kgen_string[msg, extra](),
         _type=None,
     ]()
 

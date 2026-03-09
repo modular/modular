@@ -18,8 +18,13 @@ from std.sys.info import _current_target
 from std.algorithm import elementwise, sync_parallelize
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
 from std.utils import IndexList
@@ -209,10 +214,9 @@ fn _index_tensor_1d[
 
     var last_index_dim = Int(indices.dim(indices.rank - 1))
 
-    debug_assert(
-        last_index_dim + batch_dims == data.rank,
-        "kernel doesn't support slicing after specified dims",
-    )
+    assert (
+        last_index_dim + batch_dims == data.rank
+    ), "kernel doesn't support slicing after specified dims"
 
     var data_shape = coord_to_index_list(data.layout.shape_coord())
     var batch_volume: Int = 1
@@ -367,9 +371,7 @@ fn _index_tensor_impl[
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
     else:
-        debug_assert(
-            Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        )
+        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[

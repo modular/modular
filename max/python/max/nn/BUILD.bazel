@@ -5,6 +5,14 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "nn",
     srcs = glob(["**/*.py"]),
+    # rich is used as a runtime protocol (_rich_traceback_omit) not via import.
+    # //max/python/max:tensor is an alias for //max/python/max/experimental;
+    # the pydeps tool resolves the alias so it appears as an unused dep since
+    # max.nn files don't directly import from max.experimental.*.
+    ignore_extra_deps = [
+        requirement("rich"),
+        "//max/python/max/experimental",
+    ],
     deps = [
         requirement("numpy"),
         requirement("rich"),
@@ -13,7 +21,6 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/support",
     ],

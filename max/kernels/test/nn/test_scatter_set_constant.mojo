@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import row_major
-from layout import TileTensor
+from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_set_constant
 from std.runtime.asyncrt import DeviceContextPtr
 

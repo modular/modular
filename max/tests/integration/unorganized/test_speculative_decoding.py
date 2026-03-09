@@ -42,7 +42,7 @@ from test_common.registry import prepare_registry
 @dataclass
 class SpeculativeDecodingSetup:
     model_name: str
-    tokenizer: PipelineTokenizer
+    tokenizer: PipelineTokenizer  # type: ignore[type-arg]
     pipeline: StandaloneSpeculativeDecodingPipeline
     context1: TextContext
     context2: TextContext
@@ -354,7 +354,6 @@ def test_kv_cache_claiming_protocol() -> None:
                 pipeline._draft_model,
                 batch,
                 replica_batches=[batch],
-                num_steps=3,
                 return_n_logits=1,
                 is_draft=True,
             )

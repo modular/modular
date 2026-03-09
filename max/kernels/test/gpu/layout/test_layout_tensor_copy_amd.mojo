@@ -25,9 +25,6 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_dram_to_sram,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import simd_width_of
 from std.utils import IndexList
 from std.benchmark import keep
@@ -39,17 +36,17 @@ fn copy_dram_to_sram_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
+](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m: Int,):
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[
         layout,
-        element_type = q_tile_type.layout_int_type,
-        linear_idx_type = q_tile_type.linear_idx_type,
-    ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
+        element_type=q_tile_type.layout_int_type,
+        linear_idx_type=q_tile_type.linear_idx_type,
+    ].row_major(IndexList[2, element_type=q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
         input_ptr.address_space_cast[AddressSpace.GLOBAL](),
@@ -57,7 +54,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     )
     comptime layout_bmn = Layout.row_major(BM, BN)
     var smem = LayoutTensor[
-        dtype, layout_bmn, MutAnyOrigin, address_space = AddressSpace.SHARED
+        dtype, layout_bmn, MutAnyOrigin, address_space=AddressSpace.SHARED
     ].stack_allocation()
     if thread_idx.x == 0:
         _ = smem.fill(-1)
@@ -112,17 +109,17 @@ fn copy_dram_to_local_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
+](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m: Int,):
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
-        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
+        dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
     ]
 
     var runtime_layout = RuntimeLayout[
         layout,
-        element_type = q_tile_type.layout_int_type,
-        linear_idx_type = q_tile_type.linear_idx_type,
-    ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
+        element_type=q_tile_type.layout_int_type,
+        linear_idx_type=q_tile_type.linear_idx_type,
+    ].row_major(IndexList[2, element_type=q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
         input_ptr.address_space_cast[AddressSpace.GLOBAL](),
@@ -140,7 +137,7 @@ fn copy_dram_to_local_buffer_load_kernel[
         dtype,
         a_reg_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
     comptime for i in range(BN // BK):
@@ -195,7 +192,9 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
 
 
 fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
-    fn kernel[cache_policy: CacheOperation](ptr: UnsafePointer[BFloat16]):
+    fn kernel[
+        cache_policy: CacheOperation
+    ](ptr: UnsafePointer[BFloat16, ImmutAnyOrigin]):
         comptime simd_width = simd_width_of[DType.bfloat16]()
         var global_tensor = LayoutTensor[
             DType.bfloat16,
@@ -205,7 +204,7 @@ fn test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
             DType.bfloat16,
             Layout.row_major(16, 8),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation()
 
         comptime thread_layout = Layout.row_major(16, 16)

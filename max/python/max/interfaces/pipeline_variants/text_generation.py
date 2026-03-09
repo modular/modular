@@ -68,22 +68,28 @@ class TextGenerationResponseFormat(TypedDict):
     """Represents the response format specification for a text generation request."""
 
     type: str
-    """The type of response format, e.g., "json_object"."""
+    """The type of response format, for example, ``"json_object"``."""
 
     json_schema: dict[str, Any]
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
 
 
 class ContentPart(BaseModel):
+    """A single part of a multi-modal message content."""
+
     type: Literal["text", "image"]
 
 
 class MessageContentPart(BaseModel):
+    """A typed, immutable part of a message's content."""
+
     type: str = Field(..., description="Content type identifier")
     model_config = ConfigDict(frozen=True)
 
 
 class TextContentPart(MessageContentPart):
+    """A plain-text content part of a message."""
+
     type: Literal["text"] = Field(
         default="text", description="Content type identifier"
     )
@@ -91,6 +97,8 @@ class TextContentPart(MessageContentPart):
 
 
 class ImageContentPart(MessageContentPart):
+    """An image content part of a message."""
+
     type: Literal["image"] = Field(
         default="image", description="Content type identifier"
     )
@@ -102,6 +110,8 @@ MessageRole = Literal["system", "user", "assistant", "tool", "function"]
 
 
 class TextGenerationRequestMessage(BaseModel):
+    """A single message in a text generation request conversation."""
+
     role: MessageRole = Field(
         ..., description="Text role of the message sender"
     )
@@ -192,6 +202,8 @@ class TextGenerationRequestMessage(BaseModel):
 
 @dataclass(frozen=True)
 class TextGenerationRequest:
+    """An immutable request for text token generation from a pipeline."""
+
     request_id: RequestID = field()
     """A unique identifier for the request."""
 
@@ -249,9 +261,9 @@ class TextGenerationRequest:
     """
     echo: bool = False
     """
-    If set to True, the response will include the original prompt along with the
-    generated output. This can be useful for debugging or when you want to see how
-    the input relates to the output.
+    If set to ``True``, the response will include the original prompt along with
+    the generated output. This can be useful for debugging or when you want to
+    see how the input relates to the output.
     """
     stop: str | list[str] | None = None
     """
@@ -313,7 +325,7 @@ class TextGenerationRequest:
         """Returns the total number of image-type contents across all provided messages.
 
         Returns:
-            int: Total count of image-type contents found in messages.
+            Total count of image-type contents found in messages.
         """
         return (
             sum(message.number_of_images for message in self.messages)
@@ -353,7 +365,7 @@ class TextGenerationOutput:
         """Indicates whether the text generation process is complete.
 
         Returns:
-            bool: True if the generation is done, False otherwise.
+            ``True`` if the generation is done, ``False`` otherwise.
         """
         return self.final_status.is_done
 
@@ -437,7 +449,7 @@ class TextGenerationContext(BaseContext, Protocol):
         self,
         max_seq_len: int,
     ) -> int:
-        """Compute the maximum number of generation steps available.
+        """Computes the maximum number of generation steps available.
 
         This method calculates how many tokens can be generated without
         exceeding the specified maximum sequence length limit.
@@ -456,7 +468,7 @@ class TextGenerationContext(BaseContext, Protocol):
         """The minimum number of new tokens that must be generated.
 
         Generation will continue until at least this many new tokens have been
-        produced, even if other stopping criteria are met (e.g., EOS tokens).
+        produced, even if other stopping criteria are met (for example, EOS tokens).
 
         Returns:
             The minimum number of new tokens to generate.
@@ -492,7 +504,7 @@ class TextGenerationContext(BaseContext, Protocol):
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
-        """Get token indices that should be masked in the output logits.
+        """Returns the token indices that should be masked in the output logits.
 
         This method is primarily used to implement the ``min_tokens`` constraint,
         where certain tokens (typically EOS tokens) are masked to prevent early
@@ -513,7 +525,7 @@ class TextGenerationContext(BaseContext, Protocol):
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
-        """Update the context with a newly generated token, and update status.
+        """Updates the context with a newly generated token, and updates status.
 
         This method adds a generated token to the context, updating the token
         array, associated metadata, and log probabilities (if provided).
@@ -563,12 +575,12 @@ class TextGenerationContext(BaseContext, Protocol):
         generation to ensure valid formatted output.
 
         Returns:
-            The grammar matcher instance, or None if no structured generation
+            The grammar matcher instance, or ``None`` if no structured generation
             is configured for this context.
 
         Note:
             The matcher type depends on the structured generation backend used
-            (e.g., outlines, guidance, etc.). In the future, this should be
+            (for example, outlines, guidance, etc.). In the future, this should be
             replaced with a Protocol for better type safety.
         """
         ...
@@ -605,7 +617,7 @@ class TextGenerationContext(BaseContext, Protocol):
         including temperature, top-k/top-p filtering, and stopping criteria.
 
         Returns:
-            The ``SamplingParams`` instance containing all sampling configuration
+            The :class:`SamplingParams` instance containing all sampling configuration
             for this context.
         """
         ...
@@ -624,15 +636,15 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     def to_generation_output(self) -> TextGenerationOutput:
-        """Convert this context to a TextGenerationOutput object.
+        """Converts this context to a :class:`TextGenerationOutput` object.
 
-        This property provides a standardized way to extract the final output
-        of the text generation process from the context, including generated
-        text, tokens, and any associated metadata.
+        Provides a standardized way to extract the final output of the text
+        generation process from the context, including generated text, tokens,
+        and any associated metadata.
 
         Returns:
-            TextGenerationOutput: The output object containing the results of
-            the text generation for this context.
+            The output object containing the results of the text generation
+            for this context.
         """
         ...
 
@@ -712,12 +724,12 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
 
     @property
     def enable_echo(self) -> bool:
-        """Return True if any context in the batch has echo enabled."""
+        """``True`` if any context in the batch has echo enabled."""
         return any(self.batch_echo)
 
     @property
     def enable_log_probs(self) -> bool:
-        """Return True if any context in the batch requests log probabilities."""
+        """``True`` if any context in the batch requests log probabilities."""
         return any(self.batch_top_log_probs)
 
     @cached_property
@@ -780,17 +792,17 @@ class VLMTextGenerationContext(TextGenerationContext, Protocol):
 
     @property
     def images(self) -> list[ImageMetadata]:
-        """Returns the images in the context."""
+        """The images in the context."""
         ...
 
     @property
     def next_images(self) -> list[ImageMetadata]:
-        """Returns the images that are not yet encoded."""
+        """The images that are not yet encoded."""
         ...
 
     @property
     def needs_vision_encoding(self) -> bool:
-        """Returns whether vision encoding is needed for this context."""
+        """Whether vision encoding is needed for this context."""
         ...
 
     def compute_image_aligned_idx(self, idx: int) -> int:

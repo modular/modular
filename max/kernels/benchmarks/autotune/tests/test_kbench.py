@@ -487,6 +487,55 @@ def test_get_gpu_count_nvidia_smi_failure(mocker: MockerFixture) -> None:
     assert _get_gpu_count("nvidia:sm_90") is None
 
 
+def _rocm_smi_csv_output(n: int) -> bytes:
+    """Build fake rocm-smi --showproductname --csv output for n GPUs."""
+    header = "device,Card series,Card model,Card vendor,Card SKU"
+    rows = [
+        f"card{i},0x{i:04x},AMD Instinct MI355X,Advanced Micro Devices Inc. [AMD/ATI],D7520{i}"
+        for i in range(n)
+    ]
+    return "\n".join([header] + rows).encode()
+
+
+def test_get_gpu_count_amd_basic(mocker: MockerFixture) -> None:
+    """_get_gpu_count returns the hardware count for AMD GPUs."""
+    mocker.patch("utils.shutil.which", return_value="/usr/bin/rocm-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_rocm_smi_csv_output(8),
+    )
+    mocker.patch.dict(os.environ, {}, clear=False)
+    os.environ.pop("ROCR_VISIBLE_DEVICES", None)
+    assert _get_gpu_count("amdgpu:mi355x") == 8
+
+
+def test_get_gpu_count_amd_capped_by_env(mocker: MockerFixture) -> None:
+    """When ROCR_VISIBLE_DEVICES lists fewer IDs than hardware, use env count."""
+    mocker.patch("utils.shutil.which", return_value="/usr/bin/rocm-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        return_value=_rocm_smi_csv_output(8),
+    )
+    mocker.patch.dict(os.environ, {"ROCR_VISIBLE_DEVICES": "0,1"}, clear=False)
+    assert _get_gpu_count("amdgpu:mi355x") == 2
+
+
+def test_get_gpu_count_amd_no_smi(mocker: MockerFixture) -> None:
+    """Returns None when rocm-smi is not found."""
+    mocker.patch("utils.shutil.which", return_value=None)
+    assert _get_gpu_count("amdgpu:mi355x") is None
+
+
+def test_get_gpu_count_amd_smi_failure(mocker: MockerFixture) -> None:
+    """Returns None when rocm-smi fails."""
+    mocker.patch("utils.shutil.which", return_value="/usr/bin/rocm-smi")
+    mocker.patch(
+        "utils.subprocess.check_output",
+        side_effect=subprocess.SubprocessError("boom"),
+    )
+    assert _get_gpu_count("amdgpu:mi355x") is None
+
+
 def test_cli_rejects_num_gpu_exceeding_available(mocker: MockerFixture) -> None:
     """CLI should raise ValueError when --num-gpu exceeds detected GPUs."""
     mocker.patch("utils.get_nvidia_smi", return_value="/usr/bin/nvidia-smi")

@@ -301,7 +301,7 @@ struct ToyDuck(DuckLike):
     # ... implementation omitted
 ```
 
-You can also compose traits using [inheritance](#trait-inheritance), by defining
+You can also compose traits using [refinement](#trait-refinement), by defining
 a new, empty trait like this:
 
 ```mojo
@@ -327,31 +327,33 @@ conforms to the `DuckLike` trait composition. But it *doesn't*
 conform to `DuckTrait`, since it doesn't include `DuckTrait` in its list of
 traits.
 
-## Trait inheritance
+<a id="trait-inheritance"></a>
+## Trait refinement {#trait-refinement}
 
-Traits can inherit from other traits. A trait that inherits from another trait
-includes all of the requirements declared by the parent trait. For example:
+Traits _refine_ other traits. A trait that refines another trait includes all
+of the requirements declared by the original trait. For example:
 
 ```mojo
 trait Animal:
     fn make_sound(self):
         ...
 
-# Bird inherits from Animal
+# Bird refines Animal
 trait Bird(Animal):
     fn fly(self):
         ...
 ```
 
-Since `Bird` inherits from `Animal`, a struct that conforms to the `Bird` trait
-needs to implement **both** `make_sound()` and `fly()`. And since every `Bird`
+Since `Bird` refines `Animal`, a struct that conforms to the `Bird` trait
+must implement **both** `make_sound()` and `fly()`. And since every `Bird`
 conforms to `Animal`, a struct that conforms to `Bird` can be passed to any
 function that requires an `Animal`.
 
-To inherit from multiple traits, add a comma-separated list of traits or
-trait compositions inside the parenthesis. For example, you could define a
-`NamedAnimal` trait that combines the requirements of the `Animal` trait and a
-new `Named` trait:
+You can define a trait as a refinement of multiple traits by listing
+them in parentheses. This can be either a comma-separated list of
+traits or a trait composition. For example, you might define a
+NamedAnimal trait that combines the requirements of the Animal trait
+and a new Named trait:
 
 ```mojo
 trait Named:
@@ -363,9 +365,9 @@ trait NamedAnimal(Animal, Named):
         ...
 ```
 
-Inheritance is useful when you're creating a new trait that adds its own
+Refinement is useful when you're creating a new trait that adds additional
 requirements. If you simply want to express the union of two or more traits,
-you should use a simple trait composition instead:
+use a simple trait composition instead:
 
 ```mojo
 comptime NamedAnimal = Animal & Named

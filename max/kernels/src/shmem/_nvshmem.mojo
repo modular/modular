@@ -286,8 +286,8 @@ fn _dtype_to_nvshmem_type[
     elif dtype == DType.int:
         return get_static_string[prefix, "size", suffix, scope]()
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString, operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 

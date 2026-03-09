@@ -34,8 +34,8 @@ fn _validate_shard_and_stack[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
         ...,
     ],
 ) raises:
@@ -108,8 +108,8 @@ fn _shard_and_stack_multi_device[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
         ...,
     ],
     dev_ctxs_input: DeviceContextPtrList,
@@ -196,8 +196,8 @@ fn _shard_and_stack_single_device[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
         ...,
     ],
 ) raises:
@@ -266,8 +266,8 @@ fn shard_and_stack[
 ](
     outputs: OutputVariadicTensors,
     inputs: InputVariadicTensors[
-        dtype = outputs.dtype,
-        rank = outputs.rank - 1,
+        dtype=outputs.dtype,
+        rank=outputs.rank - 1,
         ...,
     ],
     dev_ctxs_input: DeviceContextPtrList,

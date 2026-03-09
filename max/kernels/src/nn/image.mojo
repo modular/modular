@@ -11,8 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, Idx, TileTensor, coord
-from layout._layout import TensorLayout, row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
 
 from std.utils.index import IndexList
 
@@ -93,7 +99,7 @@ struct ImageData[
     fn to_static_layout[
         new_static_image_layout: Image2DLayout
     ](self) -> ImageData[
-        LayoutType = Self.LayoutType,
+        LayoutType=Self.LayoutType,
         Self.dtype,
         new_static_image_layout,
         Self.origin,
@@ -106,7 +112,7 @@ struct ImageData[
         """
         comptime assert Self.static_image_layout == Image2DLayout.UNKNOWN
         return ImageData[
-            LayoutType = Self.LayoutType,
+            LayoutType=Self.LayoutType,
             Self.dtype,
             new_static_image_layout,
         ](self.data)
@@ -187,7 +193,7 @@ struct ImageData[
         elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
-        debug_assert(False, "Invalid layout")
+        assert False, "Invalid layout"
         return 0
 
     fn get_tuple_index(self, idx: Int) -> IndexList[4]:
@@ -238,7 +244,7 @@ struct ImageData[
         elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
-        debug_assert(False, "Invalid layout")
+        assert False, "Invalid layout"
         return IndexList[4](0)
 
     fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[Self.dtype]:
@@ -307,10 +313,9 @@ struct ImageShape(TrivialRegisterPassable):
             self.W = Int(image_data.data.dim[2]())
 
         else:
-            debug_assert(
-                image_data.get_image_layout() == Image2DLayout.RSCF,
-                "Invalid layout",
-            )
+            assert (
+                image_data.get_image_layout() == Image2DLayout.RSCF
+            ), "Invalid layout"
             self.N = Int(image_data.data.dim[3]())
             self.C = Int(image_data.data.dim[2]())
             self.H = Int(image_data.data.dim[0]())

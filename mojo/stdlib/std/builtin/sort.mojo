@@ -294,10 +294,9 @@ fn _merge[
     var span2_ptr = span2.unsafe_ptr()
     var res_ptr = result.unsafe_ptr()
 
-    debug_assert(
-        span1_size + span2_size <= len(result),
-        "The merge result does not fit in the span provided",
-    )
+    assert span1_size + span2_size <= len(
+        result
+    ), "The merge result does not fit in the span provided"
     var i = 0
     var j = 0
     var k = 0

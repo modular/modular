@@ -27,7 +27,7 @@ def test_operation[
         x: SIMD[dtype, width], y: type_of(x)
     ) raises -> type_of(x),
     op_name: StaticString,
-]():
+]() raises:
     var scalar: String
     var pairwise: String
     var suffix: String
@@ -130,25 +130,25 @@ def test_cast() raises:
     assert_true(
         "cvt.rn.f16x2.f32"
         in _compile_code[
-            cast[src_type = DType.float32, dst_type = DType.float16, width=4]
+            cast[src_type=DType.float32, dst_type=DType.float16, width=4]
         ]()
     )
     assert_true(
         "cvt.rn.bf16x2.f32"
         in _compile_code[
-            cast[src_type = DType.float32, dst_type = DType.bfloat16, width=4]
+            cast[src_type=DType.float32, dst_type=DType.bfloat16, width=4]
         ]()
     )
     assert_true(
         "cvt.f32.bf16"
         in _compile_code[
-            cast[src_type = DType.bfloat16, dst_type = DType.float32, width=1]
+            cast[src_type=DType.bfloat16, dst_type=DType.float32, width=1]
         ]()
     )
     assert_true(
         "cvt.f32.bf16"
         in _compile_code[
-            cast[src_type = DType.bfloat16, dst_type = DType.float32, width=4]
+            cast[src_type=DType.bfloat16, dst_type=DType.float32, width=4]
         ]()
     )
 

@@ -42,16 +42,16 @@ struct ManagedLayoutTensor[
         Self.dtype,
         Self.layout,
         MutAnyOrigin,
-        layout_int_type = Self.element_type,
-        linear_idx_type = Self.index_type,
+        layout_int_type=Self.element_type,
+        linear_idx_type=Self.index_type,
     ]
 
     var device_data: Optional[DeviceBuffer[Self.dtype]]
     var host_data: HostBuffer[Self.dtype]
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type = Self.element_type,
-        linear_idx_type = Self.index_type,
+        element_type=Self.element_type,
+        linear_idx_type=Self.index_type,
     ]
     var ctx: DeviceContext
 
@@ -140,10 +140,9 @@ struct ManagedLayoutTensor[
     fn device_tensor[
         update: Bool = True
     ](self) raises -> Self.layout_tensor_type:
-        debug_assert(
-            self.ctx.api() != "cpu",
-            "device_tensor cannot be constructed for host only tensor.",
-        )
+        assert (
+            self.ctx.api() != "cpu"
+        ), "device_tensor cannot be constructed for host only tensor."
 
         comptime if update:
             self._update_device()

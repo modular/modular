@@ -167,14 +167,14 @@ __extension AttentionRDNA:
             var num_b_rows = Int(kv_tile_num_rows)
 
             var k_buffer = KBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](
                 k_tile,
                 num_b_rows,
@@ -182,13 +182,13 @@ __extension AttentionRDNA:
             )
 
             var v_buffer = VBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Int(Self.BN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                num_warps_n = Int(Self.num_warps_n),
+                tensor_core_mma=Self.get_tensor_core_mma_pv(),
+                BN=Int(Self.BN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
+                num_warps_n=Int(Self.num_warps_n),
             ](
                 v_tile,
                 self.smem_manager.get_v_ptr[v_tile.dtype](),
@@ -220,7 +220,9 @@ __extension AttentionRDNA:
                 i, end, end != UInt32(self.num_keys)
             )
 
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
+        self.out_reg_buffer.apply_softmax_denominator(
+            self.rowsum.to_layout_tensor()
+        )
 
         self.store_output()
 
@@ -280,14 +282,14 @@ __extension AttentionRDNA:
             ) if not not_last_iter else None
 
             var k_buffer = KBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_qk(),
+                tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN = Int(Self.BN),
-                WN = Int(Self.WN),
-                BK = Int(Self.BK),
-                depth = Int(Self.depth),
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
+                BN=Int(Self.BN),
+                WN=Int(Self.WN),
+                BK=Int(Self.BK),
+                depth=Int(Self.depth),
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
             ](
                 k_tile,
                 num_b_rows,
@@ -296,13 +298,13 @@ __extension AttentionRDNA:
 
             var v_tile_slice = v_tile.slice[:, : Int(Self.output_depth)]()
             var v_buffer = VBufferRDNA[
-                tensor_core_mma = Self.get_tensor_core_mma_pv(),
-                BN = Int(Self.BN),
-                BK = Int(Self.BK),
-                depth = Self.output_depth,
-                num_threads = Int(Self.num_threads),
-                num_stages = Self.num_stages,
-                num_warps_n = Int(Self.num_warps_n),
+                tensor_core_mma=Self.get_tensor_core_mma_pv(),
+                BN=Int(Self.BN),
+                BK=Int(Self.BK),
+                depth=Self.output_depth,
+                num_threads=Int(Self.num_threads),
+                num_stages=Self.num_stages,
+                num_warps_n=Int(Self.num_warps_n),
             ](
                 v_tile_slice,
                 self.smem_manager.get_v_ptr[v_tile.dtype](),
@@ -337,6 +339,8 @@ __extension AttentionRDNA:
             var end_ = min(i + Int(Self.BN), end)
             loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
 
-        self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
+        self.out_reg_buffer.apply_softmax_denominator(
+            self.rowsum.to_layout_tensor()
+        )
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

@@ -17,9 +17,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -79,16 +76,12 @@ fn test_matmul_dynamic_scaled_fp8[
     ) if transpose_b else Layout.row_major(1, N.or_else(UNKNOWN_VALUE))
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(c_size)
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_size
-    )
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[in_dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
 
     var a_host = LayoutTensor[in_dtype, a_layout](
         a_host_ptr,
@@ -213,7 +206,7 @@ fn test_matmul_dynamic_scaled_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, 1, k_dim),
+        scales_granularity_mnk=Index(1, 1, k_dim),
     ](
         c_ref_ndbuffer,
         a_ndbuffer,
@@ -254,43 +247,43 @@ fn test_matmul_dynamic_scaled_fp8[
 def main() raises:
     with DeviceContext() as ctx:
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(256 + 256),
-            K = Int(256),
+            N=Int(256 + 256),
+            K=Int(256),
         ](ctx, 17, 256 + 256, 256)
 
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(512),
-            K = Int(512),
+            N=Int(512),
+            K=Int(512),
         ](ctx, 124, 512, 512)
 
         # these tests are guaranteed to hit a mojo fp8 kernel in the dispatch table.
         # if the fp8 kernel is not registered, these tests will fail.
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(5376),
-            K = Int(4096),
+            N=Int(5376),
+            K=Int(4096),
         ](ctx, 3000, 5376, 4096)
 
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
             M=None,
-            N = Int(43008),
-            K = Int(5376),
+            N=Int(43008),
+            K=Int(5376),
         ](ctx, 224, 43008, 5376)

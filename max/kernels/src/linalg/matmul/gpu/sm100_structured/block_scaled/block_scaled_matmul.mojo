@@ -18,9 +18,6 @@ then launches the warp-specialized kernel.
 """
 
 from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -36,8 +33,9 @@ from layout import (
     RuntimeInt,
     RuntimeLayout,
     TileTensor,
+    row_major,
 )
-from layout._layout import RowMajorLayout, TensorLayout, row_major
+from layout.tile_layout import RowMajorLayout, TensorLayout
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
@@ -95,14 +93,14 @@ fn _convert_input_to_batched_tensor[
     tensor.dtype,
     reshape_layout,
     tensor.origin,
-    address_space = tensor.address_space,
+    address_space=tensor.address_space,
 ]:
     """Convert 2D tensor to 3D batched tensor with batch=1."""
     return LayoutTensor[
         dtype,
         reshape_layout,
         tensor.origin,
-        address_space = tensor.address_space,
+        address_space=tensor.address_space,
     ](
         tensor.ptr,
         RuntimeLayout[reshape_layout].row_major(
@@ -245,7 +243,7 @@ fn _create_tma_and_launch[
         sfb_dtype,
         transpose_b,
         config=config,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -265,10 +263,10 @@ fn _create_tma_and_launch[
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
     a_tma_op = create_tma_tile[
-        matmul_kernel.ATmaTile.tile_layout,
-        matmul_kernel.ATmaTile.desc_layout,
+        matmul_kernel.ATileLayout,
+        matmul_kernel.ADescLayout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
+        swizzle_mode=config.a_swizzle,
     ](ctx, a_3d)
 
     # B matrix TMA
@@ -278,10 +276,10 @@ fn _create_tma_and_launch[
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
     b_tma_op = create_tma_tile[
-        matmul_kernel.BTmaTile.tile_layout,
-        matmul_kernel.BTmaTile.desc_layout,
+        matmul_kernel.BTileLayout,
+        matmul_kernel.BDescLayout,
         b_tma_tile_shape,
-        swizzle_mode = config.b_swizzle,
+        swizzle_mode=config.b_swizzle,
     ](ctx, b_3d)
 
     # C matrix TMA
@@ -297,10 +295,10 @@ fn _create_tma_and_launch[
         config.c_swizzle.bytes() // size_of[c_type](),
     )
     var c_tma_op = create_tma_tile[
-        matmul_kernel.CTmaTile.tile_layout,
-        matmul_kernel.CTmaTile.desc_layout,
+        matmul_kernel.CTileLayout,
+        matmul_kernel.CDescLayout,
         c_tma_tile_shape_final,
-        swizzle_mode = config.c_swizzle,
+        swizzle_mode=config.c_swizzle,
     ](ctx, c_3d)
 
     # Scale factors TMA
@@ -312,10 +310,10 @@ fn _create_tma_and_launch[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfa_tma_op = create_tma_tile[
-        matmul_kernel.SFATmaTile.tile_layout,
-        matmul_kernel.SFATmaTile.desc_layout,
+        matmul_kernel.SFATileLayout,
+        matmul_kernel.SFADescLayout,
         sfa_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
     ](ctx, sfa_5d)
 
     comptime sfb_tma_tile_shape = Index(
@@ -326,10 +324,10 @@ fn _create_tma_and_launch[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfb_tma_op = create_tma_tile[
-        matmul_kernel.SFBTmaTile.tile_layout,
-        matmul_kernel.SFBTmaTile.desc_layout,
+        matmul_kernel.SFBTileLayout,
+        matmul_kernel.SFBDescLayout,
         sfb_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
     ](ctx, sfb_5d)
 
     # Shared Memory

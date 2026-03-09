@@ -35,9 +35,6 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.utils.index import IndexList
@@ -125,10 +122,10 @@ fn test_conv2d_implicit_im2col[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = UnsafePointer[Scalar[act_type]].alloc(act_size)
-    var filter_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(filter_size)
-    var out_host_ptr = UnsafePointer[Scalar[out_type]].alloc(out_size)
-    var out_host_ref_ptr = UnsafePointer[Scalar[out_type]].alloc(out_size)
+    var act_host_ptr = alloc[Scalar[act_type]](act_size)
+    var filter_host_ptr = alloc[Scalar[filter_type]](filter_size)
+    var out_host_ptr = alloc[Scalar[out_type]](out_size)
+    var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
     # NDBuffers with dynamic dimensions
     comptime static_act_shape = DimList(-1, -1, -1, -1)
@@ -185,7 +182,7 @@ fn test_conv2d_implicit_im2col[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     # Perform im2col on host - use DimList with actual values for proper shape inference
-    var im2col_host_ptr = UnsafePointer[Scalar[act_type]].alloc(im2col_size)
+    var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[act_type, 2](
         im2col_host_ptr, dynamic_im2col_shape
@@ -326,10 +323,10 @@ fn test_conv2d_1sm[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = UnsafePointer[Scalar[act_type]].alloc(act_size)
-    var filter_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(filter_size)
-    var out_host_ptr = UnsafePointer[Scalar[out_type]].alloc(out_size)
-    var out_host_ref_ptr = UnsafePointer[Scalar[out_type]].alloc(out_size)
+    var act_host_ptr = alloc[Scalar[act_type]](act_size)
+    var filter_host_ptr = alloc[Scalar[filter_type]](filter_size)
+    var out_host_ptr = alloc[Scalar[out_type]](out_size)
+    var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
     # NDBuffers with dynamic dimensions
     comptime static_act_shape = DimList(-1, -1, -1, -1)
@@ -384,7 +381,7 @@ fn test_conv2d_1sm[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
-    var im2col_host_ptr = UnsafePointer[Scalar[act_type]].alloc(im2col_size)
+    var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[act_type, 2](
         im2col_host_ptr, dynamic_im2col_shape
@@ -525,11 +522,11 @@ fn test_conv2d_epilogue_lambda[
     var bias_size = out_c
 
     # Host allocations
-    var act_host_ptr = UnsafePointer[Scalar[act_type]].alloc(act_size)
-    var filter_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(filter_size)
-    var out_host_ptr = UnsafePointer[Scalar[out_type]].alloc(out_size)
-    var out_host_ref_ptr = UnsafePointer[Scalar[out_type]].alloc(out_size)
-    var bias_host_ptr = UnsafePointer[Scalar[out_type]].alloc(bias_size)
+    var act_host_ptr = alloc[Scalar[act_type]](act_size)
+    var filter_host_ptr = alloc[Scalar[filter_type]](filter_size)
+    var out_host_ptr = alloc[Scalar[out_type]](out_size)
+    var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
+    var bias_host_ptr = alloc[Scalar[out_type]](bias_size)
 
     # NDBuffers with dynamic dimensions
     comptime static_act_shape = DimList(-1, -1, -1, -1)
@@ -623,7 +620,7 @@ fn test_conv2d_epilogue_lambda[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
-    var im2col_host_ptr = UnsafePointer[Scalar[act_type]].alloc(im2col_size)
+    var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[act_type, 2](
         im2col_host_ptr, dynamic_im2col_shape
@@ -766,11 +763,11 @@ fn test_conv2d_bias_fusion[
     var filter_size = out_c * filter_h * filter_w * in_c
     var out_size = batch * out_h * out_w * out_c
 
-    var act_host = UnsafePointer[Scalar[dtype]].alloc(act_size)
-    var filter_host = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var bias_host = UnsafePointer[Scalar[dtype]].alloc(out_c)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
-    var out_ref_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    var act_host = alloc[Scalar[dtype]](act_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var bias_host = alloc[Scalar[dtype]](out_c)
+    var out_host = alloc[Scalar[dtype]](out_size)
+    var out_ref_host = alloc[Scalar[dtype]](out_size)
 
     rand(act_host, act_size)
     rand(filter_host, filter_size)
@@ -824,7 +821,7 @@ fn test_conv2d_bias_fusion[
     # Run conv2d with fused bias
     comptime if use_1sm:
         conv2d_fprop[
-            config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
+            config=Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
             out_nd.make_dims_unknown(),
@@ -835,7 +832,7 @@ fn test_conv2d_bias_fusion[
         )
     else:
         conv2d_fprop[
-            config = Conv2dConfig[dtype, dtype, dtype].default_bf16(),
+            config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),
             elementwise_compute_lambda_fn=bias_lambda,
         ](
             out_nd.make_dims_unknown(),
@@ -849,7 +846,7 @@ fn test_conv2d_bias_fusion[
     var act_host_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
         act_host, IndexList[4](batch, in_h, in_w, in_c)
     )
-    var im2col_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var im2col_host = alloc[Scalar[dtype]](M * K)
     var im2col_host_nd = NDBuffer[dtype, 2](im2col_host, IndexList[2](M, K))
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
@@ -979,11 +976,11 @@ fn test_conv2d_residual_api[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = UnsafePointer[Scalar[dtype]].alloc(act_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
-    var out_host_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
-    var source_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    var act_host_ptr = alloc[Scalar[dtype]](act_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var out_host_ptr = alloc[Scalar[dtype]](out_size)
+    var out_host_ref_ptr = alloc[Scalar[dtype]](out_size)
+    var source_host_ptr = alloc[Scalar[dtype]](out_size)
 
     # NDBuffers with dynamic dimensions
     comptime static_act_shape = DimList(-1, -1, -1, -1)
@@ -1070,7 +1067,7 @@ fn test_conv2d_residual_api[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[dtype](im2col_size)
 
-    var im2col_host_ptr = UnsafePointer[Scalar[dtype]].alloc(im2col_size)
+    var im2col_host_ptr = alloc[Scalar[dtype]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[dtype, 2](im2col_host_ptr, dynamic_im2col_shape)
     im2col(im2col_host, act_host, problem)

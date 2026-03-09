@@ -223,8 +223,8 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -354,7 +354,7 @@ fn st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
     ptr: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space = AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
     d: SIMD[DType.float32, simd_width],
 ):
@@ -506,7 +506,7 @@ struct WGMMADescriptor[dtype: DType](
     ](
         smem_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             ...,
         ],
     ) -> Self:
@@ -704,10 +704,10 @@ fn wgmma_async[
         " scale in values."
     )
 
-    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_a_desc.desc._mlir_value
     )
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
 
@@ -721,16 +721,16 @@ fn wgmma_async[
     var llvmst = array_to_llvm_struct[c_dtype, width](c_reg)
     # TODO: Simplify with parametric alias
     var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
-        shape = _get_shape[m, n, k](),
-        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
-        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        shape=_get_shape[m, n, k](),
+        typeA=_dtype_to_nvvm_wgmma_type[a_type](),
+        typeB=_dtype_to_nvvm_wgmma_type[b_type](),
         typeD=type_d_value,
-        scaleD = _to_nvvm_scale_out[scale_d](),
-        scaleA = _to_nvvm_scale_in[scale_a](),
-        scaleB = _to_nvvm_scale_in[scale_b](),
-        layoutA = _to_nvvm_layout[layout_a](),
-        layoutB = _to_nvvm_layout[layout_b](),
-        _type = __mlir_type[
+        scaleD=_to_nvvm_scale_out[scale_d](),
+        scaleA=_to_nvvm_scale_in[scale_a](),
+        scaleB=_to_nvvm_scale_in[scale_b](),
+        layoutA=_to_nvvm_layout[layout_a](),
+        layoutB=_to_nvvm_layout[layout_b](),
+        _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -832,10 +832,10 @@ fn wgmma_async[
         " scale in values."
     )
 
-    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_a_desc.desc._mlir_value
     )
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
 
@@ -848,16 +848,16 @@ fn wgmma_async[
     var llvmst = simd_to_llvm_struct[c_dtype, width](c_reg)
     # TODO: Simplify with parametric alias
     var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
-        shape = _get_shape[m, n, k](),
-        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
-        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        shape=_get_shape[m, n, k](),
+        typeA=_dtype_to_nvvm_wgmma_type[a_type](),
+        typeB=_dtype_to_nvvm_wgmma_type[b_type](),
         typeD=type_d_value,
-        scaleD = _to_nvvm_scale_out[scale_d](),
-        scaleA = _to_nvvm_scale_in[scale_a](),
-        scaleB = _to_nvvm_scale_in[scale_b](),
-        layoutA = _to_nvvm_layout[layout_a](),
-        layoutB = _to_nvvm_layout[layout_b](),
-        _type = __mlir_type[
+        scaleD=_to_nvvm_scale_out[scale_d](),
+        scaleA=_to_nvvm_scale_in[scale_a](),
+        scaleB=_to_nvvm_scale_in[scale_b](),
+        layoutA=_to_nvvm_layout[layout_a](),
+        layoutB=_to_nvvm_layout[layout_b](),
+        _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
@@ -960,313 +960,310 @@ fn wgmma_async[
         layout_b == "row" and b_type == DType.bfloat16
     )
 
-    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
         mat_b_desc.desc._mlir_value
     )
     comptime trans_b = 1 if layout_b == "row" else 0
 
-    comptime if (
+    comptime assert (
         m == 64
         and k == 16
         and a_type == b_type == DType.bfloat16
         and accum_type == c_dtype == DType.float32
-    ):
-        var a0 = bitcast[DType.uint32, 1](
-            SIMD[DType.bfloat16, 2](
-                rebind[BFloat16](mat_a_frag[0]),
-                rebind[BFloat16](mat_a_frag[1]),
+    ), "unsupported config"
+    var a0 = bitcast[DType.uint32, 1](
+        SIMD[DType.bfloat16, 2](
+            rebind[BFloat16](mat_a_frag[0]),
+            rebind[BFloat16](mat_a_frag[1]),
+        )
+    )
+    var a1 = bitcast[DType.uint32, 1](
+        SIMD[DType.bfloat16, 2](
+            rebind[BFloat16](mat_a_frag[2]),
+            rebind[BFloat16](mat_a_frag[3]),
+        )
+    )
+    var a2 = bitcast[DType.uint32, 1](
+        SIMD[DType.bfloat16, 2](
+            rebind[BFloat16](mat_a_frag[4]),
+            rebind[BFloat16](mat_a_frag[5]),
+        )
+    )
+    var a3 = bitcast[DType.uint32, 1](
+        SIMD[DType.bfloat16, 2](
+            rebind[BFloat16](mat_a_frag[6]),
+            rebind[BFloat16](mat_a_frag[7]),
+        )
+    )
+
+    comptime input_reg_spec = _str_iota[n // 2, prefix="$"]()
+    comptime input_constraints_prefix = "=f," * (n // 2)
+    comptime input_constraints_suffix = _str_iota[n // 2, sep=","]()
+    comptime constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
+
+    # fmt: off
+    comptime if n == 8:
+        var r = inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $9, 0;
+                wgmma.mma_async.sync.aligned.m64n8k16.f32.bf16.bf16
+                {""" + input_reg_spec + """},
+                 {$4, $5, $6, $7},
+                 $8, p, $10, $11, $12;
+            }""",
+            _RegisterPackType[Float32, Float32, Float32, Float32],
+            constraints = constraints,
+        ](
+            a0, a1, a2, a3,
+            desc_b_value,
+            scale_d, scale_a, scale_b, trans_b,
+            c[0], c[1], c[2], c[3],
+        )
+
+        return rebind[type_of(c)](
+            SIMD[DType.float32, 4](r[0], r[1], r[2], r[3])
+        )
+    elif n == 16:
+        var r = inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $13, 0;
+                wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16
+                {""" + input_reg_spec + """},
+                 {$8, $9, $10, $11},
+                 $12, p, $14, $15, $16;
+            }""",
+            _RegisterPackType[
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+            ],
+            constraints = constraints,
+        ](
+            a0, a1, a2, a3,
+            desc_b_value,
+            scale_d, scale_a, scale_b, trans_b,
+            c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
+        )
+
+        return rebind[type_of(c)](
+            SIMD[DType.float32, 8](
+                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
             )
         )
-        var a1 = bitcast[DType.uint32, 1](
-            SIMD[DType.bfloat16, 2](
-                rebind[BFloat16](mat_a_frag[2]),
-                rebind[BFloat16](mat_a_frag[3]),
+    elif n == 32:
+        var r = inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $21, 0;
+                wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16
+                {""" + input_reg_spec + """},
+                 {$16, $17, $18, $19},
+                 $20, p, $22, $23, $24;
+            }""",
+            _RegisterPackType[
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+            ],
+            constraints = constraints,
+        ](
+            a0, a1, a2, a3,
+            desc_b_value,
+            scale_d, scale_a, scale_b, trans_b,
+            c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
+            c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
+        )
+
+        return rebind[type_of(c)](
+            SIMD[DType.float32, 16](
+                r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
+                r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
             )
         )
-        var a2 = bitcast[DType.uint32, 1](
-            SIMD[DType.bfloat16, 2](
-                rebind[BFloat16](mat_a_frag[4]),
-                rebind[BFloat16](mat_a_frag[5]),
+    elif n == 64:
+        var r = inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $37, 0;
+                wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16
+                {""" + input_reg_spec + """},
+                 {$32, $33, $34, $35},
+                 $36, p, $38, $39, $40;
+            }""",
+            _RegisterPackType[
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+            ],
+            constraints = constraints,
+        ](
+            a0, a1, a2, a3,
+            desc_b_value,
+            scale_d, scale_a, scale_b, trans_b,
+            c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
+            c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
+            c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23],
+            c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
+        )
+
+        return rebind[type_of(c)](
+            SIMD[DType.float32, 32](
+                r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
+                r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
+                r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23],
+                r[24], r[25], r[26], r[27], r[28], r[29], r[30], r[31],
             )
         )
-        var a3 = bitcast[DType.uint32, 1](
-            SIMD[DType.bfloat16, 2](
-                rebind[BFloat16](mat_a_frag[6]),
-                rebind[BFloat16](mat_a_frag[7]),
+    elif n == 128:
+        var r = inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $69, 0;
+                wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16
+                {""" + input_reg_spec + """},
+                 {$64, $65, $66, $67},
+                 $68, p, $70, $71, $72;
+            }""",
+            _RegisterPackType[
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+            ],
+            constraints = constraints,
+        ](
+            a0, a1, a2, a3,
+            desc_b_value,
+            scale_d, scale_a, scale_b, trans_b,
+            c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
+            c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
+            c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23],
+            c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
+            c[32], c[33], c[34], c[35], c[36], c[37], c[38], c[39],
+            c[40], c[41], c[42], c[43], c[44], c[45], c[46], c[47],
+            c[48], c[49], c[50], c[51], c[52], c[53], c[54], c[55],
+            c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
+        )
+        return rebind[type_of(c)](
+            SIMD[DType.float32, 64](
+                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
+                r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
+                r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25],
+                r[26], r[27], r[28], r[29], r[30], r[31], r[32], r[33],
+                r[34], r[35], r[36], r[37], r[38], r[39], r[40], r[41],
+                r[42], r[43], r[44], r[45], r[46], r[47], r[48], r[49],
+                r[50], r[51], r[52], r[53], r[54], r[55], r[56], r[57],
+                r[58], r[59], r[60], r[61], r[62], r[63],
             )
         )
+    elif n == 256:
+        var r = inlined_assembly[
+            """
+            {
+                .reg .pred p;
+                setp.ne.b32 p, $133, 0;
+                wgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16
+                {""" + input_reg_spec + """},
+                 {$128, $129, $130, $131},
+                 $132, p, $134, $135, $136;
+            }""",
+            _RegisterPackType[
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+                Float32, Float32, Float32, Float32,
+            ],
+            constraints = constraints,
+        ](
+            a0, a1, a2, a3,
+            desc_b_value,
+            scale_d, scale_a, scale_b, trans_b,
+            c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9],
+            c[10], c[11], c[12], c[13], c[14], c[15], c[16], c[17], c[18],
+            c[19], c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27],
+            c[28], c[29], c[30], c[31], c[32], c[33], c[34], c[35], c[36],
+            c[37], c[38], c[39], c[40], c[41], c[42], c[43], c[44], c[45],
+            c[46], c[47], c[48], c[49], c[50], c[51], c[52], c[53], c[54],
+            c[55], c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
+            c[64], c[65], c[66], c[67], c[68], c[69], c[70], c[71], c[72],
+            c[73], c[74], c[75], c[76], c[77], c[78], c[79], c[80], c[81],
+            c[82], c[83], c[84], c[85], c[86], c[87], c[88], c[89], c[90],
+            c[91], c[92], c[93], c[94], c[95], c[96], c[97], c[98], c[99],
+            c[100], c[101], c[102], c[103], c[104], c[105], c[106], c[107],
+            c[108], c[109], c[110], c[111], c[112], c[113], c[114], c[115],
+            c[116], c[117], c[118], c[119], c[120], c[121], c[122], c[123],
+            c[124], c[125], c[126], c[127],
+        )
 
-        comptime input_reg_spec = _str_iota[n // 2, prefix="$"]()
-        comptime input_constraints_prefix = "=f," * (n // 2)
-        comptime input_constraints_suffix = _str_iota[n // 2, sep=","]()
-        comptime constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
-
-        # fmt: off
-        comptime if n == 8:
-            var r = inlined_assembly[
-                """{
-                    .reg .pred p;
-                    setp.ne.b32 p, $9, 0;
-                    wgmma.mma_async.sync.aligned.m64n8k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
-                     {$4, $5, $6, $7},
-                     $8, p, $10, $11, $12;
-                }""",
-                _RegisterPackType[Float32, Float32, Float32, Float32],
-                constraints = constraints,
-            ](
-                a0, a1, a2, a3,
-                desc_b_value,
-                scale_d, scale_a, scale_b, trans_b,
-                c[0], c[1], c[2], c[3],
+        return rebind[type_of(c)](
+            SIMD[DType.float32, 128](
+                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
+                r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17], r[18],
+                r[19], r[20], r[21], r[22], r[23], r[24], r[25], r[26], r[27],
+                r[28], r[29], r[30], r[31], r[32], r[33], r[34], r[35], r[36],
+                r[37], r[38], r[39], r[40], r[41], r[42], r[43], r[44], r[45],
+                r[46], r[47], r[48], r[49], r[50], r[51], r[52], r[53], r[54],
+                r[55], r[56], r[57], r[58], r[59], r[60], r[61], r[62], r[63],
+                r[64], r[65], r[66], r[67], r[68], r[69], r[70], r[71], r[72],
+                r[73], r[74], r[75], r[76], r[77], r[78], r[79], r[80], r[81],
+                r[82], r[83], r[84], r[85], r[86], r[87], r[88], r[89], r[90],
+                r[91], r[92], r[93], r[94], r[95], r[96], r[97], r[98], r[99],
+                r[100], r[101], r[102], r[103], r[104], r[105], r[106], r[107],
+                r[108], r[109], r[110], r[111], r[112], r[113], r[114], r[115],
+                r[116], r[117], r[118], r[119], r[120], r[121], r[122], r[123],
+                r[124], r[125], r[126], r[127],
             )
-
-            return rebind[type_of(c)](
-                SIMD[DType.float32, 4](r[0], r[1], r[2], r[3])
-            )
-        elif n == 16:
-            var r = inlined_assembly[
-                """{
-                    .reg .pred p;
-                    setp.ne.b32 p, $13, 0;
-                    wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
-                     {$8, $9, $10, $11},
-                     $12, p, $14, $15, $16;
-                }""",
-                _RegisterPackType[
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                ],
-                constraints = constraints,
-            ](
-                a0, a1, a2, a3,
-                desc_b_value,
-                scale_d, scale_a, scale_b, trans_b,
-                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
-            )
-
-            return rebind[type_of(c)](
-                SIMD[DType.float32, 8](
-                    r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
-                )
-            )
-        elif n == 32:
-            var r = inlined_assembly[
-                """{
-                    .reg .pred p;
-                    setp.ne.b32 p, $21, 0;
-                    wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
-                     {$16, $17, $18, $19},
-                     $20, p, $22, $23, $24;
-                }""",
-                _RegisterPackType[
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                ],
-                constraints = constraints,
-            ](
-                a0, a1, a2, a3,
-                desc_b_value,
-                scale_d, scale_a, scale_b, trans_b,
-                c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
-                c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
-            )
-
-            return rebind[type_of(c)](
-                SIMD[DType.float32, 16](
-                    r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
-                    r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
-                )
-            )
-        elif n == 64:
-            var r = inlined_assembly[
-                """{
-                    .reg .pred p;
-                    setp.ne.b32 p, $37, 0;
-                    wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
-                     {$32, $33, $34, $35},
-                     $36, p, $38, $39, $40;
-                }""",
-                _RegisterPackType[
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                ],
-                constraints = constraints,
-            ](
-                a0, a1, a2, a3,
-                desc_b_value,
-                scale_d, scale_a, scale_b, trans_b,
-                c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
-                c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
-                c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23],
-                c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
-            )
-
-            return rebind[type_of(c)](
-                SIMD[DType.float32, 32](
-                    r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
-                    r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
-                    r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23],
-                    r[24], r[25], r[26], r[27], r[28], r[29], r[30], r[31],
-                )
-            )
-        elif n == 128:
-            var r = inlined_assembly[
-                """{
-                    .reg .pred p;
-                    setp.ne.b32 p, $69, 0;
-                    wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
-                     {$64, $65, $66, $67},
-                     $68, p, $70, $71, $72;
-                }""",
-                _RegisterPackType[
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                ],
-                constraints = constraints,
-            ](
-                a0, a1, a2, a3,
-                desc_b_value,
-                scale_d, scale_a, scale_b, trans_b,
-                c[0],  c[1],  c[2],  c[3],  c[4],  c[5],  c[6],  c[7],
-                c[8],  c[9],  c[10], c[11], c[12], c[13], c[14], c[15],
-                c[16], c[17], c[18], c[19], c[20], c[21], c[22], c[23],
-                c[24], c[25], c[26], c[27], c[28], c[29], c[30], c[31],
-                c[32], c[33], c[34], c[35], c[36], c[37], c[38], c[39],
-                c[40], c[41], c[42], c[43], c[44], c[45], c[46], c[47],
-                c[48], c[49], c[50], c[51], c[52], c[53], c[54], c[55],
-                c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
-            )
-            return rebind[type_of(c)](
-                SIMD[DType.float32, 64](
-                    r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
-                    r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
-                    r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25],
-                    r[26], r[27], r[28], r[29], r[30], r[31], r[32], r[33],
-                    r[34], r[35], r[36], r[37], r[38], r[39], r[40], r[41],
-                    r[42], r[43], r[44], r[45], r[46], r[47], r[48], r[49],
-                    r[50], r[51], r[52], r[53], r[54], r[55], r[56], r[57],
-                    r[58], r[59], r[60], r[61], r[62], r[63],
-                )
-            )
-        elif n == 256:
-            var r = inlined_assembly[
-                """
-                {
-                    .reg .pred p;
-                    setp.ne.b32 p, $133, 0;
-                    wgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
-                     {$128, $129, $130, $131},
-                     $132, p, $134, $135, $136;
-                }""",
-                _RegisterPackType[
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                    Float32, Float32, Float32, Float32,
-                ],
-                constraints = constraints,
-            ](
-                a0, a1, a2, a3,
-                desc_b_value,
-                scale_d, scale_a, scale_b, trans_b,
-                c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9],
-                c[10], c[11], c[12], c[13], c[14], c[15], c[16], c[17], c[18],
-                c[19], c[20], c[21], c[22], c[23], c[24], c[25], c[26], c[27],
-                c[28], c[29], c[30], c[31], c[32], c[33], c[34], c[35], c[36],
-                c[37], c[38], c[39], c[40], c[41], c[42], c[43], c[44], c[45],
-                c[46], c[47], c[48], c[49], c[50], c[51], c[52], c[53], c[54],
-                c[55], c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
-                c[64], c[65], c[66], c[67], c[68], c[69], c[70], c[71], c[72],
-                c[73], c[74], c[75], c[76], c[77], c[78], c[79], c[80], c[81],
-                c[82], c[83], c[84], c[85], c[86], c[87], c[88], c[89], c[90],
-                c[91], c[92], c[93], c[94], c[95], c[96], c[97], c[98], c[99],
-                c[100], c[101], c[102], c[103], c[104], c[105], c[106], c[107],
-                c[108], c[109], c[110], c[111], c[112], c[113], c[114], c[115],
-                c[116], c[117], c[118], c[119], c[120], c[121], c[122], c[123],
-                c[124], c[125], c[126], c[127],
-            )
-
-            return rebind[type_of(c)](
-                SIMD[DType.float32, 128](
-                    r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
-                    r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17], r[18],
-                    r[19], r[20], r[21], r[22], r[23], r[24], r[25], r[26], r[27],
-                    r[28], r[29], r[30], r[31], r[32], r[33], r[34], r[35], r[36],
-                    r[37], r[38], r[39], r[40], r[41], r[42], r[43], r[44], r[45],
-                    r[46], r[47], r[48], r[49], r[50], r[51], r[52], r[53], r[54],
-                    r[55], r[56], r[57], r[58], r[59], r[60], r[61], r[62], r[63],
-                    r[64], r[65], r[66], r[67], r[68], r[69], r[70], r[71], r[72],
-                    r[73], r[74], r[75], r[76], r[77], r[78], r[79], r[80], r[81],
-                    r[82], r[83], r[84], r[85], r[86], r[87], r[88], r[89], r[90],
-                    r[91], r[92], r[93], r[94], r[95], r[96], r[97], r[98], r[99],
-                    r[100], r[101], r[102], r[103], r[104], r[105], r[106], r[107],
-                    r[108], r[109], r[110], r[111], r[112], r[113], r[114], r[115],
-                    r[116], r[117], r[118], r[119], r[120], r[121], r[122], r[123],
-                    r[124], r[125], r[126], r[127],
-                )
-            )
-        else:
-            comptime assert False, String("the n value '", n, "' is not valid")
-        # fmt: on
-
+        )
     else:
-        comptime assert False, "unsupported config"
+        comptime assert False, String("the n value '", n, "' is not valid")
+    # fmt: on
 
 
 @always_inline("nodebug")

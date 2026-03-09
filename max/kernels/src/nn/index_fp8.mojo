@@ -17,8 +17,6 @@ from layout.layout_tensor import (
     LayoutTensor,
     ThreadScope,
     copy_dram_to_sram,
-    copy_dram_to_local,
-    copy_local_to_shared,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile, SharedMemBarrier
 from std.gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
@@ -30,8 +28,6 @@ from nn.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.mha_fa3_utils import q_tma
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 struct IndexSmemStorage[
@@ -62,7 +58,7 @@ fn fp8_index_kernel[
 ](
     output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
     # [total_seq_len, num_heads, depth]
-    q: LayoutTensor[dtype, q_layout, MutAnyOrigin],
+    q: LayoutTensor[dtype, q_layout, ImmutAnyOrigin],
     # [total_seq_len, num_heads]
     q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
     # MHAOperand for K values
@@ -100,7 +96,7 @@ fn fp8_index_kernel[
         return
 
     ref smem_ptr = external_memory[
-        Scalar[DType.uint8], address_space = AddressSpace.SHARED, alignment=128
+        Scalar[DType.uint8], address_space=AddressSpace.SHARED, alignment=128
     ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
     ref q_smem = smem_ptr.q_smem
@@ -111,14 +107,14 @@ fn fp8_index_kernel[
         dtype,
         Layout.row_major(num_heads, depth),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](q_smem.unsafe_ptr())
 
     var k_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(BN, depth),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
     var k_smem_ptr = k_smem.unsafe_ptr()
@@ -130,7 +126,7 @@ fn fp8_index_kernel[
     )
 
     comptime QTileType = LayoutTensor[
-        dtype, Layout.row_major(num_heads, depth), MutAnyOrigin
+        dtype, Layout.row_major(num_heads, depth), ImmutAnyOrigin
     ]
 
     comptime QSTileType = LayoutTensor[
@@ -141,28 +137,28 @@ fn fp8_index_kernel[
         DType.float32,
         Layout.row_major(BN // thread_dim_x, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime QSRegTileType = LayoutTensor[
         DType.float32,
         Layout.row_major(1, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime LogitsSumType = LayoutTensor[
         DType.float32,
         Layout.row_major(BN // thread_dim_x, 1),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime ScratchType = LayoutTensor[
         DType.float32,
         Layout.row_major(BN, thread_dim_y),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]
 
     var q_tile = QTileType(q_ptr)
@@ -180,8 +176,8 @@ fn fp8_index_kernel[
         q_s_reg_tile[0, q_frag_idx] = q_s_frag[0, q_frag_idx][0]
 
     copy_dram_to_sram[
-        thread_layout = Layout.row_major(16, 8),
-        thread_scope = ThreadScope.BLOCK,
+        thread_layout=Layout.row_major(16, 8),
+        thread_scope=ThreadScope.BLOCK,
         block_dim_count=2,
     ](
         q_smem_tile.vectorize[1, simd_width](),
@@ -284,22 +280,24 @@ fn fp8_index[
         mut=True,
         DType.float32,
         output_layout,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
     q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[dtype, k_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[
+        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
+    ],
     k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     max_seq_len: Int,
@@ -309,7 +307,7 @@ fn fp8_index[
     # Create RaggedMHAOperand wrappers for K and K_s
     # These allow accessing ragged data via cache_row_offsets indirection
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, ImmutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, k.origin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -318,7 +316,7 @@ fn fp8_index[
         LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            ImmutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -353,6 +351,8 @@ fn fp8_index[
     comptime BN = block_tile_shape[1]
     comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
     comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
+
+    comptime assert num_heads % 8 == 0, "num_heads must be a multiple of 8"
 
     # RaggedMHAOperand.cache_length() returns full key length directly,
     # so _is_cache_length_accurate=True skips adding seq_len in the kernel.
@@ -399,9 +399,9 @@ fn _index_matmul_max[
     k_type: MHAOperand,
 ](
     output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
-    q: LayoutTensor[dtype, q_layout, MutAnyOrigin],
+    q: LayoutTensor[dtype, q_layout, ImmutAnyOrigin],
     q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
-    k: LayoutTensor[dtype, k_layout, MutAnyOrigin],
+    k: LayoutTensor[dtype, k_layout, ImmutAnyOrigin],
     valid_length: LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
@@ -433,14 +433,12 @@ fn _index_matmul_max[
     var q_runtime_layout = RuntimeLayout[q_layout].row_major(
         Index(seq_len, num_heads, depth)
     )
-    var q_batch = LayoutTensor[dtype, q_layout, MutAnyOrigin](
-        q_ptr, q_runtime_layout
-    )
+    var q_batch = LayoutTensor[dtype, q_layout](q_ptr, q_runtime_layout)
 
     var k_runtime_layout = RuntimeLayout[k_layout].row_major(
         Index(num_keys, 1, depth)
     )
-    var k_batch = LayoutTensor[dtype, k_layout, MutAnyOrigin](
+    var k_batch = LayoutTensor[dtype, k_layout, k.origin](
         k_ptr, k_runtime_layout
     )
 
@@ -535,22 +533,24 @@ fn fp8_index_naive[
         mut=True,
         DType.float32,
         output_layout,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
-    q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
     q_s: LayoutTensor[
-        DType.float32, qs_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, qs_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    k: LayoutTensor[dtype, k_layout, address_space = AddressSpace.GENERIC, ...],
+    k: LayoutTensor[
+        mut=False, dtype, k_layout, address_space=AddressSpace.GENERIC, ...
+    ],
     k_s: LayoutTensor[
-        DType.float32, ks_layout, address_space = AddressSpace.GENERIC, ...
+        DType.float32, ks_layout, address_space=AddressSpace.GENERIC, ...
     ],
     valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     cache_row_offsets: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     batch_size: Int,
     max_seq_len: Int,
@@ -558,7 +558,7 @@ fn fp8_index_naive[
     ctx: DeviceContext,
 ) raises:
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, k.origin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -567,7 +567,7 @@ fn fp8_index_naive[
         LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(

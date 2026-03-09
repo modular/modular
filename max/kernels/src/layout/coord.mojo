@@ -414,7 +414,9 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     fn __init__[
         rank: Int, dtype: DType
     ](
-        out self: Coord[*_Splatted[RuntimeInt[dtype], rank]],
+        out self: Coord[
+            *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[dtype]]
+        ],
         index_list: std.utils.IndexList[rank, element_type=dtype],
     ):
         """Construct a Coord from an IndexList.
@@ -526,8 +528,8 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         var t = _RegTuple(
             storage=rebind_var[
                 VariadicPack[
-                    elt_is_mutable = type_of(storage).elt_is_mutable,
-                    origin = type_of(storage).origin,
+                    elt_is_mutable=type_of(storage).elt_is_mutable,
+                    origin=type_of(storage).origin,
                     type_of(storage).is_owned,
                     TrivialRegisterPassable,
                     *Self.element_types,
@@ -1019,6 +1021,8 @@ fn idx2crd[
     output coordinate is a ComptimeInt[0]. Otherwise, coordinates are
     RuntimeInt[out_dtype].
 
+    The idx, and all components of shape and stride must be non-negative.
+
     Parameters:
         Shape: The shape type (must be CoordLike).
         Stride: The stride type (must be CoordLike).
@@ -1077,7 +1081,9 @@ fn idx2crd[
             else:
                 var stride_val = stride_t[i].value()
                 var shape_val = shape_t[i].value()
-                var coord_val = (idx // stride_val) % shape_val
+                var coord_val = Int(
+                    (UInt(idx) // UInt(stride_val)) % UInt(shape_val)
+                )
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](
                         RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
@@ -1089,7 +1095,9 @@ fn idx2crd[
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         else:
-            var coord_val = (idx // stride.value()) % shape.value()
+            var coord_val = Int(
+                (UInt(idx) // UInt(stride.value())) % UInt(shape.value())
+            )
 
             comptime for i in range(shape_len):
                 UnsafePointer(to=result[i]).init_pointee_copy(
@@ -1116,6 +1124,8 @@ fn idx2crd[
     This overload accepts a CoordLike index, enabling compile-time result
     computation when the index, shape, and stride are all statically known.
     Uses the per-element formula: ``coord[i] = (idx // stride[i]) % shape[i]``.
+
+    The idx, and all components of shape and stride must be non-negative.
 
     Parameters:
         Index: The index type (must be CoordLike).
@@ -1173,7 +1183,9 @@ fn idx2crd[
             else:
                 var stride_val = stride_t[i].value()
                 var shape_val = shape_t[i].value()
-                var coord_val = (idx.value() // stride_val) % shape_val
+                var coord_val = Int(
+                    (UInt(idx.value()) // UInt(stride_val)) % UInt(shape_val)
+                )
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](
                         RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
@@ -1192,7 +1204,10 @@ fn idx2crd[
             # All static: result is ComptimeInt, already default-initialized.
             pass
         else:
-            var coord_val = (idx.value() // stride.value()) % shape.value()
+            var coord_val = Int(
+                (UInt(idx.value()) // UInt(stride.value()))
+                % UInt(shape.value())
+            )
 
             comptime for i in range(shape_len):
                 UnsafePointer(to=result[i]).init_pointee_copy(
@@ -1292,9 +1307,14 @@ fn coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
 
 fn coord[
     dtype: DType, *element_types: Movable
-](var values: Tuple[*element_types]) -> Coord[
-    *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
-] where _AllEqual[Int, *element_types]:
+](
+    var values: Tuple[*element_types],
+    out result: Coord[
+        *Variadic.splat_type[
+            Trait=CoordLike, type_of(values).__len__(), RuntimeInt[dtype]
+        ]
+    ],
+) where _AllEqual[Int, *element_types]:
     """Create a Coord from a tuple of integers with specified dtype.
 
     Parameters:
@@ -1307,17 +1327,14 @@ fn coord[
     Returns:
         A Coord instance containing RuntimeInt elements for each value.
     """
-    var tuple = Coord[
-        *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
-    ]()
+    result = {}
 
     comptime for i in range(type_of(values).__len__()):
-        UnsafePointer(to=tuple[i]).init_pointee_copy(
-            rebind[type_of(tuple[i])](
+        UnsafePointer(to=result[i]).init_pointee_copy(
+            rebind[type_of(result[i])](
                 RuntimeInt[dtype](Scalar[dtype](rebind[Int](values[i])))
             )
         )
-    return tuple
 
 
 fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
@@ -1335,7 +1352,7 @@ fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
 
 
 comptime DynamicCoord[dtype: DType, size: Int] = Coord[
-    *_Splatted[RuntimeInt[dtype], size]
+    *Variadic.splat_type[Trait=CoordLike, size, RuntimeInt[dtype]]
 ]
 """
 Create a Coord full of `size` dynamic elements with `dtype`.
@@ -1349,7 +1366,7 @@ Returns:
 """
 
 comptime StaticCoord[value: Int, size: Int] = Coord[
-    *_Splatted[ComptimeInt[value], size]
+    *Variadic.splat_type[Trait=CoordLike, size, ComptimeInt[value]]
 ]
 """
 Create a Coord full of `size` static elements with `dtype`.
@@ -1377,7 +1394,7 @@ comptime _FlattenReducer[
 comptime _Flattened[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenReducer,
 ]
@@ -1414,7 +1431,7 @@ comptime _FlattenOffsetReducer[
 comptime _FlattenedOffsets[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
     Reducer=_FlattenOffsetReducer,
 ]
@@ -1428,8 +1445,9 @@ fn _get_flattened_helper[
 ](tuple: Coord[*element_types]) -> Int:
     """Helper function to recursively access flattened elements."""
 
-    comptime if i >= Coord[*element_types].__len__():
-        comptime assert False, "flat_idx out of bounds"
+    comptime assert (
+        i < Coord[*element_types].__len__()
+    ), "flat_idx out of bounds"
 
     comptime T = element_types[i]
 
@@ -1484,7 +1502,7 @@ comptime _AllStaticReducer[
 
 
 comptime _AllStatic[*element_types: CoordLike] = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[True],
+    BaseVal=Variadic.values[True],
     VariadicType=element_types,
     Reducer=_AllStaticReducer,
 ][0]
@@ -1504,9 +1522,9 @@ comptime _AllEqualReducer[
 comptime _AllEqual[
     T: AnyType, *element_types: AnyType
 ] = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[False],
+    BaseVal=Variadic.values[False],
     VariadicType=element_types,
-    Reducer = _AllEqualReducer[T, ...],
+    Reducer=_AllEqualReducer[T, ...],
 ][
     0
 ]
@@ -1521,7 +1539,7 @@ comptime _StaticProductReducer[
 comptime _StaticProduct[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToValue[
-    BaseVal = Variadic.values[1],
+    BaseVal=Variadic.values[1],
     VariadicType=element_types,
     Reducer=_StaticProductReducer,
 ][
@@ -1536,20 +1554,10 @@ comptime _IntToComptimeIntMapper[
 
 
 comptime _IntToComptimeInt[*values: Int] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=values,
     Reducer=_IntToComptimeIntMapper,
 ]
-
-comptime _Splatted[T: CoordLike, count: Int] = __mlir_attr[
-    `#kgen.variadic.splat<`,
-    T,
-    `,`,
-    count._mlir_value,
-    `> : `,
-    Variadic.TypesOfTrait[type_of(T)],
-]
-
 
 # ===-----------------------------------------------------------------------===#
 # Dim to CoordLike conversion
@@ -1580,9 +1588,9 @@ Uses direct field access rather than methods for compile-time evaluation.
 comptime _DimsToCoordLike[
     dtype: DType, dims: DimList
 ] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
-    VariadicType = dims.value.value,
-    Reducer = _DimToCoordLikeMapper[dtype, ...],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=dims.value.value,
+    Reducer=_DimToCoordLikeMapper[dtype, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
@@ -1631,11 +1639,12 @@ Uses direct field access rather than methods for compile-time evaluation.
 comptime _IntTupleToCoordLike[
     dtype: DType, tuple: IntTuple
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
-    VariadicType = Variadic.types[
-        T=CoordLike, *_Splatted[RuntimeInt[dtype], len(tuple)]
+    BaseVal=Variadic.empty_of_trait[CoordLike],
+    VariadicType=Variadic.types[
+        T=CoordLike,
+        *Variadic.splat_type[Trait=CoordLike, len(tuple), RuntimeInt[dtype]],
     ],
-    Reducer = _IntTupleToCoordLikeMapper[dtype, tuple, ...],
+    Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
@@ -1682,7 +1691,7 @@ Uses direct field access rather than methods for compile-time evaluation.
 comptime _CoordToDimList[*dims: CoordLike] = DimList(
     VariadicParamList(
         _ReduceVariadicAndIdxToValue[
-            BaseVal = Variadic.empty_of_type[Dim],
+            BaseVal=Variadic.empty_of_type[Dim],
             VariadicType=dims,
             Reducer=_CoordToDimMapper,
         ]
@@ -1732,9 +1741,9 @@ All elements (ComptimeInt, RuntimeInt of any dtype) are converted to RuntimeInt[
 comptime _CoordToDynamic[
     dtype: DType, *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
-    Reducer = _CoordToDynamicMapper[dtype, ...],
+    Reducer=_CoordToDynamicMapper[dtype, ...],
 ]
 """Converts a variadic of CoordLike types to all RuntimeInt[dtype].
 All elements are converted to RuntimeInt[dtype], regardless of their original type.
@@ -1796,9 +1805,9 @@ comptime _Idx2CrdResultTypes[
     stride_types: Variadic.TypesOfTrait[CoordLike],
     shape_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[CoordLike],
+    BaseVal=Variadic.empty_of_trait[CoordLike],
     VariadicType=shape_types,
-    Reducer = _Idx2CrdResultMapper[out_dtype, idx_type, stride_types, ...],
+    Reducer=_Idx2CrdResultMapper[out_dtype, idx_type, stride_types, ...],
 ]
 """Computes the result types for idx2crd based on shape, stride, and index.
 
@@ -1917,7 +1926,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index = idx.__mlir_index__()
+            index=idx.__mlir_index__()
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
@@ -2272,7 +2281,7 @@ comptime _Multiply[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _MultiplyMapper[Rhs=Rhs, ...],
+    Mapper=_MultiplyMapper[Rhs=Rhs, ...],
 ]
 
 
@@ -2289,7 +2298,7 @@ comptime _MultiplyByScalar[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Types,
-    Mapper = _MultiplyByScalarMapper[scalar=scalar, ...],
+    Mapper=_MultiplyByScalarMapper[scalar=scalar, ...],
 ]
 """Multiply each element in Types by a scalar value.
 
@@ -2315,7 +2324,7 @@ comptime _Divide[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _DivideMapper[Rhs=Rhs, ...],
+    Mapper=_DivideMapper[Rhs=Rhs, ...],
 ]
 
 comptime _CeilDivMapper[
@@ -2334,5 +2343,5 @@ comptime _CeilDiv[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _CeilDivMapper[Rhs=Rhs, ...],
+    Mapper=_CeilDivMapper[Rhs=Rhs, ...],
 ]

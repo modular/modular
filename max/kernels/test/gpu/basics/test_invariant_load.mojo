@@ -15,13 +15,10 @@ from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import ldg
 from layout import Layout, LayoutTensor
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_true
 
 
-fn ldg_kernel(i8: UnsafePointer[Int8]):
+fn ldg_kernel(i8: UnsafePointer[Int8, MutAnyOrigin]):
     i8.store(1, ldg(i8))
 
 
@@ -36,7 +33,7 @@ def test_ldg_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         ldg_kernel,
         emission_kind=emission_kind,
-        target = get_gpu_target["sm_90a"](),
+        target=get_gpu_target["sm_90a"](),
     ]().asm
 
 
@@ -51,7 +48,7 @@ def test_layout_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         layout_kernel,
         emission_kind=emission_kind,
-        target = get_gpu_target["sm_90a"](),
+        target=get_gpu_target["sm_90a"](),
     ]().asm
 
 

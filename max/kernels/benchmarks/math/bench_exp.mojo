@@ -31,9 +31,7 @@ from std.benchmark import (
 from buffer import NDBuffer
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 
 
 fn apply[
@@ -53,7 +51,7 @@ def bench_unary[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size_range: _StridedRange, op_name: String):
+](mut m: Bench, size_range: _StridedRange, op_name: String) raises:
     for i in size_range:
         bench_unary[func, dtype](m, i, op_name)
 
@@ -63,14 +61,10 @@ def bench_unary[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size: Int, op_name: String):
+](mut m: Bench, size: Int, op_name: String) raises:
     comptime alignment = 64
-    var input_ptr = UnsafePointer[Scalar[dtype],].alloc(
-        size, alignment=alignment
-    )
-    var output_ptr = UnsafePointer[Scalar[dtype],].alloc(
-        size, alignment=alignment
-    )
+    var input_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
+    var output_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):

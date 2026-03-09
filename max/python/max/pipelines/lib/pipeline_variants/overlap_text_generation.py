@@ -209,7 +209,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
 
 @traced
-def build_scatter_future_tokens_graph() -> Graph:
+def build_scatter_future_tokens_graph(device: DeviceRef) -> Graph:
     """Builds a trivial scatter_nd graph."""
     with Graph(
         "my_scatter_future_tokens_graph",
@@ -218,19 +218,19 @@ def build_scatter_future_tokens_graph() -> Graph:
             TensorType(
                 DType.int64,
                 shape=[SymbolicDim("curr_batch_size")],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
             # Generated tokens for batch N-1
             TensorType(
                 DType.int64,
                 shape=[SymbolicDim("prev_batch_size"), Dim(1)],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
             # Indices that maps generated tokens from batch N-1 to batch N
             TensorType(
                 DType.int32,
                 shape=[SymbolicDim("prev_batch_size")],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
         ],
     ) as graph:
@@ -256,22 +256,17 @@ class ScatterFutureTokenProcessor:
     present in the previous batch.
     """
 
-    def __init__(self, session: InferenceSession) -> None:
+    def __init__(self, session: InferenceSession, device: DeviceRef) -> None:
         self._scatter_future_tokens = session.load(
-            build_scatter_future_tokens_graph()
+            build_scatter_future_tokens_graph(device)
         )
 
-    @traced
-    def scatter_future_tokens(
+    def _compute_scatter_future_tok_indices(
         self,
         prev_batch: AsyncBatch[TextGenerationContextType],
         inputs: TextGenerationInputs[TextGenerationContextType],
         ragged_input_tokens: Buffer,
-    ) -> Buffer:
-        """Scatters generated tokens from the previous batch into placeholder slots.
-
-        Fills placeholder future tokens in the current batch on the GPU.
-        """
+    ) -> DevicePinnedBuffer:
         prev_generated_tokens = prev_batch.generated_tokens_device
         device = prev_generated_tokens.device
         if device.is_host:
@@ -301,22 +296,56 @@ class ScatterFutureTokenProcessor:
         # If a request is present in both the previous and current batch,
         # then we must scatter the generated token into the placeholder future
         # token slot.
-        prev_flat_batch = prev_batch.inputs.flat_batch
-        req_id_to_idx_in_batch = {
-            context.request_id: idx_in_batch
-            for idx_in_batch, context in enumerate(inputs.flat_batch)
+
+        # Here we compute the index in the ragged inputs where the last token of
+        # each request is located. If a placeholder future token is present, then
+        # it is at the last index.
+        last_token_indices: list[int] = (
+            np.cumsum([ctx.tokens.active_length for ctx in inputs.flat_batch])
+            - 1
+        ).tolist()
+        req_id_to_last_token_index = {
+            context.request_id: last_token_index
+            for context, last_token_index in zip(
+                inputs.flat_batch, last_token_indices, strict=True
+            )
         }
+
+        prev_flat_batch = prev_batch.inputs.flat_batch
         for prev_idx, context in enumerate(prev_flat_batch):
             req_id = context.request_id
             # If generated_length is still 0, then there is no placeholder future
             # token. This is possible due to chunked prefill.
             if (
-                req_id in req_id_to_idx_in_batch
+                req_id in req_id_to_last_token_index
                 and context.tokens.generated_length
             ):
-                future_tok_indices_np[prev_idx] = req_id_to_idx_in_batch[req_id]
+                future_tok_indices_np[prev_idx] = req_id_to_last_token_index[
+                    req_id
+                ]
+
+        return future_tok_indices
+
+    @traced
+    def scatter_future_tokens(
+        self,
+        prev_batch: AsyncBatch[TextGenerationContextType],
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        ragged_input_tokens: Buffer,
+    ) -> Buffer:
+        """Scatters generated tokens from the previous batch into placeholder slots.
+
+        Fills placeholder future tokens in the current batch on the GPU.
+        """
+        future_tok_indices = self._compute_scatter_future_tok_indices(
+            prev_batch,
+            inputs,
+            ragged_input_tokens,
+        )
 
         # Execute the scatter_nd kernel.
+        prev_generated_tokens = prev_batch.generated_tokens_device
+        device = future_tok_indices.device
         (new_ragged_input_tokens,) = self._scatter_future_tokens.execute(
             ragged_input_tokens,
             prev_generated_tokens,
@@ -451,7 +480,9 @@ class OverlapTextGenerationPipeline(
 
         # Load the scatter future tokens graph.
         self._scatter_future_tokens: ScatterFutureTokenProcessor = (
-            ScatterFutureTokenProcessor(session)
+            ScatterFutureTokenProcessor(
+                session, DeviceRef.from_device(self._devices[0])
+            )
         )
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
@@ -486,7 +517,9 @@ class OverlapTextGenerationPipeline(
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
-    def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
+    def _warmup_model_inputs(
+        self, batch_size: int, q_max_seq_len: int = 1
+    ) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
         for _replica_idx in range(dp_size):
@@ -494,7 +527,9 @@ class OverlapTextGenerationPipeline(
                 [
                     TextContext(
                         max_length=self._pipeline_model.max_seq_len,
-                        tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
+                        tokens=TokenBuffer(
+                            np.zeros(q_max_seq_len, dtype=np.int64)
+                        ),
                         eos_token_ids=self._eos_token_id,
                         model_name=self._pipeline_config.model.model_name,
                     )
@@ -719,24 +754,24 @@ class OverlapTextGenerationPipeline(
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Executes a batch of requests asynchronously on the GPU.
 
-        This method will return before the outputs for the current batch are ready.
-        The caller may need to call `.execute()` again (possibly with an empty batch)
-        to retrieve these outputs. For example:
+        This method returns before the outputs for the current batch are
+        ready. The caller may need to call ``execute()`` again (possibly
+        with an empty batch) to retrieve these outputs. For example:
 
-        ```python
-        output_a = pipeline.execute(inputs)
-        assert len(outputs) == 0
+        .. code-block:: python
 
-        output_b = pipeline.execute(empty_inputs)
-        assert len(outputs) == len(inputs.flat_batch)
-        ```
+            output_a = pipeline.execute(inputs)
+            assert len(outputs) == 0
+
+            output_b = pipeline.execute(empty_inputs)
+            assert len(outputs) == len(inputs.flat_batch)
 
         Args:
             inputs: The inputs for the batch.
 
         Returns:
-            A dictionary of request IDs to outputs. The outputs will not correspond
-            to the requests in the input batch. Instead they are of the previous batch.
+            A dictionary of request IDs to outputs. The outputs do not correspond
+            to the requests in the input batch. Instead they are from the previous batch.
         """
         if inputs.enable_log_probs:
             raise ValueError(

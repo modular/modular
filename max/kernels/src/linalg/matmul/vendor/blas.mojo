@@ -13,11 +13,6 @@
 
 from std.memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-
 from std.sys import has_amd_gpu_accelerator, size_of
 from std.ffi import _get_global_or_null, external_call
 
@@ -39,8 +34,8 @@ from _cublas.cublas import (
     cublasSetStream,
 )
 from _cublas.cublaslt import (
-    Context,
     Preference,
+    cublasLtHandle_t,
     cublasLtLoggerSetLevel,
     cublasLtMatmul,
     cublasLtMatmulAlgoGetHeuristic,
@@ -90,8 +85,7 @@ from buffer import NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from buffer import DimList, NDBuffer
 from std.utils import IndexList
@@ -194,9 +188,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     fn __init__(out self) raises:
         comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             var handle = Self._cublas_type()
-            check_cublas_error(
-                cublasCreate(LegacyUnsafePointer(to=handle).as_unsafe_pointer())
-            )
+            check_cublas_error(cublasCreate(UnsafePointer(to=handle)))
             self._handle = handle
         elif Self.resolved_backend is Backend.ROCBLAS:
             var handle = Self._rocblas_type()
@@ -293,9 +285,7 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
 
         comptime if _DEBUG_VENDOR_BLAS:
             comptime if handle.resolved_backend is Backend.CUBLAS:
-                check_cublas_error(
-                    cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
-                )
+                check_cublas_error(cublasLoggerConfigure(1, 1, 0, {}))
             else:
                 check_cublas_error(cublasLtLoggerSetLevel(5))
 
@@ -319,7 +309,7 @@ fn _get_global_handle[
         return global_ptr[]
 
     # Otherwise, we have not initialized the handle yet.
-    var handle_ptr = UnsafePointer[Handle[backend]].alloc(1)
+    var handle_ptr = alloc[Handle[backend]](1)
     handle_ptr.init_pointee_move(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
@@ -360,9 +350,9 @@ fn matmul[
     Matmul using the vendor BLAS library. With a global handle.
     """
 
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = TileTensor(c).to_layout_tensor()
+    var a_tensor = TileTensor(a).to_layout_tensor()
+    var b_tensor = TileTensor(b).to_layout_tensor()
 
     # Push the device context to ensure correct CUDA context is current for all
     # vendor BLAS calls.
@@ -491,7 +481,7 @@ fn matmul[
             transpose_b,
         )
 
-    with Trace[TraceLevel.OP, target = StaticString("gpu")](
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),
@@ -525,7 +515,7 @@ fn matmul[
         elif handle.resolved_backend is Backend.CUBLASLT:
             _cublasLt_matmul(
                 ctx,
-                handle._get_cublas().bitcast[Context](),
+                handle._get_cublas().bitcast[NoneType](),
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -574,9 +564,9 @@ fn matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = TileTensor(c).to_layout_tensor()
+    var a_tensor = TileTensor(a).to_layout_tensor()
+    var b_tensor = TileTensor(b).to_layout_tensor()
 
     matmul[use_tf32=use_tf32](
         ctx,
@@ -676,19 +666,15 @@ fn _cublas_matmul[
                 Int32(N),
                 Int32(M),
                 Int32(K),
-                LegacyUnsafePointer(to=alpha)
-                .bitcast[NoneType]()
-                .as_unsafe_pointer(),
-                UnsafePointer(b.ptr.bitcast[NoneType]()),
+                UnsafePointer(to=alpha).bitcast[NoneType](),
+                UnsafePointer[mut=False](b.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[b_type](),
                 Int32(K) if transpose_b else Int32(N),
-                UnsafePointer(a.ptr.bitcast[NoneType]()),
+                UnsafePointer[mut=False](a.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[a_type](),
                 Int32(M) if transpose_a else Int32(K),
-                LegacyUnsafePointer(to=beta)
-                .bitcast[NoneType]()
-                .as_unsafe_pointer(),
-                UnsafePointer(c.ptr.bitcast[NoneType]()),
+                UnsafePointer(to=beta).bitcast[NoneType](),
+                UnsafePointer[mut=True](c.ptr.bitcast[NoneType]()),
                 _convert_to_cublas_datatype[c_type](),
                 Int32(N),
                 compute_type,
@@ -718,19 +704,15 @@ fn _cublas_matmul[
             Int32(M),
             Int32(N),
             Int32(K),
-            LegacyUnsafePointer(to=alpha)
-            .bitcast[NoneType]()
-            .as_unsafe_pointer(),
-            UnsafePointer(a.ptr.bitcast[NoneType]()),
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            UnsafePointer[mut=False](a.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[a_type](),
             Int32(M),
-            UnsafePointer(b.ptr.bitcast[NoneType]()),
+            UnsafePointer[mut=False](b.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[b_type](),
             Int32(N) if transpose_b else Int32(K),
-            LegacyUnsafePointer(to=beta)
-            .bitcast[NoneType]()
-            .as_unsafe_pointer(),
-            UnsafePointer(c.ptr.bitcast[NoneType]()),
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            UnsafePointer[mut=True](c.ptr.bitcast[NoneType]()),
             _convert_to_cublas_datatype[c_type](),
             Int32(M),
             compute_type,
@@ -819,17 +801,17 @@ fn _rocblas_matmul[
                 Int32(M),
                 Int32(K),
                 LegacyUnsafePointer(to=alpha).bitcast[NoneType](),
-                UnsafePointer(b.ptr.bitcast[NoneType]()),
+                LegacyUnsafePointer(b.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(b_type),
                 Int32(K) if transpose_b else Int32(N),
-                UnsafePointer(a.ptr.bitcast[NoneType]()),
+                LegacyUnsafePointer(a.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(a_type),
                 Int32(K),
                 LegacyUnsafePointer(to=beta).bitcast[NoneType](),
-                UnsafePointer(c.ptr.bitcast[NoneType]()),
+                LegacyUnsafePointer(c.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(c_type),
                 Int32(N),
-                UnsafePointer(c.ptr.bitcast[NoneType]()),
+                LegacyUnsafePointer(c.ptr.bitcast[NoneType]()),
                 _rocblas.types.DataType(c_type),
                 Int32(N),
                 compute_type,
@@ -848,17 +830,17 @@ fn _rocblas_matmul[
             Int32(N),
             Int32(K),
             LegacyUnsafePointer(to=alpha).bitcast[NoneType](),
-            UnsafePointer(a.ptr.bitcast[NoneType]()),
+            LegacyUnsafePointer(a.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(a_type),
             Int32(M),
-            UnsafePointer(b.ptr.bitcast[NoneType]()),
+            LegacyUnsafePointer(b.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(b_type),
             Int32(N) if transpose_b else Int32(K),
             LegacyUnsafePointer(to=beta).bitcast[NoneType](),
-            UnsafePointer(c.ptr.bitcast[NoneType]()),
+            LegacyUnsafePointer(c.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(c_type),
             Int32(M),
-            UnsafePointer(c.ptr.bitcast[NoneType]()),
+            LegacyUnsafePointer(c.ptr.bitcast[NoneType]()),
             _rocblas.types.DataType(c_type),
             Int32(M),
             compute_type,
@@ -886,7 +868,7 @@ fn _cublasLt_matmul[
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    handle: UnsafePointer[Context],
+    handle: cublasLtHandle_t,
     d: LayoutTensor[d_type, d_layout, _],
     a: LayoutTensor[a_type, a_layout, _],
     b: LayoutTensor[b_type, b_layout, _],
@@ -968,7 +950,7 @@ fn _cublasLt_matmul[
     var compute_desc = cublasLtMatmulDesc_t()
     check_cublas_error(
         cublasLtMatmulDescCreate(
-            LegacyUnsafePointer(to=compute_desc),
+            UnsafePointer(to=compute_desc),
             ComputeType.COMPUTE_32F,
             DataType.R_32F,
         ),
@@ -979,7 +961,7 @@ fn _cublasLt_matmul[
         cublasLtMatmulDescSetAttribute(
             compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSA,
-            LegacyUnsafePointer(to=transa).bitcast[NoneType](),
+            UnsafePointer(to=transa).bitcast[NoneType](),
             size_of[cublasOperation_t](),
         ),
         msg="failed to set cublasLtMatmulDescAttribute for transa",
@@ -988,7 +970,7 @@ fn _cublasLt_matmul[
         cublasLtMatmulDescSetAttribute(
             compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSB,
-            LegacyUnsafePointer(to=transb).bitcast[NoneType](),
+            UnsafePointer(to=transb).bitcast[NoneType](),
             size_of[cublasOperation_t](),
         ),
         msg="failed to set cublasLtMatmulDescAttribute for transb",
@@ -1082,7 +1064,7 @@ fn _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
-                    LegacyUnsafePointer(to=a_scale_mode).bitcast[NoneType](),
+                    UnsafePointer(to=a_scale_mode).bitcast[NoneType](),
                     size_of[Int32](),
                 ),
                 msg=(
@@ -1094,7 +1076,7 @@ fn _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
-                    LegacyUnsafePointer(to=b_scale_mode).bitcast[NoneType](),
+                    UnsafePointer(to=b_scale_mode).bitcast[NoneType](),
                     size_of[Int32](),
                 ),
                 msg=(
@@ -1107,8 +1089,8 @@ fn _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
-                    LegacyUnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
-                    size_of[UnsafePointer[NoneType]](),
+                    UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
+                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
                 ),
                 msg=(
                     "failed to set cublasLtMatmulDescAttribute for Matrix A"
@@ -1119,8 +1101,8 @@ fn _cublasLt_matmul[
                 cublasLtMatmulDescSetAttribute(
                     compute_desc,
                     cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
-                    LegacyUnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
-                    size_of[UnsafePointer[NoneType]](),
+                    UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
+                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
                 ),
                 msg=(
                     "failed to set cublasLtMatmulDescAttribute for Matrix B"
@@ -1136,7 +1118,7 @@ fn _cublasLt_matmul[
     var _adesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            LegacyUnsafePointer(to=_adesc),
+            UnsafePointer(to=_adesc),
             _convert_to_cublas_datatype[a_type](),
             UInt64(K),
             UInt64(N) if c_row_major else UInt64(M),
@@ -1148,7 +1130,7 @@ fn _cublasLt_matmul[
     var _bdesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            LegacyUnsafePointer(to=_bdesc),
+            UnsafePointer(to=_bdesc),
             _convert_to_cublas_datatype[b_type](),
             UInt64(K),
             UInt64(M) if c_row_major else UInt64(N),
@@ -1160,7 +1142,7 @@ fn _cublasLt_matmul[
     var _ddesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            LegacyUnsafePointer(to=_ddesc),
+            UnsafePointer(to=_ddesc),
             _convert_to_cublas_datatype[d_type](),
             UInt64(N) if c_row_major else UInt64(M),
             UInt64(M) if c_row_major else UInt64(N),
@@ -1172,7 +1154,7 @@ fn _cublasLt_matmul[
     var _cdesc = cublasLtMatrixLayout_t()
     check_cublas_error(
         cublasLtMatrixLayoutCreate(
-            LegacyUnsafePointer(to=_cdesc),
+            UnsafePointer(to=_cdesc),
             _convert_to_cublas_datatype[d_type](),
             UInt64(N) if c_row_major else UInt64(M),
             UInt64(M) if c_row_major else UInt64(N),
@@ -1183,7 +1165,7 @@ fn _cublasLt_matmul[
 
     var preference = cublasLtMatmulPreference_t()
     check_cublas_error(
-        cublasLtMatmulPreferenceCreate(LegacyUnsafePointer(to=preference)),
+        cublasLtMatmulPreferenceCreate(UnsafePointer(to=preference)),
         msg="failed to create cublasLtMatmulPreference",
     )
 
@@ -1192,7 +1174,7 @@ fn _cublasLt_matmul[
         cublasLtMatmulPreferenceSetAttribute(
             preference,
             Preference.MAX_WORKSPACE_BYTES,
-            LegacyUnsafePointer(to=workspace_size).bitcast[NoneType](),
+            UnsafePointer(to=workspace_size).bitcast[NoneType](),
             size_of[Int64](),
         ),
         msg=(
@@ -1213,8 +1195,8 @@ fn _cublasLt_matmul[
             _ddesc,
             preference,
             1,
-            LegacyUnsafePointer(to=heuristic_result),
-            LegacyUnsafePointer(to=algorithm_count),
+            UnsafePointer(to=heuristic_result),
+            UnsafePointer(to=algorithm_count),
         ),
         msg="failed to get cublasLtMatmulAlgoGetHeuristic",
     )
@@ -1231,17 +1213,17 @@ fn _cublasLt_matmul[
             cublasLtMatmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
-                LegacyUnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
-                UnsafePointer(b.ptr.bitcast[NoneType]()),  # _a
+                UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
+                UnsafePointer[mut=False](b.ptr.bitcast[NoneType]()),  # _a
                 _adesc,  # _adesc
-                UnsafePointer(a.ptr.bitcast[NoneType]()),  # _b
+                UnsafePointer[mut=False](a.ptr.bitcast[NoneType]()),  # _b
                 _bdesc,  # _bdesc
-                LegacyUnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                OpaquePointer(),  # _c
+                UnsafePointer(to=beta).bitcast[NoneType](),  # beta
+                {},  # _c
                 _cdesc,  # _cdesc
-                UnsafePointer(d.ptr.bitcast[NoneType]()),  # _d
+                UnsafePointer[mut=True](d.ptr.bitcast[NoneType]()),  # _d
                 _ddesc,  # _ddesc
-                LegacyUnsafePointer(to=heuristic_result.algo),  # algo
+                UnsafePointer(to=heuristic_result.algo),  # algo
                 matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
@@ -1253,17 +1235,17 @@ fn _cublasLt_matmul[
             cublasLtMatmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
-                LegacyUnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
-                UnsafePointer(a.ptr.bitcast[NoneType]()),  # _a
+                UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
+                UnsafePointer[mut=False](a.ptr.bitcast[NoneType]()),  # _a
                 _adesc,  # _adesc
-                UnsafePointer(b.ptr.bitcast[NoneType]()),  # _b
+                UnsafePointer[mut=False](b.ptr.bitcast[NoneType]()),  # _b
                 _bdesc,  # _bdesc
-                LegacyUnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                OpaquePointer(),  # _c
+                UnsafePointer(to=beta).bitcast[NoneType](),  # beta
+                {},  # _c
                 _cdesc,  # _cdesc
-                UnsafePointer(d.ptr.bitcast[NoneType]()),  # _d
+                UnsafePointer[mut=True](d.ptr.bitcast[NoneType]()),  # _d
                 _ddesc,  # _ddesc
-                LegacyUnsafePointer(to=heuristic_result.algo),  # algo
+                UnsafePointer(to=heuristic_result.algo),  # algo
                 matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
@@ -1380,9 +1362,9 @@ fn _hipblasLt_matmul[
             )
         )
 
-    var _adata = UnsafePointer(a.ptr.bitcast[NoneType]())
-    var _bdata = UnsafePointer(b.ptr.bitcast[NoneType]())
-    var _ddata = UnsafePointer(d.ptr.bitcast[NoneType]())
+    var _adata = LegacyOpaquePointer(a.ptr.bitcast[NoneType]())
+    var _bdata = LegacyOpaquePointer(b.ptr.bitcast[NoneType]())
+    var _ddata = LegacyOpaquePointer(d.ptr.bitcast[NoneType]())
 
     var _adesc = create_matrix_layout(a)
     var _bdesc = create_matrix_layout(b)

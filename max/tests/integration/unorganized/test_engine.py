@@ -402,7 +402,7 @@ class ExternalWeightsModel:
     num_elems: int
     device: Device = field(default_factory=CPU)
 
-    def __call__(self, input: TensorValueLike) -> Value:
+    def __call__(self, input: TensorValueLike) -> Value:  # type: ignore[type-arg]
         weights_tensor = Weight(
             "foo",
             DType.float32,
@@ -419,7 +419,7 @@ class ExternalWeightsModelWithAlias:
     num_elems: int
     device: Device = field(default_factory=CPU)
 
-    def __call__(self, input: TensorValueLike) -> Value:
+    def __call__(self, input: TensorValueLike) -> Value:  # type: ignore[type-arg]
         weights_tensor = Weight(
             "foo",
             DType.float32,
@@ -689,7 +689,7 @@ def call_model(session: InferenceSession, named_inputs_path: Path) -> Model:
 
 
 def test_positional_call(
-    call_inputs: tuple,
+    call_inputs: tuple,  # type: ignore[type-arg]
     call_output: np.ndarray,
     call_model: Model,
 ) -> None:
@@ -707,7 +707,7 @@ def test_positional_call(
 
 
 def test_named_call(
-    call_inputs: tuple,
+    call_inputs: tuple,  # type: ignore[type-arg]
     call_output: np.ndarray,
     call_model: Model,
 ) -> None:
@@ -725,7 +725,7 @@ def test_named_call(
 
 
 def test_mixed_positional_named_call(
-    call_inputs: tuple,
+    call_inputs: tuple,  # type: ignore[type-arg]
     call_output: np.ndarray,
     call_model: Model,
 ) -> None:
@@ -744,7 +744,7 @@ def test_mixed_positional_named_call(
 
 
 def test_too_few_inputs_call(
-    call_inputs: tuple,
+    call_inputs: tuple,  # type: ignore[type-arg]
     call_model: Model,
 ) -> None:
     # Calling a model with less inputs than expected should not work.
@@ -754,7 +754,7 @@ def test_too_few_inputs_call(
 
 
 def test_too_many_inputs_call(
-    call_inputs: tuple,
+    call_inputs: tuple,  # type: ignore[type-arg]
     call_model: Model,
 ) -> None:
     # Calling a model with more inputs than expected should not work.
@@ -764,7 +764,7 @@ def test_too_many_inputs_call(
 
 
 def test_already_specified_input_call(
-    call_inputs: tuple,
+    call_inputs: tuple,  # type: ignore[type-arg]
     call_model: Model,
 ) -> None:
     # Calling a model with inputs that correspond to indexes already occupied by
@@ -775,7 +775,7 @@ def test_already_specified_input_call(
 
 
 def test_unrecognized_name_call(
-    call_inputs: tuple,
+    call_inputs: tuple,  # type: ignore[type-arg]
     call_model: Model,
 ) -> None:
     # Calling model with unrecognized names should not work.

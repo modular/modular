@@ -254,29 +254,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_eagle_hidden_state_manager",
-    size = "large",
-    srcs = [
-        "test_eagle_hidden_state_manager.py",
-    ],
-    env = {"MODULAR_PATH": "."},
-    gpu_constraints = ["//:has_multi_gpu"],
-    tags = [
-        "gpu",
-    ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines/core",
-        "//max/python/max/pipelines/lib",
-        requirement("numpy"),
-        requirement("torch"),
-    ],
-)
-
-modular_py_test(
     name = "test_eagle_index_tracking",
     srcs = ["test_eagle_index_tracking.py"],
     deps = [
@@ -395,7 +372,9 @@ modular_py_test(
     deps = [
         "//max/python/max",
         "//max/python/max/entrypoints",
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:mocks",
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+        "//max/tests/integration/test_common:registry",
     ],
 )
 

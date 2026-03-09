@@ -14,10 +14,11 @@
 from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
 
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx_int as thread_idx
 from std.gpu.host import DeviceContext
 from layout.coord import Coord, Idx, coord
-from layout._layout import TensorLayout, row_major
+from layout import row_major
+from layout.tile_layout import TensorLayout
 from layout.tile_tensor import TileTensor
 from std.memory import UnsafePointer
 from std.runtime.asyncrt import DeviceContextPtr
@@ -76,7 +77,7 @@ fn tpool_patch_merger_kernel[
     var vid = Int(block_idx.z)
     var pat_idx = Int(block_idx.y)
     var d_tile = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     if vid >= n_vids:
         return
@@ -141,11 +142,14 @@ fn tpool_patch_merger_kernel[
 
 
 fn tpool_patch_merger[
-    dtype: DType = DType.bfloat16,
+    dtype: DType,
+    output_layout: TensorLayout,
+    x_layout: TensorLayout,
+    bounds_layout: TensorLayout,
 ](
-    output: TileTensor[dtype, _, MutAnyOrigin],
-    x: TileTensor[dtype, _, ImmutAnyOrigin],
-    bounds: TileTensor[DType.int64, _, ImmutAnyOrigin],
+    output: TileTensor[dtype, output_layout, MutAnyOrigin],
+    x: TileTensor[dtype, x_layout, ImmutAnyOrigin],
+    bounds: TileTensor[DType.int64, bounds_layout, ImmutAnyOrigin],
     kH: Int,
     kW: Int,
     max_h: Int,
@@ -169,7 +173,7 @@ fn tpool_patch_merger[
     var max_pat = max_h // kH * max_w // kW * kH * kW
 
     comptime simd_width = simd_width_of[
-        dtype, target = ctx.default_device_info.target()
+        dtype, target=ctx.default_device_info.target()
     ]()
     comptime num_threads = 256
 

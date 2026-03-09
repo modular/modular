@@ -25,7 +25,6 @@ Usage:
 """
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
 from std.sys import get_defined_int, size_of
 from std.time import perf_counter_ns
 
@@ -43,8 +42,8 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout.tile_layout import row_major as tile_row_major
+from layout.tile_tensor import TileTensor
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -64,8 +63,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # =============================================================================
@@ -168,53 +165,12 @@ fn bench_grouped_block_scaled_gemm[
         * SF_ATOM_K
     )
 
-    # Static shapes (using packed K for A/B arrays)
-    comptime static_a_shape = DimList(m.dim, k_array_dim)
-    comptime static_b_shape = DimList(
-        n.dim, k_array_dim
-    ) if transpose_b else DimList(k_array_dim, n.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
-    comptime static_a_scales_shape = DimList(
-        ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
-        ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
-    var dynamic_a_shape = IndexList[2](M, k_array_val)
-    var dynamic_b_shape = IndexList[2](
-        n.value, k_array_val
-    ) if transpose_b else IndexList[2](k_array_val, n.value)
-    var dynamic_c_shape = IndexList[2](M, n.value)
-    var dynamic_a_scales_shape = IndexList[5](
-        ceildiv(M, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    var dynamic_b_scales_shape = IndexList[5](
-        ceildiv(n.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
     # Allocate tensors
-    var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var sfa_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
-    var sfb_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
+    var a_host = alloc[Scalar[a_type]](a_size)
+    var b_host = alloc[Scalar[b_type]](b_size)
+    var c_host = alloc[Scalar[c_type]](c_size)
+    var sfa_host = alloc[Scalar[scales_dtype]](a_scales_total)
+    var sfb_host = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -241,31 +197,69 @@ fn bench_grouped_block_scaled_gemm[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    # Create NDBuffers and LayoutTensors
-    var a_nd = NDBuffer[a_type, 2, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
+    # Create TileTensors - 3D with batch=1
+    comptime static_a_3d_shape = DimList(1, m.dim, k_array_dim)
+    var a_template_nd = NDBuffer[a_type, 3, _, static_a_3d_shape](
+        a_device.unsafe_ptr(), IndexList[3](1, M, k_array_val)
     )
-    var b_nd = NDBuffer[b_type, 2, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
+    comptime static_b_3d_shape = DimList(
+        1, n.dim, k_array_dim
+    ) if transpose_b else DimList(1, k_array_dim, n.dim)
+    var b_template_nd = NDBuffer[b_type, 3, _, static_b_3d_shape](
+        b_device.unsafe_ptr(),
+        IndexList[3](1, n.value, k_array_val) if transpose_b else IndexList[3](
+            1, k_array_val, n.value
+        ),
     )
-    var c_nd = NDBuffer[c_type, 2, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
-    var sfa_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
-        sfa_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
-    var sfb_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
-        sfb_device.unsafe_ptr(), dynamic_b_scales_shape
+    comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
+    var c_template_nd = NDBuffer[c_type, 3, _, static_c_3d_shape](
+        c_device.unsafe_ptr(), IndexList[3](1, M, n.value)
     )
 
-    var a_tensor = from_ndbuffer_row_major(a_nd)
-    var b_tensor = from_ndbuffer_row_major(b_nd)
-    var c_tensor = from_ndbuffer_row_major(c_nd)
-    var sfa_tensor = from_ndbuffer_row_major(sfa_nd)
-    var sfb_tensor = from_ndbuffer_row_major(sfb_nd)
+    # Scale factor template tensors - 5D with batch=1 and merged last dims
+    comptime static_a_scales_5d_shape = DimList(
+        1,
+        ceildiv(m.dim, SF_MN_GROUP_SIZE),
+        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+    var a_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_5d_shape](
+        sfa_device.unsafe_ptr(),
+        IndexList[5](
+            1,
+            ceildiv(M, SF_MN_GROUP_SIZE),
+            ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ),
+    )
+    comptime static_b_scales_5d_shape = DimList(
+        1,
+        ceildiv(n.dim, SF_MN_GROUP_SIZE),
+        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+    var b_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_5d_shape](
+        sfb_device.unsafe_ptr(),
+        IndexList[5](
+            1,
+            ceildiv(n.value, SF_MN_GROUP_SIZE),
+            ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ),
+    )
+
+    var a_template = TileTensor(a_template_nd)
+    var b_template = TileTensor(b_template_nd)
+    var c_template = TileTensor(c_template_nd)
+    var sfa_template = TileTensor(a_scales_5d_nd)
+    var sfb_template = TileTensor(b_scales_5d_nd)
 
     # Setup pointer arrays
-    var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
+    var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
         problem_sizes_host[g * 4 + 0] = Int32(M)
         problem_sizes_host[g * 4 + 1] = Int32(n.value)
@@ -277,11 +271,11 @@ fn bench_grouped_block_scaled_gemm[
     )
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
-    var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var b_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var c_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfa_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfb_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
+    var a_ptrs_host = alloc[UInt64](max_groups)
+    var b_ptrs_host = alloc[UInt64](max_groups)
+    var c_ptrs_host = alloc[UInt64](max_groups)
+    var sfa_ptrs_host = alloc[UInt64](max_groups)
+    var sfb_ptrs_host = alloc[UInt64](max_groups)
 
     for g in range(max_groups):
         a_ptrs_host[g] = UInt64(Int(a_device.unsafe_ptr()))
@@ -303,36 +297,24 @@ fn bench_grouped_block_scaled_gemm[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    comptime problem_sizes_layout = Layout.row_major(max_groups, 4)
-    var problem_sizes_tensor_host = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
-        problem_sizes_host,
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
+    var problem_sizes_tensor_host = TileTensor(
+        problem_sizes_host, tile_row_major[max_groups, 4]()
     )
 
-    comptime ptr_layout = Layout.row_major(max_groups, 1)
-    var a_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        a_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var a_ptrs_tensor = TileTensor(
+        a_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var b_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        b_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var b_ptrs_tensor = TileTensor(
+        b_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var c_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        c_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var c_ptrs_tensor = TileTensor(
+        c_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfa_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfa_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfa_ptrs_tensor = TileTensor(
+        sfa_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
-    var sfb_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfb_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfb_ptrs_tensor = TileTensor(
+        sfb_ptrs_device.unsafe_ptr(), tile_row_major[max_groups, 1]()
     )
 
     comptime BM = mma_shape[0] // cta_group
@@ -364,11 +346,11 @@ fn bench_grouped_block_scaled_gemm[
         sfa_ptrs_tensor,
         sfb_ptrs_tensor,
         problem_sizes_tensor_host,
-        a_tensor,
-        b_tensor,
-        c_tensor,
-        sfa_tensor,
-        sfb_tensor,
+        a_template,
+        b_template,
+        c_template,
+        sfa_template,
+        sfb_template,
         total_tiles,
     )
     @always_inline
@@ -389,11 +371,11 @@ fn bench_grouped_block_scaled_gemm[
                 problem_sizes_tensor_host,
                 num_groups,
                 total_tiles,
-                a_tensor,
-                b_tensor,
-                c_tensor,
-                sfa_tensor,
-                sfb_tensor,
+                a_template,
+                b_template,
+                c_template,
+                sfa_template,
+                sfb_template,
                 ctx,
             )
 
@@ -455,9 +437,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = dynamic(0),
-                n = static[N](),
-                k = static[K](),
+                m=dynamic(0),
+                n=static[N](),
+                k=static[K](),
                 num_groups=num_groups,
                 transpose_b=transpose_b,
                 cta_group=cta_group,
@@ -477,9 +459,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[128](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -492,9 +474,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[128](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -509,9 +491,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[4096](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -524,9 +506,9 @@ def main() raises:
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[4096](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
@@ -547,15 +529,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[128](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -564,15 +546,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[128](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -583,15 +565,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
+                m=static[4096](),
+                n=static[4096](),
+                k=static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 
@@ -600,15 +582,15 @@ def main() raises:
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
+                m=static[4096](),
+                n=static[7168](),
+                k=static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
             ](ctx, b)
 

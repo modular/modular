@@ -41,14 +41,14 @@ fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
     result = stack_allocation[
         1,
         UInt128,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
@@ -106,21 +106,21 @@ fn pipeline_test_kernel[
     var clc_response = stack_allocation[
         num_stages,
         UInt128,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var full_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var empty_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 

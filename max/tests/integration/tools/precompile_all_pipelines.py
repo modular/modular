@@ -42,10 +42,7 @@ from verify_pipelines import (
 
 logger = logging.getLogger(__name__)
 
-SKIP_MODELS: set[str] = {
-    # TODO(GEX-3314): VirtualDeviceContext::memAlloc crash on B200 precompile
-    "huggingfacetb/smollm2-360m-instruct",
-}
+SKIP_MODELS: set[str] = set()
 
 
 @dataclass
@@ -59,7 +56,9 @@ class PrecompileJob:
 
 
 def pin_worker_to_cpus(
-    counter: Synchronized, cpus_per_worker: int, num_workers: int
+    counter: Synchronized,  # type: ignore[type-arg]
+    cpus_per_worker: int,
+    num_workers: int,
 ) -> None:
     """Pin this worker process to a dedicated CPU slice."""
     with counter.get_lock():

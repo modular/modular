@@ -58,7 +58,7 @@ fn broadcast_multimem_kernel[
     rank: Int,
     BLOCK_SIZE: Int,
     ngpus: Int,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
@@ -115,8 +115,8 @@ fn broadcast_multimem_kernel[
             multimem_st[
                 dtype,
                 simd_width=simd_width,
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
             ](out_ptr + elem_idx, data)
 
         # Handle tail elements (when num_elements is not a multiple of simd_width).
@@ -134,8 +134,8 @@ fn broadcast_multimem_kernel[
                 tail_elem_idx
             )
             multimem_st[
-                scope = Scope.GPU,
-                consistency = Consistency.RELAXED,
+                scope=Scope.GPU,
+                consistency=Consistency.RELAXED,
             ](out_ptr + tail_elem_idx, data)
 
         # Handle any remaining sub-chunk elements with an overlapping
@@ -152,8 +152,8 @@ fn broadcast_multimem_kernel[
                     overlap_idx
                 )
                 multimem_st[
-                    scope = Scope.GPU,
-                    consistency = Consistency.RELAXED,
+                    scope=Scope.GPU,
+                    consistency=Consistency.RELAXED,
                 ](out_ptr + overlap_idx, data)
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
@@ -167,7 +167,7 @@ fn broadcast_pull_1stage_kernel[
     rank: Int,
     BLOCK_SIZE: Int,
     ngpus: Int,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
@@ -270,7 +270,7 @@ fn broadcast_pull_2stage_kernel[
     var global_tid = Int(global_idx.x)
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     # Partition data among all ngpus GPUs
@@ -466,16 +466,15 @@ fn broadcast[
     var my_rank: Int = Int(ctx.id())
 
     var num_elements = output_buffer.num_elements()
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     # Do nothing if there are no elements to reduce.
     if num_elements == 0:
         return
 
-    debug_assert(
-        output_buffer.num_elements() == input_buffer.num_elements(),
-        "Buffer shapes don't match",
-    )
+    assert (
+        output_buffer.num_elements() == input_buffer.num_elements()
+    ), "Buffer shapes don't match"
 
     if not is_p2p_enabled():
         raise Error("Broadcast currently requires P2P access between GPUs")
@@ -597,16 +596,15 @@ fn broadcast_2stage[
     var my_rank: Int = Int(ctx.id())
 
     var num_elements = output_buffer.num_elements()
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
     # Do nothing if there are no elements.
     if num_elements == 0:
         return
 
-    debug_assert(
-        output_buffer.num_elements() == input_buffer.num_elements(),
-        "Buffer shapes don't match",
-    )
+    assert (
+        output_buffer.num_elements() == input_buffer.num_elements()
+    ), "Buffer shapes don't match"
 
     comptime BLOCK_SIZE = 256
     # Limit blocks - tuning parameter

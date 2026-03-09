@@ -15,9 +15,6 @@ from std.math import ceildiv, align_up
 from std.random import random_ui64
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
@@ -122,15 +119,11 @@ fn test_scaled_mxfp8_cublaslt[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
     var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_size
-    )
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
     var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
@@ -148,11 +141,11 @@ fn test_scaled_mxfp8_cublaslt[
     var b_size = n.value * k.value
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[input_type]](a_size)
     var a_host = NDBuffer[input_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[input_type]](b_size)
     var b_host = NDBuffer[input_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
@@ -268,7 +261,7 @@ fn test_scaled_mxfp8_cublaslt[
 
     var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
     naive_block_scaled_matmul[
-        scaling_kind = UMMAKind.KIND_MXF8F6F4,
+        scaling_kind=UMMAKind.KIND_MXF8F6F4,
         SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](

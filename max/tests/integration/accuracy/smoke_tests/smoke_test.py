@@ -75,9 +75,11 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-def is_deepseek(model: str) -> bool:
-    """Temporary workaround for large DeepSeek models."""
-    return "deepseek" in model and "lite" not in model
+def is_huge_moe(model: str) -> bool:
+    """Large MoE models that need expert parallelism instead of tensor parallelism."""
+    if "deepseek" in model and "lite" not in model:
+        return True
+    return any(x in model for x in ["minimax-m", "kimi-k"])
 
 
 def validate_hf_token() -> None:
@@ -106,14 +108,18 @@ def _load_hf_repo_lock() -> dict[str, str]:
     return db
 
 
-def test_single_request(model: str, task: str) -> None:
+def test_single_request(model: str, task: str, disable_timeouts: bool) -> None:
     is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
 
+    # Initial req can be slow for huge models
+    connect_timeout, read_timeout = (
+        (None, None) if disable_timeouts else (30, 180)
+    )
     r = requests.post(
         URL,
         json={"model": model, "messages": m, "max_tokens": 8},
-        timeout=(30, 180),  # Initial req can be slow for huge models
+        timeout=(connect_timeout, read_timeout),
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -199,10 +205,14 @@ def get_server_cmd(
     VLLM = f"vllm.entrypoints.openai.api_server --max-model-len {max_model_len} --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
-    is_huge_model = is_deepseek(model)
+    is_huge_model = is_huge_moe(model)
     if is_huge_model and framework != "sglang":
         MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
         VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
+        if "minimax-m2" in model:
+            os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
+            VLLM += " --attention-backend FLASH_ATTN"
         # Have not been successful in getting SGLang to work with R1 yet
     elif gpu_count > 1:
         MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
@@ -262,7 +272,12 @@ def safe_model_name(model: str) -> str:
 
 
 def call_eval(
-    model: str, task: str, *, max_concurrent: int, num_questions: int
+    model: str,
+    task: str,
+    *,
+    max_concurrent: int,
+    num_questions: int,
+    disable_timeouts: bool,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
@@ -287,6 +302,15 @@ def call_eval(
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 
+    model_args: dict[str, str] = {
+        "model": model,
+        "base_url": URL,
+        "num_concurrent": str(max_concurrent),
+        "max_retries": "1",
+    }
+    if disable_timeouts:
+        model_args["timeout"] = "86400"
+
     include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
         eval_cmd = [
@@ -294,7 +318,7 @@ def call_eval(
             f"--tasks={task}",
             "--model=local-chat-completions",
             "--log_samples",
-            f"--model_args=model={model},base_url={URL},num_concurrent={max_concurrent},max_retries=1",
+            f"--model_args={','.join(f'{k}={v}' for k, v in model_args.items())}",
             "--apply_chat_template",
             f"--output_path={tempdir}",
             f"--limit={num_questions}",
@@ -306,7 +330,7 @@ def call_eval(
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
-        check_call(args, timeout=600)
+        check_call(args, timeout=None if disable_timeouts else 600)
 
         return parse_eval_results(Path(tempdir))
 
@@ -527,6 +551,12 @@ def write_results(
         '"--device-graph-capture --max-batch-size=16"'
     ),
 )
+@click.option(
+    "--disable-timeouts",
+    is_flag=True,
+    default=False,
+    help="Disable all timeouts. Useful when debugging hangs.",
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -536,6 +566,7 @@ def smoke_test(
     max_concurrent: int,
     num_questions: int,
     serve_extra_args: str,
+    disable_timeouts: bool,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
@@ -577,6 +608,8 @@ def smoke_test(
             "qwen2.5-vl",
             "qwen3-vl",
             "vision",
+            "kimi-k2.5",
+            "kimi-vl",
         )
     )
     # 1b is non-vision
@@ -590,9 +623,12 @@ def smoke_test(
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
-    timeout = 900
-    if is_deepseek(model):
+    if disable_timeouts:
+        timeout = sys.maxsize
+    elif is_huge_moe(model):
         timeout = 1800
+    else:
+        timeout = 900
 
     server_process, startup_time = start_server(cmd, timeout)
     try:
@@ -600,12 +636,13 @@ def smoke_test(
         write_github_output("startup_time", f"{startup_time:.2f}")
 
         for task in tasks:
-            test_single_request(model, task)
+            test_single_request(model, task, disable_timeouts=disable_timeouts)
             result, samples = call_eval(
                 model,
                 task,
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
+                disable_timeouts=disable_timeouts,
             )
             if print_responses:
                 print_samples(samples, print_cot)

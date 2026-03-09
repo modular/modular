@@ -11,10 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_dim, block_idx, grid_dim, thread_idx
+from std.gpu import (
+    block_dim,
+    block_idx_int as block_idx,
+    grid_dim,
+    thread_idx_int as thread_idx,
+)
 from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Coord, Idx, TileTensor
-from layout._layout import TensorLayout, Layout
+from layout.tile_layout import TensorLayout, Layout
 from std.math import ceildiv
 from std.sys.info import align_of
 from std.utils.index import IndexList
@@ -63,7 +68,7 @@ fn scalar_copy_row[
     row_length: Int,
     threads_per_row: Int,
 ):
-    var start_col = Int(thread_idx.x) % threads_per_row
+    var start_col = thread_idx.x % threads_per_row
     for col in range(start_col, row_length, threads_per_row):
         output_ptr[col] = input_ptr[col]
 
@@ -89,7 +94,7 @@ fn vector_copy_row[
 
     if input_aligned and output_aligned and simd_width > 1:  # vectorized loads
         var iter_width = threads_per_row * simd_width
-        var start_col = (Int(thread_idx.x) % threads_per_row) * simd_width
+        var start_col = (thread_idx.x % threads_per_row) * simd_width
         for col in range(start_col, scaled_row_length, iter_width):
             output_ptr.store[width=simd_width](
                 col, input_ptr.load[width=simd_width](col)
@@ -121,13 +126,13 @@ fn padded_copy_kernel[
     row_length: Int,
     scaled_row_length: Int,
 ):
-    var start_row = Int(block_idx.x) * rows_per_sm
+    var start_row = block_idx.x * rows_per_sm
     var threads_per_row = Int(block_dim.x)
 
     var rows_per_iter = Int(block_dim.y)
     var end_row = min(start_row + rows_per_sm, total_rows)
 
-    start_row += Int(thread_idx.y)
+    start_row += thread_idx.y
 
     for row in range(start_row, end_row, rows_per_iter):
         var output_offset = get_row_offset(
@@ -153,9 +158,9 @@ fn _pad_constant_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_tensor: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     output_tensor: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:
@@ -180,10 +185,10 @@ fn _pad_constant_impl[
     var scaled_row_length = (row_length // simd_width) * simd_width
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[
-        input_origin = ImmutOrigin(input_tensor.origin),
-        InputLayoutType = input_tensor.LayoutType,
-        output_origin = output_tensor.origin,
-        OutputLayoutType = output_tensor.LayoutType,
+        input_origin=ImmutOrigin(input_tensor.origin),
+        InputLayoutType=input_tensor.LayoutType,
+        output_origin=output_tensor.origin,
+        OutputLayoutType=output_tensor.LayoutType,
         dtype=dtype,
         simd_width=simd_width,
     ]

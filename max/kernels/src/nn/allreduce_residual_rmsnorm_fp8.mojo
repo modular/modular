@@ -69,12 +69,12 @@ from std.gpu import (
     barrier,
     block_idx,
     grid_dim,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
-from layout import Coord, Idx, TileTensor
-from layout._layout import TensorLayout, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
@@ -149,7 +149,7 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var idx = tid * simd_width
     var is_valid = idx < cols
 
@@ -334,7 +334,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var col_idx = tid * simd_width
     var is_valid = col_idx < cols
     var num_blocks = Int(grid_dim.x)
@@ -347,10 +347,9 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     # Layout: [fp8_data | scales (padded) | bf16_residual (optional)]
     # See kernel docstring for the full size formula.
     var fp8_per_rank = rows_per_rank * cols
-    debug_assert(
-        fp8_per_rank % 4 == 0,
-        "fp8 scratch must be 4-byte aligned for scale stores",
-    )
+    assert (
+        fp8_per_rank % 4 == 0
+    ), "fp8 scratch must be 4-byte aligned for scale stores"
 
     # Round up the scale element count to the next multiple of
     # (simd_width / sizeof(scales_dtype)) so that the residual scratch
@@ -606,14 +605,14 @@ fn _allreduce_rmsnorm_fp8_launch[
     var scale_buffer_tensor = TileTensor(scale_output)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
-        mut = gamma.mut,
-        origin = gamma.origin,
-        LayoutType = gamma.LayoutType,
+        mut=gamma.mut,
+        origin=gamma.origin,
+        LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
-        scale_origin = scale_buffer_tensor.origin,
-        ScaleLayoutType = scale_buffer_tensor.LayoutType,
+        scale_origin=scale_buffer_tensor.origin,
+        ScaleLayoutType=scale_buffer_tensor.LayoutType,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -710,18 +709,16 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
     var _min_buf = size_of[Signal]() + _fp8_scratch + _scale_scratch
     comptime if has_residual:
         _min_buf += _rows_per_rank * cols * size_of[in_dtype]()
-    debug_assert(
-        _fp8_scratch % size_of[scales_dtype]() == 0,
+    assert _fp8_scratch % size_of[scales_dtype]() == 0, (
         String("2-stage: fp8 scratch (")
         + String(_fp8_scratch)
         + " B) must be a multiple of sizeof(scales_dtype) for scale pointer"
         + " alignment; rank_sigs[i] must be >= "
         + String(_min_buf)
-        + " bytes",
+        + " bytes"
     )
     comptime if has_residual:
-        debug_assert(
-            (_fp8_scratch + _scale_scratch) % simd_width == 0,
+        assert (_fp8_scratch + _scale_scratch) % simd_width == 0, (
             String("2-stage: residual scratch offset (fp8=")
             + String(_fp8_scratch)
             + " B + scales_padded="
@@ -730,7 +727,7 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
             + String(_fp8_scratch + _scale_scratch)
             + " B) must be a multiple of simd_width ("
             + String(simd_width)
-            + " B) for SIMD residual stores",
+            + " B) for SIMD residual stores"
         )
 
     @always_inline
@@ -743,14 +740,14 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
     var scale_buffer_tensor = TileTensor(scale_output)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
-        mut = gamma.mut,
-        origin = gamma.origin,
-        LayoutType = gamma.LayoutType,
+        mut=gamma.mut,
+        origin=gamma.origin,
+        LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
-        scale_origin = scale_buffer_tensor.origin,
-        ScaleLayoutType = scale_buffer_tensor.LayoutType,
+        scale_origin=scale_buffer_tensor.origin,
+        ScaleLayoutType=scale_buffer_tensor.LayoutType,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -877,7 +874,7 @@ fn _launch_split_allreduce_rmsnorm_fp8[
 
     allreduce[
         ngpus=ngpus,
-        output_lambda = Optional[elementwise_epilogue_type](add_epilogue),
+        output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
     ](input_buffers, residual_output, rank_sigs, ctx)
 
     # Step 2: Fused RMSNorm + FP8 on residual_output (kernel already compiled).
@@ -932,7 +929,7 @@ fn _dispatch_fused_kernel[
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
     comptime base_simd_width = simd_width_of[
-        in_dtype, target = get_gpu_target()
+        in_dtype, target=get_gpu_target()
     ]()
     comptime sw1 = base_simd_width
     comptime sw2 = base_simd_width * 2

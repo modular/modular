@@ -262,7 +262,7 @@ struct Interval[T: IntervalElement](
         Returns:
             The difference between end and start values as an integer.
         """
-        debug_assert(Bool(self), "interval is empty")
+        assert Bool(self), "interval is empty"
         return Int(self.end - self.start)
 
     fn __bool__(self) -> Bool:
@@ -539,9 +539,9 @@ struct IntervalTree[
             The rotation assumes that x has a right child. The method will assert if
             either the root or x's right child is not set.
         """
-        debug_assert(Bool(self._root), "node is not set")
+        assert Bool(self._root), "node is not set"
         var rotation_right_child = rotation_node[].right
-        debug_assert(Bool(rotation_right_child), "right child is not set")
+        assert Bool(rotation_right_child), "right child is not set"
         rotation_node[].right = rotation_right_child[].left
 
         if rotation_right_child[].left:
@@ -606,9 +606,9 @@ struct IntervalTree[
             The rotation assumes that y has a left child. The method will assert if
             either the root or y's left child is not set.
         """
-        debug_assert(Bool(self._root), "root node is not set")
+        assert Bool(self._root), "root node is not set"
         var rotation_left_child = rotation_node[].left
-        debug_assert(Bool(rotation_left_child), "left child node is not set")
+        assert Bool(rotation_left_child), "left child node is not set"
         rotation_node[].left = rotation_left_child[].right
 
         if rotation_left_child[].right:

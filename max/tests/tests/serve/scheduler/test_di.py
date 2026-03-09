@@ -180,7 +180,7 @@ def create_default_di_scheduler_and_submit_one_request() -> tuple[
     ctx = create_text_context(
         target_endpoint=server_addr, prompt_len=100, output_len=5
     )
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
     request_queue.put(ctx)
     return decode, prefill, ctx
 
@@ -239,7 +239,7 @@ def test_one_req_end_to_end() -> None:
     decode.run_iteration()
 
     # Hacky cast to get the response queue
-    response_q = cast(queue.Queue, decode.response_queue)
+    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
 
     # Check that the first token is 99
     output1 = response_q.get()
@@ -270,7 +270,7 @@ def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
     ctx1 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
     ctx2 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
     ctx3 = create_text_context(target_endpoint=server_addr, prompt_len=1111)
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
     request_queue.put(ctx1)
     request_queue.put(ctx2)
     request_queue.put(ctx3)
@@ -314,8 +314,8 @@ def test_di_with_dp2_end_to_end() -> None:
     )
     req_id1 = ctx1.request_id
     req_id2 = ctx2.request_id
-    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)
-    response_q = cast(queue.Queue, decode.response_queue)
+    request_queue: queue.Queue = cast(queue.Queue, decode.request_queue)  # type: ignore[type-arg]
+    response_q = cast(queue.Queue, decode.response_queue)  # type: ignore[type-arg]
     request_queue.put(ctx1)
     request_queue.put(ctx2)
 

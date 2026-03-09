@@ -22,22 +22,20 @@ from std.gpu.memory import (
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 from std.testing import assert_equal
 
 
 fn copy_via_shared(
-    src: UnsafePointer[Float32],
-    dst: UnsafePointer[Float32],
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var thread_id = Int(thread_idx.x)
     var mem_buff: UnsafePointer[
-        Float32, address_space = AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
+        Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
     var src_global: UnsafePointer[
-        Float32, address_space = AddressSpace.GLOBAL
+        Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     async_copy[4](
@@ -53,8 +51,8 @@ fn copy_via_shared(
 
 fn run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
-    var in_data = UnsafePointer[Float32].alloc(16)
-    var out_data = UnsafePointer[Float32].alloc(16)
+    var in_data = alloc[Float32](16)
+    var out_data = alloc[Float32](16)
     var in_data_device = ctx.enqueue_create_buffer[DType.float32](16)
     var out_data_device = ctx.enqueue_create_buffer[DType.float32](16)
 
@@ -86,26 +84,26 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
 
 
 fn copy_with_src_size(
-    src: UnsafePointer[Float32],
-    dst: UnsafePointer[Float32],
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
     src_size: Int,
 ):
     var smem = stack_allocation[
-        8, DType.float32, address_space = AddressSpace.SHARED
+        8, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
     for i in range(8):
         smem[i] = -1.0
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
-    async_copy[16, fill = Float32(0)](
+    async_copy[16, fill=Float32(0)](
         src.address_space_cast[AddressSpace.GLOBAL](), smem, Int32(src_size)
     )
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
-    async_copy[16, fill = Float32(0)](
+    async_copy[16, fill=Float32(0)](
         src.address_space_cast[AddressSpace.GLOBAL]() + 4, smem + 4, 0
     )
     async_copy_wait_all()
@@ -116,9 +114,12 @@ fn copy_with_src_size(
 
 fn copy_with_non_zero_fill[
     smem_size: Int
-](src: UnsafePointer[BFloat16], dst: UnsafePointer[BFloat16],):
+](
+    src: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    dst: UnsafePointer[BFloat16, MutAnyOrigin],
+):
     var smem = stack_allocation[
-        smem_size, DType.bfloat16, address_space = AddressSpace.SHARED
+        smem_size, DType.bfloat16, address_space=AddressSpace.SHARED
     ]()
 
     for i in range(smem_size):
@@ -126,11 +127,11 @@ fn copy_with_non_zero_fill[
 
     var offset = smem_size // 2
 
-    async_copy[16, fill = BFloat16(32)](
+    async_copy[16, fill=BFloat16(32)](
         src.address_space_cast[AddressSpace.GLOBAL](), smem, predicate=True
     )
 
-    async_copy[16, fill = BFloat16(32)](
+    async_copy[16, fill=BFloat16(32)](
         (src + offset).address_space_cast[AddressSpace.GLOBAL](),
         smem + offset,
         predicate=False,
@@ -145,8 +146,8 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     comptime size = 4
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
-    var a_host = UnsafePointer[Float32].alloc(size)
-    var b_host = UnsafePointer[Float32].alloc(2 * size)
+    var a_host = alloc[Float32](size)
+    var b_host = alloc[Float32](2 * size)
 
     for i in range(size):
         a_host[i] = Float32(i + 1)
@@ -193,8 +194,8 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     comptime size = 8
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
-    var a_host = UnsafePointer[BFloat16].alloc(size)
-    var b_host = UnsafePointer[BFloat16].alloc(2 * size)
+    var a_host = alloc[BFloat16](size)
+    var b_host = alloc[BFloat16](2 * size)
 
     for i in range(size):
         a_host[i] = BFloat16(i + 1)

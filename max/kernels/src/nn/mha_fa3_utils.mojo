@@ -30,8 +30,8 @@ from std.gpu.compute.mma import st_matrix
 from std.gpu.sync import async_copy_arrive
 from layout.int_tuple import IntTuple
 from layout.layout import UNKNOWN_VALUE, Layout
-from layout._layout import Layout as InternalLayout, row_major
-from layout import TileTensor
+from layout.tile_layout import Layout as InternalLayout
+from layout import TileTensor, row_major
 from layout.layout_tensor import (
     LayoutTensor,
     copy_local_to_shared,
@@ -45,7 +45,6 @@ from layout.tma_async import (
     RaggedTMA3DTile,
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
-    _split_last_layout,
     TMATensorTile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
@@ -76,20 +75,20 @@ from std.utils import StaticTuple
 comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
     InternalLayout[
-        shape_types = layout.shape_types,
-        stride_types = layout.stride_types,
+        shape_types=layout.shape_types,
+        stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space = AddressSpace.LOCAL,
+    address_space=AddressSpace.LOCAL,
 ]
 comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
     InternalLayout[
-        shape_types = layout.shape_types,
-        stride_types = layout.stride_types,
+        shape_types=layout.shape_types,
+        stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ]
 
 
@@ -120,12 +119,9 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
 
     @always_inline
     fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        debug_assert(
-            Bool(self.ptr),
-            (
-                "NonNullPointer is supposed to provide a compile-time guarantee"
-                " of being non-null"
-            ),
+        assert Bool(self.ptr), (
+            "NonNullPointer is supposed to provide a compile-time guarantee"
+            " of being non-null"
         )
         return self.ptr
 
@@ -299,13 +295,13 @@ struct MHAPosition[
         dtype: DType
     ](
         self,
-        ptr: UnsafePointer[Scalar[dtype], _],
+        ptr: UnsafePointer[mut=True, Scalar[dtype], _],
         out gmem_block: LayoutTensor[
             dtype,
             Self.q_output_gmem_layout,
             MutAnyOrigin,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
             masked=True,
         ],
     ):
@@ -329,21 +325,21 @@ struct MHAPosition[
                 # In decoding, we have `group` rows, but these
                 # correspond to the same position w/ respect to the mask.
                 return mask.status(
-                    Index[dtype = DType.int32](
+                    Index[dtype=DType.int32](
                         Int(self.num_keys - 1),
                         Int(kv_tile_start_row),
                     ),
-                    Index[dtype = DType.int32](Int(1), Self.BN),
+                    Index[dtype=DType.int32](Int(1), Self.BN),
                 )
             else:
                 return TileMaskStatus.PARTIAL_MASK
         else:
             return mask.status(
-                Index[dtype = DType.int32](
+                Index[dtype=DType.int32](
                     Int(self.prompt_offset + self.start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype = DType.int32](Self.BM, Self.BN),
+                Index[dtype=DType.int32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -460,7 +456,7 @@ fn get_seq_info[
     scheduler = TransientScheduler[UInt32(BM), UInt32(num_heads)]()
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
-            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
         ](),
         tile_summary,
     )
@@ -571,7 +567,7 @@ struct PositionSummary(TrivialRegisterPassable):
         score_row = Self.get_score_row[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding = _is_decoding[MaxSeqLenType](),
+            decoding=_is_decoding[MaxSeqLenType](),
         ](seq_info, num_keys, start_pos)
         return {num_keys, score_row}
 
@@ -849,7 +845,7 @@ fn _apply_mask[
         accum_type,
         reg_tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
         element_layout=element_layout,
     ],
 ):
@@ -916,7 +912,7 @@ fn _apply_mask[
 
                         comptime if masked:
                             p = mask.mask(
-                                IndexList[4, element_type = DType.uint32](
+                                IndexList[4, element_type=DType.uint32](
                                     Int(position.prompt_idx),
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
@@ -930,27 +926,27 @@ fn _apply_mask[
                         comptime if mask_t.apply_log2e_after_mask:
                             p *= log2e
 
-                        var bound: IndexList[2, element_type = DType.uint32]
+                        var bound: IndexList[2, element_type=DType.uint32]
 
                         comptime if decoding:
-                            bound = IndexList[2, element_type = DType.uint32](
+                            bound = IndexList[2, element_type=DType.uint32](
                                 Int(position.num_keys),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
                                 p,
                             )
                         elif masked:
-                            bound = IndexList[2, element_type = DType.uint32](
+                            bound = IndexList[2, element_type=DType.uint32](
                                 Int(position.seq_len),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type = DType.uint32](
+                                IndexList[2, element_type=DType.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
@@ -1013,8 +1009,9 @@ fn produce[
     qkv_type: DType,
     BM: Int,
     BN: Int,
-    q_smem_layout: Layout,
-    q_desc_layout: Layout,
+    q_rank: Int,
+    q_tile_shape: IndexList[q_rank],
+    q_desc_shape: IndexList[q_rank],
     depth: Int,
     padded_depth: Int,
     num_heads: Int,
@@ -1035,8 +1032,9 @@ fn produce[
 ](
     q_tma_op: TMATensorTile[
         qkv_type,
-        q_smem_layout,
-        q_desc_layout,
+        q_rank,
+        q_tile_shape,
+        q_desc_shape,
     ],
     k_tma_op: KVTMATile[
         qkv_type,
@@ -1051,22 +1049,22 @@ fn produce[
         BK=padded_depth,
     ],
     q_smem: UnsafePointer[
-        Scalar[qkv_type], MutAnyOrigin, address_space = AddressSpace.SHARED
+        Scalar[qkv_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     kv_smem: UnsafePointer[
-        Scalar[qkv_type], MutAnyOrigin, address_space = AddressSpace.SHARED
+        Scalar[qkv_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     produced_mbar_kv: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     consumed_mbar_kv: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     produced_mbar_q: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     consumed_mbar_q: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -1114,9 +1112,9 @@ fn produce[
         q_idx: UInt32, offset: UInt32 = 0
     ) -> LayoutTensor[
         qkv_type,
-        q_smem_layout,
+        Layout.row_major(q_tile_shape),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]:
         return {q_smem + UInt32(q_size) * q_idx + offset}
@@ -1133,9 +1131,9 @@ fn produce[
             qkv_type,
             k_smem_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
+            address_space=AddressSpace.SHARED,
+            layout_int_type=DType.int32,
+            linear_idx_type=DType.int32,
             alignment=128,
         ],
     ):
@@ -1217,7 +1215,7 @@ fn produce[
 
     comptime if PartitionType.do_partition:
         startend = position.get_start_and_end_for_partitions[
-            page_size = KVLUTType.page_size
+            page_size=KVLUTType.page_size
         ](partition, mask)
         start = startend[0]
         end = startend[1]
@@ -1260,7 +1258,7 @@ fn produce[
 
     comptime if not PartitionType.do_partition:
         startend = position.get_start_and_end_for_partitions[
-            page_size = KVLUTType.page_size
+            page_size=KVLUTType.page_size
         ](partition, mask)
         start = startend[0]
         end = startend[1]
@@ -1306,7 +1304,7 @@ fn produce[
                 # is for both `q_smem` and `sidx_ptr`
                 var q_idx: UInt32 = q_pipeline_state.index()
                 docontinue = scheduler.advance[
-                    producer=True, sync = MHASchedulerSynchronization.DEFAULT
+                    producer=True, sync=MHASchedulerSynchronization.DEFAULT
                 ](tile_summary, tile_state, q_idx_old)
                 # FIXME: persistent kernel that uses a counter
                 # must signal somehow
@@ -1344,7 +1342,7 @@ fn produce[
 
                 kv_head_idx = position.kv_head_idx()
                 start, new_end = position.get_start_and_end_for_partitions[
-                    page_size = KVLUTType.page_size
+                    page_size=KVLUTType.page_size
                 ](partition, mask)
                 kv_tile_start_row = start
                 end = new_end
@@ -1399,8 +1397,8 @@ fn output_reg_to_smem_st_matrix[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer
         ](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
+        element_type=DType.int32,
+        linear_idx_type=DType.int32,
     ]()
 
     comptime for m_mma in range(num_m_mmas):
@@ -1439,24 +1437,24 @@ fn output_reg_to_smem[
     local_warp_group_idx: UInt32,
     warp_y: UInt32,
     q_smem: UnsafePointer[
-        Scalar[output_type], MutAnyOrigin, address_space = AddressSpace.SHARED
+        Scalar[output_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     output_reg_tile: LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas, o_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ],
 ) -> LayoutTensor[
     output_type,
     Layout.row_major(BM, padded_depth),
     MutAnyOrigin,
-    address_space = AddressSpace.SHARED,
+    address_space=AddressSpace.SHARED,
 ]:
     accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](q_smem)
     comptime use_stmatrix = accum_type == DType.float32 and padded_depth % 16 == 0 and size_of[
         output_type

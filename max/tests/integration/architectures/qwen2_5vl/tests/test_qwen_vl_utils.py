@@ -464,7 +464,7 @@ class TestOriginalQwenVLUtils:
         self, test_image: Image.Image
     ) -> None:
         """Compare extract_vision_info outputs between implementations."""
-        conversations: list[dict] = [
+        conversations: list[dict] = [  # type: ignore[type-arg]
             {
                 "role": "user",
                 "content": [
@@ -582,7 +582,9 @@ class TestOriginalQwenVLUtils:
         ],
     )
     def test_image_processing_consistency_with_parameters(
-        self, test_image: Image.Image, ele: dict
+        self,
+        test_image: Image.Image,
+        ele: dict,  # type: ignore[type-arg]
     ) -> None:
         """Test that image processing with custom parameters produces identical results."""
         from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (

@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.random import randn
@@ -93,12 +90,12 @@ fn test_prefill[
         * (cache_depth // scale_block_size)
     )
 
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
-    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var o_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var cache_ptr = UnsafePointer[Scalar[k_rope_type]].alloc(cache_size)
-    var cache_sf_ptr = UnsafePointer[Scalar[sf_dtype]].alloc(cache_sf_size)
+    var q_ptr = alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = alloc[Scalar[qkv_type]](v_size)
+    var o_ptr = alloc[Scalar[qkv_type]](o_size)
+    var cache_ptr = alloc[Scalar[k_rope_type]](cache_size)
+    var cache_sf_ptr = alloc[Scalar[sf_dtype]](cache_sf_size)
 
     # Q, K, V, cache are randomly initialized.
     randn[qkv_type](q_ptr, q_size)
@@ -108,8 +105,8 @@ fn test_prefill[
     randn[sf_dtype](cache_sf_ptr, cache_sf_size)
 
     # input row offsets and cache row offsets
-    var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
-    var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var input_row_offsets = alloc[UInt32](batch_size + 1)
+    var cache_row_offsets = alloc[UInt32](batch_size + 1)
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -256,7 +253,7 @@ fn test_prefill[
         ),
     )
 
-    flare_mla_prefill[rank = q_device.rank](
+    flare_mla_prefill[rank=q_device.rank](
         output_device,
         q_device,
         k_device,
@@ -273,13 +270,13 @@ fn test_prefill[
     ctx.synchronize()
     ctx.enqueue_copy(o_ptr, output_device_ptr)
 
-    var k_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var k_ref_ptr = alloc[Scalar[qkv_type]](
         batch_size * num_keys * num_heads * depth
     )
-    var v_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var v_ref_ptr = alloc[Scalar[qkv_type]](
         batch_size * num_keys * num_heads * depth
     )
-    var output_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var output_ref_ptr = alloc[Scalar[qkv_type]](
         batch_size * seq_len * num_heads * depth
     )
 
@@ -394,7 +391,7 @@ fn test_prefill[
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        UnsafePointer[UInt32](),
+        UnsafePointer[UInt32, MutAnyOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

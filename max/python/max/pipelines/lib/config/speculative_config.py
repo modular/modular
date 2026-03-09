@@ -25,8 +25,9 @@ logger = logging.getLogger("max.pipelines")
 SpeculativeMethod = Literal["standalone", "eagle", "mtp"]
 """The supported methods for speculative decoding."""
 
-RejectionSamplingStrategy = Literal["greedy", "residual"]
-"""The supported rejection sampling strategies for speculative decoding."""
+RejectionSamplingStrategy = Literal[
+    "greedy", "residual", "typical-acceptance", "logit-comparison"
+]
 
 
 class SpeculativeConfig(ConfigFileModel):
@@ -42,19 +43,16 @@ class SpeculativeConfig(ConfigFileModel):
     )
     """The number of speculative tokens to generate per step."""
 
-    rejection_sampling_strategy: RejectionSamplingStrategy = Field(
-        default="residual",
+    rejection_sampling_strategy: RejectionSamplingStrategy | None = Field(
+        default=None,
         description=(
-            "The rejection sampling strategy to use. 'residual' uses"
-            " residual distribution sampling with bonus tokens. 'greedy'"
-            " uses simple greedy rejection sampling without bonus tokens."
+            "Rejection sampling strategy for verifying draft tokens."
+            " Defaults to 'typical-acceptance' for eagle/mtp,"
+            " 'residual' for standalone."
         ),
     )
 
     _config_file_section_name: str = "speculative_config"
-    """The section name to use when loading this config from a MAXConfig file.
-    This is used to differentiate between different config sections in a single
-    MAXConfig file."""
 
     def is_eagle(self) -> bool:
         """Returns whether the speculative method is EAGLE (shared embedding/lm_head)."""
@@ -71,3 +69,11 @@ class SpeculativeConfig(ConfigFileModel):
     def uses_greedy_rejection(self) -> bool:
         """Returns whether the greedy rejection sampling strategy is used."""
         return self.rejection_sampling_strategy == "greedy"
+
+    def uses_typical_acceptance(self) -> bool:
+        """Returns whether the typical-acceptance sampling strategy is used."""
+        return self.rejection_sampling_strategy == "typical-acceptance"
+
+    def uses_logit_comparison(self) -> bool:
+        """Returns whether the logit-comparison sampling strategy is used."""
+        return self.rejection_sampling_strategy == "logit-comparison"

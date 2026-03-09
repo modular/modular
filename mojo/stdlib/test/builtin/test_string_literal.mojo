@@ -196,7 +196,7 @@ def test_comparison_operators() raises:
 def test_indexing() raises:
     var s = "hello"
     assert_equal(s[byte=0], "h")
-    assert_equal(s[byte = Int(1)], "e")
+    assert_equal(s[byte=Int(1)], "e")
     assert_equal(s[byte=2], "l")
 
 

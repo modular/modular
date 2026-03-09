@@ -16,16 +16,13 @@ from std.math import exp2
 from std.gpu.host.compile import _compile_code
 from std.gpu.host.info import A100, MetalM4
 from std.gpu.intrinsics import *
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn kernel[
     dtype: DType, memory: Bool = True
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    ptr: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     val: Scalar[dtype],
 ):
     store_release[memory=memory](ptr, val)
@@ -38,25 +35,23 @@ def test_compile_code() raises:
 
     # CHECK: st.release.sys.global.u32 [%rd1], %r1;
     # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
-    print(_compile_code[kernel[DType.int32], target = A100.target()]())
+    print(_compile_code[kernel[DType.int32], target=A100.target()]())
 
     # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
     # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
-    print(_compile_code[kernel[DType.bfloat16], target = A100.target()]())
+    print(_compile_code[kernel[DType.bfloat16], target=A100.target()]())
 
     # CHECK: st.release.sys.global.u32 [%rd1], %r1;
     # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
     print(
-        _compile_code[
-            kernel[DType.int32, memory=False], target = A100.target()
-        ]()
+        _compile_code[kernel[DType.int32, memory=False], target=A100.target()]()
     )
 
     # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
     # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
     print(
         _compile_code[
-            kernel[DType.bfloat16, memory=False], target = A100.target()
+            kernel[DType.bfloat16, memory=False], target=A100.target()
         ]()
     )
 
@@ -65,7 +60,7 @@ def test_compile_code() raises:
     print(
         _compile_code[
             kernel[DType.bfloat16, memory=True],
-            target = A100.target(),
+            target=A100.target(),
             emission_kind="llvm-opt",
         ]()
     )
@@ -75,31 +70,29 @@ def test_compile_code() raises:
     print(
         _compile_code[
             kernel[DType.bfloat16, memory=False],
-            target = A100.target(),
+            target=A100.target(),
             emission_kind="llvm-opt",
         ]()
     )
 
     # https://godbolt.org/z/j9ecfjjP1
-    fn exp_op(output: UnsafePointer[Float32], max_scaled: Int32):
+    fn exp_op(output: UnsafePointer[Float32, MutAnyOrigin], max_scaled: Int32):
         output[] = exp2(
             output[] * 1.44269504088896340736 - max_scaled.cast[DType.float32]()
         )
 
     # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"
     print(
-        _compile_code[
-            exp_op, target = A100.target(), emission_kind="llvm-opt"
-        ]()
+        _compile_code[exp_op, target=A100.target(), emission_kind="llvm-opt"]()
     )
     # CHECK: fma.rn.f32
-    print(_compile_code[exp_op, target = A100.target(), emission_kind="asm"]())
+    print(_compile_code[exp_op, target=A100.target(), emission_kind="asm"]())
 
     # CHECK: fma.rn.ftz.f32
     print(
         _compile_code[
             exp_op,
-            target = A100.target(),
+            target=A100.target(),
             emission_kind="asm",
             compile_options="nvptx-short-ptr=true,denormal-fp-math-f32=preserve-sign",
         ]()
@@ -112,7 +105,7 @@ def test_compile_code() raises:
     print(
         _compile_code[
             kernel[DType.int32],
-            target = MetalM4.target(),
+            target=MetalM4.target(),
             emission_kind="llvm-opt",
         ]()
     )

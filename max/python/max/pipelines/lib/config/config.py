@@ -30,9 +30,7 @@ from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
 )
-from max.pipelines.lib.pipeline_runtime_config import (
-    PipelineRuntimeConfig,
-)
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import (
     PIPELINE_REGISTRY,
     SupportedArchitecture,
@@ -324,25 +322,10 @@ class PipelineConfig(ConfigFileModel):
             # Create new model config with updated KVCache config
             model_config = config_class(**matched_kwargs)
 
-            if self.draft_model:
-                memory_util = kv_cache_kwargs.get(
-                    "device_memory_utilization", 0.9
-                )
-
-                if self.speculative and self.speculative.is_mtp():
-                    main_model_util = memory_util * 0.95
-                else:
-                    main_model_util = memory_util * 0.7
-
-                draft_model_util = memory_util - main_model_util
-
-                kv_cache_kwargs["device_memory_utilization"] = main_model_util
-
             model_config.create_kv_cache_config(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self.draft_model:
-                kv_cache_kwargs["device_memory_utilization"] = draft_model_util
                 self.draft_model.create_kv_cache_config(**kv_cache_kwargs)
 
         elif config_name == "sampling":
@@ -585,18 +568,14 @@ class PipelineConfig(ConfigFileModel):
 
         # By this point, we should have a valid model_path.
 
-        # Run Baseline Validation
-        self._validate_and_resolve_remaining_pipeline_config(
-            model_config=self.model
-        )
-
-        # Run Additional Checks for Speculative Decoding
         if self.draft_model:
-            self._validate_and_resolve_remaining_pipeline_config(
-                model_config=self.draft_model
-            )
-
+            # Joint memory estimation for speculative decoding
+            self._validate_and_resolve_speculative_memory()
             self._validate_pipeline_config_for_speculative_decoding()
+        else:
+            self._validate_and_resolve_remaining_pipeline_config(
+                model_config=self.model
+            )
 
         self._validate_and_resolve_overlap_scheduler()
 
@@ -826,12 +805,13 @@ class PipelineConfig(ConfigFileModel):
             self.model.kv_cache.enable_prefix_caching = False
             self.draft_model.kv_cache.enable_prefix_caching = False
 
-    def _validate_and_resolve_remaining_pipeline_config(
+    def _validate_and_resolve_architecture(
         self, model_config: MAXModelConfig
-    ) -> None:
-        """Updates remaining pipeline config fields if not provided.
+    ) -> SupportedArchitecture:
+        """Validates and resolves architecture, quantization, rope, and encoding.
 
-        Errors out with a detailed reason if invalid config is provided.
+        This performs all validation up to (but not including) memory
+        estimation. Returns the resolved SupportedArchitecture.
         """
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -928,6 +908,60 @@ class PipelineConfig(ConfigFileModel):
             default_weights_format=arch.default_weights_format,
         )
 
+        return arch
+
+    def _validate_and_resolve_speculative_memory(self) -> None:
+        """Joint memory estimation for speculative decoding.
+
+        Reserves memory for the draft model's non-shared weights by
+        temporarily lowering the target's utilization, then runs
+        standard estimation for the target model.
+        """
+        assert self.draft_model is not None
+
+        draft_arch = self._validate_and_resolve_architecture(self.draft_model)
+        draft_reservation = draft_arch.pipeline_model.estimate_weights_size(
+            self
+        )
+
+        # Temporarily lower utilization to carve out space for draft weights.
+        original_util = self.model.kv_cache.device_memory_utilization
+        devices = load_devices(self.model.device_specs)
+        free_memory = MemoryEstimator.free_memory(devices)
+        adjusted_util = max(
+            0.1, original_util - draft_reservation / free_memory
+        )
+        self.model.kv_cache.device_memory_utilization = adjusted_util
+
+        # Run standard target estimation with reduced budget.
+        self._validate_and_resolve_remaining_pipeline_config(
+            model_config=self.model
+        )
+
+        # Restore utilization and propagate results to draft.
+        self.model.kv_cache.device_memory_utilization = original_util
+        self.draft_model.max_length = self.model.max_length
+
+        # Hardcode the draft kvcache to 0 bytes. When allocating the draft
+        # kvcache, we will use a portion of the target's available_cache_memory.
+        # This is handled in the SpeculativeDecodingPipelineBase via
+        # MultiKVCacheParams to ensure that the same number of pages are allocated
+        # for the target and draft kv caches.
+        if self.draft_model.kv_cache._available_cache_memory is not None:
+            raise ValueError(
+                "Expected draft model's available_cache_memory to be None"
+            )
+        self.draft_model.kv_cache._available_cache_memory = 0
+
+    def _validate_and_resolve_remaining_pipeline_config(
+        self, model_config: MAXModelConfig
+    ) -> None:
+        """Updates remaining pipeline config fields if not provided.
+
+        Errors out with a detailed reason if invalid config is provided.
+        """
+        arch = self._validate_and_resolve_architecture(model_config)
+
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
             # since they don't use KV cache.
@@ -941,24 +975,26 @@ class PipelineConfig(ConfigFileModel):
                 "Please ensure the model repository contains a valid config.json file."
             )
 
+        devices = load_devices(model_config.device_specs)
         arch_config = arch.config.initialize(self)
+
+        weights_size = arch.pipeline_model.estimate_weights_size(self)
+        activation_size = arch.pipeline_model.estimate_activation_memory(
+            self, model_config.huggingface_config
+        )
 
         MemoryEstimator.estimate_memory_footprint(
             self,
             model_config,
             arch_config,
             devices,
-            arch.pipeline_model.estimate_weights_size(self),
-            arch.pipeline_model.estimate_activation_memory(
-                self, model_config.huggingface_config
-            ),
+            weights_size,
+            activation_size,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-            arch.pipeline_model.estimate_weights_size(self),
-            arch.pipeline_model.estimate_activation_memory(
-                self, model_config.huggingface_config
-            ),
+            weights_size,
+            activation_size,
             model_config,
             devices,
             arch_config,

@@ -19,9 +19,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # Additional imports for testing
 from internal_utils import (
@@ -59,10 +56,9 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     var N = n.value
     var K = k.value
 
-    debug_assert(
-        M * size_of[DType.float32]() % 16 == 0,
-        "TMA expects M to be divisible by 16 bytes",
-    )
+    assert (
+        M * size_of[DType.float32]() % 16 == 0
+    ), "TMA expects M to be divisible by 16 bytes"
 
     print(
         "== test_sm100_blockwise_scaled_fp8_matmul",
@@ -85,10 +81,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         transpose_b,
     )
 
-    debug_assert(
-        (K % BLOCK_SCALE_K == 0),
-        "K must be divisible by BLOCK_SCALE_K",
-    )
+    assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
     comptime static_a_shape = DimList(m.dim, k.dim)
     comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
@@ -123,19 +116,19 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         k.value, BLOCK_SCALE_K
     )
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
@@ -157,15 +150,11 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
+    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
     var a_scales_host = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
+    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
     var b_scales_host = NDBuffer[DType.float32, 2, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
@@ -227,7 +216,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
+        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](c, a, b, a_scales, b_scales, ctx)
@@ -237,7 +226,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
         c_device_ref_nd,
         a_device_nd,
@@ -286,8 +275,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -299,8 +288,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -312,8 +301,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             use_epilogue=True,
         ](
@@ -327,8 +316,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -341,8 +330,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 128, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 128, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -355,8 +344,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 64, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 64, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -369,8 +358,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 16, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 16, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -383,8 +372,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 8, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 8, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,
@@ -397,8 +386,8 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.float8_e4m3fn,
             DType.bfloat16,
-            umma_shape = Index(64, 256, 32),
-            swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 256, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
             ctx,

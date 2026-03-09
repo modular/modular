@@ -58,7 +58,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from layout._layout import row_major as new_row_major
+from layout.tile_layout import row_major as new_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -66,9 +66,6 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8_1d2d import (
     grouped_matmul_dynamic_scaled_fp8_1d2d,
 )
 from buffer import Dim, DimList, NDBuffer
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import Index, IndexList
 
 
@@ -124,15 +121,9 @@ fn bench_blockwise_fp8_1d2d[
     )
 
     # Host allocations
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
-    var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        num_experts
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
 
     # Setup offsets, expert ids, scales
     a_offsets_host_ptr[0] = 0
@@ -401,8 +392,8 @@ fn bench_blockwise_fp8_1d2d[
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
-                a_scales_type = DType.float32,
-                b_scales_type = DType.float32,
+                a_scales_type=DType.float32,
+                b_scales_type=DType.float32,
                 transpose_b=transpose_b,
             ](
                 c_tt,

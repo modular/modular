@@ -44,7 +44,8 @@ comptime K_BATCH_SIZE = 512
 def matmul_qint4_pack_b[
     group_size: Int
 ](
-    b: LayoutTensor[DType.uint8, ...], b_rot: LayoutTensor[DType.uint8, ...]
+    b: LayoutTensor[DType.uint8, ...],
+    b_rot: LayoutTensor[mut=True, DType.uint8, ...],
 ) raises:
     comptime assert b.rank == 2
     comptime assert b_rot.rank == 2
@@ -72,7 +73,7 @@ def matmul_qint4_pack_b[
                 src_ptr += size_of[DType.float16]()
                 dst_k_ptr += size_of[DType.float16]() * n_groups
 
-                var b_data_i4 = src_ptr.load[width = group_size // 2]()
+                var b_data_i4 = src_ptr.load[width=group_size // 2]()
                 src_ptr += group_size // 2
 
                 var b_data_i8_lo = b_data_i4 & 15
@@ -81,7 +82,7 @@ def matmul_qint4_pack_b[
 
                 comptime for i in range(0, group_size, 8):
                     var b_tuple_lo = b_data_i8.slice[4, offset=i]()
-                    var b_tuple_hi = b_data_i8.slice[4, offset = i + 4]()
+                    var b_tuple_hi = b_data_i8.slice[4, offset=i + 4]()
                     var b_tuple = (b_tuple_lo << 0) + (b_tuple_hi << 4)
                     (dst_k_ptr + 4 * nn).store(b_tuple)
                     dst_k_ptr += 4 * n_groups
@@ -118,9 +119,9 @@ fn _quantize_a_buffer[
     *,
     aq_interleave: Int = group_size,
 ](
-    a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    a_quant: LayoutTensor[aq_type, ...],
-    a_scale: LayoutTensor[DType.float32, ...],
+    a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    a_quant: LayoutTensor[mut=True, aq_type, ...],
+    a_scale: LayoutTensor[mut=True, DType.float32, ...],
 ):
     """Converts a floating point buffer to a symmetrically quantized
     representation. The data is in a packed layout that can be efficiently
@@ -231,7 +232,7 @@ fn _unpack_weights[
 
         for _ in range(0, group_size, 8):
             comptime for col in range(tile_n):
-                var b_data_packed = b_packed_ptr.load[width = simd_width * 4](
+                var b_data_packed = b_packed_ptr.load[width=simd_width * 4](
                     col * simd_width * 4
                 ).cast[DType.uint8]()
                 var b_data_i4_lo = (b_data_packed & 15).cast[DType.int8]() - 8
@@ -390,9 +391,9 @@ trait _MatmulQInt4Kernel:
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         ...
 
@@ -437,9 +438,9 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -471,7 +472,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
             var a_val_hi = bitcast[DType.int32, 1](a_ptr.load[width=4](k + 4))
 
             comptime for col in range(tile_n):
-                var b_data_packed = b_ptr.load[width = simd_width * 4](
+                var b_data_packed = b_ptr.load[width=simd_width * 4](
                     b_offset
                 ).cast[DType.uint8]()
                 b_offset += simd_width * 4
@@ -540,7 +541,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         comptime for k in range(0, group_size, 4):
             comptime for col in range(tile_n):
                 var b_val = bitcast[DType.int32, simd_width](
-                    b_ptr.load[width = simd_width * 4](b_offset)
+                    b_ptr.load[width=simd_width * 4](b_offset)
                 )
                 b_offset += simd_width * 4
 
@@ -575,9 +576,9 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -613,7 +614,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
             )
 
             comptime for col in range(tile_n):
-                var b_data_packed = b_ptr.load[width = simd_width * 4](
+                var b_data_packed = b_ptr.load[width=simd_width * 4](
                     b_offset
                 ).cast[DType.uint8]()
                 b_offset += simd_width * 4
@@ -698,7 +699,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         comptime for k in range(0, group_size, 4):
             comptime for col in range(tile_n):
                 var b_val = bitcast[DType.int32, simd_width](
-                    b_ptr.load[width = simd_width * 4](b_offset)
+                    b_ptr.load[width=simd_width * 4](b_offset)
                 )
                 b_offset += simd_width * 4
 
@@ -738,9 +739,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -768,7 +769,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
             comptime for lane in range(0, 4, 2):
                 comptime for col in range(tile_n):
-                    var b_data_packed = b_ptr.load[width = simd_width * 4](
+                    var b_data_packed = b_ptr.load[width=simd_width * 4](
                         b_offset
                     ).cast[DType.uint8]()
                     b_offset += simd_width * 4
@@ -821,7 +822,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
             comptime for lane in range(4):
                 comptime for col in range(tile_n):
-                    var b_val = b_ptr.load[width = simd_width * 4](b_offset)
+                    var b_val = b_ptr.load[width=simd_width * 4](b_offset)
                     b_offset += simd_width * 4
 
                     comptime for row in range(tile_m):
@@ -849,9 +850,9 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     fn quantize_a_buffer[
         group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-        a_quant: LayoutTensor[aq_type, ...],
-        a_scale: LayoutTensor[DType.float32, ...],
+        a: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+        a_quant: LayoutTensor[mut=True, aq_type, ...],
+        a_scale: LayoutTensor[mut=True, DType.float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -907,17 +908,17 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
 
             comptime if tile_m > 1:
                 comptime for row in range(block_m):
-                    a_tile[row] = a_ptr.load[width = simd_width * 4](a_offset)
+                    a_tile[row] = a_ptr.load[width=simd_width * 4](a_offset)
                     a_offset += simd_width * 4
             else:
-                var a_val = a_ptr.load[width = simd_width * 2](a_offset)
+                var a_val = a_ptr.load[width=simd_width * 2](a_offset)
                 a_tile[0] = rebind[SIMD[DType.int8, simd_width * 4]](
                     a_val.join(SIMD[DType.int8, simd_width * 2](0))
                 )
                 a_offset += simd_width * 2
 
             comptime for col in range(tile_n * 2):
-                var b_val = b_ptr.load[width = simd_width * 4](b_offset)
+                var b_val = b_ptr.load[width=simd_width * 4](b_offset)
                 b_offset += simd_width * 4
 
                 comptime for row in range(block_m):
@@ -955,14 +956,16 @@ fn _matmul_qint4_m_1[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_quant: LayoutTensor[aq_type, address_space = AddressSpace.GENERIC, ...],
+    a_quant: LayoutTensor[aq_type, address_space=AddressSpace.GENERIC, ...],
     a_scale: LayoutTensor[
-        DType.float32, address_space = AddressSpace.GENERIC, ...
+        DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
     b: LayoutTensor[
-        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, ...
+        DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime assert a_quant.rank == 2
     comptime assert a_scale.rank == 2
@@ -1038,14 +1041,16 @@ fn _matmul_qint4_m_any[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_quant: LayoutTensor[aq_type, address_space = AddressSpace.GENERIC, ...],
+    a_quant: LayoutTensor[aq_type, address_space=AddressSpace.GENERIC, ...],
     a_scale: LayoutTensor[
-        DType.float32, address_space = AddressSpace.GENERIC, ...
+        DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
     b: LayoutTensor[
-        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, ...
+        DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
@@ -1110,7 +1115,7 @@ fn _matmul_qint4_m_any[
                     tile_n,
                     simd_width,
                     needs_correction=needs_correction,
-                    is_i8mm = kernel.aq_tuple_type() == DType.int64,
+                    is_i8mm=kernel.aq_tuple_type() == DType.int64,
                 ](
                     b_s8_buf,
                     b_ptr
@@ -1200,11 +1205,13 @@ fn _matmul_qint4[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
     b: LayoutTensor[
-        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, ...
+        DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
@@ -1247,11 +1254,13 @@ fn matmul_qint4[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
     b: LayoutTensor[
-        DType.uint8, b_layout, address_space = AddressSpace.GENERIC, ...
+        DType.uint8, b_layout, address_space=AddressSpace.GENERIC, ...
     ],
-    c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     @parameter
     fn kernel_dispatch[kernel: _MatmulQInt4Kernel]():

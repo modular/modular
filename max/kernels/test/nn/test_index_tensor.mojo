@@ -13,8 +13,7 @@
 
 from std.random import random_ui64
 
-from layout import Coord, TileTensor
-from layout._layout import row_major
+from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,

@@ -15,17 +15,12 @@ from std.math import align_down, align_up, ceildiv
 from std.sys import align_of
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
-
+from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
-
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from std.utils.index import Index, IndexList
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
@@ -678,8 +673,8 @@ fn packA_i8mm[
     t0: Int,
     t1: Int,
     k: Int,
-    a_ptr: UnsafePointer[Scalar[a_type]],
-    a_packed_ptr: UnsafePointer[Scalar[a_type]],
+    a_ptr: UnsafePointer[mut=False, Scalar[a_type], ...],
+    a_packed_ptr: UnsafePointer[mut=True, Scalar[a_type], ...],
 ):
     @always_inline
     fn packA_helper[
@@ -770,7 +765,7 @@ fn apply_epilogue[
 
                 var vec = src.ptr.load[
                     width=vec_width,
-                    alignment = align_of[SIMD[src.dtype, vec_width]](),
+                    alignment=align_of[SIMD[src.dtype, vec_width]](),
                 ](src_idx)
 
                 var m = (dst_idx + offset) // N

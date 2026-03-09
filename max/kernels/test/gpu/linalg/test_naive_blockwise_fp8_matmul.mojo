@@ -15,10 +15,6 @@ from std.math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -98,10 +94,10 @@ fn test_naive_blockwise_fp8_matmul[
         k.value, BLOCK_SCALE_K
     )
 
-    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[input_type]](a_size)
+    var b_host_ptr = alloc[Scalar[input_type]](b_size)
+    var c_host_ptr = alloc[Scalar[DType.float32]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
 
     var a_host = NDBuffer[input_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
@@ -136,12 +132,8 @@ fn test_naive_blockwise_fp8_matmul[
         c_device.unsafe_ptr(), dynamic_c_shape
     )
 
-    var a_scale_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scale_size
-    )
-    var b_scale_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scale_size
-    )
+    var a_scale_host_ptr = alloc[Scalar[DType.float32]](a_scale_size)
+    var b_scale_host_ptr = alloc[Scalar[DType.float32]](b_scale_size)
 
     var a_scale_host = NDBuffer[DType.float32, 2, _, static_a_scale_shape](
         a_scale_host_ptr, dynamic_a_scale_shape
@@ -200,7 +192,7 @@ fn test_naive_blockwise_fp8_matmul[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk = Index(
+            scales_granularity_mnk=Index(
                 BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
             ),
         ](
@@ -255,35 +247,35 @@ def main() raises:
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b = Bool(transpose_b),
+                transpose_b=Bool(transpose_b),
             ](ctx, dynamic(128), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 128),
-                transpose_b = Bool(transpose_b),
+                transpose_b=Bool(transpose_b),
             ](ctx, dynamic(128), static[256](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 16),
-                transpose_b = Bool(transpose_b),
+                transpose_b=Bool(transpose_b),
             ](ctx, dynamic(128), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b = Bool(transpose_b),
+                transpose_b=Bool(transpose_b),
             ](ctx, dynamic(120), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
-                transpose_b = Bool(transpose_b),
+                transpose_b=Bool(transpose_b),
             ](ctx, dynamic(120), static[129](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(32, 128, 64),
-                transpose_b = Bool(transpose_b),
+                transpose_b=Bool(transpose_b),
             ](ctx, dynamic(120), static[129](), static[129]())

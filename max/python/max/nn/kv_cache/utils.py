@@ -43,12 +43,10 @@ class AttentionDispatchResolver:
         device: DeviceRef,
         is_mla: bool,
         n_kv_heads_per_device: int,
-        q_max_seq_len: int,
         num_q_heads: int | None = None,
     ) -> None:
         self._model: Model | None = None
         self._is_mla = is_mla
-        self._q_max_seq_len = q_max_seq_len if self._is_mla else 1
 
         if device.is_cpu():
             return
@@ -112,13 +110,16 @@ class AttentionDispatchResolver:
         return session.load(graph)
 
     def __call__(
-        self, batch_size: int, max_cache_valid_length: int
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
     ) -> AttentionDispatchMetadataScalars:
         """Returns decode dispatch metadata for the given shape."""
         if self._model is None or batch_size <= 0:
             return AttentionDispatchMetadataScalars(
                 batch_size=batch_size,
-                q_max_seq_len=self._q_max_seq_len,
+                q_max_seq_len=max_prompt_length,
                 num_partitions=1,
                 max_cache_valid_length=max_cache_valid_length,
             )
@@ -129,7 +130,7 @@ class AttentionDispatchResolver:
                 np.array([max_cache_valid_length], dtype=np.int64)
             )
             qs_buf = Buffer.from_numpy(
-                np.array([self._q_max_seq_len], dtype=np.int64)
+                np.array([max_prompt_length], dtype=np.int64)
             )
             (output,) = self._model(bs_buf, mc_buf, qs_buf)
             # output lives on GPU.  to_numpy() does an implicit D2H copy

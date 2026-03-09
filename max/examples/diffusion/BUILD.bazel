@@ -15,6 +15,21 @@ modular_py_library(
 )
 
 modular_py_binary(
+    name = "flux2_comparison",
+    srcs = ["flux2_comparison.py"],
+    tags = ["no-pydeps"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        requirement("diffusers"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
     name = "simple_offline_generation",
     srcs = ["simple_offline_generation.py"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable

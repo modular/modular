@@ -30,9 +30,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
-from std.memory import LegacyUnsafePointer, memset_zero, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import memset_zero, stack_allocation
 from std.testing import *
 
 from std.utils.index import IndexList
@@ -71,14 +69,14 @@ fn _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
 
 def test_parameterized_on_cuda_sm80() raises:
     var asm = _compile_code[
-        parameterized_on_cuda, target = get_gpu_target["sm_80"]()
+        parameterized_on_cuda, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_parameterized_on_cuda(asm)
 
 
 def test_parameterized_on_cuda_sm90() raises:
     var asm = _compile_code[
-        parameterized_on_cuda, target = get_gpu_target["sm_90"]()
+        parameterized_on_cuda, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_parameterized_on_cuda(asm)
 
@@ -99,16 +97,12 @@ fn _verify_hello(asm: StringSlice) raises -> None:
 
 
 def test_hello_mojo_sm80() raises:
-    var asm = _compile_code[
-        hello_mojo, target = get_gpu_target["sm_80"]()
-    ]().asm
+    var asm = _compile_code[hello_mojo, target=get_gpu_target["sm_80"]()]().asm
     _verify_hello(asm)
 
 
 def test_hello_mojo_sm90() raises:
-    var asm = _compile_code[
-        hello_mojo, target = get_gpu_target["sm_90"]()
-    ]().asm
+    var asm = _compile_code[hello_mojo, target=get_gpu_target["sm_90"]()]().asm
     _verify_hello(asm)
 
 
@@ -118,7 +112,7 @@ def test_hello_mojo_sm90() raises:
 
 
 fn erf_elementwise(
-    buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext
+    buf: UnsafePointer[Float32, MutAnyOrigin], len: Int, ctx: DeviceContext
 ) raises:
     # Each thread will process 4 * simd_width elements.
     comptime granularity = 4 * simd_width_of[DType.float32]()
@@ -135,9 +129,9 @@ fn erf_elementwise(
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[
-        func, simd_width = simd_width_of[DType.float32](), target="gpu"
-    ](granularity, ctx)
+    elementwise[func, simd_width=simd_width_of[DType.float32](), target="gpu"](
+        granularity, ctx
+    )
 
 
 def _verify_erf_elementwise(asm: StringSlice) raises:
@@ -149,14 +143,14 @@ def _verify_erf_elementwise(asm: StringSlice) raises:
 
 def test_erf_elementwise_sm80() raises:
     var asm = _compile_code[
-        erf_elementwise, target = get_gpu_target["sm_80"]()
+        erf_elementwise, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
 
 def test_erf_elementwise_sm90() raises:
     var asm = _compile_code[
-        erf_elementwise, target = get_gpu_target["sm_90"]()
+        erf_elementwise, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
@@ -166,7 +160,7 @@ def test_erf_elementwise_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn erf_kernel(buf: UnsafePointer[Float32], len: Int):
+fn erf_kernel(buf: UnsafePointer[Float32, MutAnyOrigin], len: Int):
     var tid = thread_idx.x + block_dim.y * block_idx.y
 
     if tid >= UInt(len):
@@ -184,16 +178,12 @@ fn _verify_erf_kernel(asm: StringSlice) raises -> None:
 
 
 def test_erf_kernel_sm80() raises:
-    var asm = _compile_code[
-        erf_kernel, target = get_gpu_target["sm_80"]()
-    ]().asm
+    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_80"]()]().asm
     _verify_erf_kernel(asm)
 
 
 def test_erf_kernel_sm90() raises:
-    var asm = _compile_code[
-        erf_kernel, target = get_gpu_target["sm_90"]()
-    ]().asm
+    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_90"]()]().asm
     _verify_erf_kernel(asm)
 
 
@@ -203,10 +193,10 @@ def test_erf_kernel_sm90() raises:
 
 
 fn test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, address_space = AddressSpace.SHARED]
+    UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
 ):
     return stack_allocation[
-        999, DType.int8, 8, address_space = AddressSpace.SHARED
+        999, DType.int8, 8, address_space=AddressSpace.SHARED
     ]()
 
 
@@ -218,14 +208,14 @@ fn _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
 
 def test_shared_stack_allocation_sm80() raises:
     var asm = _compile_code[
-        test_shared_stack_allocation, target = get_gpu_target["sm_80"]()
+        test_shared_stack_allocation, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_shared_stack_allocation(asm)
 
 
 def test_shared_stack_allocation_sm90() raises:
     var asm = _compile_code[
-        test_shared_stack_allocation, target = get_gpu_target["sm_90"]()
+        test_shared_stack_allocation, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_shared_stack_allocation(asm)
 
@@ -247,14 +237,14 @@ fn _verify_barrier(asm: StringSlice) raises -> None:
 
 def test_barrier_sm80() raises:
     var asm = _compile_code[
-        test_barrier, target = get_gpu_target["sm_80"]()
+        test_barrier, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_barrier(asm)
 
 
 def test_barrier_sm90() raises:
     var asm = _compile_code[
-        test_barrier, target = get_gpu_target["sm_90"]()
+        test_barrier, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_barrier(asm)
 
@@ -265,9 +255,9 @@ def test_barrier_sm90() raises:
 
 
 fn gemm(
-    c: UnsafePointer[Float32],
-    a: UnsafePointer[Float32],
-    b: UnsafePointer[Float32],
+    c: UnsafePointer[Float32, MutAnyOrigin],
+    a: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: UnsafePointer[Float32, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -305,7 +295,7 @@ fn gemm(
     var b_shared = stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.float32,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.
@@ -363,12 +353,12 @@ def _verify_gemm(asm: StringSlice) raises:
 
 
 def test_gemm_sm80() raises:
-    var asm = _compile_code[gemm, target = get_gpu_target["sm_80"]()]().asm
+    var asm = _compile_code[gemm, target=get_gpu_target["sm_80"]()]().asm
     _verify_gemm(asm)
 
 
 def test_gemm_sm90() raises:
-    var asm = _compile_code[gemm, target = get_gpu_target["sm_90"]()]().asm
+    var asm = _compile_code[gemm, target=get_gpu_target["sm_90"]()]().asm
     _verify_gemm(asm)
 
 
@@ -395,14 +385,14 @@ fn _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
 
 def test_warp_shuffle_up_sm80() raises:
     var asm = _compile_code[
-        test_warp_shuffle_up, target = get_gpu_target["sm_80"]()
+        test_warp_shuffle_up, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_shuffle_up(asm)
 
 
 def test_warp_shuffle_up_sm90() raises:
     var asm = _compile_code[
-        test_warp_shuffle_up, target = get_gpu_target["sm_90"]()
+        test_warp_shuffle_up, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_warp_shuffle_up(asm)
 
@@ -425,14 +415,14 @@ fn _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
 
 def test_warp_shuffle_down_sm80() raises:
     var asm = _compile_code[
-        test_warp_shuffle_down, target = get_gpu_target["sm_80"]()
+        test_warp_shuffle_down, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_shuffle_down(asm)
 
 
 def test_warp_shuffle_down_sm90() raises:
     var asm = _compile_code[
-        test_warp_shuffle_down, target = get_gpu_target["sm_90"]()
+        test_warp_shuffle_down, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_warp_shuffle_down(asm)
 
@@ -460,21 +450,21 @@ fn _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
 
 def test_warp_sum_reduce_sm80() raises:
     var asm = _compile_code[
-        warp_sum_reduce, target = get_gpu_target["sm_80"]()
+        warp_sum_reduce, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_sum_reduce(asm)
 
 
 def test_warp_sum_reduce_sm90() raises:
     var asm = _compile_code[
-        warp_sum_reduce, target = get_gpu_target["sm_90"]()
+        warp_sum_reduce, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_warp_sum_reduce(asm)
 
 
 fn block_reduce(val: Float32) -> Float32:
     var shared = stack_allocation[
-        WARP_SIZE, DType.float32, address_space = AddressSpace.SHARED
+        WARP_SIZE, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
     comptime warp_shift = log2_floor(WARP_SIZE)
@@ -503,14 +493,14 @@ fn _verify_block_reduce(asm: StringSlice) raises -> None:
 
 def test_block_reduce_sm80() raises:
     var asm = _compile_code[
-        block_reduce, target = get_gpu_target["sm_80"]()
+        block_reduce, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_block_reduce(asm)
 
 
 def test_block_reduce_sm90() raises:
     var asm = _compile_code[
-        block_reduce, target = get_gpu_target["sm_90"]()
+        block_reduce, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_block_reduce(asm)
 

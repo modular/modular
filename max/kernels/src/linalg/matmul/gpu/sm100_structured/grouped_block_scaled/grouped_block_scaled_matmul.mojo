@@ -17,181 +17,58 @@ Uses TMATensorTileArray for per-block updatable TMA descriptors.
 
 This module implements grouped block-scaled GEMM following the architecture
 of NVIDIA CuTe DSL grouped_blockscaled_gemm.py:
-1. Creates template TMA descriptors from the first group
+1. Creates template TMA descriptors from caller-provided TileTensors
 2. Creates TMATensorTileArray with one tensormap per block
 3. Launches GroupedBlockScaledMatmulKernel with per-group pointers
 
-Usage:
-    # Per-group pointers (device addresses)
-    var a_ptrs = ... # (num_groups, 1) with uint64 addresses
-    var b_ptrs = ... # (num_groups, 1)
-    var c_ptrs = ... # (num_groups, 1)
-    var sfa_ptrs = ... # (num_groups, 1)
-    var sfb_ptrs = ... # (num_groups, 1)
+All tensor arguments use TileTensor with compile-time dtype constraints.
+Callers must provide template tensors in the correct shapes:
+- A/B/C templates: 3D (1, M/N, K/N) with batch=1
+- Scale factor templates: 5D (1, groups_M/N, groups_K, SF_ATOM_M[0],
+  SF_ATOM_M[1] * SF_ATOM_K)
 
-    # Problem sizes per group
-    var problem_sizes = ... # (num_groups, 4) with [M, N, K, L]
+Usage:
+    # Per-group pointers as TileTensor[DType.uint64, ...]
+    var a_ptrs = TileTensor(ptr, tile_row_major[num_groups, 1]())
+    ...
+
+    # Problem sizes as TileTensor[DType.int32, ...]
+    var problem_sizes = TileTensor(ptr, tile_row_major[num_groups, 4]())
+
+    # 3D template TileTensors for TMA descriptor creation
+    var a_template = TileTensor(a_ptr, tile_row_major[1, M, K]())
+    ...
 
     grouped_block_scaled_matmul[...](
         a_ptrs, b_ptrs, c_ptrs, sfa_ptrs, sfb_ptrs,
-        problem_sizes, num_groups, ctx
+        problem_sizes, num_groups, total_tiles,
+        a_template, b_template, c_template,
+        sfa_template, sfb_template, ctx
     )
 """
 
 from std.collections import Optional
 from std.math import align_up, ceildiv
-from std.memory import UnsafePointer
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import (
-    Layout as LegacyLayout,
-    LayoutTensor,
-    RuntimeLayout,
-)
-from layout.tma_async import TMATensorTileArray
+from layout import TileTensor
 
 from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
-from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
-)
+from linalg.utils import elementwise_compute_lambda_type
 from linalg.fp4_utils import (
-    MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
 )
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from ..block_scaled.block_scaled_smem import BlockScaledSmem
-from ..block_scaled.block_scaled_matmul import (
-    _reshape_to_3d as working_reshape_to_3d,
-    _convert_input_to_batched_tensor as working_convert_to_batched,
-)
-from .grouped_tile_scheduler import GroupedTileScheduler
-from .grouped_block_scaled_matmul_kernel import (
-    GroupedBlockScaledMatmulKernel,
-    GroupedTensormapManager,
-)
+from .grouped_block_scaled_matmul_kernel import GroupedBlockScaledMatmulKernel
 from .grouped_block_scaled_smem import GroupedBlockScaledSmem
-
-
-# =============================================================================
-# Helper: Reshape 2D layout to 3D (same as block_scaled_matmul.mojo)
-# =============================================================================
-
-
-@parameter
-fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
-    """Reshape 2D layout to 3D by prepending batch dimension of 1."""
-    comptime rank = len(layout.shape)
-
-    comptime if rank == 3:
-        return materialize[layout]()
-    else:
-        return LegacyLayout.row_major(
-            1,
-            comptime (layout.shape[0].value()),
-            comptime (layout.shape[1].value()),
-        )
-
-
-fn _convert_input_to_batched_tensor[
-    dtype: DType,
-    layout: LegacyLayout,
-    reshape_layout: LegacyLayout = _reshape_to_3d[layout](),
-](
-    tensor: LayoutTensor[dtype, layout, ...],
-) -> LayoutTensor[
-    tensor.dtype,
-    reshape_layout,
-    tensor.origin,
-    address_space = tensor.address_space,
-]:
-    """Convert 2D tensor to 3D batched tensor with batch=1."""
-    return LayoutTensor[
-        dtype,
-        reshape_layout,
-        tensor.origin,
-        address_space = tensor.address_space,
-    ](
-        tensor.ptr,
-        RuntimeLayout[reshape_layout].row_major(
-            IndexList[3](
-                1 if tensor.rank == 2 else tensor.dim(0),
-                tensor.dim(0) if tensor.rank == 2 else tensor.dim(1),
-                tensor.dim(1) if tensor.rank == 2 else tensor.dim(2),
-            ),
-        ),
-    )
-
-
-# Helper for scale factor tensors (5D -> 5D with batch)
-# Matches the exact pattern from block_scaled_matmul.mojo
-@parameter
-fn _reshape_sf_to_5d[layout: LegacyLayout, is_batched: Bool]() -> LegacyLayout:
-    """Reshape scale factor layout to 5D with batch dimension.
-
-    For non-batched: (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
-                  -> (1, M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K)
-    """
-
-    comptime if is_batched:
-        # Input is 6D: (B, M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
-        return LegacyLayout.row_major(
-            comptime (layout.shape[0].value()),
-            comptime (layout.shape[1].value()),
-            comptime (layout.shape[2].value()),
-            SF_ATOM_M[0],
-            SF_ATOM_M[1] * SF_ATOM_K,
-        )
-    else:
-        # Input is 5D: (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
-        return LegacyLayout.row_major(
-            1,
-            comptime (layout.shape[0].value()),
-            comptime (layout.shape[1].value()),
-            SF_ATOM_M[0],
-            SF_ATOM_M[1] * SF_ATOM_K,
-        )
-
-
-# =============================================================================
-# Helper: Compute total tiles across all groups
-# =============================================================================
-
-
-fn compute_total_tiles[
-    tile_m: Int, tile_n: Int, max_groups: Int
-](
-    problem_sizes: LayoutTensor[
-        DType.int32, LegacyLayout.row_major(max_groups, 4), MutAnyOrigin
-    ],
-    num_groups: Int,
-) -> Int:
-    """Compute total number of tiles across all groups.
-
-    Args:
-        problem_sizes: (num_groups, 4) tensor with [M, N, K, L] per group.
-        num_groups: Number of GEMM problems.
-
-    Returns:
-        Total tile count.
-    """
-    var total = 0
-    for g in range(num_groups):
-        var m = Int(problem_sizes[g, 0])
-        var n = Int(problem_sizes[g, 1])
-        var m_tiles = ceildiv(m, tile_m)
-        var n_tiles = ceildiv(n, tile_n)
-        total += m_tiles * n_tiles
-    return total
 
 
 # =============================================================================
@@ -253,59 +130,36 @@ fn validate_grouped_gemm_constraints[
 
 
 fn grouped_block_scaled_matmul[
-    c_type: DType,
-    c_layout: LegacyLayout,
-    a_type: DType,
-    a_layout: LegacyLayout,
-    b_type: DType,
-    b_layout: LegacyLayout,
-    sfa_dtype: DType,
-    sfa_layout: LegacyLayout,
-    sfb_dtype: DType,
-    sfb_layout: LegacyLayout,
     transpose_b: Bool,
     max_groups: Int,
     *,
-    config: BlockScaledMatmulConfig[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
-    ],
+    config: BlockScaledMatmulConfig[_, _, _, _, _, transpose_b],
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
 ](
-    # Per-group tensor pointers
-    a_ptrs: LayoutTensor[
-        DType.uint64, LegacyLayout.row_major(max_groups, 1), MutAnyOrigin
-    ],
-    b_ptrs: LayoutTensor[
-        DType.uint64, LegacyLayout.row_major(max_groups, 1), MutAnyOrigin
-    ],
-    c_ptrs: LayoutTensor[
-        DType.uint64, LegacyLayout.row_major(max_groups, 1), MutAnyOrigin
-    ],
-    sfa_ptrs: LayoutTensor[
-        DType.uint64, LegacyLayout.row_major(max_groups, 1), MutAnyOrigin
-    ],
-    sfb_ptrs: LayoutTensor[
-        DType.uint64, LegacyLayout.row_major(max_groups, 1), MutAnyOrigin
-    ],
+    # Per-group tensor pointers (max_groups, 1) TileTensors
+    a_ptrs: TileTensor[DType.uint64, ...],
+    b_ptrs: TileTensor[DType.uint64, ...],
+    c_ptrs: TileTensor[DType.uint64, ...],
+    sfa_ptrs: TileTensor[DType.uint64, ...],
+    sfb_ptrs: TileTensor[DType.uint64, ...],
     # Per-group problem sizes: (max_groups, 4) with [M, N, K, L]
-    problem_sizes: LayoutTensor[
-        DType.int32, LegacyLayout.row_major(max_groups, 4), MutAnyOrigin
-    ],
+    problem_sizes: TileTensor[DType.int32, ...],
     # Number of active groups (runtime)
     num_groups: Int,
     # Total tiles across all groups (computed by caller on host)
     total_tiles: Int,
-    # Template tensors from first group (for TMA descriptor creation)
-    # These are 2D tensors (M, K) or (N, K) - will be converted to 3D internally
-    a_template: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b_template: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    c_template: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    # Scale factor templates - 5D tensors
-    sfa_template: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
-    sfb_template: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
+    # Template tensors for TMA descriptor creation
+    # A/B/C: 3D (1, M/N, K/N) batched TileTensors
+    a_template: TileTensor[config.a_type, ...],
+    b_template: TileTensor[config.b_type, ...],
+    c_template: TileTensor[config.c_type, ...],
+    # Scale factor templates: 5D (1, M/N_groups, K_groups, SF_ATOM_M[0],
+    # SF_ATOM_M[1] * SF_ATOM_K)
+    sfa_template: TileTensor[config.sfa_dtype, ...],
+    sfb_template: TileTensor[config.sfb_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch grouped block-scaled FP8 matmul kernel on SM100.
@@ -314,16 +168,6 @@ fn grouped_block_scaled_matmul[
     where each group can have different M, N, K dimensions.
 
     Parameters:
-        c_type: Output element type.
-        c_layout: Output tensor layout.
-        a_type: A matrix element type (FP8).
-        a_layout: A tensor layout.
-        b_type: B matrix element type (FP8).
-        b_layout: B tensor layout.
-        sfa_dtype: A scaling factor type (F8-UE8M0).
-        sfa_layout: A scaling factor tensor layout.
-        sfb_dtype: B scaling factor type (F8-UE8M0).
-        sfb_layout: B scaling factor tensor layout.
         transpose_b: Whether B is transposed (must be True).
         max_groups: Maximum number of groups (compile-time bound).
         config: Block-scaled matmul configuration.
@@ -342,9 +186,9 @@ fn grouped_block_scaled_matmul[
         problem_sizes: Per-group problem sizes (max_groups, 4) as [M, N, K, L].
         num_groups: Actual number of groups (runtime value <= max_groups).
         total_tiles: Total tiles across all groups (computed by caller).
-        a_template: Template A tensor for TMA descriptor creation.
-        b_template: Template B tensor for TMA descriptor creation.
-        c_template: Template C tensor for TMA descriptor creation.
+        a_template: Template A tensor (1, M, K) for TMA descriptor creation.
+        b_template: Template B tensor (1, N, K) for TMA descriptor creation.
+        c_template: Template C tensor (1, M, N) for TMA descriptor creation.
         sfa_template: Template SFA tensor for TMA descriptor creation.
         sfb_template: Template SFB tensor for TMA descriptor creation.
         ctx: Device context for kernel launch.
@@ -352,6 +196,12 @@ fn grouped_block_scaled_matmul[
     Raises:
         If configuration constraints are violated.
     """
+    comptime a_type = config.a_type
+    comptime b_type = config.b_type
+    comptime c_type = config.c_type
+    comptime sfa_dtype = config.sfa_dtype
+    comptime sfb_dtype = config.sfb_dtype
+
     # ===== Validate constraints =====
     validate_grouped_gemm_constraints[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b, config
@@ -366,75 +216,6 @@ fn grouped_block_scaled_matmul[
     comptime cluster_shape = config.cluster_shape
     comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
 
-    # ===== Convert templates to batched tensors =====
-    # Use working kernel's conversion functions to ensure compatibility
-    comptime is_batched_matmul = a_template.rank == 3
-
-    var a_tensor_batched = working_convert_to_batched(a_template)
-    var b_tensor_batched = working_convert_to_batched(b_template)
-    var c_tensor_batched = working_convert_to_batched(c_template)
-
-    # Scale factor tensors: convert to 5D with batch dimension and merged last dims
-    # Use exact same pattern as block_scaled_matmul.mojo's scales_5d_layout
-    comptime scales_5d_layout[layout: LegacyLayout] = LegacyLayout.row_major(
-        layout.shape[0].value() if is_batched_matmul else 1,
-        layout.shape[1]
-        .value() if is_batched_matmul else layout.shape[0]
-        .value(),
-        layout.shape[2]
-        .value() if is_batched_matmul else layout.shape[1]
-        .value(),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    )
-    comptime sfa_5d_layout = scales_5d_layout[sfa_layout]
-    comptime sfb_5d_layout = scales_5d_layout[sfb_layout]
-
-    var sfa_5d_tensor = LayoutTensor[sfa_dtype, sfa_5d_layout, MutAnyOrigin](
-        sfa_template.ptr,
-        RuntimeLayout[sfa_5d_layout].row_major(
-            IndexList[5](
-                sfa_template.dim(0) if is_batched_matmul else 1,
-                sfa_template.dim(1) if is_batched_matmul else sfa_template.dim(
-                    0
-                ),
-                sfa_template.dim(2) if is_batched_matmul else sfa_template.dim(
-                    1
-                ),
-                sfa_template.dim(3) if is_batched_matmul else sfa_template.dim(
-                    2
-                ),
-                (
-                    sfa_template.dim(4) * sfa_template.dim(5)
-                ) if is_batched_matmul else (
-                    sfa_template.dim(3) * sfa_template.dim(4)
-                ),
-            ),
-        ),
-    )
-    var sfb_5d_tensor = LayoutTensor[sfb_dtype, sfb_5d_layout, MutAnyOrigin](
-        sfb_template.ptr,
-        RuntimeLayout[sfb_5d_layout].row_major(
-            IndexList[5](
-                sfb_template.dim(0) if is_batched_matmul else 1,
-                sfb_template.dim(1) if is_batched_matmul else sfb_template.dim(
-                    0
-                ),
-                sfb_template.dim(2) if is_batched_matmul else sfb_template.dim(
-                    1
-                ),
-                sfb_template.dim(3) if is_batched_matmul else sfb_template.dim(
-                    2
-                ),
-                (
-                    sfb_template.dim(4) * sfb_template.dim(5)
-                ) if is_batched_matmul else (
-                    sfb_template.dim(3) * sfb_template.dim(4)
-                ),
-            ),
-        ),
-    )
-
     # ===== Instantiate Kernel First (TMA layouts computed from config) =====
     comptime matmul_kernel = GroupedBlockScaledMatmulKernel[
         a_type,
@@ -445,7 +226,7 @@ fn grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
-        cluster_shape = StaticTuple[Int32, 3](
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
@@ -460,35 +241,35 @@ fn grouped_block_scaled_matmul[
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
     var a_tma_op = create_tma_tile[
-        KernelType.ATmaTile.tile_layout,
-        KernelType.ATmaTile.desc_layout,
+        KernelType.ATileLayout,
+        KernelType.ADescLayout,
         a_tma_tile_shape,
-        swizzle_mode = config.a_swizzle,
-    ](ctx, a_tensor_batched)
+        swizzle_mode=config.a_swizzle,
+    ](ctx, a_template)
 
     # B matrix TMA
     comptime b_tma_tile_shape = Index(
         1, BN // (cluster_shape[0] // config.cta_group), BK
     )
     var b_tma_op = create_tma_tile[
-        KernelType.BTmaTile.tile_layout,
-        KernelType.BTmaTile.desc_layout,
+        KernelType.BTileLayout,
+        KernelType.BDescLayout,
         b_tma_tile_shape,
-        swizzle_mode = config.b_swizzle,
-    ](ctx, b_tensor_batched)
+        swizzle_mode=config.b_swizzle,
+    ](ctx, b_template)
 
     # C matrix TMA
     comptime c_tma_tile_shape = Index(
         1, config.output_tile_shape[0], config.output_tile_shape[1]
     )
     var c_tma_op = create_tma_tile[
-        KernelType.CTmaTile.tile_layout,
-        KernelType.CTmaTile.desc_layout,
+        KernelType.CTileLayout,
+        KernelType.CDescLayout,
         c_tma_tile_shape,
-        swizzle_mode = config.c_swizzle,
-    ](ctx, c_tensor_batched)
+        swizzle_mode=config.c_swizzle,
+    ](ctx, c_template)
 
-    # Scaling factors TMA - 5D tensors (using converted batched tensors)
+    # Scaling factors TMA
     comptime sfa_tma_tile_shape = Index(
         1,
         BM // SF_MN_GROUP_SIZE,
@@ -497,10 +278,10 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfa_tma_op = create_tma_tile[
-        KernelType.SFATmaTile.tile_layout,
-        KernelType.SFATmaTile.desc_layout,
+        KernelType.SFATileLayout,
+        KernelType.SFADescLayout,
         sfa_tma_tile_shape,
-    ](ctx, sfa_5d_tensor)
+    ](ctx, sfa_template)
 
     comptime sfb_tma_tile_shape = Index(
         1,
@@ -510,10 +291,10 @@ fn grouped_block_scaled_matmul[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfb_tma_op = create_tma_tile[
-        KernelType.SFBTmaTile.tile_layout,
-        KernelType.SFBTmaTile.desc_layout,
+        KernelType.SFBTileLayout,
+        KernelType.SFBDescLayout,
         sfb_tma_tile_shape,
-    ](ctx, sfb_5d_tensor)
+    ](ctx, sfb_template)
 
     # ===== Create TMATensorTileArray for per-block tensormaps =====
     # Each block gets its own tensormap copy that can be updated at runtime.
@@ -629,47 +410,6 @@ fn grouped_block_scaled_matmul[
     # 1 TMA + 1 MMA + 1 Scheduler + 4 Epilogue warps
     comptime num_threads = 32 * 7
 
-    # ===== Create TileTensor wrappers for kernel args =====
-    from layout._layout import row_major as new_row_major
-    from std.memory import UnsafePointer as NewPtr
-
-    var a_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
-        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
-            unsafe_from_address=Int(a_ptrs.ptr)
-        ),
-        layout=new_row_major[max_groups, 1](),
-    )
-    var b_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
-        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
-            unsafe_from_address=Int(b_ptrs.ptr)
-        ),
-        layout=new_row_major[max_groups, 1](),
-    )
-    var c_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
-        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
-            unsafe_from_address=Int(c_ptrs.ptr)
-        ),
-        layout=new_row_major[max_groups, 1](),
-    )
-    var sfa_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
-        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
-            unsafe_from_address=Int(sfa_ptrs.ptr)
-        ),
-        layout=new_row_major[max_groups, 1](),
-    )
-    var sfb_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
-        ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](
-            unsafe_from_address=Int(sfb_ptrs.ptr)
-        ),
-        layout=new_row_major[max_groups, 1](),
-    )
-    var problem_sizes_tt = type_of(matmul_kernel).ProblemSizesTile(
-        ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](
-            unsafe_from_address=Int(problem_sizes.ptr)
-        ),
-        layout=new_row_major[max_groups, 4](),
-    )
-
     # ===== Kernel Launch =====
     # Dispatch to run_2sm() for 2SM mode (cta_group=2), else run() for 1SM
 
@@ -688,14 +428,14 @@ fn grouped_block_scaled_matmul[
             tma_array_sfa,
             tma_array_sfb,
             tma_array_c,
-            # Per-group pointer tensors (TileTensor)
-            a_ptrs_tt,
-            b_ptrs_tt,
-            c_ptrs_tt,
-            sfa_ptrs_tt,
-            sfb_ptrs_tt,
+            # Per-group pointer tensors
+            a_ptrs,
+            b_ptrs,
+            c_ptrs,
+            sfa_ptrs,
+            sfb_ptrs,
             # Problem sizes and group count
-            problem_sizes_tt,
+            problem_sizes,
             num_groups,
             grid_dim=grid_dim,
             block_dim=num_threads,
@@ -719,14 +459,14 @@ fn grouped_block_scaled_matmul[
             tma_array_sfa,
             tma_array_sfb,
             tma_array_c,
-            # Per-group pointer tensors (TileTensor)
-            a_ptrs_tt,
-            b_ptrs_tt,
-            c_ptrs_tt,
-            sfa_ptrs_tt,
-            sfb_ptrs_tt,
+            # Per-group pointer tensors
+            a_ptrs,
+            b_ptrs,
+            c_ptrs,
+            sfa_ptrs,
+            sfb_ptrs,
             # Problem sizes and group count
-            problem_sizes_tt,
+            problem_sizes,
             num_groups,
             grid_dim=grid_dim,
             block_dim=num_threads,

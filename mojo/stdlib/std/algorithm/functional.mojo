@@ -203,7 +203,7 @@ fn vectorize[
     """
     comptime assert simd_width > 0, "simd width must be > 0"
     comptime assert unroll_factor > 0, "unroll factor must be > 0"
-    debug_assert(size >= 0, "size must be >= 0")
+    assert size >= 0, "size must be >= 0"
 
     comptime unrolled_simd_width = simd_width * unroll_factor
     var simd_end = align_down(UInt(size), UInt(simd_width))
@@ -328,7 +328,7 @@ fn vectorize[
     """
     comptime assert simd_width > 0, "simd width must be > 0"
     comptime assert unroll_factor > 0, "unroll factor must be > 0"
-    debug_assert(size >= 0, "size must be >= 0")
+    assert size >= 0, "size must be >= 0"
 
     comptime unrolled_simd_width = simd_width * unroll_factor
     var simd_end = Int(align_down(UInt(size), UInt(simd_width)))
@@ -492,7 +492,7 @@ fn sync_parallelize[
     fn func_wrapped(i: Int):
         with FlushDenormals():
             try:
-                with Trace[TraceLevel.THREAD, target = StaticString("cpu")](
+                with Trace[TraceLevel.THREAD, target=StaticString("cpu")](
                     "task", task_id=i, parent_id=parent_id
                 ):
                     func(i)
@@ -574,7 +574,7 @@ fn parallelize[
 fn _parallelize_impl[
     origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
-    debug_assert(num_workers > 0, "Number of workers must be positive")
+    assert num_workers > 0, "Number of workers must be positive"
     # Calculate how many items are picked up by each worker.
     var chunk_size = num_work_items // num_workers
     # Calculate how many workers need to add an extra item to their work.
@@ -1516,7 +1516,7 @@ fn elementwise[
         task_id=get_safe_task_id(context),
     ):
         comptime if is_gpu[target]():
-            _elementwise_impl_gpu[func, simd_width = UInt(simd_width)](
+            _elementwise_impl_gpu[func, simd_width=UInt(simd_width)](
                 shape, context[]
             )
         else:
@@ -1841,7 +1841,7 @@ fn _elementwise_impl_gpu[
 
     if shape[rank - 1] % Int(simd_width) == 0:
         comptime kernel = _elementwise_gpu_kernel[
-            block_size = UInt(block_size), handle_uneven_simd=False
+            block_size=UInt(block_size), handle_uneven_simd=False
         ]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
@@ -1850,7 +1850,7 @@ fn _elementwise_impl_gpu[
         )
     else:
         comptime kernel = _elementwise_gpu_kernel[
-            block_size = UInt(block_size), handle_uneven_simd=True
+            block_size=UInt(block_size), handle_uneven_simd=True
         ]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=Int(num_blocks),
@@ -2011,7 +2011,7 @@ fn _stencil_impl_cpu[
             ](idx: Int) unified {mut indices, read input_shape}:
                 indices[rank - 1] = idx
                 var stencil_indices = IndexList[
-                    stencil_rank, element_type = stencil_axis.element_type
+                    stencil_rank, element_type=stencil_axis.element_type
                 ](indices[stencil_axis[0]], indices[stencil_axis[1]])
                 var bounds = map_fn(stencil_indices)
                 var lower_bound = bounds[0]
@@ -2175,7 +2175,7 @@ fn _stencil_impl_gpu[
 
         # Process stencil for this point
         var stencil_indices = IndexList[
-            stencil_rank, element_type = stencil_axis.element_type
+            stencil_rank, element_type=stencil_axis.element_type
         ](indices[stencil_axis[0]], indices[stencil_axis[1]])
         var bounds = map_fn(stencil_indices)
         var lower_bound = bounds[0]
