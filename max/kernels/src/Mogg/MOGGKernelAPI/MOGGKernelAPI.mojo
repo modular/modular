@@ -38,7 +38,12 @@ from std.math import (
 from std.random import randn, seed
 from std.ffi import external_call
 from std.sys import align_of, llvm_intrinsic
-from std.sys.info import simd_width_of, size_of, _current_target
+from std.sys.info import (
+    simd_width_of,
+    size_of,
+    _current_target,
+    _accelerator_arch,
+)
 from std.sys.intrinsics import _type_is_eq
 
 import compiler_internal as compiler
@@ -98,6 +103,8 @@ from linalg.fp4_quantization import (
     quantize_dynamic_block_scaled,
     block_scales_interleave,
 )
+from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
+from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
@@ -8924,6 +8931,101 @@ struct Struct_quantize_dynamic_block_scaled:
             managed_tensor_slice_to_ndbuffer(input),
             tensor_sf,
             cuda_ctx,
+        )
+
+
+@compiler.register("mo.matmul.mxfp4.dequant.fp8")
+struct Struct_matmul_mxfp4_dequant_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        b_scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=2, ...],
+        b_scales: InputTensor[dtype=b_scales_type, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "MXFP4 dequant-to-FP8 matmul only supports GPUs"
+        comptime assert (
+            "sm_90" in _accelerator_arch()
+        ), "MXFP4 dequant-to-FP8 matmul requires SM90"
+        comptime assert (
+            c_type == DType.bfloat16
+        ), "MXFP4 matmul output must be bfloat16"
+        comptime assert (
+            a_type == DType.bfloat16
+        ), "MXFP4 matmul activations must be bfloat16"
+        comptime assert (
+            b_type == DType.uint8
+        ), "MXFP4 matmul weights must be uint8 (packed FP4)"
+        comptime assert (
+            b_scales_type == DType.float8_e8m0fnu
+        ), "MXFP4 matmul scales must be float8_e8m0fnu"
+
+        cuda_ctx = context.get_device_context()
+        mxfp4_matmul_sm90(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.dequant.mxfp4")
+struct Struct_dequant_mxfp4:
+    @always_inline
+    @staticmethod
+    fn execute[
+        out_type: DType,
+        in_type: DType,
+        scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_type, rank=2, ...],
+        input: InputTensor[dtype=in_type, rank=2, ...],
+        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "MXFP4 dequant only supports GPUs"
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "MXFP4 dequant output must be bfloat16 or float8_e4m3fn"
+        comptime assert (
+            in_type == DType.uint8
+        ), "MXFP4 dequant input must be uint8 (packed FP4)"
+        comptime assert (
+            scales_type == DType.float8_e8m0fnu
+        ), "MXFP4 dequant scales must be float8_e8m0fnu"
+
+        cuda_ctx = context.get_device_context()
+
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var scales_tt = scales.to_tile_tensor[DType.int64]()
+        var out_tt = output.to_tile_tensor[DType.int64]()
+
+        var num_rows = Int(in_tt.dim[0]())
+        # num_cols is the unpacked column count (2x packed)
+        var num_cols = Int(in_tt.dim[1]()) * 2
+
+        dequant_mxfp4(
+            cuda_ctx,
+            out_tt,
+            in_tt,
+            scales_tt,
+            num_rows=num_rows,
+            num_cols=num_cols,
         )
 
 
