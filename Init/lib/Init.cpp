@@ -5,13 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Init/Init.h"
-#include "Config/Version.h"
 #include "Init/DevelopmentSignalHandler.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/CrashReporting/CrashReporting.h"
-#include "Support/HTTP/HTTPClient.h"
 #include "Support/Telemetry/Telemetry.h"
 
 using namespace M;
@@ -29,23 +27,11 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   // Create the top-level context.
   ContextRef ctx = ContextRef::create();
 
-  // Create our global HTTP context.
-  auto httpCtx = HTTPContext::init();
-
-  // Set basic details on the context, including our version.
-  httpCtx->setUserAgent("modular-" + std::string(programName) + "/" +
-                        std::string(getModularVersionString()));
-
   // Create the settings object.
   auto settingsOr = Config::open();
   if (settingsOr.isError())
     return settingsOr.takeError();
   Config settings = std::move(*settingsOr);
-
-  // If we have a certificate authority, set that on the HTTPContext.
-  StringRef caInfo = settings.getValue("ssl.cainfo");
-  if (!caInfo.empty())
-    httpCtx->setCAInfo(std::string(caInfo));
 
   bool crashReportingEnabled =
       settings.getValueAsBool("crash_reporting.enabled",
@@ -62,7 +48,6 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     initCrashpadForProgram(programName, &settings);
 
   // Move everything into the context. Construct here may used the settings.
-  ctx->emplace<HTTPContextRef>(std::move(httpCtx));
   ctx->emplace<Telemetry::TelemetryContext>(settings);
 
   // Create a new runtime (if needed).
