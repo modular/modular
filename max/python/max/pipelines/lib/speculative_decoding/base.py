@@ -20,8 +20,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, load_devices
-from max.engine import InferenceSession, Model
+from max.driver import Buffer, load_devices
+from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
@@ -181,6 +181,10 @@ def get_vocab_size(huggingface_config: AutoConfig) -> int:
 class RejectionRunner(Protocol):
     """Interface for rejection sampling runners."""
 
+    def __init__(
+        self, session: InferenceSession, device_ref: DeviceRef
+    ) -> None: ...
+
     def run(
         self,
         draft_tokens: Buffer,
@@ -198,14 +202,15 @@ class _TypicalAcceptanceRunner(RejectionRunner):
     """Routes per-batch: temp=0 uses greedy (argmax), temp>0 uses stochastic."""
 
     def __init__(
-        self,
-        greedy_model: Any,
-        stochastic_model: Any,
-        target_device: Device,
+        self, session: InferenceSession, device_ref: DeviceRef
     ) -> None:
-        self._greedy = greedy_model
-        self._stochastic = stochastic_model
-        self._device = target_device
+        self._greedy = session.load(
+            greedy_acceptance_sampler(device=device_ref)
+        )
+        self._stochastic = session.load(
+            typical_acceptance_sampler(device=device_ref)
+        )
+        self._device = device_ref.to_device()
 
     def run(
         self,
@@ -254,8 +259,10 @@ class _TypicalAcceptanceRunner(RejectionRunner):
 class _GreedyRunner(RejectionRunner):
     """Always argmax acceptance. No draft logits needed."""
 
-    def __init__(self, model: Model) -> None:
-        self._model = model
+    def __init__(
+        self, session: InferenceSession, device_ref: DeviceRef
+    ) -> None:
+        self._model = session.load(greedy_acceptance_sampler(device=device_ref))
 
     def run(
         self,
@@ -280,8 +287,10 @@ class _GreedyRunner(RejectionRunner):
 class _LogitComparisonRunner(RejectionRunner):
     """draft_logit <= target_logit + eps. No bonus token (returns None)."""
 
-    def __init__(self, model: Model) -> None:
-        self._model = model
+    def __init__(
+        self, session: InferenceSession, device_ref: DeviceRef
+    ) -> None:
+        self._model = session.load(rejection_sampler(device=device_ref))
 
     def run(
         self,
@@ -308,8 +317,12 @@ class _LogitComparisonRunner(RejectionRunner):
 class _ResidualRunner(RejectionRunner):
     """p_target/p_draft ratio acceptance. Needs all_draft_logits."""
 
-    def __init__(self, model: Model) -> None:
-        self._model = model
+    def __init__(
+        self, session: InferenceSession, device_ref: DeviceRef
+    ) -> None:
+        self._model = session.load(
+            rejection_sampler_with_residuals(device=device_ref)
+        )
 
     def run(
         self,
@@ -335,34 +348,16 @@ class _ResidualRunner(RejectionRunner):
         return a, b, c
 
 
-def _build_rejection_runner(
-    strategy: str,
-    session: InferenceSession,
-    device_ref: DeviceRef,
-) -> RejectionRunner:
+def _rejection_runner_registry(strategy: str) -> type[RejectionRunner]:
     """Loads the compiled rejection sampler graph and returns a runner."""
     if strategy == "typical-acceptance":
-        return _TypicalAcceptanceRunner(
-            greedy_model=session.load(
-                greedy_acceptance_sampler(device=device_ref)
-            ),
-            stochastic_model=session.load(
-                typical_acceptance_sampler(device=device_ref)
-            ),
-            target_device=device_ref.to_device(),
-        )
+        return _TypicalAcceptanceRunner
     if strategy == "greedy":
-        return _GreedyRunner(
-            session.load(greedy_acceptance_sampler(device=device_ref))
-        )
+        return _GreedyRunner
     if strategy == "logit-comparison":
-        return _LogitComparisonRunner(
-            session.load(rejection_sampler(device=device_ref))
-        )
+        return _LogitComparisonRunner
     else:
-        return _ResidualRunner(
-            session.load(rejection_sampler_with_residuals(device=device_ref))
-        )
+        return _ResidualRunner
 
 
 def compute_max_num_draft_steps(
@@ -531,8 +526,9 @@ class SpeculativeDecodingPipelineBase(
                 " 'typical-acceptance', or 'logit-comparison' instead."
             )
         logger.info(f"Using '{strategy}' rejection sampling strategy")
-        self._rejection_runner: RejectionRunner = _build_rejection_runner(
-            strategy, self._session, device_refs[0]
+        rejection_runner_type = _rejection_runner_registry(strategy)
+        self._rejection_runner: RejectionRunner = rejection_runner_type(
+            self._session, device_refs[0]
         )
         self._needs_all_draft_logits = strategy == "residual"
 
