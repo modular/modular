@@ -266,10 +266,10 @@ struct Q4sym[
     @staticmethod
     fn quantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         input_shape: IndexList[input_tensor.rank],
     ):
@@ -294,13 +294,12 @@ struct Q4sym[
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
         var size_of_block = size_of[Q4sym[Self.group_size, Self.float_dtype]]()
-        debug_assert(
-            input_shape[input_tensor.rank - 1] % Self.group_size == 0,
-            "Only support fully divisible dimensions right now.",
-        )
+        assert (
+            input_shape[input_tensor.rank - 1] % Self.group_size == 0
+        ), "Only support fully divisible dimensions right now."
 
         var blob_output_ptr = output_tensor.ptr
-        var base_block_ptr = UnsafePointer(blob_output_ptr).bitcast[
+        var base_block_ptr = blob_output_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
@@ -320,9 +319,9 @@ struct Q4sym[
                 var flat_index_input = (
                     input_inner_stride * i + j * Self.group_size
                 )
-                var loaded_group = input_tensor.ptr.load[
-                    width = Self.group_size
-                ](flat_index_input)
+                var loaded_group = input_tensor.ptr.load[width=Self.group_size](
+                    flat_index_input
+                )
 
                 var flat_index_output = output_inner_stride * i + j
                 var output_ptr = base_block_ptr + flat_index_output
@@ -344,10 +343,13 @@ struct Q4sym[
     @staticmethod
     fn dequantize_and_write_to_tensor(
         input_tensor: LayoutTensor[
-            DType.uint8, address_space = AddressSpace.GENERIC, ...
+            DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
         output_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+            mut=True,
+            Self.float_dtype,
+            address_space=AddressSpace.GENERIC,
+            ...,
         ],
         output_shape: IndexList[output_tensor.rank],
     ):
@@ -365,17 +367,16 @@ struct Q4sym[
         ), "input tensor and output tensor must have the same rank"
         # Read and dequantize `input_tensor` which are the bytes of the raw
         # blocked format. Write the corresponding results to `output_tensor`
-        debug_assert(
+        assert (
             output_tensor.runtime_layout.shape.value[output_tensor.rank - 1]
             % Self.group_size
-            == 0,
-            "Only support fully divisible dimensions right now.",
-        )
+            == 0
+        ), "Only support fully divisible dimensions right now."
 
         # TODO: check contiguous inputs and outputs
 
         var uint8_input_ptr = input_tensor.ptr
-        var base_block_ptr = UnsafePointer(uint8_input_ptr).bitcast[
+        var base_block_ptr = uint8_input_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
@@ -431,9 +432,7 @@ struct block_Q4_K:
 
 
 fn scale_min_k4(
-    src_ptr: UnsafePointer[
-        block_Q4_K, address_space = AddressSpace.GENERIC, ...
-    ],
+    src_ptr: UnsafePointer[block_Q4_K, address_space=AddressSpace.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
     if g < 4:
@@ -454,10 +453,10 @@ fn scale_min_k4(
 
 fn q4_k_dequantize_impl(
     input_tensor: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, ...
+        DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     output_tensor: LayoutTensor[
-        mut=True, DType.float32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
     comptime group_nelems = block_Q4_K.group_size

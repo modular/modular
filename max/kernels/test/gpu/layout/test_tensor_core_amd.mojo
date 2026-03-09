@@ -17,9 +17,6 @@ from std.gpu.host.info import MI300X, MI355X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout.tensor_core import TensorCore, load_b_tr
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 from std.testing import assert_equal
 from std.utils.index import Index, IndexList
@@ -2079,12 +2076,14 @@ def test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(
 fn test_load_b_tr(ctx: DeviceContext) raises:
     print("== test_load_b_tr")
 
-    fn kernel[mma_shape: IndexList[3]](flag: UnsafePointer[Scalar[DType.bool]]):
+    fn kernel[
+        mma_shape: IndexList[3]
+    ](flag: UnsafePointer[Scalar[DType.bool], MutAnyOrigin]):
         var smem = LayoutTensor[
             DType.bfloat16,
             Layout.row_major(mma_shape[2], mma_shape[1]),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
 
         if lane_id() == 0:

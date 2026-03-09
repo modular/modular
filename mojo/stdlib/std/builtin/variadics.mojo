@@ -144,8 +144,8 @@ struct Variadic:
 
     comptime reverse[
         T: type_of(AnyType), //, *element_types: T
-    ] = _MapVariadicAndIdxToType[
-        To=T, VariadicType=element_types, Mapper = _ReversedVariadic[T, ...]
+    ]: Variadic.TypesOfTrait[T] = _MapVariadicAndIdxToType[
+        To=T, VariadicType=element_types, Mapper=_ReversedVariadic[T, ...]
     ]
     """A wrapper to reverse a variadic sequence of types.
 
@@ -154,37 +154,74 @@ struct Variadic:
         element_types: The variadic sequence of types to reverse.
     """
 
-    comptime splat[type: AnyType, count: Int] = __mlir_attr[
-        `#kgen.variadic.splat<`,
-        type,
-        `,`,
-        count._mlir_value,
-        `> : `,
-        Variadic.TypesOfTrait[type_of(type)],
+    comptime splat_type[
+        Trait: type_of(AnyType), //, count: Int, type: Trait
+    ]: Variadic.TypesOfTrait[Trait] = Self.tabulate_type[
+        Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
     ]
     """Splat a type into a variadic sequence.
 
     Parameters:
-        type: The type to splat.
+        Trait: The trait that the types conform to.
         count: The number of times to splat the type.
+        type: The type to splat.
     """
 
-    comptime splat_value[T: AnyType, //, value: T, count: Int] = __mlir_attr[
-        `#kgen.variadic.splat<:`,
-        +T,
-        ` `,
-        +value,
-        `,`,
-        count._mlir_value,
-        `> : `,
-        Variadic.ValuesOfType[T],
+    comptime splat_value[
+        T: AnyType, //, count: Int, value: T
+    ]: Variadic.ValuesOfType[T] = Self.tabulate[
+        count, _SplatValueTabulator[value, _]
     ]
     """Splat a value into a variadic sequence.
 
     Parameters:
         T: The type of the value to splat.
-        value: The value to splat.
         count: The number of times to splat the value.
+        value: The value to splat.
+    """
+
+    comptime tabulate[
+        ToT: AnyType,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToValueGeneratorType[ToT],
+    ]: Variadic.ValuesOfType[ToT] = __mlir_attr[
+        `#kgen.variadic.tabulate<`,
+        count._mlir_value,
+        `,`,
+        _IndexToIntTabulateWrap[Mapper, ...],
+        `> : `,
+        Variadic.ValuesOfType[ToT],
+    ]
+    """Apply an "index -> value" generator, N times to build a variadic.
+
+    Parameters:
+        ToT: The type of the values in the variadic sequence.
+        count: The number of times to apply the generator.
+        Mapper: The generator to apply, mapping from Int to ToT.
+    """
+
+    comptime tabulate_type[
+        Trait: type_of(AnyType),
+        ToT: Trait,
+        //,
+        count: Int,
+        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
+    ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
+        `#kgen.variadic.tabulate<`,
+        count._mlir_value,
+        `,`,
+        _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+        `> : `,
+        Variadic.TypesOfTrait[Trait],
+    ]
+    """Apply an "index -> value" generator, N times to build a variadic.
+
+    Parameters:
+        Trait: The trait that the types conform to.
+        ToT: The type of the values in the variadic sequence.
+        count: The number of times to apply the generator.
+        Mapper: The generator to apply, mapping from Int to ToT.
     """
 
     comptime contains[
@@ -193,10 +230,10 @@ struct Variadic:
         type: Trait,
         element_types: Variadic.TypesOfTrait[Trait],
     ] = _ReduceVariadicAndIdxToValue[
-        BaseVal = Variadic.values[False],
+        BaseVal=Variadic.values[False],
         VariadicType=element_types,
         #  Curry `_ContainsMapper` to fit the reducer signature
-        Reducer = _ContainsReducer[Trait=Trait, Type=type, ...],
+        Reducer=_ContainsReducer[Trait=Trait, Type=type, ...],
     ][
         0
     ]
@@ -216,9 +253,9 @@ struct Variadic:
         element_types: Variadic.TypesOfTrait[From],
         Mapper: _TypeToTypeGenerator[From, To],
     ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal = Variadic.empty_of_trait[To],
+        BaseVal=Variadic.empty_of_trait[To],
         VariadicType=element_types,
-        Reducer = _MapTypeToTypeReducer[From, To, Mapper, ...],
+        Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
     ]
     """Map a variadic of types to a new variadic of types using a mapper.
 
@@ -270,9 +307,9 @@ struct Variadic:
             start <= end <= Variadic.size(element_types)
         ) = Variadic.size(element_types),
     ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal = Variadic.empty_of_trait[T],
+        BaseVal=Variadic.empty_of_trait[T],
         VariadicType=element_types,
-        Reducer = _SliceReducer[T, start, end, ...],
+        Reducer=_SliceReducer[T, start, end, ...],
     ]
     """Extract a contiguous subsequence from a variadic sequence.
 
@@ -342,9 +379,9 @@ struct Variadic:
         *element_types: T,
         predicate: _TypePredicateGenerator[T],
     ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal = Variadic.empty_of_trait[T],
+        BaseVal=Variadic.empty_of_trait[T],
         VariadicType=element_types,
-        Reducer = _FilterReducer[T, predicate, ...],
+        Reducer=_FilterReducer[T, predicate, ...],
     ]
     """Filter types from a variadic sequence based on a predicate function.
 
@@ -396,6 +433,34 @@ struct Variadic:
     comptime ChainedVariant = Variant[*Step2]
     ```
     """
+
+    comptime _ValueIdxToValueGeneratorType[
+        From: AnyType, To: AnyType
+    ] = __mlir_type[
+        `!lit.generator<<"From": `,
+        +From,
+        `, "Idx":`,
+        Int,
+        `>`,
+        +To,
+        `>`,
+    ]
+    """This specifies a generator to generate a generator type for the reducer of
+    values. The result generator type is [From, idx: Int] -> To,
+    """
+
+    comptime _ValueToValueMapper[
+        FromType: AnyType,
+        ToType: AnyType,
+        //,
+        Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
+        Prev: Variadic.ValuesOfType[ToType],
+        From: Variadic.ValuesOfType[FromType],
+        idx: Int,
+    ] = Variadic.concat_values[
+        Prev,
+        Variadic.values[Mapper[From[idx], idx]],
+    ]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -516,7 +581,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
             comptime_only: Tell callers that this only works at comptime.
         """
         self.value = __mlir_op.`pop.variadic.load.values`[
-            _type = type_of(self.value)
+            _type=type_of(self.value)
         ](values.value)
 
     @doc_private
@@ -556,7 +621,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         _constrained_conforms_to[
             conforms_to(Self.type, Writable),
             Parent=Self,
-            Element = Self.type,
+            Element=Self.type,
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
@@ -638,7 +703,7 @@ struct _VariadicListIter[
     """
 
     comptime variadic_list_type = VariadicList[
-        origin = Self.elt_origin,
+        origin=Self.elt_origin,
         Self.elt_type,
         Self.is_owned,
     ]
@@ -728,7 +793,7 @@ struct VariadicList[
             _constrained_conforms_to[
                 conforms_to(Self.element_type, ImplicitlyDestructible),
                 Parent=Self,
-                Element = Self.element_type,
+                Element=Self.element_type,
                 ParentConformsTo="ImplicitlyDestructible",
             ]()
             comptime TDestructible = downcast[
@@ -810,7 +875,7 @@ struct VariadicList[
         _constrained_conforms_to[
             conforms_to(Self.element_type, Writable),
             Parent=Self,
-            Element = Self.element_type,
+            Element=Self.element_type,
             ParentConformsTo="Writable",
             ElementConformsTo="Writable",
         ]()
@@ -1067,7 +1132,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index = index.__mlir_index__()
+            index=index.__mlir_index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 
@@ -1198,6 +1263,50 @@ struct VariadicPack[
 
 
 # ===-----------------------------------------------------------------------===#
+# Tabulate Helpers
+# ===-----------------------------------------------------------------------===#
+
+comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `>`,
+    +ToT,
+    `>`,
+]
+
+comptime _TabulateIntToTypeGeneratorType[
+    Trait: type_of(AnyType), ToT: Trait
+] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `> `,
+    Trait,
+    `>`,
+]
+
+
+comptime _IndexToIntTabulateWrap[
+    ToT: AnyType,
+    //,
+    ToWrap: _TabulateIntToValueGeneratorType[ToT],
+    idx: __mlir_type.index,
+]: ToT = ToWrap[Int(mlir_value=idx)]
+
+comptime _IndexToIntTypeTabulateWrap[
+    Trait: type_of(AnyType),
+    ToT: Trait,
+    //,
+    ToWrap: _TabulateIntToTypeGeneratorType[Trait, ToT],
+    idx: __mlir_type.index,
+] = ToWrap[Int(mlir_value=idx)]
+
+
+comptime _SplatValueTabulator[T: AnyType, //, value: T, index: Int] = value
+comptime _SplatTypeTabulator[
+    Trait: type_of(AnyType), T: Trait, index: Int
+]: Trait = T
+
+# ===-----------------------------------------------------------------------===#
 # VariadicReduce
 # ===-----------------------------------------------------------------------===#
 
@@ -1219,7 +1328,6 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
 The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> Prev,
 """
 
-
 comptime _IndexToIntWrap[
     From: type_of(AnyType),
     ReduceT: AnyType,
@@ -1228,7 +1336,7 @@ comptime _IndexToIntWrap[
     VA: Variadic.TypesOfTrait[From],
     idx: __mlir_type.index,
 ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
-
+"""Wrapper for type -> value."""
 
 comptime _ReduceVariadicAndIdxToVariadic[
     From: type_of(AnyType),
@@ -1398,9 +1506,9 @@ comptime _MapVariadicAndIdxToType[
     VariadicType: Variadic.TypesOfTrait[From],
     Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[To],  # reduce from a empty variadic
+    BaseVal=Variadic.empty_of_trait[To],  # reduce from a empty variadic
     VariadicType=VariadicType,
-    Reducer = _WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper, ...],
+    Reducer=_WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper, ...],
 ]
 """Construct a new variadic of types using a type-to-type mapper.
 
@@ -1427,7 +1535,6 @@ comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
 The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
 which maps the input variadic + index of the current element to another type.
 """
-
 
 comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
     F: AnyType,

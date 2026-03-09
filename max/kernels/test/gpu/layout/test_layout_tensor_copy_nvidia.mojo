@@ -74,7 +74,7 @@ fn async_dynamic_copy_kernel[
         DType.float32,
         Layout(IntTuple(BM, BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     smem_tile.copy_from_async[is_masked=True](input_tile)
@@ -92,15 +92,15 @@ fn test_dynamic_async_copy[
 
     comptime input_runtime_layout = RuntimeLayout[
         unknown_layout,
-        element_type = DType.int64,
-        linear_idx_type = DType.int64,
-    ].row_major(IndexList[2, element_type = DType.int64](M, N))
+        element_type=DType.int64,
+        linear_idx_type=DType.int64,
+    ].row_major(IndexList[2, element_type=DType.int64](M, N))
 
     comptime output_runtime_layout = RuntimeLayout[
         unknown_layout,
-        element_type = DType.int64,
-        linear_idx_type = DType.int64,
-    ].row_major(IndexList[2, element_type = DType.int64](num_rows, N))
+        element_type=DType.int64,
+        linear_idx_type=DType.int64,
+    ].row_major(IndexList[2, element_type=DType.int64](num_rows, N))
 
     var input = ManagedLayoutTensor[
         DType.float32,
@@ -172,7 +172,7 @@ fn swizzle_copy[
             dtype,
             Layout.row_major(BM, BK),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -308,7 +308,7 @@ fn masked_async_copy_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -435,7 +435,7 @@ fn masked_copy_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -560,7 +560,7 @@ fn masked_copy_dram_to_local_kernel[
                 layout.size() // num_threads // simd_width, simd_width
             ),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(-1.0)

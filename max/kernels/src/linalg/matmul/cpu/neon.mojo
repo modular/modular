@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import fma
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout import Layout, LayoutTensor, RuntimeTuple
 
@@ -93,7 +90,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 comptime for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_val = c_local[row, col]
-                    c_val = fma[dtype = c_local.dtype, width=simd_size](
+                    c_val = fma[dtype=c_local.dtype, width=simd_size](
                         a_val[lane], b_val, c_val
                     )
                     c_local[row, col] = c_val
@@ -138,7 +135,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -166,7 +163,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k1),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

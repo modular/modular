@@ -98,6 +98,69 @@ def test_multi_device_graph_capture_replay() -> None:
     )
 
 
+def test_multi_device_replay_mixed_keys_routes_outputs_per_device() -> None:
+    """Mixed-key replay should route output bindings per replayed device key."""
+    available_gpus = accelerator_count()
+    if available_gpus < 2:
+        pytest.skip("Test requires at least 2 GPUs")
+
+    host = CPU()
+    device0 = Accelerator(0)
+    device1 = Accelerator(1)
+
+    input_type0 = TensorType(
+        dtype=DType.float32, shape=[4], device=DeviceRef.GPU(0)
+    )
+    input_type1 = TensorType(
+        dtype=DType.float32, shape=[4], device=DeviceRef.GPU(1)
+    )
+
+    with Graph(
+        "multi_device_mixed_keys_per_device_binding",
+        input_types=[input_type0, input_type1],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor + 1, graph.inputs[1].tensor + 2)
+
+    session = InferenceSession(devices=[host, device0, device1])
+    model = session.load(graph)
+
+    keys_a = [101, 101]
+    keys_b = [202, 202]
+    mixed_keys = [101, 202]
+
+    input0_a = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(device0)
+    input1_a = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 10).to(
+        device1
+    )
+    input0_b = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 100).to(
+        device0
+    )
+    input1_b = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 1000).to(
+        device1
+    )
+
+    captured_a0, _captured_a1 = model.capture(keys_a, input0_a, input1_a)
+    _captured_b0, captured_b1 = model.capture(keys_b, input0_b, input1_b)
+
+    input0_a.inplace_copy_from(
+        Buffer.from_numpy(np.arange(4, dtype=np.float32) + 5).to(device0)
+    )
+    input1_b.inplace_copy_from(
+        Buffer.from_numpy(np.arange(4, dtype=np.float32) + 5000).to(device1)
+    )
+
+    model.replay(mixed_keys, input0_a, input1_b)
+
+    np.testing.assert_allclose(
+        captured_a0.to_numpy(),
+        (np.arange(4, dtype=np.float32) + 5) + 1,
+    )
+    np.testing.assert_allclose(
+        captured_b1.to_numpy(),
+        (np.arange(4, dtype=np.float32) + 5000) + 2,
+    )
+
+
 def test_multi_device_graph_capture_with_updated_inputs() -> None:
     """Test that replaying with updated inputs produces correct results."""
     available_gpus = accelerator_count()

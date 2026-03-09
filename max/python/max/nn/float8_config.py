@@ -180,14 +180,17 @@ class Float8Config:
     """The :obj:`DType` of bias weights."""
 
     quant_method: str | None = None
-    """The quantization method used (e.g., "fbgemm_fp8")."""
+    """The quantization method used (for example, ``"fbgemm_fp8"``)."""
 
     quant_algo: str | None = None
-    """Additional differentiator within same quant_method e.g. modelopt NVFP4 vs FP8"""
+    """Additional differentiator within same quant_method (for example, modelopt NVFP4 vs FP8)."""
+
+    can_use_fused_mlp: bool = False
+    """Whether the quantization scales can be used with fused MLP operations."""
 
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
-        """Returns the weight and input scale granularities on M, N and K axis."""
+        """The weight and input scale granularities on the M, N, and K axes."""
         m_input_granularity: int
         k_input_granularity: int
         if self.input_scale.is_block:
@@ -228,23 +231,23 @@ class Float8Config:
 
     @property
     def is_static(self) -> bool:
-        """Returns ``True`` if this input scale is static."""
+        """``True`` if this input scale is static."""
         return self.input_scale.origin == Float8ScaleOrigin.STATIC
 
     @property
     def is_dynamic(self) -> bool:
-        """Returns ``True`` if this input scale is dynamic."""
+        """``True`` if this input scale is dynamic."""
         return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
 
     @property
     def is_nvfp4(self) -> bool:
-        """Returns ``True`` if this config represents modelopt NVFP4."""
+        """``True`` if this config represents modelopt NVFP4."""
         return self.quant_method == "modelopt" and self.quant_algo == "NVFP4"
 
     def quantized_scales_type(
         self, quantized_shape: Shape, device_ref: DeviceRef
     ) -> TensorType:
-        """Returns the TensorType of the scales tensor after dynamic quantization."""
+        """The :class:`TensorType` of the scales tensor after dynamic quantization."""
         if self.is_nvfp4:
             return _nvfp4_scales_type(quantized_shape, device_ref)
         elif (

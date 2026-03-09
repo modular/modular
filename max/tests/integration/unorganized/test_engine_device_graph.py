@@ -195,7 +195,7 @@ def test_graph_capture_rejects_unsafe_key_reuse() -> None:
     with pytest.raises(RuntimeError, match="Unsafe graph key reuse"):
         model.replay(graph_key, input_tensor2)
 
-    with pytest.raises(RuntimeError, match="Unsafe graph key reuse"):
+    with pytest.raises(RuntimeError, match="Graph keys already captured"):
         model.capture(graph_key, input_tensor2)
 
 

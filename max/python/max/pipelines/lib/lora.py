@@ -1167,7 +1167,9 @@ class LoRAManager:
                 state_key = f"{key}.{weight_key}"
                 weight = Buffer.zeros(
                     base_weight.shape.static_dims, base_weight.dtype
-                ).copy(base_weight.device.to_device())
+                )
+                if not is_virtual_device_mode():
+                    weight = weight.copy(base_weight.device.to_device())
                 state_dict[state_key] = WeightData(
                     weight,
                     key,

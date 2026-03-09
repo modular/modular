@@ -19,9 +19,8 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
+from std.memory import alloc
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -100,19 +99,19 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var b_size = batch.value * n.value * k.value // 2
     var c_size = batch.value * m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 3, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 3, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host = NDBuffer[c_type, 3, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref = NDBuffer[c_type, 3, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
@@ -185,15 +184,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_total
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
     var a_scales_host = NDBuffer[scales_dtype, 6, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_total
-    )
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
     var b_scales_host = NDBuffer[scales_dtype, 6, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
@@ -383,11 +378,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         tensor.dtype,
         reshape_layout,
         tensor.origin,
-        address_space = tensor.address_space,
+        address_space=tensor.address_space,
     ]:
         comptime if tensor.rank == 3:
             return LayoutTensor[
-                dtype, reshape_layout, address_space = tensor.address_space
+                dtype, reshape_layout, address_space=tensor.address_space
             ](
                 tensor.ptr + batch_idx * tensor.dim(1) * tensor.dim(2),
                 RuntimeLayout[reshape_layout].row_major(
@@ -400,7 +395,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         else:
             comptime assert tensor.rank == 6, "expecting rank 3 for tensor"
             return LayoutTensor[
-                dtype, reshape_layout, address_space = tensor.address_space
+                dtype, reshape_layout, address_space=tensor.address_space
             ](
                 tensor.ptr
                 + batch_idx
@@ -422,19 +417,19 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     for b in range(batch.value):
         var a_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_2d[a_lt.layout]()
+            reshape_layout=_reshape_to_2d[a_lt.layout]()
         ](a_lt, b)
         var b_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_2d[b_lt.layout]()
+            reshape_layout=_reshape_to_2d[b_lt.layout]()
         ](b_lt, b)
         var c_ref_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_2d[c_ref_tensor.layout]()
+            reshape_layout=_reshape_to_2d[c_ref_tensor.layout]()
         ](c_ref_tensor, b)
         var a_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_5d[a_scales_lt.layout]()
+            reshape_layout=_reshape_to_5d[a_scales_lt.layout]()
         ](a_scales_lt, b)
         var b_scales_tensor_5d = _convert_to_none_batched_tensor[
-            reshape_layout = _reshape_to_5d[b_scales_lt.layout]()
+            reshape_layout=_reshape_to_5d[b_scales_lt.layout]()
         ](b_scales_lt, b)
 
         vendor_blas.matmul(
@@ -503,7 +498,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -524,7 +519,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -545,7 +540,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 2, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -567,7 +562,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](8, 2, 1),
+                    cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -588,7 +583,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -609,7 +604,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -631,7 +626,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -652,7 +647,7 @@ def main() raises:
                     scales_dtype,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                     cta_group=cta_group,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,

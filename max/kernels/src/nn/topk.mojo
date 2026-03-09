@@ -44,8 +44,8 @@ from layout.coord import (
     RuntimeInt,
     coord_to_index_list,
 )
-from layout._layout import TensorLayout, Layout, RowMajorLayout, row_major
-from layout import TileTensor
+from layout.tile_layout import TensorLayout, Layout, RowMajorLayout
+from layout import TileTensor, row_major
 from std.math import log2
 from std.memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
@@ -715,12 +715,12 @@ fn _block_reduce_topk[
     var p_sram = stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * p_width,
         Scalar[DType.int],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
     var u_sram = stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * u_width,
         Scalar[T],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Calculate warp id and thread information
@@ -811,8 +811,8 @@ fn _topk_stage1_old[
     # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
         TopK_2[T, largest],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[TopK_2[T, largest]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[TopK_2[T, largest]](),
     ]()
 
     with PDL():
@@ -936,8 +936,8 @@ fn _topk_stage1[
     # Allocate shared memory for the values and indices
     var topk_sram = external_memory[
         TopK_2[T, largest],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[TopK_2[T, largest]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[TopK_2[T, largest]](),
     ]()
 
     with PDL():
@@ -1060,8 +1060,8 @@ fn _topk_stage2[
     var vals_smem_size = num_e_rounded
     var vals_sram = external_memory[
         Scalar[T],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[Scalar[T]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[Scalar[T]](),
     ]()
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
@@ -1098,7 +1098,7 @@ fn _topk_stage2[
             s_val2 = (s_id + 2 * k_batch).bitcast[Scalar[T]]()
 
         var s_sum = stack_allocation[
-            1, Scalar[T], address_space = AddressSpace.SHARED
+            1, Scalar[T], address_space=AddressSpace.SHARED
         ]()
         s_sum[0] = Scalar[T](0)
         var max_logit = Scalar[T](0)
@@ -1551,29 +1551,29 @@ fn topk_gpu[
     var internal_input: TileTensor[
         dtype,
         Layout[
-            shape_types = DynamicCoord[DType.int64, 2].element_types,
-            stride_types = DynamicCoord[DType.int64, 2].element_types,
+            shape_types=DynamicCoord[DType.int64, 2].element_types,
+            stride_types=DynamicCoord[DType.int64, 2].element_types,
         ],
         input.origin,
-        address_space = input.address_space,
+        address_space=input.address_space,
     ]
     var internal_out_idxs: TileTensor[
         out_idx_type,
         Layout[
-            shape_types = DynamicCoord[DType.int64, 2].element_types,
-            stride_types = DynamicCoord[DType.int64, 2].element_types,
+            shape_types=DynamicCoord[DType.int64, 2].element_types,
+            stride_types=DynamicCoord[DType.int64, 2].element_types,
         ],
         out_idxs.origin,
-        address_space = out_idxs.address_space,
+        address_space=out_idxs.address_space,
     ]
     var internal_out_vals: TileTensor[
         dtype,
         Layout[
-            shape_types = DynamicCoord[DType.int64, 2].element_types,
-            stride_types = DynamicCoord[DType.int64, 2].element_types,
+            shape_types=DynamicCoord[DType.int64, 2].element_types,
+            stride_types=DynamicCoord[DType.int64, 2].element_types,
         ],
         out_vals.origin,
-        address_space = out_vals.address_space,
+        address_space=out_vals.address_space,
     ]
 
     comptime if input.rank == 1:

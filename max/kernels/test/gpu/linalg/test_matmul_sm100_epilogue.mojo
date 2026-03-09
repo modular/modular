@@ -19,16 +19,10 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from structured_kernels.tile_types import (
-    lt_to_tt,
-)
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -107,23 +101,23 @@ def test_matmul_sm100_epilogue[
     var b_size = n.value * k.value if transpose_b else k.value * n.value
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
-    var c_host_copy_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_copy_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_copy = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_copy_ptr, dynamic_c_shape
     )
@@ -195,9 +189,9 @@ def test_matmul_sm100_epilogue[
         elementwise_compute_lambda_fn=optional_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ](
-        lt_to_tt(from_ndbuffer_row_major(c_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(a_device_nd)),
-        lt_to_tt(from_ndbuffer_row_major(b_device_nd)),
+        TileTensor(c_device_nd),
+        TileTensor(a_device_nd),
+        TileTensor(b_device_nd),
         ctx,
     )
 
@@ -323,7 +317,7 @@ def main() raises:
                             DType.bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape = StaticTuple[Int32, 3](
+                            cluster_shape=StaticTuple[Int32, 3](
                                 Int32(cluster_m), Int32(cluster_n), 1
                             ),
                             cta_group=2,

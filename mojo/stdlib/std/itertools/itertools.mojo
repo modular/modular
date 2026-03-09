@@ -104,9 +104,11 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeA,
+            Element=Self.IteratorTypeA,
             ParentConformsTo="Copyable",
         ]()
+        comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
+
         self._inner_a = rebind_var[Self.IteratorTypeA](
             trait_downcast[Copyable](copy._inner_a).copy()
         )
@@ -125,7 +127,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         _constrained_conforms_to[
             conforms_to(type_of(self._inner_a_elem).T, Copyable),
             Parent=Self,
-            Element = type_of(self._inner_a_elem).T,
+            Element=type_of(self._inner_a_elem).T,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
@@ -252,21 +254,21 @@ struct _Product3[
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeA.Element,
+            Element=Self.IteratorTypeA.Element,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB.Element, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeB.Element,
+            Element=Self.IteratorTypeB.Element,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeC.Element, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeC.Element,
+            Element=Self.IteratorTypeC.Element,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
@@ -384,28 +386,28 @@ struct _Product4[
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeA.Element, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeA.Element,
+            Element=Self.IteratorTypeA.Element,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeB.Element, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeB.Element,
+            Element=Self.IteratorTypeB.Element,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeC.Element, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeC.Element,
+            Element=Self.IteratorTypeC.Element,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
         _constrained_conforms_to[
             conforms_to(Self.IteratorTypeD.Element, Copyable),
             Parent=Self,
-            Element = Self.IteratorTypeD.Element,
+            Element=Self.IteratorTypeD.Element,
             ParentConformsTo="Iterator",
             ElementConformsTo="Copyable",
         ]()
@@ -636,7 +638,7 @@ struct _TakeWhileIterator[
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
-            Element = Self.InnerIteratorType,
+            Element=Self.InnerIteratorType,
             ParentConformsTo="Copyable",
         ]()
         self._inner = rebind_var[Self.InnerIteratorType](
@@ -670,7 +672,7 @@ fn take_while[
     //,
     predicate: fn(IterableType.IteratorType[origin].Element) -> Bool,
 ](ref[origin] iterable: IterableType) -> _TakeWhileIterator[
-    InnerIteratorType = IterableType.IteratorType[origin],
+    InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
@@ -756,7 +758,7 @@ struct _DropWhileIterator[
         _constrained_conforms_to[
             conforms_to(Self.InnerIteratorType, Copyable),
             Parent=Self,
-            Element = Self.InnerIteratorType,
+            Element=Self.InnerIteratorType,
             ParentConformsTo="Copyable",
         ]()
         self._inner = rebind_var[Self.InnerIteratorType](
@@ -791,7 +793,7 @@ fn drop_while[
     //,
     predicate: fn(IterableType.IteratorType[origin].Element) -> Bool,
 ](ref[origin] iterable: IterableType) -> _DropWhileIterator[
-    InnerIteratorType = IterableType.IteratorType[origin],
+    InnerIteratorType=IterableType.IteratorType[origin],
     predicate=predicate,
 ] where conforms_to(
     IterableType.IteratorType[origin].Element,
@@ -906,5 +908,5 @@ fn repeat[
         print(s)  # Prints: hello, hello, hello, hello, hello
     ```
     """
-    debug_assert(times >= 0, "The `times` argument must be non-negative")
+    assert times >= 0, "The `times` argument must be non-negative"
     return {element.copy(), times}

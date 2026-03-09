@@ -38,9 +38,9 @@ fn fa4_mma[
     page_size: Int,
 ](
     mbars: FA4MiscMBars[
-        num_qk_stages = config.num_qk_stages,
-        num_pv_stages = config.num_pv_stages,
-        num_kv_stages = config.num_kv_stages,
+        num_qk_stages=config.num_qk_stages,
+        num_pv_stages=config.num_pv_stages,
+        num_kv_stages=config.num_kv_stages,
         separate_kv=True,
         use_order_barriers=EnableForcedOrdering,
     ],
@@ -76,9 +76,9 @@ fn fa4_mma[
         accum_type,
         MMA_M=HalfBM,
         MMA_N=BN,
-        BK = align_up(config.depth, config.MMA_K),
-        swizzle_a = config.swizzle_mode,
-        swizzle_b = config.swizzle_mode,
+        BK=align_up(config.depth, config.MMA_K),
+        swizzle_a=config.swizzle_mode,
+        swizzle_b=config.swizzle_mode,
         transpose_b=True,
         num_stages=num_qk_stages,
     ]
@@ -86,9 +86,9 @@ fn fa4_mma[
         qkv_type,
         accum_type,
         MMA_M=HalfBM,
-        MMA_N = config.padded_depth,
+        MMA_N=config.padded_depth,
         BK=BN,
-        swizzle_b = config.swizzle_mode,
+        swizzle_b=config.swizzle_mode,
         transpose_b=False,
         num_stages=num_pv_stages,
     ]
@@ -119,9 +119,9 @@ fn fa4_mma[
     comptime q0_size = HalfBM * config.padded_depth
     comptime q0_bytes = q0_size * size_of[qkv_type]()
     q0 = smem_descriptor[
-        BMN = config.BM // 2,
-        BK = config.BK0,
-        swizzle_mode = config.swizzle_mode,
+        BMN=config.BM // 2,
+        BK=config.BK0,
+        swizzle_mode=config.swizzle_mode,
         is_k_major=True,
     ](q_smem)
     q1 = q0 + UInt32(q0_bytes)

@@ -1144,5 +1144,15 @@ def test_inplace_rehash_via_update() raises:
         assert_equal(d[200 + i], 200 + i)
 
 
+def test_dict_conditional_conformances() raises:
+    assert_true(conforms_to(Dict[Int, Int], Writable))
+    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
+    # `where` clause on conditional conformances — it sees that `Dict` has a
+    # conformance for `Writable` and returns True without checking whether
+    # the condition holds for the concrete types. The type checker at call
+    # sites *does* enforce the condition correctly.
+    # assert_false(conforms_to(Dict[Int, NoneType], Writable))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

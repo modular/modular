@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import ceildiv, isclose
 from std.random import rand
 from std.sys.info import simd_width_of
@@ -95,10 +92,10 @@ fn test[
     var filter_size = Q * R * S * C_per_group * F
     var output_size = N * DO * HO * WO * F
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var input_ptr = alloc[Scalar[dtype]](input_size)
+    var filter_ptr = alloc[Scalar[dtype]](filter_size)
+    var output_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
 
     rand[dtype](input_ptr, input_size)
     rand[dtype](filter_ptr, filter_size)
@@ -123,7 +120,7 @@ fn test[
     )
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
 
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
     var packed_filter = LayoutTensor[dtype, layout_6d](
@@ -165,9 +162,6 @@ fn test[
             layout_5d,
             layout_6d,
             layout_5d,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,
@@ -179,9 +173,6 @@ fn test[
             layout_5d,
             layout_5d,
             layout_5d,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,

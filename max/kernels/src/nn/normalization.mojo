@@ -47,8 +47,8 @@ from layout.coord import (
     RuntimeInt,
     coord_to_index_list,
 )
-from layout._layout import Layout, TensorLayout, row_major
-from layout import TileTensor
+from layout.tile_layout import Layout, TensorLayout
+from layout import TileTensor, row_major
 from std.memory import stack_allocation
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -130,10 +130,10 @@ fn block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = stack_allocation[
-        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
     ]()
     var m2_broadcast = stack_allocation[
-        1, dtype, address_space = AddressSpace.SHARED
+        1, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var warp_m2 = warp.sum(val)
@@ -253,22 +253,22 @@ fn welford_block_all_reduce[
     mut res_count: Scalar[dtype],
 ):
     var mean_shared = stack_allocation[
-        WARP_SIZE, dtype, address_space = AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
     ]()
     var m2_shared = stack_allocation[
-        WARP_SIZE, dtype, address_space = AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
     ]()
     var count_shared = stack_allocation[
-        WARP_SIZE, dtype, address_space = AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
     ]()
     var mean_broadcast = stack_allocation[
-        1, dtype, address_space = AddressSpace.SHARED
+        1, dtype, address_space=AddressSpace.SHARED
     ]()
     var m2_broadcast = stack_allocation[
-        1, dtype, address_space = AddressSpace.SHARED
+        1, dtype, address_space=AddressSpace.SHARED
     ]()
     var count_broadcast = stack_allocation[
-        1, dtype, address_space = AddressSpace.SHARED
+        1, dtype, address_space=AddressSpace.SHARED
     ]()
 
     var warp_idx = warp_id()
@@ -386,7 +386,7 @@ fn layer_norm_gpu_warp_tiling[
             var gamma_val = gamma_fn[Int(simd_width)](Index(idx))
             var beta_idx = beta.layout(Idx(idx))
             var beta_val = beta.ptr.load[
-                width = Int(simd_width), alignment=align
+                width=Int(simd_width), alignment=align
             ](beta_idx)
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
@@ -471,7 +471,7 @@ fn layer_norm_gpu_block[
                 var gamma_val = gamma_fn[Int(simd_width)](Index(offset))
                 var beta_offset = beta.layout(Idx(offset))
                 var beta_val = beta.ptr.load[
-                    width = Int(simd_width), alignment=align
+                    width=Int(simd_width), alignment=align
                 ](beta_offset)
 
                 var vec_data = input_fn[Int(simd_width)](
@@ -551,7 +551,7 @@ fn layer_norm_gpu[
         indices[rank - 1] = col
         output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
 
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -566,9 +566,9 @@ fn layer_norm_gpu[
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = layer_norm_gpu_warp_tiling[
-                mut = beta.mut,
-                LayoutType = beta.LayoutType,
-                origin = beta.origin,
+                mut=beta.mut,
+                LayoutType=beta.LayoutType,
+                origin=beta.origin,
                 UInt(simd_width),
                 input_fn_2d,
                 gamma_fn,
@@ -584,9 +584,9 @@ fn layer_norm_gpu[
             )
         else:
             comptime kernel = layer_norm_gpu_block[
-                mut = beta.mut,
-                LayoutType = beta.LayoutType,
-                origin = beta.origin,
+                mut=beta.mut,
+                LayoutType=beta.LayoutType,
+                origin=beta.origin,
                 UInt(simd_width),
                 input_fn_2d,
                 gamma_fn,
@@ -602,9 +602,9 @@ fn layer_norm_gpu[
             )
     else:
         comptime kernel = layer_norm_gpu_block[
-            mut = beta.mut,
-            LayoutType = beta.LayoutType,
-            origin = beta.origin,
+            mut=beta.mut,
+            LayoutType=beta.LayoutType,
+            origin=beta.origin,
             1,
             input_fn_2d,
             gamma_fn,
@@ -903,9 +903,7 @@ fn _rms_norm_warp_tiling_subkernel[
 
     comptime if rows_per_warp == 2:
         # Each half warp handles reduction for one row.
-        row_m2 = warp.lane_group_sum_and_broadcast[num_lanes = WARP_SIZE // 2](
-            thread_m2
-        )
+        row_m2 = warp.lane_group_sum[num_lanes=WARP_SIZE // 2](thread_m2)
     else:
         row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
             thread_m2
@@ -956,6 +954,7 @@ fn rms_norm_gpu_warp_tiling_128[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
+    var gamma_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     # Each warp handles 2 rows, so total rows per block is warps_per_block * 2
     var block_row = block_idx.x * UInt(warps_per_block * 2)
@@ -1022,6 +1021,7 @@ fn rms_norm_gpu_warp_tiling[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
+    var gamma_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
@@ -1210,7 +1210,7 @@ fn rms_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -1231,9 +1231,9 @@ fn rms_norm_gpu[
             grid_dim = ceildiv(rows, warps_per_block * 2)
 
             comptime kernel = rms_norm_gpu_warp_tiling_128[
-                mut = gamma.mut,
-                LayoutType = gamma.LayoutType,
-                origin = gamma.origin,
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
                 simd_width,
                 warps_per_block,
                 input_fn_2d,
@@ -1252,9 +1252,9 @@ fn rms_norm_gpu[
             )
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = rms_norm_gpu_warp_tiling[
-                mut = gamma.mut,
-                LayoutType = gamma.LayoutType,
-                origin = gamma.origin,
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1275,9 +1275,9 @@ fn rms_norm_gpu[
             and cols % (simd_width * 2) == 0
         ):
             comptime kernel = rms_norm_gpu_warp_tiling[
-                mut = gamma.mut,
-                LayoutType = gamma.LayoutType,
-                origin = gamma.origin,
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
                 simd_width * 2,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1295,9 +1295,9 @@ fn rms_norm_gpu[
             )
         else:
             comptime kernel = rms_norm_gpu_block[
-                mut = gamma.mut,
-                LayoutType = gamma.LayoutType,
-                origin = gamma.origin,
+                mut=gamma.mut,
+                LayoutType=gamma.LayoutType,
+                origin=gamma.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1315,9 +1315,9 @@ fn rms_norm_gpu[
             )
     else:
         comptime kernel = rms_norm_gpu_block[
-            mut = gamma.mut,
-            LayoutType = gamma.LayoutType,
-            origin = gamma.origin,
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -1575,6 +1575,7 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     var weight_offset_accum2 = weight_offset2.cast[accum_type]()
 
     var vec_data = SIMD[dtype, simd_width](0)
+    var gamma1_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
@@ -1663,8 +1664,8 @@ fn rms_norm_fused_residual_add_gpu_block[
 
     var shared_mem = external_memory[
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[dtype, simd_width]](),
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[dtype, simd_width]](),
         name="intermediate_shared_memory",
     ]()
     with PDL():
@@ -1791,7 +1792,7 @@ fn rms_norm_fused_residual_add_gpu[
         indices[rank - 1] = col
         return residual_input_fn[simd_width](indices.canonicalize())
 
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -1806,12 +1807,12 @@ fn rms_norm_fused_residual_add_gpu[
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
-                mut1 = gamma1.mut,
-                LayoutType1 = gamma1.LayoutType,
-                origin1 = gamma1.origin,
-                mut2 = gamma2.mut,
-                LayoutType2 = gamma2.LayoutType,
-                origin2 = gamma2.origin,
+                mut1=gamma1.mut,
+                LayoutType1=gamma1.LayoutType,
+                origin1=gamma1.origin,
+                mut2=gamma2.mut,
+                LayoutType2=gamma2.LayoutType,
+                origin2=gamma2.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1838,12 +1839,12 @@ fn rms_norm_fused_residual_add_gpu[
             )
 
             comptime kernel = rms_norm_fused_residual_add_gpu_block[
-                mut1 = gamma1.mut,
-                LayoutType1 = gamma1.LayoutType,
-                origin1 = gamma1.origin,
-                mut2 = gamma2.mut,
-                LayoutType2 = gamma2.LayoutType,
-                origin2 = gamma2.origin,
+                mut1=gamma1.mut,
+                LayoutType1=gamma1.LayoutType,
+                origin1=gamma1.origin,
+                mut2=gamma2.mut,
+                LayoutType2=gamma2.LayoutType,
+                origin2=gamma2.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1873,12 +1874,12 @@ fn rms_norm_fused_residual_add_gpu[
         var shared_mem_size = cols * size_of[dtype]()
 
         comptime kernel = rms_norm_fused_residual_add_gpu_block[
-            mut1 = gamma1.mut,
-            LayoutType1 = gamma1.LayoutType,
-            origin1 = gamma1.origin,
-            mut2 = gamma2.mut,
-            LayoutType2 = gamma2.LayoutType,
-            origin2 = gamma2.origin,
+            mut1=gamma1.mut,
+            LayoutType1=gamma1.LayoutType,
+            origin1=gamma1.origin,
+            mut2=gamma2.mut,
+            LayoutType2=gamma2.LayoutType,
+            origin2=gamma2.origin,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -2355,7 +2356,7 @@ fn _rms_norm_fused_fp8_gpu[
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime base_simd_width = simd_width_of[
-        in_dtype, target = get_gpu_target()
+        in_dtype, target=get_gpu_target()
     ]()
 
     # Dispatch: select SIMD width and kernel strategy based on column count
@@ -2547,14 +2548,14 @@ fn _rms_norm_fused_fp8_gpu_launch[
 
     comptime if use_warp_tiling:
         comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
-            mut = gamma.mut,
-            origin = gamma.origin,
-            LayoutType = gamma.LayoutType,
+            mut=gamma.mut,
+            origin=gamma.origin,
+            LayoutType=gamma.LayoutType,
             in_dtype=in_dtype,
             out_dtype=out_dtype,
             scales_dtype=scales_dtype,
-            scale_origin = scale_buffer_tensor.origin,
-            ScaleLayoutType = scale_buffer_tensor.LayoutType,
+            scale_origin=scale_buffer_tensor.origin,
+            ScaleLayoutType=scale_buffer_tensor.LayoutType,
             simd_width=simd_width,
             threads_per_block=threads_per_block,
             input_fn=input_fn,
@@ -2576,14 +2577,14 @@ fn _rms_norm_fused_fp8_gpu_launch[
             )
     else:
         comptime kernel = _rms_norm_fused_fp8_kernel_block[
-            mut = gamma.mut,
-            origin = gamma.origin,
-            LayoutType = gamma.LayoutType,
+            mut=gamma.mut,
+            origin=gamma.origin,
+            LayoutType=gamma.LayoutType,
             in_dtype=in_dtype,
             out_dtype=out_dtype,
             scales_dtype=scales_dtype,
-            scale_origin = scale_buffer_tensor.origin,
-            ScaleLayoutType = scale_buffer_tensor.LayoutType,
+            scale_origin=scale_buffer_tensor.origin,
+            ScaleLayoutType=scale_buffer_tensor.LayoutType,
             simd_width=simd_width,
             threads_per_block=threads_per_block,
             input_fn=input_fn,
@@ -2746,11 +2747,11 @@ fn group_norm_reshape[
     out result: TileTensor[
         dtype,
         Layout[
-            shape_types = DynamicCoord[DType.int64, 2].element_types,
-            stride_types = DynamicCoord[DType.int64, 2].element_types,
+            shape_types=DynamicCoord[DType.int64, 2].element_types,
+            stride_types=DynamicCoord[DType.int64, 2].element_types,
         ],
         buf.origin,
-        address_space = buf.address_space,
+        address_space=buf.address_space,
     ],
 ):
     """
@@ -3004,7 +3005,7 @@ fn group_norm_gpu[
 
         return input_fn[simd_width, rank](indices)
 
-    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     if num_cols < OutputLinearIdxType(simd_width):
         raise Error(
             "group_norm_gpu requires num_cols >= simd_width; got num_cols="
@@ -3033,8 +3034,8 @@ fn group_norm_gpu[
             WARP_SIZE * simd_width * max_warps_per_block
         ):
             comptime kernel = group_norm_gpu_warp_tiling[
-                LayoutType = output_rs.LayoutType,
-                origin = output_rs.origin,
+                LayoutType=output_rs.LayoutType,
+                origin=output_rs.origin,
                 dtype=dtype,
                 simd_width=simd_width,
                 input_fn=input_fn_2d,
@@ -3053,10 +3054,10 @@ fn group_norm_gpu[
             )
         else:
             comptime kernel = group_norm_gpu_block[
-                LayoutType = output_rs.LayoutType,
-                origin = output_rs.origin,
+                LayoutType=output_rs.LayoutType,
+                origin=output_rs.origin,
                 dtype=dtype,
-                simd_width = UInt(simd_width),
+                simd_width=UInt(simd_width),
                 input_fn=input_fn_2d,
                 gamma_fn=gamma_fn,
                 beta_fn=beta_fn,
@@ -3073,8 +3074,8 @@ fn group_norm_gpu[
             )
     else:
         comptime kernel = group_norm_gpu_block[
-            LayoutType = output_rs.LayoutType,
-            origin = output_rs.origin,
+            LayoutType=output_rs.LayoutType,
+            origin=output_rs.origin,
             dtype=dtype,
             simd_width=1,
             input_fn=input_fn_2d,

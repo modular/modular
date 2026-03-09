@@ -20,9 +20,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -47,7 +44,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
 
-    var c_ref_ptr = UnsafePointer[Scalar[c.type]].alloc(m * n)
+    var c_ref_ptr = alloc[Scalar[c.type]](m * n)
     var c_ref = NDBuffer[c.type, c.rank](c_ref_ptr, c.get_shape())
     gemm_naive(a, b, c_ref)
 
@@ -80,15 +77,9 @@ fn bench_matmul[
     comptime c_type = spec.static_info.c_type
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = 64
-    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(
-        spec.m * spec.k, alignment=alignment
-    )
-    var b_ptr = UnsafePointer[Scalar[b_type],].alloc(
-        spec.k * spec.n, alignment=alignment
-    )
-    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(
-        spec.m * spec.n, alignment=alignment
-    )
+    var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
+    var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
+    var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
     var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
     var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
     var c = NDBuffer[c_type, 2](c_ptr, Index(spec.m, spec.n))
@@ -108,7 +99,7 @@ fn bench_matmul[
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    var bp_ptr = UnsafePointer[Scalar[b_type],].alloc(
+    var bp_ptr = alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
     var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))

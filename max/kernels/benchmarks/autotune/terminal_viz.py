@@ -40,7 +40,7 @@ def _safe_eval(v: str) -> Any:
         return v
 
 
-def spec_to_dict(spec: str) -> dict:
+def spec_to_dict(spec: str) -> dict:  # type: ignore[type-arg]
     """Convert 'name/$p1=v1/$p2=v2/...' to {'name': name, 'p1': v1, ...}."""
     parts = spec.split("/")
     d = {"name": parts[0]}

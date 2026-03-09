@@ -17,9 +17,8 @@ from std.sys.info import align_of, simd_width_of
 
 from std.algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor
 from std.memory import alloc, memset_zero
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
@@ -262,9 +261,9 @@ struct TiledMatmul[
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
             # TODO(jtodd): bubble up from here
             # Convert NDBuffers to LayoutTensors for the inner matmul call
-            var c_tensor = from_ndbuffer_row_major(self.c)
-            var a_tensor = from_ndbuffer_row_major(self.a)
-            var b_tensor = from_ndbuffer_row_major(b_packed_tile)
+            var c_tensor = TileTensor(self.c).to_layout_tensor()
+            var a_tensor = TileTensor(self.a).to_layout_tensor()
+            var b_tensor = TileTensor(b_packed_tile).to_layout_tensor()
             self.alg.__inner_matmul__[
                 tile_kernel_rows,
                 tile_kernel_cols,
@@ -391,7 +390,7 @@ struct TiledMatmul[
         3,
         b_packed_ptr.origin,
         Self.config.packed_shape,
-        address_space = b_packed_ptr.address_space,
+        address_space=b_packed_ptr.address_space,
     ]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
@@ -408,7 +407,7 @@ struct TiledMatmul[
             3,
             b_packed_ptr.origin,
             Self.config.packed_shape,
-            address_space = b_packed_ptr.address_space,
+            address_space=b_packed_ptr.address_space,
         ](
             b_packed_ptr,
             IndexList[3](tile_n // n_inner_size, tile_k, n_inner_size),

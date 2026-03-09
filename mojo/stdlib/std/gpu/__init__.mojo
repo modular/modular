@@ -56,6 +56,7 @@ from .primitives import (
     block_dim,
     block_id_in_cluster,
     block_idx,
+    block_idx_int,
     cluster_dim,
     cluster_idx,
     global_idx,
@@ -63,6 +64,7 @@ from .primitives import (
     lane_id,
     sm_id,
     thread_idx,
+    thread_idx_int,
     warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE

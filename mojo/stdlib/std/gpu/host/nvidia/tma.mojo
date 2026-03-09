@@ -320,7 +320,7 @@ fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     Args:
         desc_ptr: Pointer to the TMA descriptor to prefetch.
     """
-    __mlir_op.`nvvm.prefetch`[tensormap = __mlir_attr.unit](
+    __mlir_op.`nvvm.prefetch`[tensormap=__mlir_attr.unit](
         to_llvm_ptr(desc_ptr),
     )
 
@@ -402,7 +402,7 @@ fn create_tma_descriptor[
             OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
-            _DeviceBufferPtr,  #  globalAddress
+            type_of(global_buf._handle),  #  globalAddress
             UnsafePointer[Int64, MutAnyOrigin],  # globalDim
             UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
             UnsafePointer[Int32, MutAnyOrigin],  # boxDim

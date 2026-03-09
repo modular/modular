@@ -168,7 +168,7 @@ fn compile_kernel_to_asm[
     # Compile for AMD GPU
     var compiled = _compile_code[
         kernel,
-        target = get_gpu_target["gfx950"](),
+        target=get_gpu_target["gfx950"](),
     ]()
     return compiled.asm
 
@@ -226,7 +226,7 @@ fn compile_pingpong_kernel_to_asm[
     # Compile for AMD GPU
     var compiled = _compile_code[
         kernel,
-        target = get_gpu_target["gfx950"](),
+        target=get_gpu_target["gfx950"](),
     ]()
     return compiled.asm
 

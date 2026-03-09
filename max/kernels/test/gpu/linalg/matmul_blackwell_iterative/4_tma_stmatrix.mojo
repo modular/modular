@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -77,12 +75,15 @@ fn kernel_4[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
+    a_tma_rank: Int,
+    b_tma_rank: Int,
+    c_tma_rank: Int,
+    a_tile_shape: IndexList[a_tma_rank],
+    b_tile_shape: IndexList[b_tma_rank],
+    c_tile_shape: IndexList[c_tma_rank],
+    a_desc_shape: IndexList[a_tma_rank],
+    b_desc_shape: IndexList[b_tma_rank],
+    c_desc_shape: IndexList[c_tma_rank],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -92,9 +93,9 @@ fn kernel_4[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: UInt = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
     num_iters: Int,
 ):
     comptime assert num_threads == 128 or num_threads == 256
@@ -108,7 +109,7 @@ fn kernel_4[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    comptime TMA_BN = c_tma_op.layout.shape[1].value()
+    comptime TMA_BN = c_tile_shape[1]
 
     comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
@@ -129,11 +130,15 @@ fn kernel_4[
     comptime c_smem_layout = Layout.row_major(BM, BN)
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -142,35 +147,35 @@ fn kernel_4[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime a_size = a_smem_layout.size()
@@ -197,7 +202,7 @@ fn kernel_4[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -252,7 +257,7 @@ fn kernel_4[
         accum_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -317,7 +322,7 @@ fn kernel_4[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -331,8 +336,8 @@ fn kernel_4[
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
+        element_type=DType.int32,
+        linear_idx_type=DType.int32,
     ]()
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
@@ -340,9 +345,19 @@ fn kernel_4[
     comptime for tma_n in range(BN // TMA_BN):
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range(TMA_BN // 16):
-                var d_reg = c_frag.slice[
-                    8, offset = (i + tma_n * (TMA_BN // 16)) * 8
-                ]().cast[DType.bfloat16]()
+                var d_reg = SIMD[DType.bfloat16, 8]()
+
+                comptime for _ei in range(4):
+                    comptime _src_offset = (
+                        i + tma_n * (TMA_BN // 16)
+                    ) * 8 + 2 * _ei
+                    var pair = SIMD[DType.float32, 2](
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset]),
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset + 1]),
+                    )
+                    var casted = pair.cast[DType.bfloat16]()
+                    d_reg[2 * _ei] = casted[0]
+                    d_reg[2 * _ei + 1] = casted[1]
 
                 var st_matrix_args = RuntimeTuple[
                     IntTuple(
@@ -376,9 +391,9 @@ fn kernel_4[
 
         c_tma_tile = LayoutTensor[
             c_type,
-            c_layout,
+            Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ](smem_offset)
 
@@ -448,12 +463,15 @@ fn blackwell_kernel_4[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
-        type_of(c_tma_op).layout,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
-        type_of(c_tma_op).desc_layout,
+        type_of(a_tma_op).rank,
+        type_of(b_tma_op).rank,
+        type_of(c_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(b_tma_op).tile_shape,
+        type_of(c_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).desc_shape,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -536,9 +554,9 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 transpose_b,
                 BK,
                 benchmark=True,
-                M = shape[0],
-                N = shape[1],
-                K = shape[2],
+                M=shape[0],
+                N=shape[1],
+                K=shape[2],
             ](ctx)
         except e:
             print("Error: Failed to run benchmark for this shape")
@@ -567,9 +585,9 @@ def test_blackwell_kernel_4[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
@@ -701,10 +719,10 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            umma_shape = Index(64, 256, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 256, 16),
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            c_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             BK=64,
             M=4096,

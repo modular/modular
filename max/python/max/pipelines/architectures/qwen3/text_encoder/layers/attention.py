@@ -16,11 +16,11 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.norm import RMSNorm
 
 from .rotary_embedding import RotaryEmbedding
 
@@ -88,7 +88,6 @@ class EncoderAttention(Module[..., Tensor]):
         Args:
             x: Input tensor with shape [total_seq_len, hidden_dim]
             rope: RotaryEmbedding module
-
         Returns:
             Output tensor with shape [total_seq_len, hidden_dim]
         """

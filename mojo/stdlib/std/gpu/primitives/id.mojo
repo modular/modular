@@ -32,6 +32,7 @@ from std.sys.info import (
     is_nvidia_gpu,
 )
 from std.memory import AddressSpace
+from std.builtin.int import _FromInt
 
 from ..globals import WARP_SIZE
 from .warp import broadcast
@@ -59,7 +60,7 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
         UnsafePointer[
             Scalar[dtype],
             MutExternalOrigin,
-            address_space = AddressSpace.CONSTANT,
+            address_space=AddressSpace.CONSTANT,
         ],
         has_side_effect=False,
     ]()
@@ -121,9 +122,8 @@ fn lane_id() -> UInt:
         )
 
     else:
-        return CompilationTarget.unsupported_target_error[
-            UInt,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -179,9 +179,8 @@ fn sm_id() -> UInt:
             )
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            UInt,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="sm_id() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -191,9 +190,16 @@ fn sm_id() -> UInt:
 # ===-----------------------------------------------------------------------===#
 
 
-struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
+struct _ThreadIdx[ResultType: _FromInt = UInt](
+    Defaultable, TrivialRegisterPassable
+):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
-    a thread within a block."""
+    a thread within a block.
+
+    Parameters:
+        ResultType: Type of index accessors, typically `Int` or `UInt`
+            (default).
+    """
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -209,13 +215,12 @@ struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
         elif is_apple_gpu():
             return "llvm.air.thread_position_in_threadgroup." + dim
         else:
-            return CompilationTarget.unsupported_target_error[
-                StaticString,
-                operation = __get_current_function_name(),
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name(),
             ]()
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    fn __getattr__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` coordinates of a thread within a block.
 
         Returns:
@@ -223,12 +228,14 @@ struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        )
+        var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
+        return Self.ResultType(from_int=Int(i))
 
 
 comptime thread_idx = _ThreadIdx()
+"""Contains the thread index in the block, as `x`, `y`, and `z` values."""
+
+comptime thread_idx_int = _ThreadIdx[Int]()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 
@@ -237,9 +244,16 @@ comptime thread_idx = _ThreadIdx()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockIdx(Defaultable, TrivialRegisterPassable):
+struct _BlockIdx[ResultType: _FromInt = UInt](
+    Defaultable, TrivialRegisterPassable
+):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
-    a block within a grid."""
+    a block within a grid.
+
+    Parameters:
+        ResultType: Type of index accessors, typically `Int` or `UInt`
+            (default).
+    """
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -255,13 +269,12 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
         elif is_apple_gpu():
             return "llvm.air.threadgroup_position_in_grid." + dim
         else:
-            return CompilationTarget.unsupported_target_error[
-                StaticString,
-                operation = __get_current_function_name(),
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name(),
             ]()
 
     @always_inline("nodebug")
-    fn __getattr__[dim: StringLiteral](self) -> UInt:
+    fn __getattr__[dim: StringLiteral](self) -> Self.ResultType:
         """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
 
         Returns:
@@ -269,12 +282,14 @@ struct _BlockIdx(Defaultable, TrivialRegisterPassable):
         """
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
-        return UInt(
-            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        )
+        var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
+        return Self.ResultType(from_int=Int(i))
 
 
 comptime block_idx = _BlockIdx()
+"""Contains the block index in the grid, as `x`, `y`, and `z` values."""
+
+comptime block_idx_int = _BlockIdx[Int]()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 
@@ -334,9 +349,8 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
             return _get_gcn_idx[_get_offset(), DType.uint16]()
 
         else:
-            return CompilationTarget.unsupported_target_error[
-                UInt,
-                operation = __get_current_function_name(),
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name(),
             ]()
 
 
@@ -404,9 +418,8 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
             # by block_dim.dim
             return gridDim // block_dim.__getattr__[dim]()
         else:
-            return CompilationTarget.unsupported_target_error[
-                UInt,
-                operation = __get_current_function_name(),
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name(),
             ]()
 
 

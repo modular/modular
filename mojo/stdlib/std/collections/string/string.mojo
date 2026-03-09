@@ -380,10 +380,9 @@ struct String(
         Safety:
             `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
         """
-        debug_assert(
-            _is_valid_utf8(unsafe_from_utf8),
-            "String: span is not valid UTF-8",
-        )
+        assert _is_valid_utf8(
+            unsafe_from_utf8
+        ), "String: span is not valid UTF-8"
         var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
         memcpy(
@@ -736,9 +735,7 @@ struct String(
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            return (
-                self._refcount().load[ordering = Consistency.MONOTONIC]() == 1
-            )
+            return self._refcount().load[ordering=Consistency.MONOTONIC]() == 1
         else:
             return False
 
@@ -748,7 +745,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
-            _ = self._refcount().fetch_add[ordering = Consistency.MONOTONIC](1)
+            _ = self._refcount().fetch_add[ordering=Consistency.MONOTONIC](1)
 
     @always_inline("nodebug")
     fn _drop_ref(mut self):
@@ -758,7 +755,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
             var refcount = ptr.bitcast[Atomic[DType.int]]()
-            if refcount[].fetch_sub[ordering = Consistency.RELEASE](1) == 1:
+            if refcount[].fetch_sub[ordering=Consistency.RELEASE](1) == 1:
                 fence[Consistency.ACQUIRE]()
                 ptr.free()
 
@@ -917,10 +914,9 @@ struct String(
         This helper is inherently unsafe as it does not check if the capacity is
         sufficient and does not check UTF-8 validity.
         """
-        debug_assert(
-            self.capacity() > self.byte_length(),
-            "String: capacity is not sufficient",
-        )
+        assert (
+            self.capacity() > self.byte_length()
+        ), "String: capacity is not sufficient"
         var length = self.byte_length()
         (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
         self.set_byte_length(length + 1)
@@ -2159,9 +2155,9 @@ fn _unsafe_chr_ascii(c: UInt8) -> String:
     Safety:
         The byte must be a valid single byte ASCII character (0-127).
     """
-    debug_assert(
-        c <= _LARGEST_UNICODE_ASCII_BYTE, "Character is not single byte unicode"
-    )
+    assert (
+        c <= _LARGEST_UNICODE_ASCII_BYTE
+    ), "Character is not single byte unicode"
 
     return String(unsafe_from_utf8=Span(ptr=UnsafePointer(to=c), length=1))
 
@@ -2440,7 +2436,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
     if start == (length - 1):
         return 10, start
     if str_slice[byte=start] == "0":
-        var second_digit = str_slice[byte = start + 1]
+        var second_digit = str_slice[byte=start + 1]
         if second_digit == "b" or second_digit == "B":
             return 2, start + 2
         if second_digit == "o" or second_digit == "O":

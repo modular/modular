@@ -57,7 +57,7 @@ def test_reshape() -> None:
         )
 
 
-def subseqs(c: Collection):  # noqa: ANN201
+def subseqs(c: Collection):  # type: ignore[type-arg]  # noqa: ANN201
     if not c:
         return st.just(type(c)())
     subseq_indices = st.sets(st.sampled_from(range(len(c))))

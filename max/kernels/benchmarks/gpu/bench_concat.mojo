@@ -25,8 +25,8 @@ from std.benchmark import (
 )
 from std.builtin._closure import __ownership_keepalive
 from std.gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx, TileTensor
-from layout._layout import Layout, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import Layout
 from nn.concat import _concat_gpu_elementwise
 
 from std.utils import IndexList, StaticTuple

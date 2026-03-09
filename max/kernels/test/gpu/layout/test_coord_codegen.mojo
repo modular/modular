@@ -16,13 +16,10 @@ import std.sys
 
 from std.gpu.host.compile import _compile_code, get_gpu_target
 from layout import ComptimeInt, Idx, Coord, RuntimeInt
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_true
 
 
-fn kernel(v: Int, ptr: UnsafePointer[Int32]):
+fn kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
     """Kernel that uses MixedTuple with both compile-time and runtime indices.
 
     Args:
@@ -36,7 +33,7 @@ fn kernel(v: Int, ptr: UnsafePointer[Int32]):
 
 fn test_coord_codegen_memory() raises:
     var amd_asm = _compile_code[
-        kernel, target = get_gpu_target["amdgpu:gfx942"]()
+        kernel, target=get_gpu_target["amdgpu:gfx942"]()
     ]().asm
 
     assert_true("buffer_load_dword" not in amd_asm)
@@ -44,7 +41,7 @@ fn test_coord_codegen_memory() raises:
     assert_true("v_mov_b32_e32 v1, s0" in amd_asm)
 
     var nvidia_asm = _compile_code[
-        kernel, target = get_gpu_target["sm_80"]()
+        kernel, target=get_gpu_target["sm_80"]()
     ]().asm
 
     assert_true("ld.local" not in nvidia_asm)

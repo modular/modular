@@ -44,18 +44,21 @@ __extension HopperMatmulSM90Kernel:
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     fn run_persistent[
-        a_tile_layout: Layout,
-        b_tile_layout: Layout,
-        c_tma_layout: Layout,
-        a_desc_layout: Layout,
-        b_desc_layout: Layout,
-        c_desc_layout: Layout,
+        a_tma_rank: Int,
+        b_tma_rank: Int,
+        c_tma_rank: Int,
+        a_tile_shape: IndexList[a_tma_rank],
+        b_tile_shape: IndexList[b_tma_rank],
+        c_tile_shape: IndexList[c_tma_rank],
+        a_desc_shape: IndexList[a_tma_rank],
+        b_desc_shape: IndexList[b_tma_rank],
+        c_desc_shape: IndexList[c_tma_rank],
         grid_shape: IndexList[2],
         schedule: MatmulSchedule,
     ](
-        a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-        b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
+        a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
         c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
         problem_shape: IndexList[3],
     ):
@@ -66,7 +69,7 @@ __extension HopperMatmulSM90Kernel:
         var wgmma_op = Self.WgmmaOp()
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SMem]()[]
 
@@ -172,10 +175,11 @@ __extension HopperMatmulSM90Kernel:
     )
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     fn run_unaligned[
-        c_desc_layout: Layout,
-        c_tma_layout: Layout,
+        c_tma_rank: Int,
+        c_tile_shape: IndexList[c_tma_rank],
+        c_desc_shape: IndexList[c_tma_rank],
     ](
-        c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
         a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
         b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -189,7 +193,7 @@ __extension HopperMatmulSM90Kernel:
         var wgmma_op = Self.WgmmaOp()
         ref smem = external_memory[
             Scalar[DType.uint8],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ]().bitcast[Self.SMem]()[]
 

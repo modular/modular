@@ -50,14 +50,16 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import Coord, Idx, RuntimeInt, TileTensor
-from layout._layout import row_major
+from layout import (
+    Coord,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
@@ -183,15 +185,9 @@ fn bench_grouped_matmul[
     var b_size = num_experts * N * packed_K
 
     # Host allocations
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var a_scale_offsets_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_active_experts)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
 
     # Setup offsets and expert ids
     a_scale_dim0 = 0
@@ -365,9 +361,7 @@ fn bench_grouped_matmul[
         var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
             num_experts
         )
-        var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-            num_experts
-        )
+        var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
         for i in range(num_experts):
             expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
                 num_experts
@@ -560,7 +554,7 @@ fn bench_grouped_matmul[
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                         config=config,
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -629,7 +623,7 @@ fn bench_grouped_matmul[
 
                 else:
                     grouped_matmul[
-                        elementwise_lambda_fn = Optional[
+                        elementwise_lambda_fn=Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](

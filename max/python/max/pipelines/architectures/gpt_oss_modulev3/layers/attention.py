@@ -20,19 +20,21 @@ import math
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
+from max.experimental.nn import Linear, Module
+from max.experimental.nn.common_layers.functional_kernels import (
+    flash_attention_ragged,
+    fused_qk_ragged_rope,
+    fused_qkv_ragged_matmul,
+)
+from max.experimental.nn.common_layers.rotary_embedding import (
+    YarnRotaryEmbedding,
+)
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.module_v3 import Linear, Module
-from max.nn.module_v3.common_layers.functional_kernels import (
-    flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-)
-from max.nn.module_v3.common_layers.rotary_embedding import YarnRotaryEmbedding
 
 
 class GptOssAttention(Module[..., Tensor]):

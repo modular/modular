@@ -28,7 +28,7 @@ from std.sys import (
     align_of,
     codegen_unreachable,
     get_defined_string,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     llvm_intrinsic,
     simd_bit_width,
@@ -113,7 +113,7 @@ fn _memcmp_impl[
     s2: UnsafePointer[mut=False, Scalar[dtype], ...],
     count: Int,
 ) -> Int where dtype.is_integral():
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _memcmp_impl_unconstrained(s1, s2, count)
     else:
         return _memcmp_opt_impl_unconstrained(s1, s2, count)
@@ -257,7 +257,7 @@ fn memcpy[
     """
     var n = count * size_of[dest.type]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
@@ -294,7 +294,7 @@ fn memmove[
         count: The number of elements to copy.
     """
     var n = count * size_of[T]()
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         for i in range(n):
             (dest.bitcast[Byte]() + i).store((src.bitcast[Byte]() + i).load())
     else:
@@ -441,25 +441,25 @@ fn stack_allocation[
 
         comptime if address_space == AddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
-                name = _get_kgen_string[global_name](),
-                count = count._mlir_value,
-                memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
-                _type = UnsafePointer[
+                name=_get_kgen_string[global_name](),
+                count=count._mlir_value,
+                memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
+                _type=UnsafePointer[
                     type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type,
-                alignment = alignment._mlir_value,
+                alignment=alignment._mlir_value,
             ]()
         elif address_space == AddressSpace.CONSTANT:
             # No need to annotation this global_alloc because constants in
             # GPU shared memory won't prevent llvm module splitting to
             # happen since they are immutables.
             return __mlir_op.`pop.global_alloc`[
-                name = _get_kgen_string[global_name](),
-                count = count._mlir_value,
-                _type = UnsafePointer[
+                name=_get_kgen_string[global_name](),
+                count=count._mlir_value,
+                _type=UnsafePointer[
                     type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type,
-                alignment = alignment._mlir_value,
+                alignment=alignment._mlir_value,
             ]()
 
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
@@ -467,23 +467,23 @@ fn stack_allocation[
         # addrspacecast the resulting pointer.
         elif address_space == AddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
-                count = count._mlir_value,
-                _type = UnsafePointer[type, MutExternalOrigin]._mlir_type,
-                alignment = alignment._mlir_value,
+                count=count._mlir_value,
+                _type=UnsafePointer[type, MutExternalOrigin]._mlir_type,
+                alignment=alignment._mlir_value,
             ]()
             return __mlir_op.`pop.pointer.bitcast`[
-                _type = UnsafePointer[
+                _type=UnsafePointer[
                     type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type
             ](generic_ptr)
 
     # Perform a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
-        count = count._mlir_value,
-        _type = UnsafePointer[
+        count=count._mlir_value,
+        _type=UnsafePointer[
             type, MutExternalOrigin, address_space=address_space
         ]._mlir_type,
-        alignment = alignment._mlir_value,
+        alignment=alignment._mlir_value,
     ]()
 
 
@@ -504,7 +504,7 @@ fn _malloc[
     out res: UnsafePointer[
         type,
         MutExternalOrigin,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
     ],
 ):
     comptime if is_gpu():
@@ -520,12 +520,12 @@ fn _malloc[
         comptime U = UnsafePointer[
             NoneType,
             MutExternalOrigin,
-            address_space = AddressSpace.GENERIC,
+            address_space=AddressSpace.GENERIC,
         ]
         var ptr = external_call["malloc", U](size)
         return ptr.bitcast[type]()
     else:
-        return __mlir_op.`pop.aligned_alloc`[_type = type_of(res)._mlir_type](
+        return __mlir_op.`pop.aligned_alloc`[_type=type_of(res)._mlir_type](
             alignment._mlir_value, size._mlir_value
         )
 

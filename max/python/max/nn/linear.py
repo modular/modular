@@ -85,6 +85,9 @@ class Linear(Module, Shardable):
     """The optional weight scale stored on CPU with shape () or (N,).
     Model init moves the weight_scale to the target device if present."""
 
+    weight_scale_2: Weight | None = None
+    """The optional weight scale 2 used for fp4 quantization."""
+
     device: DeviceRef
     """The device where matrix operations are performed."""
 
@@ -327,16 +330,21 @@ class Linear(Module, Shardable):
 
         if self.bias:
             # Only truly shard the bias across devices when the weight sharding
-            # is rowwise.
+            # is rowwise or stacked_qkv (output dimension is split per device).
             # Otherwise, when the weight sharding is columnwise, set the bias to
             # replicate so that it is complete on device 0.
             # Linear.shard handles setting bias to None on devices >= 1 to
             # prevent bias duplication, which would be incorrect.
-            self.bias.sharding_strategy = (
-                strategy
-                if strategy.is_rowwise
-                else ShardingStrategy.replicate(strategy.num_devices)
-            )
+            if strategy.is_rowwise:
+                self.bias.sharding_strategy = strategy
+            elif strategy.is_stacked_qkv:
+                self.bias.sharding_strategy = ShardingStrategy.rowwise(
+                    strategy.num_devices
+                )
+            else:
+                self.bias.sharding_strategy = ShardingStrategy.replicate(
+                    strategy.num_devices
+                )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[Linear]:
         """Creates sharded views of this Linear layer across multiple devices.
@@ -353,12 +361,11 @@ class Linear(Module, Shardable):
             )
 
         # Calculate sharded dimensions.
-        out_dim = (
-            int(self.weight.shape[0])
-            // self.weight.sharding_strategy.num_devices
-            if self.weight.sharding_strategy.is_rowwise
-            else int(self.weight.shape[0])
-        )
+        strategy = self.weight.sharding_strategy
+        if strategy.is_rowwise or strategy.is_stacked_qkv:
+            out_dim = int(self.weight.shape[0]) // strategy.num_devices
+        else:
+            out_dim = int(self.weight.shape[0])
 
         # Get sharded weights
         sharded_weights = self.weight.shard(devices)
@@ -454,39 +461,56 @@ class Linear(Module, Shardable):
         if self.clip_weight:
             weight = clamp(weight, -self.clip_weight, self.clip_weight)
 
-        if self.weight.quantization_encoding:
-            res = ops.qmatmul(
-                self.weight.quantization_encoding, None, x, weight
-            )
-        elif self.float8_config:
-            assert self.weight_scale is not None
-            weight_scale: TensorValue = self.weight_scale
-
-            if self.float8_config.is_nvfp4:
-                assert self.input_scale is not None
-                assert self.weight_scale_2 is not None
-                res = matmul_float4(
-                    x,
-                    self.weight,
-                    weight_scale,
-                    self.input_scale,
-                    self.weight_scale_2,
-                    self.float8_config,
-                )
-            else:
-                res = matmul_float8(
-                    x,
-                    self.weight,
-                    weight_scale,
-                    self.input_scale,
-                    self.float8_config,
-                )
-        else:
-            res = x @ weight.T
+        res = linear(
+            x,
+            weight,
+            self.weight.quantization_encoding,
+            self.float8_config,
+            self.input_scale,
+            self.weight_scale,
+            self.weight_scale_2,
+        )
 
         if self.bias is not None:
             res += self.bias.to(res.device)
         return res
+
+
+def linear(
+    x: TensorValue,
+    weight: TensorValue,
+    quantization_encoding: QuantizationEncoding | None = None,
+    float8_config: Float8Config | None = None,
+    input_scale: TensorValue | None = None,
+    weight_scale: TensorValue | None = None,
+    weight_scale_2: TensorValue | None = None,
+) -> TensorValue:
+    """Computes x @ weight.T with quantization support."""
+    if quantization_encoding is not None:
+        return ops.qmatmul(quantization_encoding, None, x, weight)
+    elif float8_config:
+        assert weight_scale is not None
+        if float8_config.is_nvfp4:
+            assert input_scale is not None
+            assert weight_scale_2 is not None
+            return matmul_float4(
+                x,
+                weight,
+                weight_scale,
+                input_scale,
+                weight_scale_2,
+                float8_config,
+            )
+        else:
+            return matmul_float8(
+                x,
+                weight,
+                weight_scale,
+                input_scale,
+                float8_config,
+            )
+    else:
+        return x @ weight.T
 
 
 class ColumnParallelLinear(Linear):
@@ -817,6 +841,69 @@ class MLP(Module, Shardable):
         )
         self._sharding_strategy: ShardingStrategy | None = None
 
+    def _concat_or_max_gate_up_tensors(
+        self,
+        gate_tensor: TensorValue | None,
+        up_tensor: TensorValue | None,
+    ) -> TensorValue | None:
+        """Concatenates the gate and up projection tensors for fused gate/up matmul."""
+        if gate_tensor is None or up_tensor is None:
+            return None
+
+        # If the tensors are scalars, get the max of the two values.
+        if len(gate_tensor.shape) == 0:
+            assert len(up_tensor.shape) == 0
+            return ops.max(
+                ops.concat((gate_tensor.reshape((1,)), up_tensor.reshape((1,))))
+            ).reshape([])
+
+        if self.gate_proj.device:
+            gate_tensor = gate_tensor.to(self.gate_proj.device)
+        if self.up_proj.device:
+            up_tensor = up_tensor.to(self.up_proj.device)
+
+        return ops.concat((gate_tensor, up_tensor))
+
+    def _concat_or_max_gate_up_weights(self) -> TensorValue:
+        """Concatenates the gate and up projection weights."""
+        result = self._concat_or_max_gate_up_tensors(
+            self.gate_proj.weight, self.up_proj.weight
+        )
+        assert result is not None
+        return result
+
+    def _concat_or_max_gate_up_scales(self) -> TensorValue | None:
+        """Concatenates the gate and up projection scales."""
+        return self._concat_or_max_gate_up_tensors(
+            self.gate_proj.weight_scale, self.up_proj.weight_scale
+        )
+
+    def _concat_or_max_gate_up_bias(self) -> TensorValue | None:
+        """Concatenates the gate and up projection biases."""
+        return self._concat_or_max_gate_up_tensors(
+            self.gate_proj.bias, self.up_proj.bias
+        )
+
+    def _concat_or_max_gate_up_input_scale(self) -> TensorValue | None:
+        """Gets the max input scale of the gate and up projection."""
+        return self._concat_or_max_gate_up_tensors(
+            self.gate_proj.input_scale, self.up_proj.input_scale
+        )
+
+    def _concat_or_max_gate_up_weight_scale_2(self) -> TensorValue | None:
+        """Gets the max weight scale 2 of the gate and up projection."""
+        return self._concat_or_max_gate_up_tensors(
+            self.gate_proj.weight_scale_2, self.up_proj.weight_scale_2
+        )
+
+    def _can_used_fused_mlp(self) -> bool:
+        """Checks if the gate/up matmuls can be fused."""
+        if self.quantization_encoding:
+            return False
+        if self.float8_config is None:
+            return True
+        return self.float8_config.can_use_fused_mlp
+
     def __call__(self, x: TensorValueLike) -> TensorValue:
         """Applies the MLP transformation to the input.
 
@@ -826,7 +913,7 @@ class MLP(Module, Shardable):
         Returns:
             The transformed tensor after applying the MLP layers.
         """
-        if self.quantization_encoding or self.float8_config:
+        if not self._can_used_fused_mlp():
             return self.down_proj(
                 self.activation_function(self.gate_proj(TensorValue(x)))
                 * self.up_proj(TensorValue(x))
@@ -834,33 +921,21 @@ class MLP(Module, Shardable):
         else:
             # Optimization to compute a single matmul by merging the
             # gate and up projection weights.
-            feed_forward_length = self.gate_proj.weight.shape[0]
-            gate_proj_weight: TensorValue = self.gate_proj.weight
-            if self.gate_proj.device:
-                gate_proj_weight = gate_proj_weight.to(self.gate_proj.device)
-            up_proj_weight: TensorValue = self.up_proj.weight
-            if self.up_proj.device:
-                up_proj_weight = up_proj_weight.to(self.up_proj.device)
+            output = linear(
+                TensorValue(x),
+                self._concat_or_max_gate_up_weights(),
+                self.quantization_encoding,
+                self.float8_config,
+                input_scale=self._concat_or_max_gate_up_input_scale(),
+                weight_scale=self._concat_or_max_gate_up_scales(),
+                weight_scale_2=self._concat_or_max_gate_up_weight_scale_2(),
+            )
 
-            bias = None
-            if (
-                self.gate_proj.bias is not None
-                and self.up_proj.bias is not None
-            ):
-                gate_proj_bias: TensorValue = self.gate_proj.bias
-                if self.gate_proj.device:
-                    gate_proj_bias = gate_proj_bias.to(self.gate_proj.device)
-                up_proj_bias: TensorValue = self.up_proj.bias
-                if self.up_proj.device:
-                    up_proj_bias = up_proj_bias.to(self.up_proj.device)
-                bias = ops.concat((gate_proj_bias, up_proj_bias))
-
+            bias = self._concat_or_max_gate_up_bias()
             if bias is not None:
-                output = (
-                    x @ ops.concat((gate_proj_weight, up_proj_weight)).T
-                ) + bias
-            else:
-                output = x @ ops.concat((gate_proj_weight, up_proj_weight)).T
+                output += bias
+
+            feed_forward_length = self.gate_proj.weight.shape[0]
 
             gate_out, up_out = ops.split(
                 output, [feed_forward_length, feed_forward_length], axis=1
@@ -943,6 +1018,10 @@ class MLP(Module, Shardable):
             sharded.gate_proj = gate_proj
             sharded.down_proj = down_proj
             sharded.up_proj = up_proj
+
+            # Store parent layer to access the original weights to check
+            # if the weights can be stacked.
+            sharded._parent_layer = self
 
             shards.append(sharded)
 

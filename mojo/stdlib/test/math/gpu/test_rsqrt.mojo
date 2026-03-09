@@ -27,10 +27,10 @@ def run_elementwise[
     kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) raises -> SIMD[
         dtype, width
     ],
-](ctx: DeviceContext) where dtype.is_floating_point():
+](ctx: DeviceContext) raises where dtype.is_floating_point():
     comptime length = 256
 
-    comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)

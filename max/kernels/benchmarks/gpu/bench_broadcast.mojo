@@ -104,7 +104,7 @@ fn bench_broadcast[
 
     var length = num_bytes // size_of[dtype]()
 
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
     var cb_in = CacheBustingBuffer[dtype](
         length, simd_size, list_of_ctx[root], cache_busting
     )
@@ -227,15 +227,24 @@ fn bench_broadcast[
             )
 
             # Run broadcast - root's input goes to all outputs
-            comptime broadcast_kernel = vendor_ccl.broadcast if use_vendor_ccl else broadcast
-            broadcast_kernel[ngpus, use_multimem=use_multimem](
-                in_buf_offset,
-                out_bufs[ctx_idx],
-                rank_sigs,
-                ctx_inner,
-                root,
-                max_num_blocks,
-            )
+            comptime if use_vendor_ccl:
+                vendor_ccl.broadcast[ngpus, use_multimem=use_multimem](
+                    in_buf_offset,
+                    out_bufs[ctx_idx],
+                    rank_sigs,
+                    ctx_inner,
+                    root,
+                    max_num_blocks,
+                )
+            else:
+                broadcast[ngpus, use_multimem=use_multimem](
+                    in_buf_offset,
+                    out_bufs[ctx_idx],
+                    rank_sigs,
+                    ctx_inner,
+                    root,
+                    max_num_blocks,
+                )
 
         bencher.iter_custom[call_fn](ctx)
 
@@ -283,15 +292,24 @@ fn bench_broadcast[
 
     # Run one broadcast for verification
     comptime for i in range(ngpus):
-        comptime broadcast_kernel = vendor_ccl.broadcast if use_vendor_ccl else broadcast
-        broadcast_kernel[ngpus, use_multimem=use_multimem](
-            in_buf_verify,
-            out_bufs[i],
-            rank_sigs,
-            list_of_ctx[i],
-            root,
-            max_num_blocks,
-        )
+        comptime if use_vendor_ccl:
+            vendor_ccl.broadcast[ngpus, use_multimem=use_multimem](
+                in_buf_verify,
+                out_bufs[i],
+                rank_sigs,
+                list_of_ctx[i],
+                root,
+                max_num_blocks,
+            )
+        else:
+            broadcast[ngpus, use_multimem=use_multimem](
+                in_buf_verify,
+                out_bufs[i],
+                rank_sigs,
+                list_of_ctx[i],
+                root,
+                max_num_blocks,
+            )
 
     # Copy results back and verify - reuse host_buffer for each GPU
     comptime for i in range(ngpus):

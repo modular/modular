@@ -233,7 +233,7 @@ struct KVBufferImpl[
         Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
 
@@ -251,17 +251,17 @@ struct KVBufferImpl[
         Self.dtype,
         Self.layout,
         Self.origin,
-        address_space = Self.address_space,
-        alignment = Self.alignment,
-        masked = Self.masked,
-        layout_int_type = Self.layout_int_type,
-        linear_idx_type = Self.linear_idx_type,
+        address_space=Self.address_space,
+        alignment=Self.alignment,
+        masked=Self.masked,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
     ]
 
     comptime GlobalTiledIteratorType = Self.GlobalTensorType.TiledIteratorType[
         Self.config.btile_dim0,
         Self.config.btile_dim1,
-        axis = Self.config.iterator_axis,
+        axis=Self.config.iterator_axis,
     ]
 
     var global_iterator: Self.GlobalTiledIteratorType
@@ -274,7 +274,7 @@ struct KVBufferImpl[
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
     ):
         # comptime assert
@@ -286,7 +286,7 @@ struct KVBufferImpl[
         self.global_iterator = global_tile.tiled_iterator[
             Self.config.btile_dim0,
             Self.config.btile_dim1,
-            axis = Self.config.iterator_axis,
+            axis=Self.config.iterator_axis,
         ](0, 0)
         self.load_tile_id = 0
 
@@ -299,7 +299,7 @@ struct KVBufferImpl[
     fn load_from_dram(
         mut self,
     ):
-        copy_dram_to_local[src_thread_layout = Self.thread_layout,](
+        copy_dram_to_local[src_thread_layout=Self.thread_layout,](
             self.load_tile.split[Self.num_stages]()[
                 self.load_tile_id
             ].vectorize[1, Self.simd_width](),
@@ -319,8 +319,8 @@ struct KVBufferImpl[
     ](self,):
         var smem_tile = self.smem_iter.next_unsafe(0)[]
         copy_local_to_shared[
-            thread_layout = Self.thread_layout,
-            swizzle = Self.swizzle,
+            thread_layout=Self.thread_layout,
+            swizzle=Self.swizzle,
             row_major=True,
         ](
             smem_tile.vectorize[1, Self.simd_width](),
@@ -367,7 +367,7 @@ struct KVBufferImpl[
                 )
                 mma_vec[frag_i, 0] = rebind[type_of(mma_vec[frag_i, 0])](result)
         else:
-            Self.tensor_core_mma.mma_op.load_b[swizzle = Self.swizzle](
+            Self.tensor_core_mma.mma_op.load_b[swizzle=Self.swizzle](
                 warp_tile,
                 self.get_mma_tile().vectorize[1, Self.simd_width](),
                 UInt(k_mma),
@@ -385,7 +385,7 @@ comptime KBuffer[
     num_stages: Int = 1,
     token_gen: Bool = False,
 ] = KVBufferImpl[
-    config = KBufferConfig[BN, BK, WN],
+    config=KBufferConfig[BN, BK, WN],
     tensor_core_mma=tensor_core_mma,
     swizzle=swizzle,
     BN=BN,
@@ -408,7 +408,7 @@ comptime VBuffer[
     num_stages: Int = 1,
     token_gen: Bool = False,
 ] = KVBufferImpl[
-    config = VBufferConfig[BN, BK, WN, depth],
+    config=VBufferConfig[BN, BK, WN, depth],
     tensor_core_mma=tensor_core_mma,
     swizzle=swizzle,
     BN=BN,
@@ -525,7 +525,7 @@ struct VBufferTransposeLoads[
         Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         circular=True,
     ]
 
@@ -537,11 +537,11 @@ struct VBufferTransposeLoads[
         Self.dtype,
         Self.layout,
         Self.origin,
-        address_space = Self.address_space,
-        alignment = Self.alignment,
-        masked = Self.masked,
-        layout_int_type = Self.layout_int_type,
-        linear_idx_type = Self.linear_idx_type,
+        address_space=Self.address_space,
+        alignment=Self.alignment,
+        masked=Self.masked,
+        layout_int_type=Self.layout_int_type,
+        linear_idx_type=Self.linear_idx_type,
     ]
 
     comptime GlobalTiledIteratorType = Self.GlobalTensorType.TiledIteratorType[
@@ -561,7 +561,7 @@ struct VBufferTransposeLoads[
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
     ):
         comptime assert Self.depth in (
@@ -649,8 +649,8 @@ struct VBufferTransposeLoads[
                     .tile[4, Self.depth_tile_size](Int(warp_id) % 2, depth_idx)
                 )
                 copy_dram_to_local[
-                    src_thread_layout = Layout.row_major(4, 16),
-                    thread_scope = ThreadScope.WARP,
+                    src_thread_layout=Layout.row_major(4, 16),
+                    thread_scope=ThreadScope.WARP,
                 ](
                     load_tile.tile[1, Self.load_width](
                         i + depth_idx * Self.loads_per_thread_per_depth_tile,
@@ -811,8 +811,8 @@ struct QRegisterBuffer[
         comptime for i in range(Self.num_tiles):
             var reg_tile = mma_tiles[i]
             copy_dram_to_local[
-                src_thread_layout = Self.thread_layout,
-                thread_scope = ThreadScope.WARP,
+                src_thread_layout=Self.thread_layout,
+                thread_scope=ThreadScope.WARP,
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
                 gmem_warp_iter,
@@ -959,7 +959,7 @@ struct PRegisterBuffer[
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
     ):
         self.reg_tile = Self.RegisterTileType_.stack_allocation()
@@ -1044,7 +1044,7 @@ struct PRegisterBuffer[
             Self.accum_type_,
             Self.dtype,
             Self.mma_shape,
-            group_size = Self.k_group_size,
+            group_size=Self.k_group_size,
             transpose_b=False,
         ]()
 

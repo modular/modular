@@ -18,21 +18,20 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from std.gpu import block_dim
 from std.gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 
 def test_vendor_blas[
     dtype: DType, transpose_b: Bool
 ](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var c_host_ref = alloc[Scalar[dtype]](M * N)
 
     for m in range(M):
         for k in range(K):
@@ -63,25 +62,45 @@ def test_vendor_blas[
 
     comptime BLOCK_DIM = 16
 
-    var c_ref_tensor = from_ndbuffer_row_major(c_ref)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects.
+    from std.memory import UnsafePointer
+
+    var c_ref_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(N), Idx(K))) if transpose_b else row_major(
+            Coord(Idx(K), Idx(N))
+        ),
+    )
 
     comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,
-        c_ref_tensor.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
         transpose_b=transpose_b,
     ]
 
     ctx.enqueue_function_experimental[kernel](
-        c_ref_tensor,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,
@@ -115,10 +134,10 @@ def test_vendor_blas[
 def dispatch_test_vendor_blas[
     transpose_b: Bool
 ](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
-    test_vendor_blas[dtype = DType.bfloat16, transpose_b=transpose_b](
+    test_vendor_blas[dtype=DType.bfloat16, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
-    test_vendor_blas[dtype = DType.float32, transpose_b=transpose_b](
+    test_vendor_blas[dtype=DType.float32, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
 

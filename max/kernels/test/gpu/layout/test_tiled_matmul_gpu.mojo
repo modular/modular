@@ -23,9 +23,6 @@ from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils import IndexList
 from std.utils.index import Index
 
@@ -108,7 +105,7 @@ fn sram_blocked_matmul[
         DType.float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
@@ -117,7 +114,7 @@ fn sram_blocked_matmul[
         DType.float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
@@ -347,7 +344,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
         DType.float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
@@ -356,7 +353,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
         DType.float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
@@ -440,9 +437,9 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
 
     comptime thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
-    var mat_c_ptr = UnsafePointer[Float32].alloc(M * N)
-    var mat_a_ptr = UnsafePointer[Float32].alloc(M * K)
-    var mat_b_ptr = UnsafePointer[Float32].alloc(K * N)
+    var mat_c_ptr = alloc[Float32](M * N)
+    var mat_a_ptr = alloc[Float32](M * K)
+    var mat_b_ptr = alloc[Float32](K * N)
 
     for i in range(M * K):
         mat_a_ptr[i] = Float32(i)

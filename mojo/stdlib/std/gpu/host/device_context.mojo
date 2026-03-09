@@ -779,8 +779,8 @@ struct DeviceBuffer[dtype: DType](
     """
 
     # Implementation of `DevicePassable`
-    comptime device_type: AnyType = LegacyUnsafePointer[
-        mut=True, Scalar[Self.dtype]
+    comptime device_type: AnyType = UnsafePointer[
+        mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
     ]
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
@@ -1943,9 +1943,9 @@ struct DeviceFunction[
         var result: _DeviceFunctionPtr = {}
         self._func_impl = _compile_code[
             Self.func,
-            emission_kind = self._emission_kind,
-            target = Self.target,
-            compile_options = Self.compile_options,
+            emission_kind=self._emission_kind,
+            target=Self.target,
+            compile_options=Self.compile_options,
         ]()
         var debug_level = String(DebugLevel)
         _checked(
@@ -2097,8 +2097,8 @@ struct DeviceFunction[
             return _compile_code[
                 Self.func,
                 emission_kind="asm",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
         comptime if Self._ptxas_info_verbose:
@@ -2159,8 +2159,8 @@ struct DeviceFunction[
             var llvm = _compile_code[
                 Self.func,
                 emission_kind="llvm-opt",
-                target = Self.target,
-                compile_options = Self.compile_options,
+                target=Self.target,
+                compile_options=Self.compile_options,
             ]().asm
 
             comptime if dump_llvm_val.isa[fn() capturing -> Path]():
@@ -3643,7 +3643,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             Optional[Variadic.TypesOfTrait[AnyType]](None),
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3684,14 +3684,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         - This method will be deprecated and eventually removed.
           Use `compile_function()` instead for type-checked kernel compilation.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3762,14 +3761,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3802,7 +3800,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3835,14 +3833,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3877,7 +3874,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3914,14 +3911,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -3954,7 +3950,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         out result: DeviceFunction[
             func,
             declared_arg_types,
-            target = Self.default_device_info.target(),
+            target=Self.default_device_info.target(),
             compile_options=compile_options,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
@@ -3987,14 +3983,13 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        debug_assert(
+        assert (
             not func_attribute
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
-            "Requested more than available shared memory.",
-        )
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
+        ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,

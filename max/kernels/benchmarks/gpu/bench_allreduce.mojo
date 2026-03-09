@@ -107,7 +107,7 @@ fn bench_reduce[
     var temp_buffer_num_bytes = ngpus * num_bytes
     var length = num_bytes // size_of[dtype]()
 
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
     var cb_template = CacheBustingBuffer[dtype](
         length, simd_size, list_of_ctx[0], cache_busting
     )
@@ -240,17 +240,28 @@ fn bench_reduce[
                     IndexList[rank](length),
                 )
             # Run allreduce
-            comptime allreduce_kernel = vendor_ccl.allreduce if use_vendor_ccl else allreduce
-            allreduce_kernel[
-                ngpus=ngpus,
-                use_multimem=use_multimem,
-            ](
-                in_bufs,
-                out_bufs[ctx_idx],
-                rank_sigs,
-                ctx_inner,
-                max_num_blocks,
-            )
+            comptime if use_vendor_ccl:
+                vendor_ccl.allreduce[
+                    ngpus=ngpus,
+                    use_multimem=use_multimem,
+                ](
+                    in_bufs,
+                    out_bufs[ctx_idx],
+                    rank_sigs,
+                    ctx_inner,
+                    max_num_blocks,
+                )
+            else:
+                allreduce[
+                    ngpus=ngpus,
+                    use_multimem=use_multimem,
+                ](
+                    in_bufs,
+                    out_bufs[ctx_idx],
+                    rank_sigs,
+                    ctx_inner,
+                    max_num_blocks,
+                )
 
         b.iter_custom[call_fn](ctx)
 
@@ -359,7 +370,7 @@ def main() raises:
     comptime cache_busting = True
 
     # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions
-    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     comptime if ragged:
         num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()

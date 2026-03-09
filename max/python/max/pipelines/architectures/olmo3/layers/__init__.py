@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.nn.module_v3.common_layers.mlp import MLP
-from max.nn.module_v3.common_layers.rotary_embedding import (
+from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.common_layers.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )

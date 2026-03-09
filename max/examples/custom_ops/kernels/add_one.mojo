@@ -28,7 +28,7 @@ struct AddOne:
         target: StaticString,
     ](
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:

@@ -39,10 +39,10 @@ struct _CUevent_st:
     pass
 
 
-comptime CUcontext = UnsafePointer[_CUctx_st, MutAnyOrigin]
-comptime CUstream = UnsafePointer[_CUstream_st, MutAnyOrigin]
-comptime CUmodule = UnsafePointer[_CUmod_st, MutAnyOrigin]
-comptime CUevent = UnsafePointer[_CUevent_st, MutAnyOrigin]
+comptime CUcontext = UnsafePointer[_CUctx_st, ExternalOrigin[mut=True]]
+comptime CUstream = UnsafePointer[_CUstream_st, ExternalOrigin[mut=True]]
+comptime CUmodule = UnsafePointer[_CUmod_st, ExternalOrigin[mut=True]]
+comptime CUevent = UnsafePointer[_CUevent_st, ExternalOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.

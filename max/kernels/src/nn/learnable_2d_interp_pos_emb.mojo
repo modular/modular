@@ -32,9 +32,13 @@ Tensor layout (all row-major):
 
 from std.math import clamp, floor
 
-from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu import (
+    block_dim,
+    block_idx_int as block_idx,
+    thread_idx_int as thread_idx,
+)
 from std.gpu.host import DeviceContext
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from layout.tile_tensor import TileTensor
 
 
@@ -111,7 +115,7 @@ fn _gpu_kernel[
     comptime assert grid_thws.flat_rank == 2
     comptime assert time_weight.flat_rank == 2
 
-    var pos_idx = Int(block_idx.x)
+    var pos_idx = block_idx.x
 
     # Scan grid_thws to find which video this position belongs to.
     var offset: Int = 0
@@ -149,7 +153,7 @@ fn _gpu_kernel[
         dx = in_w - Float32(iw_floor)
 
     # Threads stride over dim channels.
-    for d in range(Int(thread_idx.x), dim, Int(block_dim.x)):
+    for d in range(thread_idx.x, dim, Int(block_dim.x)):
         var pos_val: Float32
         if no_interp:
             pos_val = Float32(weight[hh, ww, d])

@@ -46,6 +46,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
@@ -53,9 +54,6 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from std.utils.static_tuple import StaticTuple
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.math import ceildiv
@@ -96,15 +94,19 @@ fn blockscaled_pair_cta_mxfp8[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    a_scales_tile_layout: Layout,
-    b_scales_tile_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
+    a_scales_tile_rank: Int,
+    a_scales_tile_shape: IndexList[a_scales_tile_rank],
+    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    b_scales_tile_rank: Int,
+    b_scales_tile_shape: IndexList[b_scales_tile_rank],
+    b_scales_desc_shape: IndexList[b_scales_tile_rank],
     c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
-    b_scales_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -113,13 +115,19 @@ fn blockscaled_pair_cta_mxfp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        a_scales_type,
+        a_scales_tile_rank,
+        a_scales_tile_shape,
+        a_scales_desc_shape,
     ],
     b_scales_tma_op: TMATensorTile[
-        b_scales_type, b_scales_tile_layout, b_scales_desc_layout
+        b_scales_type,
+        b_scales_tile_rank,
+        b_scales_tile_shape,
+        b_scales_desc_shape,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -137,10 +145,10 @@ fn blockscaled_pair_cta_mxfp8[
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
 
     comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
@@ -163,7 +171,7 @@ fn blockscaled_pair_cta_mxfp8[
     ]()
 
     var smem = external_memory[
-        UInt8, address_space = AddressSpace.SHARED, alignment=8
+        UInt8, address_space=AddressSpace.SHARED, alignment=8
     ]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
@@ -192,7 +200,7 @@ fn blockscaled_pair_cta_mxfp8[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem)
 
@@ -200,7 +208,7 @@ fn blockscaled_pair_cta_mxfp8[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem)
 
@@ -208,7 +216,7 @@ fn blockscaled_pair_cta_mxfp8[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_scales_smem)
 
@@ -216,7 +224,7 @@ fn blockscaled_pair_cta_mxfp8[
         b_scales_type,
         b_scales_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_scales_smem)
 
@@ -226,7 +234,7 @@ fn blockscaled_pair_cta_mxfp8[
     var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -301,7 +309,7 @@ fn blockscaled_pair_cta_mxfp8[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -505,7 +513,7 @@ fn blockscaled_pair_cta_mxfp8[
     c_frag = tcgen05_ld[
         datapaths=32,
         bits=32,
-        repeat = BN if MMA_M == 128 else MMA_N,
+        repeat=BN if MMA_M == 128 else MMA_N,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -530,9 +538,10 @@ fn blockscaled_pair_cta_mxfp8[
 
         comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
-                SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
-                    c_type
-                ]()
+                SIMD[accum_type, 2](
+                    rebind[Scalar[accum_type]](c_frag[2 * i]),
+                    rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
+                ).cast[c_type]()
             )
     else:
         var c_gmem_frag = c_gmem_slice.tile[BM // 4, MMA_N](
@@ -541,9 +550,10 @@ fn blockscaled_pair_cta_mxfp8[
 
         comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
-                SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
-                    c_type
-                ]()
+                SIMD[accum_type, 2](
+                    rebind[Scalar[accum_type]](c_frag[2 * i]),
+                    rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
+                ).cast[c_type]()
             )
 
 
@@ -672,8 +682,8 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_shape=Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, a_scales_4d)
@@ -682,8 +692,8 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         Index(
             MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout = Layout.row_major(
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __tile_shape=Index(
             MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, b_scales_4d)
@@ -704,15 +714,19 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
-        type_of(a_scales_tma_op).layout,
-        type_of(b_scales_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(a_scales_tma_op).rank,
+        type_of(a_scales_tma_op).tile_shape,
+        type_of(a_scales_tma_op).desc_shape,
+        type_of(b_scales_tma_op).rank,
+        type_of(b_scales_tma_op).tile_shape,
+        type_of(b_scales_tma_op).desc_shape,
         c_layout,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
-        type_of(a_scales_tma_op).desc_layout,
-        type_of(b_scales_tma_op).desc_layout,
         block_tile_shape,
         mma_shape,
         transpose_b=transpose_b,
@@ -794,13 +808,13 @@ def test_blockscaled_pair_cta_mxfp8[
         k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var a_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_a_scales_size
     )
     var a_scales_host_ref = NDBuffer[
         ref_scales_type, 2, _, static_ref_a_scales_shape
     ](a_scales_host_ref_ptr, dynamic_ref_a_scales_shape)
-    var b_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var b_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_b_scales_size
     )
     var b_scales_host_ref = NDBuffer[
@@ -917,15 +931,11 @@ def test_blockscaled_pair_cta_mxfp8[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_total
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_total)
     var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_total
-    )
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_total)
     var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
@@ -943,19 +953,19 @@ def test_blockscaled_pair_cta_mxfp8[
     var b_size = n.value * k
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
@@ -1078,11 +1088,11 @@ def main() raises:
             DType.bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-            k = 3 * BK,
+            k=3 * BK,
         ](ctx, dynamic(256), static[128]())
 
         test_blockscaled_pair_cta_mxfp8[
@@ -1091,11 +1101,11 @@ def main() raises:
             DType.bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-            k = 2 * BK,
+            k=2 * BK,
         ](ctx, dynamic(256), static[256]())
 
         test_blockscaled_pair_cta_mxfp8[
@@ -1104,9 +1114,9 @@ def main() raises:
             DType.bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-            k = 2 * BK,
+            k=2 * BK,
         ](ctx, dynamic(512), static[512]())

@@ -40,7 +40,7 @@ from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx,
+    block_idx_int as block_idx,
     thread_idx,
     warp_id,
 )
@@ -68,7 +68,7 @@ from .structured import (
 
 # Type aliases for cleaner code
 comptime GlobalTensor[dtype: DType, layout: Layout] = LayoutTensor[
-    dtype, layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+    dtype, layout, MutAnyOrigin, address_space=AddressSpace.GLOBAL
 ]
 
 
@@ -277,7 +277,7 @@ fn run_producer[
         dtype,
         Layout.row_major(elements_loaded_per_thread // simd_width, simd_width),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     var reg_tile_frag = reg_frag.vectorize[1, simd_width]()
 
@@ -316,7 +316,7 @@ fn run_producer[
                     copy_local_to_shared[
                         thread_layout=thread_layout,
                         swizzle=swizzle,
-                        thread_scope = ThreadScope.WARP,
+                        thread_scope=ThreadScope.WARP,
                         row_major=True,
                     ](
                         smem_warp_tile[0].vectorize[1, simd_width](),
@@ -352,16 +352,16 @@ fn warp_specialized_matmul_kernel[
     pipeline_stages: Int,
 ](
     a: LayoutTensor[
-        in_type, a_layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+        in_type, a_layout, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ],
     b: LayoutTensor[
-        in_type, b_layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+        in_type, b_layout, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ],
     c: LayoutTensor[
         out_type,
         c_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.GLOBAL,
+        address_space=AddressSpace.GLOBAL,
     ],
 ):
     comptime K = a.shape[1]()
@@ -466,7 +466,7 @@ fn warp_specialized_matmul_kernel[
                 a,
                 ring_buffer_a,
                 warp_id,
-                Int(block_idx.x),
+                block_idx.x,
             )
         else:  # B producer
             var producer_warp_id = warp_id - UInt(a_producer_warps)
@@ -488,7 +488,7 @@ fn warp_specialized_matmul_kernel[
                 b,
                 ring_buffer_b,
                 producer_warp_id,
-                Int(block_idx.y),
+                block_idx.y,
             )
 
     else:  # Consumer
@@ -496,9 +496,9 @@ fn warp_specialized_matmul_kernel[
             MMA_M, WARP_SIZE // MMA_M
         )
 
-        var c_block_tile = c.tile[BM, BN](Int(block_idx.x), Int(block_idx.y))
+        var c_block_tile = c.tile[BM, BN](block_idx.x, block_idx.y)
         var c_scatter_gather = ScatterGatherAmd[
-            output_thread_layout, thread_scope = ThreadScope.WARP
+            output_thread_layout, thread_scope=ThreadScope.WARP
         ](c)
 
         comptime total_consumer_operations = m_warps_per_block * n_warps_per_block

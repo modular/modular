@@ -17,12 +17,9 @@ import std.sys
 from std.gpu import thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.compile import _compile_code, get_gpu_target
-from layout._layout import Layout
+from layout.tile_layout import Layout
 from layout import Idx, Coord
 from layout.int_tuple import IntTuple
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal, assert_true
 
 
@@ -41,28 +38,26 @@ fn test_codegen_memory[
 
     # Test AMD GPU codegen
     var amd_asm = _compile_code[
-        func, target = get_gpu_target["amdgpu:gfx942"]()
+        func, target=get_gpu_target["amdgpu:gfx942"]()
     ]().asm
 
     # Should not load from buffer for compile-time known values
     assert_true("ds_read" not in amd_asm and "ds_write" not in amd_asm)
 
     # Test NVIDIA GPU codegen
-    var nvidia_asm = _compile_code[
-        func, target = get_gpu_target["sm_80"]()
-    ]().asm
+    var nvidia_asm = _compile_code[func, target=get_gpu_target["sm_80"]()]().asm
 
     # Should not use local memory for compile-time known values
     assert_true("ld.local" not in nvidia_asm and "st.local" not in nvidia_asm)
 
 
-fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32]):
+fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
     # Create layout with mixed compile-time and runtime dimensions
     var layout = Layout(shape=(Idx[8](), Idx(x)), stride=(Idx(x), Idx[1]()))
     ptr[0] = Int32(layout(Coord(Idx[0](), Idx(x - 1))))
 
 
-fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
+fn kernel_thread_idx(ptr: UnsafePointer[Int32, MutAnyOrigin]):
     comptime layout = Layout(
         shape=(Idx[8](), Idx[2]()), stride=(Idx[1](), Idx[1]())
     )

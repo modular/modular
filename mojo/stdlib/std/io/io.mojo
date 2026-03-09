@@ -21,7 +21,7 @@ from std.sys import _libc as libc
 from std.ffi import c_char, external_call
 from std.sys import (
     is_amd_gpu,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     stdin,
@@ -181,8 +181,8 @@ fn _printf_cpu[
     with _fdopen(file) as fd:
         # FIXME: external_call should handle this
         _ = __mlir_op.`pop.external_call`[
-            func = "KGEN_CompilerRT_fprintf".value,
-            variadicType = __mlir_attr[
+            func="KGEN_CompilerRT_fprintf".value,
+            variadicType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<none>,`,
                 `!kgen.pointer<scalar<si8>>`,
@@ -201,7 +201,7 @@ fn _printf_cpu[
 fn _printf[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         _printf_cpu[fmt](args, file)
     else:
         comptime if is_nvidia_gpu():
@@ -286,8 +286,8 @@ fn _printf[
         else:
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.
-            return CompilationTarget.unsupported_target_error[
-                operation = __get_current_function_name()
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
             ]()
 
 
@@ -323,8 +323,8 @@ fn _snprintf[
     # FIXME: external_call should handle this
     return Int(
         __mlir_op.`pop.external_call`[
-            func = "snprintf".value,
-            variadicType = __mlir_attr[
+            func="snprintf".value,
+            variadicType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<scalar<si8>>,`,
                 `!pop.scalar<index>, `,
@@ -392,7 +392,7 @@ fn print[
         file: The output stream.
     """
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         var buffer = _WriteBufferStack(file)
         comptime length = values.__len__()
 
@@ -426,8 +426,8 @@ fn print[
                 var msg = printf_begin()
                 _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
             else:
-                return CompilationTarget.unsupported_target_error[
-                    operation = __get_current_function_name()
+                CompilationTarget.unsupported_target_error[
+                    operation=__get_current_function_name()
                 ]()
         else:
             var buffer = _WriteBufferStack(file)

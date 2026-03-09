@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
-
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 
@@ -147,7 +143,9 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Writable):
         self = Self(args, kwargs)
 
     @staticmethod
-    fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
+    fn _get_self_ptr(
+        py_self: PythonObject,
+    ) -> UnsafePointer[Self, MutAnyOrigin]:
         """Helper to extract the self pointer from Python object."""
         try:
             return py_self.downcast_value_ptr[Self]()

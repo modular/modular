@@ -32,9 +32,6 @@ from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 from std.utils import IndexList
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import Index
 
 comptime NWARMUP = 1
@@ -68,9 +65,9 @@ fn run_cublas[
     M: Int,
     N: Int,
     K: Int,
-    a: UnsafePointer[Scalar[dtype]],
-    b: UnsafePointer[Scalar[dtype]],
-    c: UnsafePointer[Scalar[dtype]],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    b: UnsafePointer[mut=False, Scalar[dtype], _],
+    c: UnsafePointer[mut=True, Scalar[dtype], _],
 ) raises:
     var a_device = NDBuffer[dtype, 2](a, IndexList[2](M, K))
     var b_device = NDBuffer[dtype, 2](b, IndexList[2](K, N))
@@ -127,8 +124,8 @@ fn gemm_kernel_1[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -219,7 +216,7 @@ fn run_gemm_kernel_1[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -242,8 +239,8 @@ fn gemm_kernel_2[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -334,7 +331,7 @@ fn run_gemm_kernel_2[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -359,8 +356,8 @@ fn gemm_kernel_3[
     BK: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -403,13 +400,13 @@ fn gemm_kernel_3[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Initialize the register to accumulate the result
@@ -486,7 +483,7 @@ fn run_gemm_kernel_3[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -512,8 +509,8 @@ fn gemm_kernel_4[
     TM: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -563,18 +560,18 @@ fn gemm_kernel_4[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate a register tile to store the partial results.
     var dst_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     dst_reg.copy_from(dst)
 
@@ -657,7 +654,7 @@ fn run_gemm_kernel_4[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -684,8 +681,8 @@ fn gemm_kernel_5[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -734,27 +731,27 @@ fn gemm_kernel_5[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -824,7 +821,7 @@ fn run_gemm_kernel_5[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -851,8 +848,8 @@ fn gemm_kernel_6[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -910,13 +907,13 @@ fn gemm_kernel_6[
         dtype,
         Layout.col_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate register tiles to store the partial results and operands.
@@ -924,16 +921,16 @@ fn gemm_kernel_6[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -1016,7 +1013,7 @@ fn run_gemm_kernel_6[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -1045,8 +1042,8 @@ fn matmul_kernel_tc[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[dtype, layout_a, MutAnyOrigin],
-    B: LayoutTensor[dtype, layout_b, MutAnyOrigin],
+    A: LayoutTensor[dtype, layout_a, ImmutAnyOrigin],
+    B: LayoutTensor[dtype, layout_b, ImmutAnyOrigin],
     C: LayoutTensor[dtype, layout_c, MutAnyOrigin],
 ):
     """
@@ -1110,13 +1107,13 @@ fn matmul_kernel_tc[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
@@ -1125,7 +1122,7 @@ fn matmul_kernel_tc[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -1140,10 +1137,10 @@ fn matmul_kernel_tc[
         B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
 
         # Load tiles of A and B into shared memory asynchronously
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
         )
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             B_sram_tile.vectorize[1, 4](), B_dram_tile.vectorize[1, 4]()
         )
 
@@ -1243,7 +1240,7 @@ fn run_gemm_kernel_tc[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),

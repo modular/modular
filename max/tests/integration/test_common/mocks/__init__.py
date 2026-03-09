@@ -45,7 +45,7 @@ def retrieve_mock_text_generation_pipeline(
     max_length: int | None = None,
     max_new_tokens: int | None = None,
     device_specs: list[DeviceSpec] | None = None,
-) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
+) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:  # type: ignore[type-arg]
     if eos_token > vocab_size:
         raise ValueError(
             f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"

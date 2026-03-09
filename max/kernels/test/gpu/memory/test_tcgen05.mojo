@@ -31,7 +31,7 @@ fn tcgen05_st_ld_roundtrip_kernel[
     var elect_one_thread = thread_idx.x == 0
 
     var ptr_tmem_addr = stack_allocation[
-        1, UInt32, address_space = AddressSpace.SHARED, alignment=16
+        1, UInt32, address_space=AddressSpace.SHARED, alignment=16
     ]()
 
     comptime width = N
@@ -44,7 +44,7 @@ fn tcgen05_st_ld_roundtrip_kernel[
 
     tmem_addr = ptr_tmem_addr[0]
 
-    var data_st = SIMD[DType.float32, width]()
+    var data_st = InlineArray[Scalar[DType.float32], width](uninitialized=True)
     for n in range(N):
         data_st[n] = Float32(thread_idx.x * UInt(N) + UInt(n))
 
@@ -61,7 +61,7 @@ fn tcgen05_st_ld_roundtrip_kernel[
         datapaths=16,
         bits=256,
         repeat=2,
-        dtype = DType.float32,
+        dtype=DType.float32,
         pack=False,
         width=width,
     ](tmem_addr)
@@ -116,7 +116,7 @@ fn tcgen05_cp_ld_roundtrip_kernel[
         DType.float32,
         smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -192,7 +192,7 @@ fn tcgen05_cp_ld_roundtrip_kernel[
     var elect_one_warp = warp_id() == 0
 
     var ptr_tmem_addr = stack_allocation[
-        1, UInt32, address_space = AddressSpace.SHARED, alignment=16
+        1, UInt32, address_space=AddressSpace.SHARED, alignment=16
     ]()
 
     comptime width = N
@@ -215,7 +215,7 @@ fn tcgen05_cp_ld_roundtrip_kernel[
         datapaths=16,
         bits=bits,
         repeat=1,
-        dtype = DType.float32,
+        dtype=DType.float32,
         pack=False,
         width=width,
     ](tmem_addr)

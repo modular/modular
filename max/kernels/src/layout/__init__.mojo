@@ -33,6 +33,22 @@ from .coord import (
 from .int_tuple import UNKNOWN_VALUE, IntTuple
 from .layout import Layout, LayoutList, composition, print_layout
 from .layout_tensor import LayoutTensor, stack_allocation_like
+from .tile_layout import (
+    TensorLayout,
+    Layout as MixedLayout,
+    RowMajorLayout,
+    ColMajorLayout,
+    row_major,
+    col_major,
+    blocked_product,
+    zipped_divide,
+)
 from .runtime_layout import RuntimeLayout
 from .runtime_tuple import RuntimeTuple
-from .tile_tensor import TileTensor, flatten_leading, stack_allocation
+from .tile_tensor import (
+    TileTensor,
+    flatten_leading,
+    stack_allocation,
+    lt_to_tt,
+    LTToTTLayout,
+)

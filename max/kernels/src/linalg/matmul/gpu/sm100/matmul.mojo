@@ -129,14 +129,14 @@ fn consumer_main_loop[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
@@ -179,7 +179,7 @@ fn consumer_main_loop[
 
 
 comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-    layout, element_type = DType.uint32, linear_idx_type = DType.uint32
+    layout, element_type=DType.uint32, linear_idx_type=DType.uint32
 ]
 
 
@@ -187,9 +187,11 @@ comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
 fn f32_frag_to_smem[
     swizzle_mode: TensorMapSwizzle,
     stageN: UInt,
+    vec_dtype: DType,
+    vec_size: Int,
 ](
-    vec: SIMD[_, _],
-    dst: LayoutTensor[mut=True, _, _, address_space = AddressSpace.SHARED, ...],
+    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
 ):
     # TODO: apply swizzle. Somehow swizzle+distribute results in wrong values.
     # alias swizzle = make_swizzle[DType.float64, swizzle_mode]() # hack
@@ -198,8 +200,8 @@ fn f32_frag_to_smem[
         lane_id()
     )
     comptime assert (
-        2 * dst_frag.layout.size() == vec.size
-    ), "2*dst_frag.layout.size() must be equal to vec.size"
+        2 * dst_frag.layout.size() == vec_size
+    ), "2*dst_frag.layout.size() must be equal to vec_size"
 
     comptime for i in range(dst_frag.layout.shape[0].value()):
         comptime for j in range(dst_frag.layout.shape[1].value()):
@@ -215,11 +217,13 @@ fn f32_frag_to_smem[
 fn stsm_helper[
     swizzle: Swizzle,
     stageN: UInt,
+    vec_dtype: DType,
+    vec_size: Int,
     transpose_c: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    vec: SIMD[_, _],
-    dst: LayoutTensor[mut=True, _, _, address_space = AddressSpace.SHARED, ...],
+    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
     warp_offset: UInt32 = 0,
 ):
     comptime if size_of[dst.dtype]() == 4:
@@ -261,16 +265,6 @@ fn stsm_helper[
         (lane & 15) * UInt(stride0) + (lane >> 4) * 8
     ) if not transpose_c else RLayout32Bits[trans_st_matrix_layout]()(Int(lane))
 
-    # Helper function to slice a range of SIMD vector.
-    # LLVM extract intrinsic generates bad code on GPU.
-    @always_inline
-    fn slice[offset: Int, size: Int](v: SIMD) -> SIMD[v.dtype, size]:
-        var tmp = SIMD[v.dtype, size]()
-
-        comptime for i in range(size):
-            tmp[i] = v[i + offset]
-        return tmp
-
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx_row_size):
         comptime n_offset = i * stsmx_tile_offset
@@ -284,9 +278,17 @@ fn stsm_helper[
         else:
             offset = swizzle(stsm_lane_offset + UInt32(n_offset))
         comptime stmtx_simd_width = 4 if stageN % 16 == 0 else 2
-        var v = slice[i * stsmx_lane_size, 2 * stmtx_simd_width](vec).cast[
-            dst.dtype
-        ]()
+        comptime cast_width = 4 // size_of[Scalar[dst.dtype]]()
+        var v = SIMD[dst.dtype, stmtx_simd_width * cast_width]()
+        comptime for k in range(stmtx_simd_width):
+            var src = SIMD[vec_dtype, cast_width]()
+            comptime for _j in range(cast_width):
+                src[_j] = rebind[Scalar[vec_dtype]](
+                    vec[i * stsmx_lane_size + k * cast_width + _j]
+                )
+            var casted = src.cast[dst.dtype]()
+            comptime for _j in range(cast_width):
+                v[k * cast_width + _j] = casted[_j]
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
             dst.ptr + offset, bitcast[DType.float32, stmtx_simd_width](v)
         )
@@ -336,7 +338,7 @@ fn shared_memory_epilogue_transpose[
         var rt_thread_layout = RLayout32Bits[thread_layout]()
         var lane = lane_id()
         var crd = idx2crd(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE), element_type = DType.uint32](
+            RuntimeTuple[IntTuple(UNKNOWN_VALUE), element_type=DType.uint32](
                 Int(lane)
             ),
             rt_thread_layout.shape,
@@ -350,7 +352,7 @@ fn shared_memory_epilogue_transpose[
                     UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
                 )
                 var coord = RuntimeTuple[
-                    [thread_shape, rest_shape], element_type = DType.uint32
+                    [thread_shape, rest_shape], element_type=DType.uint32
                 ](
                     Int(0),
                     Int(crd[1].get_int()),
@@ -364,7 +366,7 @@ fn shared_memory_epilogue_transpose[
                 var offset = UInt32(simd_size) * RLayout32Bits[result]()(coord)
                 var logical_crd = idx2crd(
                     RuntimeTuple[
-                        IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
+                        IntTuple(UNKNOWN_VALUE), element_type=DType.uint32
                     ](Int(offset)),
                     rt_layout_3d.shape,
                     rt_layout_3d.stride,
@@ -415,7 +417,7 @@ fn shared_memory_epilogue_transpose[
             var rt_thread_layout = RLayout32Bits[thread_layout]()
             var crd = idx2crd(
                 RuntimeTuple[
-                    IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
+                    IntTuple(UNKNOWN_VALUE), element_type=DType.uint32
                 ](Int(lane)),
                 rt_thread_layout.shape,
                 rt_thread_layout.stride,
@@ -432,7 +434,7 @@ fn shared_memory_epilogue_transpose[
                         iter_i,
                     )
                     var coord = RuntimeTuple[
-                        [thread_shape, rest_shape], element_type = DType.uint32
+                        [thread_shape, rest_shape], element_type=DType.uint32
                     ](
                         Int(crd[0].get_int()),
                         Int(0),
@@ -446,7 +448,7 @@ fn shared_memory_epilogue_transpose[
                     )
                     var logical_crd = idx2crd(
                         RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
+                            IntTuple(UNKNOWN_VALUE), element_type=DType.uint32
                         ](Int(offset)),
                         rt_layout_2d.shape,
                         rt_layout_2d.stride,
@@ -574,11 +576,11 @@ fn shared_memory_epilogue[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
                 RuntimeTuple[
                     blocked_m_128_layout.shape,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
                 RuntimeTuple[
                     blocked_m_128_layout.stride,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
             )
 
@@ -586,11 +588,11 @@ fn shared_memory_epilogue[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
                 RuntimeTuple[
                     blocked_m_128_layout.shape,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
                 RuntimeTuple[
                     blocked_m_128_layout.stride,
-                    element_type = DType.int64,
+                    element_type=DType.int64,
                 ](),
             )
 
@@ -673,7 +675,7 @@ fn _compute_register_lambda_fn[
 ](
     top_coord: StaticTuple[UInt32, 2],
     bottom_coord: StaticTuple[UInt32, 2],
-    mut frag: SIMD[epilogue_dtype, frag_size],
+    mut frag: InlineArray[Scalar[epilogue_dtype], frag_size],
     staged_c_row: UInt32,
     staged_c_col: UInt32,
 ):
@@ -687,52 +689,40 @@ fn _compute_register_lambda_fn[
         staged_c_col + bottom_coord[1] + UInt32(inc),
     )
 
-    # slice the fragment to get the current repeat top and bottom fragments
-    var simd_top = frag.slice[2, offset=offset]()
-    var simd_bottom = frag.slice[2, offset = offset + 2]()
-
-    # In normal case, simd_top and simd_bottom are elements on the M dimension
+    # In normal case, top and bottom are elements on the M dimension
     # when transpose_c is true, they are on the N dimension. We change the index order
-    # when we do the transpose and pass the SIMD sector one-by-one to the lambda function.
-    comptime for i in range(simd_top.size):
+    # when we do the transpose and pass the elements one-by-one to the lambda function.
+    comptime for i in range(2):
         comptime if not transpose_c:
-            simd_top[i] = compute_lambda_fn(
+            frag[offset + i] = compute_lambda_fn(
                 IndexList[2](
                     Int(top_frag_upper_coord[0]),
                     Int(top_frag_upper_coord[1] + UInt32(i)),
                 ),
-                simd_top[i],
+                frag[offset + i],
             )
-
-            simd_bottom[i] = compute_lambda_fn(
+            frag[offset + 2 + i] = compute_lambda_fn(
                 IndexList[2](
                     Int(bottom_frag_upper_coord[0]),
                     Int(bottom_frag_upper_coord[1] + UInt32(i)),
                 ),
-                simd_bottom[i],
+                frag[offset + 2 + i],
             )
         else:
-            simd_top[i] = compute_lambda_fn(
+            frag[offset + i] = compute_lambda_fn(
                 IndexList[2](
                     Int(top_frag_upper_coord[1] + UInt32(i)),
                     Int(top_frag_upper_coord[0]),
                 ),
-                simd_top[i],
+                frag[offset + i],
             )
-
-            simd_bottom[i] = compute_lambda_fn(
+            frag[offset + 2 + i] = compute_lambda_fn(
                 IndexList[2](
                     Int(bottom_frag_upper_coord[1] + UInt32(i)),
                     Int(bottom_frag_upper_coord[0]),
                 ),
-                simd_bottom[i],
+                frag[offset + 2 + i],
             )
-
-    # store the results back into the fragment
-    frag[offset] = simd_top[0]
-    frag[offset + 1] = simd_top[1]
-    frag[offset + 2] = simd_bottom[0]
-    frag[offset + 3] = simd_bottom[1]
 
 
 @always_inline
@@ -752,8 +742,8 @@ fn register_epilogue[
     cta_group: Int,
     is_lower_frag_required: Bool,
 ](
-    mut upper_frag_casted: SIMD[epilogue_dtype, frag_size],
-    mut lower_frag_casted: SIMD[epilogue_dtype, frag_size],
+    mut upper_frag_casted: InlineArray[Scalar[epilogue_dtype], frag_size],
+    mut lower_frag_casted: InlineArray[Scalar[epilogue_dtype], frag_size],
     c_row: UInt32,
     c_col: UInt32,
     N: UInt32,

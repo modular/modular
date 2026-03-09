@@ -32,8 +32,8 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 
-from layout import TileTensor, stack_allocation
-from layout._layout import TensorLayout, row_major
+from layout import TileTensor, row_major, stack_allocation
+from layout.tile_layout import TensorLayout
 from layout.coord import (
     Coord,
     coord,
@@ -80,12 +80,12 @@ fn gemm_kernel[
 
     var a_tile_sram = stack_allocation[
         mat_a.dtype,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](row_major[BM, BK]())
 
     var b_tile_sram = stack_allocation[
         mat_b.dtype,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](row_major[BK, BN]())
 
     var n_warp_n = BN // WN
@@ -95,19 +95,19 @@ fn gemm_kernel[
     # Allocate register tiles.
     var a_reg = stack_allocation[
         mat_a.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](
         row_major[TM]()
     )  # TM elements for M-dimension vector
     var b_reg = stack_allocation[
         mat_b.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](
         row_major[TN]()
     )  # TN elements for N-dimension vector
     var c_reg = stack_allocation[
         mat_c.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](row_major[TM, TN]()).fill(0)
 
     comptime warp_layout = row_major[8, 4]()
@@ -117,14 +117,14 @@ fn gemm_kernel[
             (Idx(Int(block_idx.y)), Idx(Int(k_i)))
         )
         copy_dram_to_sram_async[
-            thread_layout = Layout.row_major(NUM_THREADS // BK, BK)
+            thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
         ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
 
         var b_tile_dram = mat_b.tile[BK, BN](
             (Idx(Int(k_i)), Idx(Int(block_idx.x)))
         )
         copy_dram_to_sram_async[
-            thread_layout = Layout.row_major(NUM_THREADS // BN, BN)
+            thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
         ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
 
         async_copy_wait_all()
@@ -138,12 +138,12 @@ fn gemm_kernel[
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
                 (Idx[0](), Idx(warp_n))
             ).slice[k_j : k_j + 1, :]()
-            copy_sram_to_local[
-                src_warp_layout = warp_layout.to_layout(), axis=0
-            ](a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor())
-            copy_sram_to_local[
-                src_warp_layout = warp_layout.to_layout(), axis=1
-            ](b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor())
+            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=0](
+                a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor()
+            )
+            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=1](
+                b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor()
+            )
             outer_product_acc(c_reg, a_reg, b_reg)
 
         # Otherwise a data race, faster threads will modify shared memory.
@@ -153,7 +153,7 @@ fn gemm_kernel[
         (Idx(Int(block_idx.y)), Idx(Int(block_idx.x)))
     ).tile[WM, WN]((Idx(warp_m), Idx(warp_n)))
 
-    copy_local_to_dram[dst_thread_layout = warp_layout.to_layout()](
+    copy_local_to_dram[dst_thread_layout=warp_layout.to_layout()](
         c_warp_tile.to_layout_tensor(), c_reg.to_layout_tensor()
     )
 

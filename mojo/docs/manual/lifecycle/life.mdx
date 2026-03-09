@@ -483,9 +483,10 @@ def main() raises:
     print(pair.first, copy.second)
 ```
 
-The `ImplicitlyCopyable` trait inherits from `Copyable`, so adding
-`ImplicitlyCopyable` to your type gives you a copy constructor and a
-`copy()` method. It also gives you automatic `Movable` conformance.
+The `ImplicitlyCopyable` trait refines `Copyable`, so adding
+`ImplicitlyCopyable` to your type gives you `Copyable`'s copy
+constructor and a `copy()` method. It also gives you automatic
+`Movable` conformance.
 
 The trait doesn't define any methods of its own: it serves as a signal
 to the compiler that it can insert calls to copy constructor as needed. For

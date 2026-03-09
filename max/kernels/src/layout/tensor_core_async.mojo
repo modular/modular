@@ -210,7 +210,7 @@ fn warpgroup_fence[
     //,
 ](
     accum: LayoutTensor[
-        accum_type, accum_layout, address_space = AddressSpace.LOCAL, ...
+        accum_type, accum_layout, address_space=AddressSpace.LOCAL, ...
     ]
 ):
     """Code motion fence to ensure the registers of the WGMMA instruction do not get touched by anything.
@@ -643,7 +643,7 @@ fn _wgmma_descriptor[
     is_k_major: Bool = True,
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED, ...]
+    addr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
 ) -> WGMMADescriptor[dtype]:
     # Conform to canonical layout.
     comptime assert (
@@ -688,9 +688,7 @@ fn _lhs_descriptor[
     //,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[
-        dtype, layout, address_space = AddressSpace.SHARED, ...
-    ]
+    tensor: LayoutTensor[dtype, layout, address_space=AddressSpace.SHARED, ...]
 ) -> WGMMADescriptor[tensor.dtype]:
     comptime BM = layout[0].size()
     comptime BK = layout[1].size()
@@ -715,9 +713,7 @@ fn _rhs_descriptor[
     transposed: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[
-        dtype, layout, address_space = AddressSpace.SHARED, ...
-    ]
+    tensor: LayoutTensor[dtype, layout, address_space=AddressSpace.SHARED, ...]
 ) -> WGMMADescriptor[tensor.dtype]:
     comptime BN = layout[0].size()
     comptime BK = layout[1].size()
@@ -747,7 +743,7 @@ fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
 fn _convert_cfrags_to_tuple[
     c_type: DType, c_frag_size: Int
 ](
-    c_frags: LayoutTensor[c_type, _, address_space = AddressSpace.LOCAL, ...],
+    c_frags: LayoutTensor[c_type, _, address_space=AddressSpace.LOCAL, ...],
 ) -> StaticTuple[Scalar[c_type], c_frag_size]:
     var c_frags_in_tuple = StaticTuple[Scalar[c_type], c_frag_size]()
 
@@ -763,7 +759,7 @@ fn _convert_cfrags_to_simd[
 ](
     c_frags_in_tuple: StaticTuple[Scalar[c_type], c_frag_size],
     c_frags: LayoutTensor[
-        mut=True, c_type, _, address_space = AddressSpace.LOCAL, ...
+        mut=True, c_type, _, address_space=AddressSpace.LOCAL, ...
     ],
 ):
     comptime for i in range(c_frag_size):
@@ -821,17 +817,17 @@ struct TensorCoreAsync[
         num_k_iters: Optional[Int] = None,
     ](
         a_smem_tile: LayoutTensor[
-            Self.a_type, _, _, address_space = AddressSpace.SHARED, ...
+            Self.a_type, _, _, address_space=AddressSpace.SHARED, ...
         ],
         b_smem_tile: LayoutTensor[
-            Self.b_type, _, _, address_space = AddressSpace.SHARED, ...
+            Self.b_type, _, _, address_space=AddressSpace.SHARED, ...
         ],
         c_reg_tile: LayoutTensor[
             mut=True,
             Self.c_type,
             _,
             _,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             ...,
         ],
         wg_idx: Int = 0,
@@ -968,8 +964,8 @@ struct TensorCoreAsync[
                         Self.mma_shape[0],
                         Self.mma_shape[1],
                         Self.mma_shape[2],
-                        a_type = Self.a_type,
-                        b_type = Self.b_type,
+                        a_type=Self.a_type,
+                        b_type=Self.b_type,
                         layout_b=layout_b,
                         scale_d=scale_d,
                         scale_a=scale_a,
@@ -984,16 +980,16 @@ struct TensorCoreAsync[
     @always_inline
     fn wgmma(
         a_frag_tile: LayoutTensor[
-            Self.a_type, _, address_space = AddressSpace.LOCAL, ...
+            Self.a_type, _, address_space=AddressSpace.LOCAL, ...
         ],
         b_smem_tile: LayoutTensor[
-            Self.b_type, _, address_space = AddressSpace.SHARED, ...
+            Self.b_type, _, address_space=AddressSpace.SHARED, ...
         ],
         c_reg_tile: LayoutTensor[
             mut=True,
             Self.c_type,
             _,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             ...,
         ],
     ):
@@ -1102,8 +1098,8 @@ struct TensorCoreAsync[
                         Self.mma_shape[0],
                         Self.mma_shape[1],
                         Self.mma_shape[2],
-                        a_type = Self.a_type,
-                        b_type = Self.b_type,
+                        a_type=Self.a_type,
+                        b_type=Self.b_type,
                         layout_b=layout_b,
                     ](
                         a_frag,

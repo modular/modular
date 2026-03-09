@@ -14,15 +14,8 @@
 from std.utils import StaticTuple
 from std.math import iota, ceildiv
 from std.sys import is_nvidia_gpu
-
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
-from std.memory import LegacyUnsafePointer
 from std.collections import OptionalReg
-
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-
 from std.utils.index import IndexList, Index
 from std.builtin.device_passable import DevicePassable
 
@@ -1058,8 +1051,8 @@ fn naively_compute_total_iters[
         iter_count += UInt32(
             Int(
                 mask.status(
-                    Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
-                    Index[dtype = DType.int32](BM, BN),
+                    Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
+                    Index[dtype=DType.int32](BM, BN),
                 )
                 != TileMaskStatus.FULL_MASK
             )
@@ -1075,8 +1068,8 @@ fn naively_get_first_nonempty_mask_col[
     var kv_row: UInt32 = 0
     while (
         mask.status(
-            Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
-            Index[dtype = DType.int32](BM, BN),
+            Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
+            Index[dtype=DType.int32](BM, BN),
         )
         == TileMaskStatus.FULL_MASK
     ):
@@ -1084,9 +1077,9 @@ fn naively_get_first_nonempty_mask_col[
     return kv_row
 
 
-struct MaterializedMask[dtype_: DType, layout_: Layout](
-    MHAMask, TrivialRegisterPassable
-):
+struct MaterializedMask[
+    dtype_: DType, layout_: Layout, origin_: Origin[mut=False]
+](MHAMask, TrivialRegisterPassable):
     """Mask that's backed by a materialized tensor."""
 
     comptime apply_log2e_after_mask: Bool = True
@@ -1094,8 +1087,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     comptime mask_safe_out_of_bounds: Bool = False
     comptime check_mask_during_decoding: Bool = True
 
-    comptime MaskType = LayoutTensor[Self.dtype_, Self.layout_, ImmutAnyOrigin]
-    var mask_tensor: Self.MaskType
+    var mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_]
     var start_pos: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -1118,7 +1110,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 
     fn __init__(
         out self,
-        mask_tensor: Self.MaskType,
+        mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_],
         start_pos: OptionalReg[
             LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin

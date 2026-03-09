@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.collections import Optional
 from std.math import exp, isclose
 from std.random import rand, seed
@@ -38,12 +35,12 @@ from std.utils.index import Index
 def reference_attention_bshd[
     dtype: DType
 ](
-    q_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    k_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    v_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    mask_nd: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    k_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    v_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    mask_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     output_nd: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
 ) raises:
@@ -53,28 +50,28 @@ def reference_attention_bshd[
     fn reshape_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space = buf.address_space
+        dtype, layout_4d, buf.origin, address_space=buf.address_space
     ]:
         var shape = buf.runtime_layout.shape.value.canonicalize()
         var num_heads = shape[buf.rank - 2] if buf.rank == 4 else 1
         var shape_4d = Index(shape[0], shape[1], num_heads, shape[buf.rank - 1])
-        return LayoutTensor[
-            dtype, layout_4d, address_space = buf.address_space
-        ](buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d))
+        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
+            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
+        )
 
     fn reshape_mask_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space = buf.address_space
+        dtype, layout_4d, buf.origin, address_space=buf.address_space
     ]:
         var shape = buf.runtime_layout.shape.value.canonicalize()
         var num_heads = shape[1] if buf.rank == 4 else 1
         var shape_4d = Index(
             shape[0], num_heads, shape[buf.rank - 2], shape[buf.rank - 1]
         )
-        return LayoutTensor[
-            dtype, layout_4d, address_space = buf.address_space
-        ](buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d))
+        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
+            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
+        )
 
     var q_4d = reshape_4d(q_nd)
     var k_4d = reshape_4d(k_nd)
@@ -112,7 +109,7 @@ def reference_attention_bshd[
     )
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
+    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -175,7 +172,7 @@ def reference_attention_bshd_with_sinks[
     k_nd: LayoutTensor[dtype, ...],
     v_nd: LayoutTensor[dtype, ...],
     mask_nd: LayoutTensor[dtype, ...],
-    sink_weights_nd: LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)],
+    sink_weights_nd: LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), _],
     output_nd: LayoutTensor[mut=True, dtype, ...],
     scale: Float32,
 ) raises:
@@ -187,28 +184,28 @@ def reference_attention_bshd_with_sinks[
     fn reshape_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space = buf.address_space
+        dtype, layout_4d, buf.origin, address_space=buf.address_space
     ]:
         var shape = buf.runtime_layout.shape.value.canonicalize()
         var num_heads = shape[buf.rank - 2] if buf.rank == 4 else 1
         var shape_4d = Index(shape[0], shape[1], num_heads, shape[buf.rank - 1])
-        return LayoutTensor[
-            dtype, layout_4d, address_space = buf.address_space
-        ](buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d))
+        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
+            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
+        )
 
     fn reshape_mask_4d(
         buf: LayoutTensor[dtype, ...]
     ) -> LayoutTensor[
-        dtype, layout_4d, buf.origin, address_space = buf.address_space
+        dtype, layout_4d, buf.origin, address_space=buf.address_space
     ]:
         var shape = buf.runtime_layout.shape.value.canonicalize()
         var num_heads = shape[1] if buf.rank == 4 else 1
         var shape_4d = Index(
             shape[0], num_heads, shape[buf.rank - 2], shape[buf.rank - 1]
         )
-        return LayoutTensor[
-            dtype, layout_4d, address_space = buf.address_space
-        ](buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d))
+        return LayoutTensor[dtype, layout_4d, address_space=buf.address_space](
+            buf.ptr, RuntimeLayout[layout_4d].row_major(shape_4d)
+        )
 
     var q_4d = reshape_4d(q_nd)
     var k_4d = reshape_4d(k_nd)
@@ -230,7 +227,7 @@ def reference_attention_bshd_with_sinks[
     var kv_group_count = num_heads // kv_num_heads
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
+    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -421,7 +418,7 @@ def build_ndbuffer[
 ](shape: IndexList[rank]) raises -> LayoutTensor[
     dtype, Layout.row_major(static_shape), MutAnyOrigin
 ]:
-    var ptr = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
+    var ptr = alloc[Scalar[dtype]](shape.flattened_length())
     rand(ptr, shape.flattened_length())
     return LayoutTensor[dtype, Layout.row_major(static_shape), MutAnyOrigin](
         ptr, RuntimeLayout[Layout.row_major(static_shape)].row_major(shape)
@@ -549,7 +546,7 @@ def test_flash_attention[dtype: DType]() raises:
     test_case[
         dtype,
         batch_rank=1,
-        output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 128),
+        output_static_shape=IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 128),
     ](
         TestCaseConfig(
             batch_dims=Index(1),
@@ -563,7 +560,7 @@ def test_flash_attention[dtype: DType]() raises:
     test_case[
         dtype,
         batch_rank=1,
-        output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 160),
+        output_static_shape=IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 160),
     ](
         TestCaseConfig(
             batch_dims=Index(1),
@@ -577,7 +574,7 @@ def test_flash_attention[dtype: DType]() raises:
     test_case[
         dtype,
         batch_rank=1,
-        output_static_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 300),
+        output_static_shape=IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, 300),
     ](
         TestCaseConfig(
             batch_dims=Index(1),
@@ -677,12 +674,12 @@ def test_case_split_kv[
         cfg.seq_len, cfg.depth_dim
     )
     var kv_past_shape = cfg.build_shape[
-        shape_rank = cfg.kv_cache_rank, is_kv=True
+        shape_rank=cfg.kv_cache_rank, is_kv=True
     ](cfg.prev_seq_len(), cfg.depth_dim)
 
     flash_attention_split_kv[
         dtype=dtype,
-        rank = batch_rank + 2,
+        rank=batch_rank + 2,
         input_k_fn,
         input_v_fn,
         input_k_cache_fn,
@@ -880,7 +877,7 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         k,
         v,
         mask,
-        LayoutTensor[sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE)](
+        LayoutTensor[sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE), _](
             sink_weights.ptr,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 sink_weights.runtime_layout.shape.value
@@ -899,7 +896,7 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         output_with_sinks,
         scale,
         sink_weights=LayoutTensor[
-            sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE)
+            sink_weights.dtype, Layout.row_major(UNKNOWN_VALUE), _
         ](
             sink_weights.ptr.as_immutable(),
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

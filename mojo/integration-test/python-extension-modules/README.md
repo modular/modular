@@ -61,3 +61,4 @@ from `mojo_module.so`:
 ```shell
 % python main.py
 Result from Mojo 🔥: 2
+```

@@ -143,7 +143,7 @@ def _reduce(
     """Reduces a symbolic tensor using a reduction operation.
 
     Args:
-        op: The reduction operation (e.g. sum, product).
+        op: The reduction operation (for example, sum, product).
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
             indexes from the last dimension. For example, a value of ``-1`` will

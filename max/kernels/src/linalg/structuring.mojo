@@ -32,9 +32,7 @@ from layout.int_tuple import (
 )
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 
 
 struct ScatterGatherAmd[
@@ -67,7 +65,7 @@ struct ScatterGatherAmd[
     fn copy(
         self,
         dst_reg_tile: LayoutTensor[
-            mut=True, address_space = AddressSpace.LOCAL, ...
+            mut=True, address_space=AddressSpace.LOCAL, ...
         ],
         src_gmem_tile: LayoutTensor,
         offset: Optional[UInt] = None,
@@ -90,7 +88,7 @@ struct ScatterGatherAmd[
     fn copy(
         self,
         dst_gmem_tile: LayoutTensor[mut=True, ...],
-        src_reg_tile: LayoutTensor[address_space = AddressSpace.LOCAL, ...],
+        src_reg_tile: LayoutTensor[address_space=AddressSpace.LOCAL, ...],
     ):
         """Copy registers to DRAM.
 
@@ -175,7 +173,9 @@ trait SharedMemoryBasePtr:
 
     @always_inline
     @staticmethod
-    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+    fn ptr() -> (
+        UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+    ):
         ...
 
 
@@ -187,18 +187,20 @@ struct NVIDIASharedMemoryBasePtr[
 
     @always_inline
     @staticmethod
-    fn ptr() -> UnsafePointer[Int8, address_space = AddressSpace.SHARED]:
+    fn ptr() -> (
+        UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+    ):
         return external_memory[
             Int8,
-            address_space = AddressSpace.SHARED,
-            alignment = Self.memory_alignment,
-            name = Self.name,
+            address_space=AddressSpace.SHARED,
+            alignment=Self.memory_alignment,
+            name=Self.name,
         ]()
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     comptime Tile[dtype: DType, layout: Layout] = SMemTile[
-        dtype, layout, alignment = Self.SMBP.alignment
+        dtype, layout, alignment=Self.SMBP.alignment
     ]
 
     comptime TileArray[
@@ -207,7 +209,9 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
 
     comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArray[type, size]
 
-    var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
+    var base_ptr: UnsafePointer[
+        Int8, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ]
     var offset: Int
 
     @always_inline

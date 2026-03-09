@@ -15,11 +15,13 @@ from std.math import ceildiv, isclose
 from std.sys import argv, simd_width_of
 from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
-from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.memory import async_copy_wait_all
+from layout import TileTensor
 from layout.int_tuple import IntTuple
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -97,7 +99,7 @@ fn sgemm_double_buffer[
             a_type,
             Layout.row_major(2 * BK, BM_padded),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .slice[:, :BM]()
@@ -111,7 +113,7 @@ fn sgemm_double_buffer[
             b_type,
             Layout.row_major(2 * BK, BN),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .split[2]()
@@ -157,7 +159,7 @@ fn sgemm_double_buffer[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
         2,
     ] = [
@@ -165,13 +167,13 @@ fn sgemm_double_buffer[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
     ]
     comptime layout_b = Layout.row_major(TN)
@@ -180,7 +182,7 @@ fn sgemm_double_buffer[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
         2,
     ] = [
@@ -188,13 +190,13 @@ fn sgemm_double_buffer[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
     ]
     comptime layout_c = Layout.row_major(TM, TN)
@@ -203,7 +205,7 @@ fn sgemm_double_buffer[
             c_type,
             layout_c,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -401,23 +403,43 @@ fn test(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = LayoutTensor[DType.float32, c_layout](c_device_ref)
-
     # Naive gemm.
     comptime BLOCK_DIM = 16
+
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    var c_ref_tt = TileTensor(
+        c_device_ref.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
+    )
+
     comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
         DType.float32,
         DType.float32,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
     ctx.enqueue_function_experimental[gemm_naive](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,

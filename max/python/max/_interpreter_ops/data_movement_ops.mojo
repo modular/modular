@@ -24,12 +24,11 @@ from std.sys.info import has_accelerator, simd_width_of
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor.managed_tensor_slice import ManagedTensorSlice
+from tensor import ManagedTensorSlice
 from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
 from buffer.dimlist import DimList
 from MOGGKernelAPI.MOGGKernelAPI import Slice, StaticBroadcastTo, Transpose
-
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_size, MAX_RANK
 
 
@@ -116,8 +115,8 @@ fn static_broadcast_to_op[
         ctx: Device context pointer (null for CPU).
     """
     # Create ManagedTensorSlice wrappers
-    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
     var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         in_ptr, in_shape
@@ -335,9 +334,9 @@ fn transpose_op[
         perm_data: Padded permutation array (MAX_RANK).
         ctx: Device context pointer (null for CPU).
     """
-    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime perm_spec = StaticTensorSpec[DType.int64, 1].create_unknown()
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime perm_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
     var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         in_ptr, in_shape
@@ -359,7 +358,7 @@ fn transpose_op[
         Transpose.execute[
             target="cpu",
             _trace_name="interpreter.transpose",
-            static_permutations = DimList.create_unknown[MAX_RANK](),
+            static_permutations=DimList.create_unknown[MAX_RANK](),
             dtype=dtype,
             rank=MAX_RANK,
         ](output_tensor, input_tensor, perm_tensor, DeviceContextPtr())
@@ -370,7 +369,7 @@ fn transpose_op[
                 Transpose.execute[
                     target="gpu",
                     _trace_name="interpreter.transpose",
-                    static_permutations = DimList.create_unknown[MAX_RANK](),
+                    static_permutations=DimList.create_unknown[MAX_RANK](),
                     dtype=dtype,
                     rank=MAX_RANK,
                 ](output_tensor, input_tensor, perm_tensor, device_ctx)
@@ -750,7 +749,7 @@ fn memcpy_op[
     if not ctx:
         # TODO(MXF-108): Remove use_blocking_impl=True
         elementwise[
-            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+            func, simd_width=simd_width_of[dtype](), use_blocking_impl=True
         ](IndexList[1](count))
     else:
         # GPU execution
@@ -803,8 +802,8 @@ fn slice_op[
         steps_ptr: Pointer to padded step indices (int64, length MAX_RANK).
         ctx: Device context pointer (null for CPU).
     """
-    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
-    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
 
     var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
         in_ptr, in_shape
@@ -813,7 +812,7 @@ fn slice_op[
         io_spec=Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
-    comptime idx_spec = StaticTensorSpec[DType.int64, 1].create_unknown()
+    comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
 
     var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
         starts_ptr, IndexList[1](MAX_RANK)

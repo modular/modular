@@ -161,11 +161,6 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         session=session,
         max_batch_size=128,
     )
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    blocks_type = kv_symbolic_inputs.kv_blocks
-    cache_lengths_type = kv_symbolic_inputs.cache_lengths
-    lookup_table_type = kv_symbolic_inputs.lookup_table
-    is_cache_empty_type = kv_symbolic_inputs.max_lengths
 
     def construct() -> Graph:
         with Graph(
@@ -174,10 +169,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 input_type,
                 input_row_offsets_type,
                 wqkv_type,
-                blocks_type,
-                cache_lengths_type,
-                lookup_table_type,
-                is_cache_empty_type,
+                *kv_params.get_symbolic_inputs()[0],
             ],
         ) as g:
             (
@@ -188,6 +180,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 cache_lengths,
                 lookup_table,
                 is_cache_empty,
+                _attention_dispatch_metadata,
             ) = g.inputs
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
@@ -229,6 +222,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
     kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     @modular_graph_test(
         session,
@@ -243,6 +237,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             4: kv_runtime_inputs.cache_lengths,
             5: kv_runtime_inputs.lookup_table,
             6: kv_runtime_inputs.max_lengths,
+            7: kv_runtime_inputs.attention_dispatch_metadata,
         },
     )
     def test_runs_without_nan(

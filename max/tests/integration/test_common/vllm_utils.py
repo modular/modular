@@ -25,7 +25,6 @@ from typing import Any
 os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
 
 import numpy as np
-
 from test_common.test_data import MockTextGenerationRequest
 
 

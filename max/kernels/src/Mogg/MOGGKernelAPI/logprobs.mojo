@@ -32,8 +32,8 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
     fn __init__(
         out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
     ):
-        self.k_array = InlineArray[size = Self.num_elements](fill=fill_k)
-        self.v_array = InlineArray[size = Self.num_elements](fill=fill_v)
+        self.k_array = InlineArray[size=Self.num_elements](fill=fill_k)
+        self.v_array = InlineArray[size=Self.num_elements](fill=fill_v)
 
     @always_inline
     fn swap(mut self, a: Int, b: Int) -> None:
@@ -81,7 +81,7 @@ fn compute_log_probabilities_1tok[
 ) -> None:
     var vocab_size = logits.shape()[1]
     var batch_index = get_batch_from_row_offsets(
-        lp_output_offsets.to_layout_tensor(), output_token_index
+        lp_output_offsets.to_tile_tensor[DType.int64](), output_token_index
     )
     var reverse_index_in_seq = (
         lp_output_offsets[batch_index + 1] - UInt32(output_token_index) - 1

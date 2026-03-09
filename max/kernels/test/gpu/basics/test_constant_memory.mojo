@@ -15,18 +15,18 @@
 from std.gpu.host import ConstantMemoryMapping, DeviceContext
 from std.gpu.host.compile import _compile_code
 from std.gpu import thread_idx
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 from std.testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext) raises:
     fn alloc[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
+    ]() -> UnsafePointer[
+        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+    ]:
         return stack_allocation[
-            n, Float32, address_space = AddressSpace.CONSTANT
+            n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
     assert_true(".const .align 4 .b8 " in _compile_code[alloc[20]]())
@@ -41,16 +41,20 @@ def test_constant_mem(ctx: DeviceContext) raises:
 
     fn _fill_impl[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
+    ]() -> UnsafePointer[
+        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+    ]:
         var ptr = stack_allocation[
-            n, Float32, address_space = AddressSpace.CONSTANT
+            n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
         comptime for i in range(n):
             ptr[i] = Float32(i)
         return ptr
 
-    fn static_constant_kernel[n: Int](data: UnsafePointer[Float32]):
+    fn static_constant_kernel[
+        n: Int
+    ](data: UnsafePointer[Float32, MutAnyOrigin]):
         comptime val = _fill_impl[n]()
         data[thread_idx.x] = val[thread_idx.x]
 
@@ -72,9 +76,11 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 
     fn _fill_impl[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
+    ]() -> UnsafePointer[
+        Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
+    ]:
         var ptr = stack_allocation[
-            n, Float32, address_space = AddressSpace.CONSTANT
+            n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
         comptime for i in range(n):
@@ -83,9 +89,9 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 
     fn static_constant_kernel[
         get_constant_memory: fn() -> UnsafePointer[
-            Float32, address_space = AddressSpace.CONSTANT
+            Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
         ]
-    ](data: UnsafePointer[Float32]):
+    ](data: UnsafePointer[Float32, MutAnyOrigin]):
         comptime val = get_constant_memory()
         data[thread_idx.x] = val[thread_idx.x]
 
@@ -105,12 +111,12 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
 def test_external_constant_mem(ctx: DeviceContext) raises:
     print("== test_external_constant_mem")
 
-    fn static_constant_kernel(data: UnsafePointer[Float32]):
+    fn static_constant_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
         var static_constant = stack_allocation[
             16,
             Float32,
-            name = StaticString("static_constant"),
-            address_space = AddressSpace.CONSTANT,
+            name=StaticString("static_constant"),
+            address_space=AddressSpace.CONSTANT,
             alignment=8,
         ]()
         data[thread_idx.x] = static_constant[thread_idx.x]

@@ -111,7 +111,7 @@ fn dummy(
 def test_overloaded() raises:
     var qb = QuickBench()
 
-    qb.run[T_out = NoneType._mlir_type](
+    qb.run[T_out=NoneType._mlir_type](
         dummy,
         bench_id=BenchId("dummy_none"),
         measures=[

@@ -16,10 +16,6 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -73,10 +69,10 @@ fn test_warp_specialize_gemm_with_multicasting[
     var b_size = n.value * k.value
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
 
     var a_host = NDBuffer[a_type, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
@@ -180,7 +176,7 @@ fn test_warp_specialize_gemm_with_multicasting[
         config=matmul_config,
         use_tma_store=use_tma_store,
         splits=splits,
-        raster_order = RasterOrder.AlongN,
+        raster_order=RasterOrder.AlongN,
     ](
         c_device_nd,
         a_device_nd,

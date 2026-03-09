@@ -57,7 +57,7 @@ class DummyModelInputs(ModelInputs):
     input4: Buffer | None = None
 
 
-class DummyPipelineModel(PipelineModelWithKVCache):
+class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     """A pipeline model with setup, input preparation and execution methods."""
 
     def execute(

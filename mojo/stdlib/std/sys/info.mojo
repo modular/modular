@@ -48,36 +48,25 @@ struct CompilationTarget[value: _TargetType = _current_target()](
     @always_inline("nodebug")
     @staticmethod
     fn unsupported_target_error[
-        result: AnyType = NoneType._mlir_type,
         *,
         operation: Optional[String] = None,
         note: Optional[String] = None,
-    ]() -> result:
+    ]() -> Never:
         """Produces a constraint failure when called indicating that some
         operation is not supported by the current compilation target.
 
         Parameters:
-            result: The never-returned result type of this function.
             operation: Optional name of the operation that is not supported.
                 Should be a function name or short description.
             note: Optional additional note to print.
-
-        Returns:
-            This function does not return normally, however a return type
-            can be specified to satisfy Mojo type checking.
         """
 
         comptime note_text = String(" Note: ", note.value() if note else "")
         comptime msg = "Current compilation target does not support"
-
-        comptime if operation:
-            comptime assert False, String(
-                msg, " operation: ", operation.value(), ".", note_text
-            )
-        else:
-            comptime assert False, String(msg, " this operation.", note_text)
-
-        os.abort()
+        comptime op_text = String(
+            " operation: ", operation.value(), "."
+        ) if operation else " this operation."
+        comptime assert False, String(msg, op_text, note_text)
 
     @always_inline("nodebug")
     @staticmethod
@@ -391,13 +380,11 @@ fn platform_map[
     """
 
     comptime if CompilationTarget.is_macos() and macos:
-        return macos.value().copy()
+        return materialize[macos.value()]()
     elif CompilationTarget.is_linux() and linux:
-        return linux.value().copy()
+        return materialize[linux.value()]()
     else:
-        return CompilationTarget.unsupported_target_error[
-            T, operation=operation
-        ]()
+        CompilationTarget.unsupported_target_error[operation=operation]()
 
 
 @always_inline("nodebug")
@@ -487,7 +474,7 @@ fn _is_sm_120x() -> Bool:
 
 @always_inline("nodebug")
 fn _has_blackwell_tcgen05() -> Bool:
-    return is_nvidia_gpu["sm_100a"]() or is_nvidia_gpu["sm_101a"]()
+    return "sm_100a" in _accelerator_arch() or "sm_101a" in _accelerator_arch()
 
 
 @always_inline("nodebug")

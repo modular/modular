@@ -13,9 +13,6 @@
 
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.random import rand
 from std.sys import argv, size_of
 
@@ -89,19 +86,19 @@ fn gemv_tma_kernel[
 
     comptime b_smem_layout = Layout.row_major(Int(BLOCK_SIZE_K))
 
-    var descriptor_a_ptr = LegacyUnsafePointer(to=descriptor_a).bitcast[
-        NoneType
-    ]()
-    var descriptor_b_ptr = LegacyUnsafePointer(to=descriptor_b).bitcast[
-        NoneType
-    ]()
+    var descriptor_a_ptr = UnsafePointer(to=descriptor_a).bitcast[NoneType]()
+    var descriptor_b_ptr = UnsafePointer(to=descriptor_b).bitcast[NoneType]()
 
     var a_smem_base = rebind[
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[dtype],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[dtype],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_A_dynamic_shared_memory",
         ]()
@@ -119,7 +116,7 @@ fn gemv_tma_kernel[
         dtype,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -131,7 +128,7 @@ fn gemv_tma_kernel[
         dtype,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -178,7 +175,7 @@ fn gemv_tma_kernel[
             ](
                 a_smem.next(stage)[].ptr,
                 descriptor_a_ptr,
-                LegacyUnsafePointer(to=tma_mbar[stage]),
+                UnsafePointer(to=tma_mbar[stage]),
                 Index(UInt(col_offset), block_row),
             )
             cp_async_bulk_tensor_shared_cluster_global[
@@ -188,7 +185,7 @@ fn gemv_tma_kernel[
             ](
                 b_smem.next(stage)[].ptr,
                 descriptor_b_ptr,
-                LegacyUnsafePointer(to=tma_mbar[stage]),
+                UnsafePointer(to=tma_mbar[stage]),
                 Index(UInt(col_offset)),
             )
             producer_phase.step()
@@ -339,11 +336,11 @@ def test_gemv_tma[
     var b_size = k.value
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
+    var a_host_ptr = alloc[Scalar[dtype]](a_size)
     var a_host = NDBuffer[dtype, 2, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
+    var b_host_ptr = alloc[Scalar[dtype]](b_size)
     var b_host = NDBuffer[dtype, 1, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )

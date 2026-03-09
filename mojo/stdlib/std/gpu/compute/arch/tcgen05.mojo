@@ -18,10 +18,10 @@ from std.os import abort
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
 from std.sys.info import _has_blackwell_tcgen05
-
 from std.gpu import external_memory
 from std.gpu.compute.mma import _str_iota  # TODO: move to a string module
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from std.gpu.intrinsics import _get_nvtx_register_constraint
 from std.memory import bitcast
 
 
@@ -38,7 +38,7 @@ struct TensorMemory(TrivialRegisterPassable):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
     var ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]
     """Pointer to the tensor memory address."""
 
@@ -54,7 +54,7 @@ struct TensorMemory(TrivialRegisterPassable):
         """
         # Bitcast to avoid `cannot implicitly convert` error.
         self.ptr = external_memory[
-            UInt32, address_space = AddressSpace.SHARED, alignment=16
+            UInt32, address_space=AddressSpace.SHARED, alignment=16
         ]().bitcast[UInt32]()
         self.num_cols = num_cols
 
@@ -64,7 +64,7 @@ fn tcgen05_alloc[
     cta_group: Int32
 ](
     ptr_tmem_addr: UnsafePointer[
-        mut=True, UInt32, _, address_space = AddressSpace.SHARED
+        mut=True, UInt32, _, address_space=AddressSpace.SHARED
     ],
     num_cols: UInt32,
 ):
@@ -133,7 +133,7 @@ fn tcgen05_ld[
     dtype: DType,
     pack: Bool,
     width: Int = (datapaths * bits * repeat) // (32 * 32),
-](tmem_addr: UInt32) -> SIMD[dtype, width]:
+](tmem_addr: UInt32) -> InlineArray[Scalar[dtype], width]:
     """Loads data from tensor memory into registers.
 
     Parameters:
@@ -148,7 +148,7 @@ fn tcgen05_ld[
         tmem_addr: The address of the tensor memory to load from.
 
     Returns:
-        The SIMD register containing the loaded data.
+        The InlineArray containing the loaded data.
     """
     check_blackwell_constraint()
 
@@ -205,7 +205,9 @@ fn tcgen05_ld[
     comptime shape_str = String(datapaths) + "x" + String(bits)
     comptime num_str = String(repeat)
     comptime pack_str = ".pack::16b" if pack else ""
-    comptime constraints_str = "=r," * width + "r"
+    comptime constraints_str = (
+        "=" + _get_nvtx_register_constraint[dtype]() + ","
+    ) * width + "r"
     comptime output_args_str = "{" + _str_iota[
         width, prefix="$", sep=","
     ]() + "}"
@@ -215,7 +217,7 @@ fn tcgen05_ld[
     @always_inline("nodebug")
     fn call_ld_intrinsic[
         pack_type: TrivialRegisterPassable
-    ]() -> SIMD[dtype, width]:
+    ]() -> InlineArray[Scalar[dtype], width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
             + shape_str
@@ -231,67 +233,72 @@ fn tcgen05_ld[
             constraints=constraints_str,
             has_side_effect=True,
         ](tmem_addr)
-        return UnsafePointer(to=r).bitcast[SIMD[dtype, width]]()[]
+        var ptr = UnsafePointer(to=r).bitcast[Scalar[dtype]]()
+        var result = InlineArray[Scalar[dtype], width](uninitialized=True)
+        comptime for i in range(width):
+            result[i] = ptr[i]
+        return result^
 
     # fmt: off
+    comptime S = Scalar[dtype]
     comptime if width == 1:
-        return call_ld_intrinsic[UInt32]()
+        return call_ld_intrinsic[S]()
     elif width == 2:
         return call_ld_intrinsic[
-                _RegisterPackType[UInt32, UInt32]
+                _RegisterPackType[S, S]
             ]()
     elif width == 4:
         return  call_ld_intrinsic[
-                _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
+                _RegisterPackType[S, S, S, S]
             ]()
     elif width == 8:
         return call_ld_intrinsic[
-                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32]
+                _RegisterPackType[S, S, S, S, S, S, S, S]
              ]()
     elif width == 16:
         return call_ld_intrinsic[
-                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+                _RegisterPackType[S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S
             ]
         ]()
     elif width == 32:
         return call_ld_intrinsic[
-                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+                _RegisterPackType[S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S
             ]
         ]()
     elif width == 64:
         return call_ld_intrinsic[
-                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
+                _RegisterPackType[S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S
             ]
         ]()
     elif width == 128:
         return call_ld_intrinsic[
-                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
-                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                _RegisterPackType[S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
+                                  S, S, S, S, S, S, S, S,
             ]
         ]()
     else:
@@ -308,7 +315,7 @@ fn tcgen05_st[
     bits: Int,
     repeat: Int,
     pack: Bool,
-](tmem_addr: UInt32, data: SIMD[dtype, width]):
+](tmem_addr: UInt32, data: InlineArray[Scalar[dtype], width]):
     """Stores data from registers into tensor memory.
 
     Parameters:
@@ -365,7 +372,9 @@ fn tcgen05_st[
     comptime shape_str = String(datapaths) + "x" + String(bits)
     comptime num_str = String(repeat)
     comptime pack_str = ".unpack::16b" if pack else ""
-    comptime constraints_str = "r," * width + "r"
+    comptime constraints_str = (
+        _get_nvtx_register_constraint[dtype]() + ","
+    ) * width + "r"
     comptime addr_str = "[$" + String(width) + "]"
     comptime input_args_str = "{" + _str_iota[
         width, prefix="$", sep=","

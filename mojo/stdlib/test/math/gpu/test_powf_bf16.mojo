@@ -26,7 +26,7 @@ comptime type = DType.float32
 def run_elementwise(exponent: BFloat16, ctx: DeviceContext) raises:
     comptime length = 256
 
-    comptime pack_size = simd_width_of[type, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[type, target=get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[type](length)
     var out_device = ctx.enqueue_create_buffer[type](length)

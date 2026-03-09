@@ -36,18 +36,20 @@ from layout.tma_async import SharedMemBarrier, TMATensorTile
 from linalg.structuring import SMemTile as LTSMemTile
 
 # Import TileTensor types for overloaded load methods
-from structured_kernels.tile_types import SMemTile2D, TMATile
+from structured_kernels.tile_types import SMemTile2D, TmaOpType
 
 # Import variadic types for TileTensor load overload
 from std.builtin.variadics import Variadic
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
+from std.utils.index import IndexList
 
 
 struct TileLoaderTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
-    gmem_layout: Layout,
-    desc_layout: Layout,
+    tma_rank: Int,
+    tile_shape: IndexList[tma_rank],
+    desc_shape: IndexList[tma_rank],
     /,
     *,
     cta_group: Int,
@@ -60,13 +62,14 @@ struct TileLoaderTMA[
     Parameters:
         tma_origin: Origin of the TMA descriptor pointer.
         dtype: Element data type.
-        gmem_layout: Global memory tensor layout.
-        desc_layout: TMA descriptor layout (tile dimensions).
+        tma_rank: Rank of the TMA tile/descriptor shapes.
+        tile_shape: TMA tile shape as IndexList.
+        desc_shape: TMA descriptor shape as IndexList.
         cta_group: CTA group size (1 or 2 for SM100 2-SM MMA).
     """
 
     comptime TmaOp = TMATensorTile[
-        Self.dtype, Self.gmem_layout, Self.desc_layout
+        Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
@@ -151,7 +154,7 @@ struct TileLoaderTMA[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: UInt,
@@ -189,13 +192,11 @@ struct TileLoader[
 ](TrivialRegisterPassable):
     """TMA tile loader parameterized on new Layout types.
 
-    Uses TMATile to derive the TMATensorTile type from new Layout.
+    Uses TmaOpType to derive the TMATensorTile type from new Layout.
     Accepts TileTensor destinations.
     """
 
-    comptime TmaOp = TMATile[
-        Self.dtype, Self.tile_layout, Self.desc_layout
-    ].InnerType
+    comptime TmaOp = TmaOpType[Self.dtype, Self.tile_layout, Self.desc_layout]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
     var tma_op: Self.TmaOpPtr
@@ -222,7 +223,7 @@ struct TileLoader[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: UInt,
@@ -250,14 +251,12 @@ struct ScalesLoader[
 ](TrivialRegisterPassable):
     """TMA scales loader parameterized on new Layout types.
 
-    Uses TMATile to derive the TMATensorTile type from new Layout.
+    Uses TmaOpType to derive the TMATensorTile type from new Layout.
     Uses async_copy (no multicast). Coordinate order is
     (row_coord, k_coord) matching scales tensor layout.
     """
 
-    comptime TmaOp = TMATile[
-        Self.dtype, Self.tile_layout, Self.desc_layout
-    ].InnerType
+    comptime TmaOp = TmaOpType[Self.dtype, Self.tile_layout, Self.desc_layout]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
     var tma_op: Self.TmaOpPtr
@@ -278,7 +277,7 @@ struct ScalesLoader[
             Self.dtype,
             LayoutType,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         row_coord: Int,

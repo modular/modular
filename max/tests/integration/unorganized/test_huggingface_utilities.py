@@ -206,7 +206,9 @@ class TestValidateHfRepoAccess:
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
-            original_error = hf_hub_errors.GatedRepoError("Repository is gated")
+            original_error = hf_hub_errors.GatedRepoError(
+                "Repository is gated", response=MagicMock()
+            )
             mock_exists.side_effect = original_error
 
             with pytest.raises(ValueError) as exc_info:
@@ -238,7 +240,7 @@ class TestValidateHfRepoAccess:
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.RepositoryNotFoundError(
-                "Repository not found"
+                "Repository not found", response=MagicMock()
             )
             mock_exists.side_effect = original_error
 
@@ -261,7 +263,7 @@ class TestValidateHfRepoAccess:
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.RevisionNotFoundError(
-                "Revision not found"
+                "Revision not found", response=MagicMock()
             )
             mock_exists.side_effect = original_error
 

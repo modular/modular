@@ -58,10 +58,9 @@ def execute_ragged_flash_attention[
         num_continuous_blocks,
         ")",
     )
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     var input_row_offsets_heap = alloc[Scalar[DType.uint32]](batch_size + 1)

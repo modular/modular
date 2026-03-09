@@ -721,6 +721,6 @@ fn store_matrix_d[
             d_ptr, d, tile_row, tile_col, ldm
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()

@@ -27,9 +27,6 @@ from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
@@ -126,12 +123,8 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Host allocations for row offsets and cache lengths
-    var input_row_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size + 1
-    )
-    var cache_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size
-    )
+    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
     var max_context_length = 0
     var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
@@ -189,7 +182,7 @@ def execute_kv_cache_ragged_flash_attention[
     # Q tensor allocation
     comptime static_q_shape = DimList(Dim(), num_q_heads, head_dim)
     var q_size = Int(total_seq_len) * num_q_heads * head_dim
-    var q_host_ptr = UnsafePointer[Scalar[dtype]].alloc(q_size)
+    var q_host_ptr = alloc[Scalar[dtype]](q_size)
     var q_host = NDBuffer[dtype, 3, _, static_q_shape](
         q_host_ptr,
         IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
@@ -215,7 +208,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Output tensor allocation
     var output_size = Int(total_seq_len) * num_q_heads * head_dim
-    var output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_host_ptr = alloc[Scalar[dtype]](output_size)
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
     var output_device = NDBuffer[dtype, 3, _, static_q_shape](
         output_dev_buffer.unsafe_ptr(),
@@ -233,9 +226,7 @@ def execute_kv_cache_ragged_flash_attention[
     # Paged LUT allocation
     var paged_lut_cols = ceildiv(max_context_length, page_size)
     var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
-    )
+    var paged_lut_host_ptr = alloc[Scalar[DType.uint32]](paged_lut_size)
     var paged_lut_host = NDBuffer[DType.uint32, 2](
         paged_lut_host_ptr,
         IndexList[2](batch_size, paged_lut_cols),
@@ -264,9 +255,7 @@ def execute_kv_cache_ragged_flash_attention[
     var kv_block_size = (
         num_pages * 2 * num_layers * page_size * num_kv_heads * head_dim
     )
-    var kv_block_paged_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_block_size
-    )
+    var kv_block_paged_host_ptr = alloc[Scalar[dtype]](kv_block_size)
     var kv_block_paged_host = NDBuffer[dtype, 6](
         kv_block_paged_host_ptr,
         IndexList[6](
