@@ -559,6 +559,40 @@ kgen.generator export @testFloordiv() -> !pop.simd<4, index> {
   kgen.return %1 : !pop.simd<4, index>
 }
 
+// COM: pop.shr with index on 32-bit
+
+kgen.generator @shr_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
+  %0 = pop.shr %arg0, %arg1 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @testShr
+kgen.generator export @testShr() -> !pop.scalar<index> {
+  kgen.param.declare S0: scalar<index> = <248>
+  kgen.param.declare S1: scalar<index> = <4>
+  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shr_index, S0, S1)>
+  // CHECK: = <15>
+  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// COM: pop.shl with index on 32-bit
+
+kgen.generator @shl_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
+  %0 = pop.shl %arg0, %arg1 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @testShl
+kgen.generator export @testShl() -> !pop.scalar<index> {
+  kgen.param.declare S0: scalar<index> = <1>
+  kgen.param.declare S1: scalar<index> = <5>
+  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shl_index, S0, S1)>
+  // CHECK: = <32>
+  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
+  kgen.return %0 : !pop.scalar<index>
+}
+
 }
 
 // -----
@@ -687,6 +721,40 @@ kgen.generator export @testFloordiv() -> !pop.simd<4, index> {
   %2 = kgen.param.constant: !pop.simd<4, uindex> = <U2>
 
   kgen.return %1 : !pop.simd<4, index>
+}
+
+// COM: pop.shr with index on 64-bit
+
+kgen.generator @shr_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
+  %0 = pop.shr %arg0, %arg1 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @testShr
+kgen.generator export @testShr() -> !pop.scalar<index> {
+  kgen.param.declare S0: scalar<index> = <3>
+  kgen.param.declare S1: scalar<index> = <63>
+  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shr_index, S0, S1)>
+  // CHECK: = <0>
+  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// COM: pop.shl with index on 64-bit
+
+kgen.generator @shl_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
+  %0 = pop.shl %arg0, %arg1 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @testShl
+kgen.generator export @testShl() -> !pop.scalar<index> {
+  kgen.param.declare S0: scalar<index> = <1>
+  kgen.param.declare S1: scalar<index> = <5>
+  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shl_index, S0, S1)>
+  // CHECK: = <32>
+  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
+  kgen.return %0 : !pop.scalar<index>
 }
 
 }

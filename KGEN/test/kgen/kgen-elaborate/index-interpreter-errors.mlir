@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=false" -verify-diagnostics -split-input-file
 // RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=true" -split-input-file 2>&1 | FileCheck %s --check-prefix=CHECK-PARAM
 
-// COM: use-parametric-interpret=true has slight difference from =false for error messages. 
+// COM: use-parametric-interpret=true has slight difference from =false for error messages.
 //      Using FileCheck instead to check those with CHECK-PRAMA prefix.
 
  module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
@@ -25,4 +25,60 @@ kgen.generator export @callIt() -> index {
   %0 = kgen.param.constant: index = <value>
   kgen.return %0 : index
 }
+}
+
+// -----
+
+// COM: Shifting too many bits for a 32-bit target - undefined behaviour
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+
+// expected-note @below {{failed to interpret function @shr_index}}
+kgen.generator @shr_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
+// expected-note @below {{failed to interpret operation pop.shr(#pop<simd 3> : !pop.scalar<index>, #pop<simd 63> : !pop.scalar<index>)}}
+// expected-note @below {{failed to interpret POP::ShrOp}}
+  %0 = pop.shr %arg0, %arg1 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @testShr
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @testShr() -> !pop.scalar<index> {
+  kgen.param.declare S0: scalar<index> = <3>
+  kgen.param.declare S1: scalar<index> = <63>
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shr_index, S0, S1)>
+  // CHECK: = <0>
+  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+}
+
+// -----
+
+// COM: Shifting too many bits for a 64-bit target - undefined behaviour
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+
+// expected-note @below {{failed to interpret function @shl_index}}
+kgen.generator @shl_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
+// expected-note @below {{failed to interpret operation pop.shl(#pop<simd 3> : !pop.scalar<index>, #pop<simd 65> : !pop.scalar<index>)}}
+// expected-note @below {{failed to interpret POP::ShlOp}}
+  %0 = pop.shl %arg0, %arg1 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @testShl
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @testShl() -> !pop.scalar<index> {
+  kgen.param.declare S0: scalar<index> = <3>
+  kgen.param.declare S1: scalar<index> = <65>
+  // expected-note @below {{failed to compile-time evaluate function call}}
+  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shl_index, S0, S1)>
+  // CHECK: = <0>
+  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
+  kgen.return %0 : !pop.scalar<index>
+}
+
 }
