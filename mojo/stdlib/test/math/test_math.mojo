@@ -396,7 +396,9 @@ def test_rsqrt() raises:
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
-def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64) raises:
+def _test_frexp_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = frexp(Scalar[dtype](123.45))
     assert_almost_equal(
         res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol

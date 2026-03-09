@@ -522,7 +522,9 @@ fn _ldexp_impl[
 @always_inline
 fn ldexp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes elementwise ldexp function.
 
     The ldexp function multiplies a floating point value x by the number 2
@@ -540,10 +542,6 @@ fn ldexp[
     Returns:
         Vector containing elementwise result of ldexp on x and exp.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     return _ldexp_impl(x, exp.cast[dtype]())
 
 
@@ -812,7 +810,9 @@ fn _frexp_mask2[
 @always_inline
 fn frexp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> StaticTuple[SIMD[dtype, width], 2]:
+](x: SIMD[dtype, width]) -> StaticTuple[
+    SIMD[dtype, width], 2
+] where dtype.is_floating_point():
     """Breaks floating point values into a fractional part and an exponent part.
     This follows C and Python in increasing the exponent by 1 and normalizing the
     fraction from 0.5 to 1.0 instead of 1.0 to 2.0.
@@ -832,7 +832,6 @@ fn frexp[
         of the input floating point values.
     """
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
-    comptime assert dtype.is_floating_point(), "must be a floating point value"
 
     comptime T = SIMD[dtype, width]
     comptime zero = T(0)
@@ -862,7 +861,7 @@ fn frexp[
 @always_inline
 fn _log_base[
     dtype: DType, width: Int, //, base: Int
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs elementwise log of a SIMD vector with a specific base.
 
     Parameters:
@@ -2455,7 +2454,9 @@ fn cbrt[
 # TODO: implement for variadic inputs as Python.
 fn hypot[
     dtype: DType, width: Int, //
-](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `hypot` of the inputs.
 
     Constraints:
@@ -2472,9 +2473,6 @@ fn hypot[
     Returns:
         The `hypot` of the inputs.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2489,10 +2487,6 @@ fn hypot[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypot", Scalar[result_type]](arg0, arg1)
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
@@ -2665,7 +2659,9 @@ fn erfc[
 # ===----------------------------------------------------------------------=== #
 
 
-fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn lgamma[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `lgamma` of the inputs.
 
     Constraints:
@@ -2681,9 +2677,6 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `lgamma` of the input.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["lgamma"](x)
 
@@ -2693,7 +2686,9 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn gamma[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Gamma of the input.
 
     For details, see https://en.wikipedia.org/wiki/Gamma_function.
@@ -2711,9 +2706,6 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The Gamma function evaluated at the input.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["tgamma"](x)
 
@@ -2725,7 +2717,9 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
 fn remainder[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `remainder` of the inputs.
 
     Constraints:
@@ -2742,10 +2736,6 @@ fn remainder[
     Returns:
         The `remainder` of the inputs.
     """
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2764,10 +2754,6 @@ fn remainder[
         return _external_call_const["remainder", Scalar[result_type]](
             arg0, arg1
         )
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](x, y)
@@ -2893,7 +2879,9 @@ fn y1[
 
 fn scalb[
     dtype: DType, width: Int, //
-](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `scalb` of the inputs.
 
     Constraints:
@@ -2910,9 +2898,6 @@ fn scalb[
     Returns:
         The `scalb` of the inputs.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2927,10 +2912,6 @@ fn scalb[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalb", Scalar[result_type]](arg0, arg1)
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
@@ -3126,7 +3107,7 @@ fn modf[
 @always_inline
 fn ulp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the ULP (units of last place) or (units of least precision) of
     the number.
 
@@ -3143,8 +3124,6 @@ fn ulp[
     Returns:
         The ULP of x.
     """
-
-    comptime assert dtype.is_floating_point(), "the type must be floating point"
 
     var nan_mask = isnan(x)
     var xabs = abs(x)
@@ -3372,10 +3351,9 @@ fn _call_libm[
     width: Int,
     //,
     func_name: StaticString,
-](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    comptime assert (
-        dtype.is_floating_point()
-    ), "argument type must be floating point"
+](arg: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     comptime assert (
         not is_gpu()
     ), "libm operations are only available on CPU targets"
