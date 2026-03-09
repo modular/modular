@@ -746,11 +746,21 @@ class MAXModelConfig(MAXModelConfigBase):
                 "config_dict": component_configs.get(component_name, {}),
             }
 
+        # Collect top-level metadata (non-private, non-component keys).
+        metadata: dict[str, Any] = {}
+        for key, value in model_index.items():
+            if key.startswith("_"):
+                continue
+            if isinstance(value, list) and len(value) == 2:
+                continue
+            metadata[key] = value
+
         # Build the final config structure
         return {
             "_class_name": class_name,
             "_diffusers_version": diffusers_version,
             "components": components,
+            **metadata,
         }
 
     @computed_field  # type: ignore[prop-decorator]
