@@ -140,7 +140,13 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        Buffer.from_numpy(all_ones.copy()), *(graph_inputs.as_list()[1:])
+        blocks=Buffer.from_numpy(all_ones.copy()),
+        cache_lengths=graph_inputs.cache_lengths,
+        lookup_table=graph_inputs.lookup_table,
+        max_lengths=graph_inputs.max_lengths,
+        kv_scales=graph_inputs.kv_scales,
+        attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        dispatch_scalars=graph_inputs.dispatch_scalars,
     )
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
@@ -217,7 +223,13 @@ def test_partial_rms_norm_key_cache(
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        Buffer.from_numpy(all_ones.copy()), *(graph_inputs.as_list()[1:])
+        blocks=Buffer.from_numpy(all_ones.copy()),
+        cache_lengths=graph_inputs.cache_lengths,
+        lookup_table=graph_inputs.lookup_table,
+        max_lengths=graph_inputs.max_lengths,
+        kv_scales=graph_inputs.kv_scales,
+        attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        dispatch_scalars=graph_inputs.dispatch_scalars,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
@@ -314,7 +326,13 @@ def test_rms_norm_new_key_cache(
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        Buffer.from_numpy(all_ones.copy()), *(graph_inputs.as_list()[1:])
+        blocks=Buffer.from_numpy(all_ones.copy()),
+        cache_lengths=graph_inputs.cache_lengths,
+        lookup_table=graph_inputs.lookup_table,
+        max_lengths=graph_inputs.max_lengths,
+        kv_scales=graph_inputs.kv_scales,
+        attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        dispatch_scalars=graph_inputs.dispatch_scalars,
     )
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
@@ -455,7 +473,13 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        Buffer.from_numpy(all_ones.copy()), *(graph_inputs.as_list()[1:])
+        blocks=Buffer.from_numpy(all_ones.copy()),
+        cache_lengths=graph_inputs.cache_lengths,
+        lookup_table=graph_inputs.lookup_table,
+        max_lengths=graph_inputs.max_lengths,
+        kv_scales=graph_inputs.kv_scales,
+        attention_dispatch_metadata=graph_inputs.attention_dispatch_metadata,
+        dispatch_scalars=graph_inputs.dispatch_scalars,
     )
 
     # Create gamma weights for per token normalization

@@ -24,6 +24,7 @@ from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice
+from max.nn.kv_cache.utils import AttentionDispatchMetadataScalars
 from max.pipelines.lib import ModelInputs, ModelOutputs
 from max.pipelines.lib.graph_capture import (
     ServeGraphCaptureRunner,
@@ -231,6 +232,12 @@ def _make_kv_per_device(
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         max_lengths=Buffer.from_numpy(max_lengths),
         attention_dispatch_metadata=Buffer.from_numpy(dispatch),
+        dispatch_scalars=AttentionDispatchMetadataScalars(
+            batch_size=1,
+            q_max_seq_len=q_max_seq_len,
+            num_partitions=num_partitions,
+            max_cache_valid_length=max_cache_len,
+        ),
     )
 
 

@@ -286,50 +286,31 @@ fn _compute_num_partitions[
 # ------------------------------------------------------------------------------
 # Public pre-compute function for MOGG ops
 # ------------------------------------------------------------------------------
-fn compute_mla_dispatch_scalar_args[
+fn compute_mla_dispatch_scalars[
     num_heads: Int,
     _is_cache_length_accurate: Bool = False,
     is_fp8_kv: Bool = False,
 ](
-    output_ptr: UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin],
     batch_size: Int,
     max_cache_valid_length: Int,
     q_max_seq_len: Int,
-    ctx: DeviceContext,
-) raises:
-    """Compute the 4 scalar dispatch args and write them to the device buffer.
+    sm_count: Int,
+) -> Tuple[Int, Int, Int, Int]:
+    """Pure computation of the 4 MLA dispatch scalars (no I/O).
 
-    The output buffer layout is:
-        [0] batch_size
-        [1] q_max_seq_len
-        [2] num_partitions
-        [3] max_cache_valid_length
-
-    This is called once per device before the layer loop by the
-    ``mo.mla.compute_dispatch_args.paged`` MOGG op.
+    Returns ``(batch_size, q_max_seq_len, num_partitions, max_cache_valid_length)``.
     """
-
     var effective = max_cache_valid_length
 
     comptime if not _is_cache_length_accurate:
         effective += q_max_seq_len
 
     var split_page_size = 64 if (effective <= 512 and batch_size >= 32) else 128
-    comptime sm_count = ctx.default_device_info.sm_count
     var num_partitions = _compute_num_partitions[num_heads, is_fp8_kv](
         batch_size, effective, q_max_seq_len, split_page_size, sm_count
     )
 
-    var host_args = InlineArray[Int64, 4](uninitialized=True)
-    host_args[0] = Int64(batch_size)
-    host_args[1] = Int64(q_max_seq_len)
-    host_args[2] = Int64(num_partitions)
-    host_args[3] = Int64(max_cache_valid_length)
-    # Write to GPU buffer (H2D copy).
-    var output_buf = DeviceBuffer[DType.int64](ctx, output_ptr, 4, owning=False)
-    output_buf.enqueue_copy_from(
-        UnsafePointer(to=host_args).bitcast[Scalar[DType.int64]]()
-    )
+    return (batch_size, q_max_seq_len, num_partitions, max_cache_valid_length)
 
 
 struct MLADispatchScalarArgs[
@@ -377,18 +358,24 @@ struct MLADispatchScalarArgs[
         self.batch_size = batch_size
         self.q_max_seq_len = q_max_seq_len
         self.max_cache_valid_length = max_cache_len
-        compute_mla_dispatch_scalar_args[
+
+        comptime sm_count = ctx.default_device_info.sm_count
+        var scalars = compute_mla_dispatch_scalars[
             num_heads=Self.num_heads,
             _is_cache_length_accurate=Self._is_cache_length_accurate,
             is_fp8_kv=Self.is_fp8_kv,
-        ](
-            self.gpu_buf.unsafe_ptr()
-            .bitcast[Scalar[DType.int64]]()
-            .as_any_origin(),
-            batch_size,
-            max_cache_len,
-            q_max_seq_len,
-            ctx,
+        ](batch_size, max_cache_len, q_max_seq_len, sm_count)
+
+        var host_args = InlineArray[Int64, 4](uninitialized=True)
+        host_args[0] = Int64(scalars[0])
+        host_args[1] = Int64(scalars[1])
+        host_args[2] = Int64(scalars[2])
+        host_args[3] = Int64(scalars[3])
+        var output_buf = DeviceBuffer[DType.int64](
+            ctx, self.gpu_buf.unsafe_ptr(), 4, owning=False
+        )
+        output_buf.enqueue_copy_from(
+            UnsafePointer(to=host_args).bitcast[Scalar[DType.int64]]()
         )
 
     fn gpu_layout_tensor(
@@ -443,11 +430,8 @@ fn mla_decode_sm100_dispatch[
         Scalar[DType.float32], origin=MutAnyOrigin
     ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
-    # Get the base pointer to the scales tensor from the operand.
     var scales_ptr = k.scales_raw_ptr()
 
-    # Compute num_partitions from the scalar args (same logic as
-    # compute_mla_dispatch_scalar_args).
     var effective_max_cache_len = max_cache_valid_length
 
     comptime if not _is_cache_length_accurate:

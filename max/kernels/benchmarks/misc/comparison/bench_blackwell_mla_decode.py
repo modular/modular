@@ -540,7 +540,7 @@ def bench_max(
             q_max_seq_len,
             num_heads=num_q_heads,
             device=DeviceRef.GPU(),
-        )
+        ).to(DeviceRef.GPU())
 
         # Use MLA decode kernel
         result = flare_mla_decode_ragged(

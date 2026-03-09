@@ -230,9 +230,7 @@ from nn.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.mla_decode_sm100_dispatch import (
-    compute_mla_dispatch_scalar_args,
-)
+from nn.mla_decode_sm100_dispatch import compute_mla_dispatch_scalars
 from nn.moe import moe_create_indices, router_group_limited
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
@@ -7714,13 +7712,18 @@ struct Struct_mla_compute_dispatch_args_scalar:
         )
         var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
 
-        compute_mla_dispatch_scalar_args[num_heads=num_heads](
-            output.unsafe_ptr().as_any_origin(),
+        comptime sm_count = ctx.default_device_info.sm_count
+        var scalars = compute_mla_dispatch_scalars[num_heads=num_heads](
             batch_size,
             max_cache_valid_length,
             q_max_seq_len,
-            ctx,
+            sm_count,
         )
+
+        output[0] = Int64(scalars[0])
+        output[1] = Int64(scalars[1])
+        output[2] = Int64(scalars[2])
+        output[3] = Int64(scalars[3])
 
 
 @compiler.register("mo.mla.graph.decode.paged.fp8.capturable")

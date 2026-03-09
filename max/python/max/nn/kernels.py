@@ -2441,28 +2441,12 @@ def compute_mla_dispatch_args_scalar(
     num_heads: int,
     device: DeviceRef,
 ) -> TensorValue:
-    """Pre-compute MLA decode dispatch scalar args via Mojo heuristic.
-
-    Calls into the Mojo ``compute_mla_dispatch_scalar_args`` function.
-
-    Args:
-        batch_size: Rank-1 int64 tensor of shape `[1]` on CPU.
-        max_cache_valid_length: Rank-1 int64 tensor of shape `[1]` on CPU.
-        q_max_seq_len: Rank-1 int64 tensor of shape `[1]` on CPU.
-            Number of query tokens per sequence (1 for standard decode,
-            >1 for MTP).
-        num_heads: Number of Q attention heads.
-        device: GPU device for the output buffer.
-
-    Returns:
-        GPU tensor of shape `[4]` int64.
-    """
     results = ops.custom(
         "mo.mla.compute_dispatch_args.scalar",
         device=device,
         values=[batch_size, max_cache_valid_length, q_max_seq_len],
         out_types=[
-            TensorType(shape=[4], dtype=DType.int64, device=device),
+            TensorType(shape=[4], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
         parameters={"num_heads": num_heads},
     )
