@@ -31,9 +31,6 @@ from linalg.matmul.gpu.sm100.blockwise_fp8 import (
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_epilogue_type
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -139,22 +136,14 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_size
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
 
     var a_host = LayoutTensor[a_type, a_layout](
         a_host_ptr,

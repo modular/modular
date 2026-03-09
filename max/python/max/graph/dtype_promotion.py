@@ -24,7 +24,7 @@ The target DType for promoting a value `x` and `y` is:
 Where category is an ordered hierarchy of: `bool < unsigned int < signed int < float`
 
 If all input dtypes can be fully represented by the target dtype, the promotion is successful.
-If an input can not be guaranteed representable (e.g. `uint8` -> `int8`), an error is raised.
+If an input can not be guaranteed representable (for example, ``uint8`` -> `int8`), an error is raised.
 
 DType promotion of a max object and a non-max object will only ever promote to the max object DType.
 An error will be raised if the values in the non-max object are not precisely representable in the max object DType.

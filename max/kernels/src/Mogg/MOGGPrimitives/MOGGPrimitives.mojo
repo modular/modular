@@ -1030,7 +1030,7 @@ fn ManagedTensorSliceDef[
     rank: Int,
     //,
     io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[dtype, rank],
+    static_spec: StaticTensorSpec[dtype, rank, _, _],
 ](
     ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
@@ -1059,7 +1059,7 @@ fn reshape_contiguous_buffer[
 ](
     buffer: ManagedTensorSlice[
         io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, old_rank].create_unknown(),
+        static_spec=StaticTensorSpec[dtype, old_rank, ...].get_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
@@ -1091,25 +1091,6 @@ fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
 
 
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-fn build_static_tensor_specs[
-    dtype: DType,
-    rank: Int,
-](
-    shape: DimList,
-    strides: DimList,
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[dtype, rank]:
-    comptime SpecType = StaticTensorSpec[dtype, rank]
-
-    return SpecType(
-        shape, strides, alignment, address_space, exclusive, None, None, None
-    )
-
-
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @register_internal("to_managed_tensor_slice")
@@ -1121,7 +1102,7 @@ fn to_managed_tensor_slice[
     shape: UnsafePointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
@@ -1156,7 +1137,7 @@ fn get_scalar_from_managed_tensor_slice[
 ](
     tensor: ManagedTensorSlice[
         io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, 1].create_unknown(),
+        static_spec=StaticTensorSpec[dtype, 1, ...].get_unknown(),
     ]
 ) -> Scalar[dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
@@ -1178,7 +1159,7 @@ fn _to_managed_tensor_slice_index_list_shape[
     shape_tuple: IndexList[rank],
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
@@ -1201,7 +1182,7 @@ fn to_managed_tensor_slice_list[
     out out_list: List[
         ManagedTensorSlice[
             io_spec=IOSpec[mut, input](),
-            static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
+            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
         ]
     ],
 ):
@@ -1536,9 +1517,7 @@ fn mogg_tensor_init[
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank](
-        static_shape,
-        static_stride,
+    static_spec=StaticTensorSpec[dtype, rank, static_shape, static_stride](
         alignment,
         AddressSpace.GENERIC,
         exclusive,
@@ -1604,9 +1583,9 @@ fn tmp_reshape_contiguous_buffer[
     shape: IndexList[new_rank],
 ) -> ManagedTensorSlice[
     io_spec=buffer.io_spec,
-    static_spec=StaticTensorSpec[buffer.dtype, new_rank](
-        static_shape,
-        static_stride,
+    static_spec=StaticTensorSpec[
+        buffer.dtype, new_rank, static_shape, static_stride
+    ](
         1,
         AddressSpace.GENERIC,
         True,

@@ -95,8 +95,8 @@ fn _BLOCK_SCOPE() -> StaticString:
     elif is_amd_gpu():
         return "workgroup"
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString, operation=__get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -107,8 +107,8 @@ fn _DEVICE_SCOPE() -> StaticString:
     elif is_amd_gpu():
         return "agent"
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString, operation=__get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 

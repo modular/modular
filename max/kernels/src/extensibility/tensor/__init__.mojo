@@ -30,6 +30,7 @@ from .managed_tensor_slice import (
     OutputTensor,
     OutputVariadicTensors,
     StaticTensorSpec,
+    StaticTensorSpecList,
     VariadicTensors,
     _FusedComputeOutputTensor,
     foreach,
@@ -39,6 +40,7 @@ from .managed_tensor_slice import (
     simd_store_into_tensor_pointer,
     trace_slice_arg,
     view_copy_impl,
+    get_row_major_tensor_spec,
 )
 from .operation_traits import (
     ElementwiseBinaryComparisonOp,

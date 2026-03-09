@@ -312,9 +312,9 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 class Graph:
     """Represents a single MAX graph.
 
-    A `Graph` is a callable routine in MAX. Like functions, graphs have a
+    A :class:`Graph` is a callable routine in MAX. Like functions, graphs have a
     name and signature. Unlike a function, which follows an imperative
-    programming model, a `Graph` follows a dataflow programming model, using
+    programming model, a :class:`Graph` follows a dataflow programming model, using
     lazily-executed, parallel operations instead of sequential instructions.
 
     When you instantiate a graph, you must specify the input shapes as one or
@@ -509,7 +509,7 @@ class Graph:
         if self._has_chain_input:
             chain_count = 1 + len(self.device_chains)
         if body_args and chain_count:
-            body_args = body_args[:-chain_count]  # type: ignore
+            body_args = body_args[:-chain_count]
 
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args
@@ -525,34 +525,65 @@ class Graph:
         custom_extensions: Iterable[Path] = [],
         devices: Iterable[DeviceRef] = [],
     ) -> Graph:
-        """Creates and adds a subgraph to the current graph.
+        """Creates a reusable subgraph for the current graph.
 
-        Creates a new :class:`Graph` instance configured as a subgraph of the
-        current graph. The subgraph inherits the parent graph's module and
-        symbolic parameters. A chain type is automatically appended to the
-        input types to enable proper operation sequencing within the subgraph.
+        A subgraph is the graph equivalent of a function: you define a block of
+        ops once and call it from the parent graph as many times as you need.
+        Use a subgraph when a block of computation repeats—for example, a
+        transformer layer that appears 62 times in a model. Wrapping it in a
+        subgraph lets the compiler process the definition once instead of once
+        per repetition, which can cut compile time by 50x or more.
 
-        The created subgraph is marked with special MLIR attributes to identify
-        it as a subgraph and is registered in the parent graph's subgraph
-        registry.
+        Trade-offs to keep in mind:
+
+        - **Memory:** Allocations inside a subgraph can't be shared with
+          allocations outside it, so peak memory may be slightly higher.
+        - **Kernel fusion:** The compiler can't fuse ops across the subgraph
+          boundary, which may reduce throughput marginally.
+
+        For models with a :class:`~max.nn.Module`, prefer
+        :meth:`~max.nn.Module.build_subgraph`, which handles weight prefixes
+        automatically.
+
+        Examples:
+            Define a subgraph that adds 1 to every element, then call it on a
+            graph input:
+
+            .. code-block:: python
+
+                from max.dtype import DType
+                from max.graph import Graph, ops
+                from max.graph.type import TensorType, DeviceRef
+
+                input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+
+                with Graph("main", input_types=[input_type]) as graph:
+                    with graph.add_subgraph(
+                        "add_one", input_types=[input_type]
+                    ) as sub:
+                        x = sub.inputs[0].tensor
+                        one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
+                        sub.output(ops.elementwise.add(x, one))
+
+                    result = ops.call(sub, graph.inputs[0])
+                    graph.output(*result)
 
         Args:
-            name: The name identifier for the subgraph.
-            forward: The optional callable that defines the sequence of
-                operations for the subgraph's forward pass. If provided, the
-                subgraph will be built immediately using this callable.
-            input_types: The data types for the subgraph's input tensors. A
-                chain type will be automatically added to these input types.
-            path: The optional path to a saved subgraph definition to load from
-                disk instead of creating a new one.
-            custom_extensions: The list of paths to custom operation libraries
-                to load for the subgraph. Supports ``.mojopkg`` files and Mojo
-                source directories.
-            devices: The list of devices this subgraph is meant to use.
+            name: The name identifier for the subgraph. Must be unique within
+                the parent graph. Use the same name when calling the subgraph
+                with :func:`~max.graph.ops.call`.
+            forward: An optional callable that defines the subgraph's forward
+                pass. When provided, the subgraph is built immediately.
+            input_types: The tensor types for the subgraph's inputs. A chain
+                type is added automatically for operation sequencing.
+            path: An optional path to a saved subgraph definition to load
+                from disk.
+            custom_extensions: Paths to custom op libraries (``.mojopkg``
+                files or Mojo source directories) to load for the subgraph.
+            devices: Devices this subgraph targets.
 
         Returns:
-            A new :class:`Graph` instance registered as a subgraph of this
-            graph.
+            A :class:`Graph` instance registered as a subgraph of this graph.
         """
         subgraph = Graph(
             name=name,
@@ -891,7 +922,7 @@ class Graph:
         Args:
             block: The MLIR block to build into
             block_fn: Callable that generates the block's operations and returns results
-            block_terminator_op: Operation to terminate the block (e.g. mo.YieldOp)
+            block_terminator_op: The operation to terminate the block (for example, ``mo.YieldOp``)
             block_name: Name of the block for error reporting
             expected_output_types: List of expected output types for the block
             add_chain: Whether to append the current chain to block results

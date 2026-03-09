@@ -713,7 +713,7 @@ struct SM100MLA[
         @always_inline
         fn mask_row[
             BN: Int, //, mask_strategy: MaskStrategy
-        ](s: LocalTensor[Self.accum_type, row_major[BN]()], kv_row: UInt32,):
+        ](mut s: InlineArray[Scalar[Self.accum_type], BN], kv_row: UInt32):
             apply_mask[mask_strategy=mask_strategy](
                 s,
                 mask,
@@ -766,10 +766,15 @@ struct SM100MLA[
                 s_tmem + UInt32(first_cols)
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            s0v = s0.ptr.load[width=first_cols]()
-            vrow_max = s0v.reduce_max[size_out=Self.simd_size]()
+            var vrow_max = SIMD[Self.accum_type, Self.simd_size](s0[0])
 
-            s.ptr.store(s0v)
+            comptime for _i in range(1, first_cols):
+                vrow_max = max(
+                    vrow_max, SIMD[Self.accum_type, Self.simd_size](s0[_i])
+                )
+
+            comptime for _i in range(first_cols):
+                s.ptr.store(_i, s0[_i])
             comptime cols = Self.config.BN - first_cols + batch_size
 
             comptime for i in range(cols // (2 * batch_size)):
@@ -783,11 +788,15 @@ struct SM100MLA[
                     mask_row[mask_strategy=mask_strategy](
                         s1, kv_row + UInt32(offset0)
                     )
-                    s1v = s1.ptr.load[width=batch_size]()
-                    vrow_max = max(
-                        s1v.reduce_max[size_out=Self.simd_size](), vrow_max
-                    )
-                    s.ptr.store(offset0, s1v)
+
+                    comptime for _i in range(batch_size):
+                        vrow_max = max(
+                            vrow_max,
+                            SIMD[Self.accum_type, Self.simd_size](s1[_i]),
+                        )
+
+                    comptime for _i in range(batch_size):
+                        s.ptr.store(offset0 + _i, s1[_i])
                 else:
                     s2 = TMemTile[Self.accum_type, BM, batch_size](
                         s_tmem + UInt32(offset1)
@@ -795,11 +804,15 @@ struct SM100MLA[
                     mask_row[mask_strategy=mask_strategy](
                         s1, kv_row + UInt32(offset0)
                     )
-                    s1v = s1.ptr.load[width=batch_size]()
-                    vrow_max = max(
-                        s1v.reduce_max[size_out=Self.simd_size](), vrow_max
-                    )
-                    s.ptr.store(offset0, s1v)
+
+                    comptime for _i in range(batch_size):
+                        vrow_max = max(
+                            vrow_max,
+                            SIMD[Self.accum_type, Self.simd_size](s1[_i]),
+                        )
+
+                    comptime for _i in range(batch_size):
+                        s.ptr.store(offset0 + _i, s1[_i])
                     tcgen05_load_wait()
 
                     comptime if offset2 < Self.config.BN:
@@ -809,11 +822,15 @@ struct SM100MLA[
                     mask_row[mask_strategy=mask_strategy](
                         s2, kv_row + UInt32(offset1)
                     )
-                    s2v = s2.ptr.load[width=batch_size]()
-                    vrow_max = max(
-                        s2v.reduce_max[size_out=Self.simd_size](), vrow_max
-                    )
-                    s.ptr.store(offset1, s2v)
+
+                    comptime for _i in range(batch_size):
+                        vrow_max = max(
+                            vrow_max,
+                            SIMD[Self.accum_type, Self.simd_size](s2[_i]),
+                        )
+
+                    comptime for _i in range(batch_size):
+                        s.ptr.store(offset1 + _i, s2[_i])
 
             return vrow_max.reduce_max()
 
@@ -1186,8 +1203,8 @@ struct SM100MLA[
                     else:
                         o_tmem = o1_tmem
 
-                    var o_b0: SIMD[Self.accum_type, batch_size]
-                    var o_b1: SIMD[Self.accum_type, batch_size]
+                    var o_b0: InlineArray[Scalar[Self.accum_type], batch_size]
+                    var o_b1: InlineArray[Scalar[Self.accum_type], batch_size]
                     o_b0 = tcgen05_ld[
                         datapaths=32,
                         bits=32,
@@ -1219,12 +1236,27 @@ struct SM100MLA[
                             pack=False,
                             width=batch_size,
                         ](o_tmem + UInt32(b1_offset))
+                        var o_b0_scaled = InlineArray[
+                            Scalar[Self.accum_type], batch_size
+                        ](uninitialized=True)
+
+                        var c_scalar_pair = SIMD[Self.accum_type, 2](c_scalar)
+                        comptime for _i in range(batch_size // 2):
+                            var pair = SIMD[Self.accum_type, 2](
+                                rebind[Scalar[Self.accum_type]](o_b0[2 * _i]),
+                                rebind[Scalar[Self.accum_type]](
+                                    o_b0[2 * _i + 1]
+                                ),
+                            )
+                            var scaled = pair * c_scalar_pair
+                            o_b0_scaled[2 * _i] = scaled[0]
+                            o_b0_scaled[2 * _i + 1] = scaled[1]
                         tcgen05_st[  # 0b0*c_scalar store
                             datapaths=32,
                             bits=32,
                             repeat=batch_size,
                             pack=False,
-                        ](o_tmem + UInt32(b0_offset0), o_b0 * c_scalar)
+                        ](o_tmem + UInt32(b0_offset0), o_b0_scaled)
                         tcgen05_load_wait()  # ob1 loaded
 
                         comptime if b0_offset1 + batch_size <= Self.kv_depth:
@@ -1236,22 +1268,56 @@ struct SM100MLA[
                                 pack=False,
                                 width=batch_size,
                             ](o_tmem + UInt32(b0_offset1))
+                        var o_b1_scaled = InlineArray[
+                            Scalar[Self.accum_type], batch_size
+                        ](uninitialized=True)
+
+                        comptime for _i in range(batch_size // 2):
+                            var pair = SIMD[Self.accum_type, 2](
+                                rebind[Scalar[Self.accum_type]](o_b1[2 * _i]),
+                                rebind[Scalar[Self.accum_type]](
+                                    o_b1[2 * _i + 1]
+                                ),
+                            )
+                            var scaled = pair * c_scalar_pair
+                            o_b1_scaled[2 * _i] = scaled[0]
+                            o_b1_scaled[2 * _i + 1] = scaled[1]
                         tcgen05_st[  # 0b0*c_scalar store
                             datapaths=32,
                             bits=32,
                             repeat=batch_size,
                             pack=False,
-                        ](o_tmem + UInt32(b1_offset), o_b1 * c_scalar)
+                        ](o_tmem + UInt32(b1_offset), o_b1_scaled)
 
                     comptime if load_remainder > 0:
                         tcgen05_load_wait()  # ob1 loaded
                         comptime offset = 2 * batch_size * load_iters
+                        var o_b0_scaled_rem = InlineArray[
+                            Scalar[Self.accum_type], load_remainder
+                        ](uninitialized=True)
+
+                        comptime for _i in range(load_remainder // 2):
+                            var pair = SIMD[Self.accum_type, 2](
+                                rebind[Scalar[Self.accum_type]](o_b0[2 * _i]),
+                                rebind[Scalar[Self.accum_type]](
+                                    o_b0[2 * _i + 1]
+                                ),
+                            )
+                            var scaled = pair * SIMD[Self.accum_type, 2](
+                                c_scalar
+                            )
+                            o_b0_scaled_rem[2 * _i] = scaled[0]
+                            o_b0_scaled_rem[2 * _i + 1] = scaled[1]
+                        comptime if load_remainder % 2 != 0:
+                            o_b0_scaled_rem[load_remainder - 1] = (
+                                o_b0[load_remainder - 1] * c_scalar
+                            )
                         tcgen05_st[  # 0b0*c_scalar store
                             datapaths=32,
                             bits=32,
                             repeat=load_remainder,
                             pack=False,
-                        ](o_tmem + UInt32(offset), o_b0 * c_scalar)
+                        ](o_tmem + UInt32(offset), o_b0_scaled_rem)
                     tcgen05_store_wait()
                     tcgen05_fence_before()
                 pipeline_o.release()

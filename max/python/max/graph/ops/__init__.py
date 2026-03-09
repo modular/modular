@@ -12,30 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """Implements operations used when staging a graph.
 
-This module provides operations for building computational
-[graphs](/max/api/python/graph/Graph) in MAX. These operations can create,
-transform, and manipulate tensor values within the graph. They can also add
-constant values to your graph with operations like
-[``constant()``](/max/api/python/graph/ops#max.graph.ops.constant).
-
-Most operations return a [``TensorValue``](/max/api/python/graph/TensorValue/),
-which supports standard Python operators such as ``+``, ``*``, and ``@`` (matrix
+This module provides operations for building a :class:`~max.graph.Graph` in
+MAX. Most operations return a :class:`~max.graph.TensorValue`, which supports
+standard Python operators such as ``+``, ``*``, and ``@`` (matrix
 multiplication), as well as convenience methods like
-[``reshape()``](/max/api/python/graph/TensorValue/#max.graph.TensorValue.reshape)
-and
-[``flatten()``](/max/api/python/graph/TensorValue/#max.graph.TensorValue.flatten).
+:meth:`~max.graph.TensorValue.reshape` and
+:meth:`~max.graph.TensorValue.flatten`. Ops like
+:func:`~max.graph.ops.constant` can also add constant values to your graph.
 
 When an operation receives inputs with different data types
-([``dtype``](/max/api/python/dtype#max.dtype.DType)), MAX promotes the output
-to a common type by picking the higher-ranked category (``bool < unsigned int <
-signed int < float``) and the larger bit width. The result is always one of the
-input types. Plainly, the promotion rule for two values ``x`` and ``y`` is
-``max(category(x), category(y)), max(bitwidth(x), bitwidth(y))``.
+(:class:`~max.dtype.DType`), MAX promotes the output to a common type by
+picking the higher-ranked category (``bool < unsigned int < signed int <
+float``) and the larger bit width. The result is always one of the input types.
+Plainly, the promotion rule for two values ``x`` and ``y`` is:
+
+.. code-block:: python
+
+    max(category(x), category(y)), max(bitwidth(x), bitwidth(y))
 
 If any input can't be safely represented in the chosen type, MAX raises an
-error. For example, promoting ``uint8`` and ``int8`` targets ``int8``, but
-since ``int8`` can't represent all ``uint8`` values, this fails.
-"""
+error. For example, MAX fails to promote ``uint8`` and ``int8`` to ``int8``,
+since ``int8`` can't represent all ``uint8`` values."""
 
 from __future__ import annotations
 

@@ -402,7 +402,7 @@ fn create_tma_descriptor[
             OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
-            _DeviceBufferPtr,  #  globalAddress
+            type_of(global_buf._handle),  #  globalAddress
             UnsafePointer[Int64, MutAnyOrigin],  # globalDim
             UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
             UnsafePointer[Int32, MutAnyOrigin],  # boxDim

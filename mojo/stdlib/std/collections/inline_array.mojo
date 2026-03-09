@@ -41,6 +41,7 @@ from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.repr import repr
 from std.compile import get_type_name
 import std.format._utils as fmt
+from std.hashlib.hasher import Hasher
 from std.memory import UnsafeMaybeUninit
 
 # ===-----------------------------------------------------------------------===#
@@ -120,12 +121,19 @@ struct _InlineArrayIter[
 
 
 struct InlineArray[ElementType: Copyable, size: Int](
-    Copyable,
+    Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     DevicePassable,
+    Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
+    ImplicitlyCopyable where conforms_to(
+        ElementType, ImplicitlyCopyable
+    ) and conforms_to(ElementType, Copyable),
+    ImplicitlyDestructible,
     Iterable,
+    Movable,
     Sized,
-    Writable,
+    Writable where conforms_to(ElementType, Writable),
 ):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
@@ -555,6 +563,58 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """
         return Self.size
 
+    @always_inline
+    fn __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
+        """Compares two arrays for equality.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if all elements are equal, False otherwise.
+        """
+        comptime for i in range(Self.size):
+            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
+                Equatable
+            ](other.unsafe_get(i)):
+                return False
+        return True
+
+    @always_inline
+    fn __ne__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
+        """Compares two arrays for inequality.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if any elements are not equal, False otherwise.
+        """
+        comptime for i in range(Self.size):
+            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
+                Equatable
+            ](other.unsafe_get(i)):
+                return True
+        return False
+
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Hashes the elements of the array using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        comptime for i in range(Self.size):
+            trait_downcast[Hashable](self.unsafe_get(i)).__hash__(hasher)
+
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
@@ -692,9 +752,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     fn _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.ElementType, Writable
+    ):
         var index = 0
 
         @parameter
@@ -707,22 +767,20 @@ struct InlineArray[ElementType: Copyable, size: Int](
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = index
 
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes the InlineArray representation to a Writer.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes the repr representation of this InlineArray to a Writer.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -739,7 +797,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of the InlineArray.
 
         Returns:
@@ -751,7 +809,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of the InlineArray.
 
         Returns:

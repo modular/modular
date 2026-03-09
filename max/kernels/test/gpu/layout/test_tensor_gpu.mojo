@@ -18,9 +18,6 @@ from std.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import Layout, LayoutTensor
@@ -38,8 +35,8 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
     fn copy_to_sram_test_kernel[
         layout: Layout,
     ](
-        dram_tensor: LayoutTensor[DType.float32, layout, MutAnyOrigin],
-        flag: UnsafePointer[Scalar[DType.bool]],
+        dram_tensor: LayoutTensor[DType.float32, layout, ImmutAnyOrigin],
+        flag: UnsafePointer[Scalar[DType.bool], MutAnyOrigin],
     ):
         var dram_tile = dram_tensor.tile[4, 4](0, Int(block_idx.x))
         var sram_tensor = LayoutTensor[
@@ -66,7 +63,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
         tensor.device_tensor(),
         DeviceBuffer[DType.bool](
             ctx,
-            rebind[UnsafePointer[Scalar[DType.bool]]](ptr),
+            rebind[UnsafePointer[Scalar[DType.bool], MutAnyOrigin]](ptr),
             1,
             owning=False,
         ),

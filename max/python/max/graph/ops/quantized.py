@@ -195,7 +195,7 @@ def qmatmul(
 
     Args:
         encoding: The quantization encoding to use.
-        config: Optional quantization config; required for some encodings (e.g. GPTQ).
+        config: Optional quantization config; required for some encodings (for example, GPTQ).
         lhs: The non-quantized, left-hand-side of the matmul.
         rhs: The transposed and quantized right-hand-side tensor(s).
 

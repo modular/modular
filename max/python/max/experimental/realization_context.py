@@ -193,7 +193,7 @@ class EagerRealizationContext(RealizationContext):
         _core.lower(
             module,
             [
-                builtin.passes.RemoveDeadValues(),
+                builtin.passes.RemoveDeadValuesPass(),
                 rmo.passes.LegalizeRMOOps(),
             ],
         )

@@ -439,9 +439,9 @@ def fused_qkv_ragged_matmul_scaled_float4(
             dtype uint32.
         n_heads: Number of attention heads.
         input_scale: TensorValue representing the input scale tensor. Shape
-            for blockwise scaling is 5D e.g., [2, 3, 32, 4, 4].
+            for blockwise scaling is 5D, for example, [2, 3, 32, 4, 4].
         weight_scale: TensorValue representing the weight scale tensor. Shape
-            for blockwise scaling is 5D e.g., [2, 34, 32, 4, 4]
+            for blockwise scaling is 5D, for example, [2, 34, 32, 4, 4]
         tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (pre-quantization, non-inverted).
         kv_scales: TBD, used in NVFP4 KV cache, see: https://github.com/NVIDIA/TensorRT-LLM/blob/0ffa77af51b272ba27424564ed253096d6f0f11a/tensorrt_llm/_torch/modules/linear.py#L690
         _output_dim: Optional output dimension. If not provided, the output
@@ -560,11 +560,11 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     layer_idx: TensorValue,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A `quantization_config` must be provided.
+    quantized weight matrices. A ``quantization_config`` must be provided.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
+    ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    ``input_row_offsets`` indicates where each batch starts and ends in ``input``
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -643,11 +643,11 @@ def fused_qkv_ragged_matmul_quantized(
     bias: TensorValue | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A `quantization_config` must be provided.
+    quantized weight matrices. A ``quantization_config`` must be provided.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
+    ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    ``input_row_offsets`` indicates where each batch starts and ends in ``input``
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -1290,7 +1290,7 @@ def rope_ragged(
     *,
     interleaved: bool = True,
 ) -> TensorValue:
-    """Apply RoPE to ragged input using the standard rope kernel."""
+    """Applies RoPE to ragged input using the standard rope kernel."""
     if input_row_offsets.dtype != DType.uint32:
         raise ValueError(
             "expected input_row_offsets to have dtype uint32, was"
@@ -1343,7 +1343,7 @@ def _apply_rope_with_freqs_cis(
     *,
     interleaved: bool = True,
 ) -> TensorValue:
-    """Apply RoPE using per-token freqs_cis (no KV cache coupling)."""
+    """Applies RoPE using per-token freqs_cis (no KV cache coupling)."""
     if freqs_cis.rank == 2:
         head_dim = input.shape[-1]
         freqs_cis = freqs_cis.reshape((freqs_cis.shape[0], head_dim // 2, 2))
@@ -1378,7 +1378,7 @@ def _freqs_cis_from_position_ids(
     *,
     mrope_section: list[int] | None = None,
 ) -> TensorValue:
-    """Build per-token freqs_cis from a freqs table + explicit position_ids."""
+    """Builds per-token freqs_cis from a freqs table and explicit position_ids."""
     if position_ids.dtype != DType.uint32:
         raise ValueError(
             f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
@@ -1471,7 +1471,7 @@ def rope_ragged_with_position_ids(
     mrope_section: list[int] | None = None,
     interleaved: bool = True,
 ) -> TensorValue:
-    """Apply RoPE using explicit position_ids (no KV cache coupling)."""
+    """Applies RoPE using explicit position_ids (no KV cache coupling)."""
     if position_ids.dtype != DType.uint32:
         raise ValueError(
             f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
@@ -3596,7 +3596,7 @@ def batched_dynamic_scaled_fp8_matmul(
     weight_scale_spec: Float8WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Perform a batched blockwise scaled matmul of two tensors with scaling factors.
+    """Performs a batched blockwise scaled matmul of two tensors with scaling factors.
 
     Args:
         a: The first tensor to multiply (3D tensor).
@@ -3895,7 +3895,7 @@ def dynamic_scaled_matmul(
     weight_scale_spec: Float8WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Perform a matmul of two tensors with scaling factors. Currently only
+    """Performs a matmul of two tensors with scaling factors. Currently only
     supports channel-wise scaling for weights and per-token scaling for inputs.
 
     Args:
@@ -4005,7 +4005,7 @@ def dynamic_block_scaled_matmul_fp4(
     sf_vector_size: int = 16,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Perform a matmul of two FP4 tensors with 1D-block scaled scaling factors.
+    """Performs a matmul of two FP4 tensors with 1D-block scaled scaling factors.
 
     Args:
         a: The first tensor to multiply.
@@ -4331,10 +4331,10 @@ def matmul_static_scaled_float8(
 
 
 def needs_fp8_fnuz_conversion() -> bool:
-    """Check if we need to convert FP8 E4M3FN to FNUZ for AMD GPUs.
+    """Checks if FP8 E4M3FN to FNUZ conversion is needed for AMD GPUs.
 
     Returns:
-        True if running on AMD GPU with CDNA3 architecture, False otherwise.
+        ``True`` if running on AMD GPU with CDNA3 architecture, ``False`` otherwise.
     """
     try:
         return "gfx94" in accelerator_architecture_name()
@@ -4346,7 +4346,7 @@ def normalize_e4m3fn_to_e4m3fnuz(
     weight: TensorValue,
     weight_scale: TensorValue,
 ) -> tuple[TensorValue, TensorValue]:
-    """Convert E4M3FN weights to E4M3FNUZ format for AMD GPUs.
+    """Converts E4M3FN weights to E4M3FNUZ format for AMD GPUs.
 
     This conversion is necessary because AMD GPUs use the E4M3FNUZ format
     while NVIDIA GPUs use E4M3FN. The key differences are:
@@ -4398,7 +4398,7 @@ def convert_weights_to_fp8_fnuz_if_needed(
     weight: TensorValue,
     weight_scale: TensorValue,
 ) -> tuple[TensorValue, TensorValue]:
-    """Convert weights and scales to FP8 FNUZ format if needed for AMD GPUs.
+    """Converts weights and scales to FP8 FNUZ format if needed for AMD GPUs.
 
     This utility function checks if FP8 FNUZ conversion is needed, currently onli AMD MI300 GPUs,
     and performs the conversion if required. This centralizes the conversion logic
@@ -5623,7 +5623,7 @@ def tpool_patch_merger(
         kW: Merge kernel width.
         max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
-        total_output_patches: Total number of output patches, i.e.
+        total_output_patches: Total number of output patches, that is,
             ``sum(H_i * W_i)`` over all videos.
 
     Returns:

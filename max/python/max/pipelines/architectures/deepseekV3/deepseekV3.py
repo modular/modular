@@ -54,6 +54,7 @@ from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
+    RotaryEmbedding,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.transformer.distributed_transformer import (
@@ -113,7 +114,7 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
 class DeepseekV3DecoderLayer(Module):
     def __init__(
         self,
-        rope: DeepseekYarnRotaryEmbedding,
+        rope: RotaryEmbedding,
         config: DeepseekV3Config,
         layer_idx: int,
         ep_manager: EPBatchManager | None = None,
@@ -392,24 +393,33 @@ class DeepseekV3(Module):
             quantization_encoding=None,
         )
 
-        assert config.rope_scaling is not None
-        scaling_params = DeepseekYarnRopeScalingParams(
-            scaling_factor=config.rope_scaling["factor"],
-            original_max_position_embeddings=config.rope_scaling[
-                "original_max_position_embeddings"
-            ],
-            beta_fast=config.rope_scaling["beta_fast"],
-            beta_slow=config.rope_scaling["beta_slow"],
-            mscale=config.rope_scaling["mscale"],
-            mscale_all_dim=config.rope_scaling["mscale_all_dim"],
-        )
-        self.rope = DeepseekYarnRotaryEmbedding(
-            config.qk_rope_head_dim,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_position_embeddings,
-            scaling_params=scaling_params,
-        )
+        if config.rope_scaling is not None:
+            scaling_params = DeepseekYarnRopeScalingParams(
+                scaling_factor=config.rope_scaling["factor"],
+                original_max_position_embeddings=config.rope_scaling[
+                    "original_max_position_embeddings"
+                ],
+                beta_fast=config.rope_scaling["beta_fast"],
+                beta_slow=config.rope_scaling["beta_slow"],
+                mscale=config.rope_scaling["mscale"],
+                mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+            )
+            self.rope: RotaryEmbedding = DeepseekYarnRotaryEmbedding(
+                config.qk_rope_head_dim,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_position_embeddings,
+                scaling_params=scaling_params,
+            )
+        else:
+            self.rope = RotaryEmbedding(
+                dim=config.qk_rope_head_dim,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_position_embeddings,
+                head_dim=config.qk_rope_head_dim,
+                interleaved=config.rope_interleave,
+            )
 
         self.ep_manager: EPBatchManager | None = None
         if config.ep_config is not None:

@@ -21,7 +21,7 @@ from std.sys import PrefetchLocality
 
 import std.math
 from std.collections.string.string_slice import _get_kgen_string
-from std.sys import is_compile_time
+from std.sys import is_run_in_comptime_interpreter
 from std.sys.info import _is_sm_9x_or_newer, is_gpu
 
 
@@ -846,7 +846,7 @@ fn expect[T: TrivialRegisterPassable, //, expected_val: T](val: T) -> T:
     Notes:
         Only works with integer/boolean types.
     """
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return val
     return llvm_intrinsic["llvm.expect", T, has_side_effect=False](
         val, expected_val
@@ -904,7 +904,7 @@ fn assume(val: Bool):
     Args:
       val: The input value which is assumed to be `True`.
     """
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return
     llvm_intrinsic["llvm.assume", NoneType](val)
 

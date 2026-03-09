@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, isclose
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
 from std.random import rand, random_float64
 from std.sys import size_of
 
@@ -57,7 +55,9 @@ fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
 
 fn quantize_a_Q8[
     group_size: Int
-](a: UnsafePointer[Float32, ...], a_quant: UnsafePointer[Int8, ...]) -> Float32:
+](
+    a: UnsafePointer[Float32, ...], a_quant: UnsafePointer[mut=True, Int8, ...]
+) -> Float32:
     var fp_data = a.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -142,9 +142,7 @@ struct qgemm_Q4_0(QuantizedGemm):
         N: Int, K: Int
     ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
-        var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * size_of[_block_Q4_0]()
-        )
+        var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_0]())
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
 
         for _n in range(N):
@@ -238,9 +236,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         N: Int, K: Int
     ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
-        var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * size_of[_block_Q4_K]()
-        )
+        var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_K]())
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
 
         for _n in range(N):
@@ -371,9 +367,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         N: Int, K: Int
     ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
-        var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * size_of[_block_Q6_K]()
-        )
+        var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q6_K]())
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
 
         for _n in range(N):
@@ -518,7 +512,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
     ) raises -> LayoutTensor[
         DType.float32, Layout.row_major[2](), MutAnyOrigin
     ]:
-        var ptr = UnsafePointer[Float32].alloc(M * N)
+        var ptr = alloc[Float32](M * N)
         for i in range(M * N):
             ptr[i] = random_float64(min=-1.0, max=+1.0).cast[DType.float32]()
         return LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin](
@@ -535,7 +529,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
     def _pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _]
     ) raises -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
-        var b_packed_buffer = UnsafePointer[UInt8].alloc(b.size())
+        var b_packed_buffer = alloc[UInt8](b.size())
         var b_packed = LayoutTensor[
             DType.uint8, Layout.row_major[2](), MutAnyOrigin
         ](

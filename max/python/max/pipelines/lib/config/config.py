@@ -30,9 +30,7 @@ from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
 )
-from max.pipelines.lib.pipeline_runtime_config import (
-    PipelineRuntimeConfig,
-)
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import (
     PIPELINE_REGISTRY,
     SupportedArchitecture,
@@ -943,11 +941,17 @@ class PipelineConfig(ConfigFileModel):
         # Restore utilization and propagate results to draft.
         self.model.kv_cache.device_memory_utilization = original_util
         self.draft_model.max_length = self.model.max_length
-        if self.model.kv_cache._available_cache_memory is not None:
-            draft_budget = int(free_memory * (original_util - adjusted_util))
-            self.draft_model.kv_cache._available_cache_memory = max(
-                draft_budget, 0
+
+        # Hardcode the draft kvcache to 0 bytes. When allocating the draft
+        # kvcache, we will use a portion of the target's available_cache_memory.
+        # This is handled in the SpeculativeDecodingPipelineBase via
+        # MultiKVCacheParams to ensure that the same number of pages are allocated
+        # for the target and draft kv caches.
+        if self.draft_model.kv_cache._available_cache_memory is not None:
+            raise ValueError(
+                "Expected draft model's available_cache_memory to be None"
             )
+        self.draft_model.kv_cache._available_cache_memory = 0
 
     def _validate_and_resolve_remaining_pipeline_config(
         self, model_config: MAXModelConfig

@@ -11,12 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from std.os import abort
 from std.pathlib import Path
 from std.ffi import _find_dylib
@@ -80,9 +74,12 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-fn cudnnBackendInitialize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
+fn cudnnBackendInitialize(
+    descriptor: OpaquePointer,
+) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendInitialize", fn(OpaquePointer) -> cudnnStatus_t
+        "cudnnBackendInitialize",
+        fn(type_of(descriptor)) -> cudnnStatus_t,
     ]()(descriptor)
 
 
@@ -584,11 +581,11 @@ fn cudnnBackendSetAttribute(
     return _get_dylib_function[
         "cudnnBackendSetAttribute",
         fn(
-            OpaquePointer,
-            cudnnBackendAttributeName_t,
-            cudnnBackendAttributeType_t,
-            Int64,
-            OpaquePointer,
+            type_of(descriptor),
+            type_of(attribute_name),
+            type_of(attribute_type),
+            type_of(element_count),
+            type_of(array_of_elements),
         ) -> cudnnStatus_t,
     ]()(
         descriptor,
@@ -845,13 +842,11 @@ struct cudnnBackendNumericalNote_t(
 
 fn cudnnBackendCreateDescriptor(
     descriptor_type: cudnnBackendDescriptorType_t,
-    descriptor: UnsafePointer[OpaquePointer],
+    descriptor: UnsafePointer[OpaquePointer[AnyOrigin[mut=True]], _],
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
-        fn(
-            cudnnBackendDescriptorType_t, UnsafePointer[OpaquePointer]
-        ) -> cudnnStatus_t,
+        fn(type_of(descriptor_type), type_of(descriptor)) -> cudnnStatus_t,
     ]()(descriptor_type, descriptor)
 
 
@@ -1018,7 +1013,7 @@ struct cudnnRngDistribution_t(
 
 fn cudnnBackendFinalize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendFinalize", fn(OpaquePointer) -> cudnnStatus_t
+        "cudnnBackendFinalize", fn(type_of(descriptor)) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -1912,7 +1907,7 @@ struct cudnnSignalMode_t(
         return Int(self._value)
 
 
-comptime cudnnBackendDescriptor_t = OpaquePointer
+comptime cudnnBackendDescriptor_t = OpaquePointer[AnyOrigin[mut=True]]
 
 
 @fieldwise_init
@@ -1991,21 +1986,21 @@ fn cudnnBackendDestroyDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
-        fn(OpaquePointer) -> cudnnStatus_t,
+        fn(type_of(descriptor)) -> cudnnStatus_t,
     ]()(descriptor)
 
 
 fn cudnnBackendExecute(
-    handle: UnsafePointer[cudnnContext],
+    handle: UnsafePointer[cudnnContext, _],
     execution_plan: OpaquePointer,
     variant_pack: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendExecute",
         fn(
-            UnsafePointer[cudnnContext],
-            OpaquePointer,
-            OpaquePointer,
+            type_of(handle),
+            type_of(execution_plan),
+            type_of(variant_pack),
         ) -> cudnnStatus_t,
     ]()(handle, execution_plan, variant_pack)
 
@@ -2067,18 +2062,18 @@ fn cudnnBackendGetAttribute(
     attribute_name: cudnnBackendAttributeName_t,
     attribute_type: cudnnBackendAttributeType_t,
     requested_element_count: Int64,
-    element_count: UnsafePointer[Int64],
+    element_count: UnsafePointer[Int64, _],
     array_of_elements: OpaquePointer,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendGetAttribute",
         fn(
-            OpaquePointer,
-            cudnnBackendAttributeName_t,
-            cudnnBackendAttributeType_t,
-            Int64,
-            UnsafePointer[Int64],
-            OpaquePointer,
+            type_of(descriptor),
+            type_of(attribute_name),
+            type_of(attribute_type),
+            type_of(requested_element_count),
+            type_of(element_count),
+            type_of(array_of_elements),
         ) -> cudnnStatus_t,
     ]()(
         descriptor,

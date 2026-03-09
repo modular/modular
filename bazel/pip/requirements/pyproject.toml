@@ -43,7 +43,6 @@ dependencies = [
   "logbar",
   "markupsafe",
   "matplotlib",
-  "microbench",
   "msgspec",
   "munch",
   "mypy",
@@ -87,7 +86,7 @@ dependencies = [
   "slack-sdk",
   "tiktoken",
   "simpy",
-  "sphinx==7.4.7",
+  "sphinx==8.1.3",
   "sse-starlette",
   "sseclient-py",
   "starlette>=0.47.2", # transitively included by sse-starlette, >=0.47.2 is required for resolving CVE-2025-54121

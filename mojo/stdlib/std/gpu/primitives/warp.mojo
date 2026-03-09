@@ -516,8 +516,7 @@ fn shuffle_idx[
             mask, val, offset
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            SIMD[dtype, simd_width],
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -612,8 +611,7 @@ fn shuffle_up[
     elif is_apple_gpu():
         return _shuffle_apple_helper["up", dtype, simd_width](mask, val, offset)
     else:
-        return CompilationTarget.unsupported_target_error[
-            SIMD[dtype, simd_width],
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -713,8 +711,7 @@ fn shuffle_down[
             mask, val, offset
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            SIMD[dtype, simd_width],
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -815,8 +812,7 @@ fn shuffle_xor[
             mask, val, offset
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            SIMD[dtype, simd_width],
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -1426,6 +1422,6 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[ret_type], operation=__get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()

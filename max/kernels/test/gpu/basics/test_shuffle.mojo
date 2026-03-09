@@ -21,9 +21,6 @@ from std.gpu.primitives.warp import (
     shuffle_up,
     shuffle_xor,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 
@@ -31,7 +28,7 @@ fn kernel_wrapper[
     dtype: DType,
     simd_width: Int,
     kernel_fn: fn(SIMD[dtype, simd_width]) capturing -> SIMD[dtype, simd_width],
-](device_ptr: UnsafePointer[Scalar[dtype]]):
+](device_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
     var val = device_ptr.load[width=simd_width](thread_idx.x * UInt(simd_width))
     var result = kernel_fn(val)
     barrier()
@@ -44,7 +41,7 @@ fn _kernel_launch_helper[
     simd_width: Int,
     kernel_fn: fn(SIMD[dtype, simd_width]) capturing -> SIMD[dtype, simd_width],
 ](
-    host_ptr: UnsafePointer[Scalar[dtype]],
+    host_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     buffer_size: Int,
     block_size: Int,
     ctx: DeviceContext,
@@ -68,7 +65,7 @@ fn _shuffle_idx_launch_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
     comptime constant_add: Scalar[dtype] = 42
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -123,7 +120,7 @@ fn _shuffle_up_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -187,7 +184,7 @@ fn _shuffle_down_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -251,7 +248,7 @@ fn _shuffle_xor_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -309,7 +306,7 @@ fn _warp_reduce_launch_helper[
     comptime buffer_size = block_size * simd_width
     comptime offset = 1
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = 1
 
@@ -358,7 +355,7 @@ fn _warp_sum_launch_helper[
     dtype: DType,
 ](ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(block_size)
+    var host_ptr = alloc[Scalar[dtype]](block_size)
     for i in range(block_size):
         host_ptr[i] = Scalar[dtype](i)
 
@@ -396,7 +393,7 @@ fn _lane_group_sum_broadcast_stride1_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
@@ -458,7 +455,7 @@ fn _lane_group_max_broadcast_stride1_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
@@ -512,7 +509,7 @@ fn _lane_group_reduce_launch_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
@@ -592,7 +589,7 @@ fn _lane_group_min_broadcast_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var host_ptr = alloc[Scalar[dtype]](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 

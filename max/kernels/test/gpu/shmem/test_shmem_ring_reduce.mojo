@@ -15,9 +15,6 @@
 from std.algorithm import parallelize
 from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from std.math import iota
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
 from shmem import *
 from std.ffi import c_int
@@ -35,10 +32,10 @@ comptime chunk_size = 1024 * 256
 
 
 fn ring_reduce(
-    dst_ptr: UnsafePointer[c_int],
-    src_ptr: UnsafePointer[c_int],
+    dst_ptr: UnsafePointer[c_int, MutAnyOrigin],
+    src_ptr: UnsafePointer[c_int, ImmutAnyOrigin],
     nreduce: Int,
-    signal_ptr: UnsafePointer[UInt64],
+    signal_ptr: UnsafePointer[UInt64, MutAnyOrigin],
     chunk_size: Int,
 ):
     """Perform Allreduce using ring algorithm.

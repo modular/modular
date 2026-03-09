@@ -408,6 +408,21 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         return length
 
     @always_inline
+    fn get_row_major_strides(self) -> Self:
+        """Interpret the current index list as a shape, and return the strides
+        to traverse such a shape in row-major order.
+
+        Returns:
+            The strides to traverse the index list in row-major order.
+        """
+        var strides = Self()
+        var offset = 1
+        comptime for i in reversed(range(Self.size)):
+            strides[i] = offset
+            offset *= self[i]
+        return strides
+
+    @always_inline
     fn __add__(self, rhs: Self) -> Self:
         """Performs element-wise integer add.
 

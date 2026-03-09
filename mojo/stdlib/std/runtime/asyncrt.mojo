@@ -15,8 +15,15 @@
 from std.os import abort
 from std.os.atomic import Atomic
 from std.ffi import external_call
+from std.memory import alloc
 
-from std.builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
+from std.builtin.coroutine import (
+    AnyCoroutine,
+    _coro_resume_fn,
+    _suspend_async,
+)
+
+# RaisingCoroutine is a builtin type, available without explicit import.
 from std.gpu.host import DeviceContext
 
 from std.utils import StaticTuple
@@ -270,6 +277,172 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
             _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]())
         )
         return self.get()
+
+
+# ===-----------------------------------------------------------------------===#
+# RaisingTask
+# ===-----------------------------------------------------------------------===#
+
+
+fn create_raising_task[
+    type: Movable, origins: OriginSet
+](
+    var handle: RaisingCoroutine[type, origins],
+    out task: RaisingTask[type, origins],
+):
+    """Run a raising coroutine as a task on the AsyncRT Runtime.
+
+    Creates a task from a raising coroutine and schedules it for execution.
+    The task may raise an error when waited on, propagating any error from
+    the coroutine.
+
+    Parameters:
+        type: The result type, which must be `Movable` to extract the result.
+        origins: The origin set from the coroutine's captures.
+
+    Args:
+        handle: The raising coroutine to execute as a task. Ownership is
+            transferred.
+
+    Returns:
+        The `task` output parameter is initialized with the created task.
+    """
+    var ctx = handle._get_ctx[_AsyncContext]()
+    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
+    ctx[].callback = _AsyncContext.complete
+    task = RaisingTask(handle^)
+    _async_execute[type](task._handle._handle, desired_worker_id=-1)
+
+
+@explicit_destroy
+struct RaisingTask[type: Movable, origins: OriginSet]:
+    """Represents an async task that may raise an error upon completion.
+
+    Wraps a `RaisingCoroutine` that executes asynchronously and either
+    produces a result value or raises an error. The error is propagated
+    to the caller when `wait()` is called.
+
+    This type uses `@explicit_destroy` because only one of the result or
+    error slots is valid after completion. The caller must call `wait()`
+    or `force_destroy()` to consume the task.
+
+    Parameters:
+        type: The type of value produced on success.
+        origins: The set of origins for the coroutine wrapped by this task.
+    """
+
+    var _handle: RaisingCoroutine[Self.type, Self.origins]
+    """The underlying raising coroutine."""
+
+    var _result_ptr: UnsafePointer[Self.type, MutExternalOrigin]
+    """Heap-allocated storage for the result value."""
+
+    var _error_ptr: UnsafePointer[Error, MutExternalOrigin]
+    """Heap-allocated storage for the error value."""
+
+    fn __init__(
+        out self, var handle: RaisingCoroutine[Self.type, Self.origins]
+    ):
+        """Initialize a raising task with a raising coroutine.
+
+        Args:
+            handle: The raising coroutine to execute. Ownership is transferred.
+        """
+        self._handle = handle^
+        self._result_ptr = alloc[Self.type](1)
+        self._error_ptr = alloc[Error](1)
+        self._handle._set_result_slot(self._result_ptr, self._error_ptr)
+
+    fn _has_error(self) -> Bool:
+        """Check whether the coroutine raised an error.
+
+        Reads the error flag from the coroutine's continuation struct via
+        the `co.get_results` MLIR op. Only valid after the task completes.
+
+        Returns:
+            True if the coroutine raised an error, False if it succeeded.
+        """
+        return __mlir_op.`co.get_results`[_type=__mlir_type.i1](
+            self._handle._handle
+        )
+
+    fn _release_coro(deinit self):
+        """Release chain and coroutine resources without touching result/error
+        slots (caller handles those).
+        """
+        var ctx = self._handle._get_ctx[_AsyncContext]()
+        _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
+        self._handle^.force_destroy()
+
+    @always_inline
+    fn __await__(deinit self, out result: Self.type) raises:
+        """Suspend the current async function until the task completes.
+
+        Consumes the task. On success, moves the result out. On failure,
+        raises the error from the coroutine.
+
+        This enables `await task^` syntax in async functions.
+
+        Returns:
+            The `result` output parameter receives the task's result value.
+
+        Raises:
+            If the underlying coroutine raised an error.
+        """
+
+        @always_inline
+        @parameter
+        fn await_body(cur_hdl: AnyCoroutine):
+            _async_and_then(
+                cur_hdl,
+                _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]()),
+            )
+
+        _suspend_async[await_body]()
+        var has_error = self._has_error()
+        var rp = self._result_ptr
+        var ep = self._error_ptr
+        self^._release_coro()
+        if has_error:
+            var err = ep.take_pointee()
+            rp.free()
+            ep.free()
+            raise err^
+        result = rp.take_pointee()
+        ep.free()
+        rp.free()
+
+    fn wait(deinit self, out result: Self.type) raises:
+        """Block until the task completes and return the result or raise.
+
+        Consumes the task. On success, moves the result out. On failure,
+        raises the error from the coroutine.
+
+        Returns:
+            The `result` output parameter receives the task's result value.
+
+        Raises:
+            If the underlying coroutine raised an error.
+        """
+        _async_wait(
+            _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]())
+        )
+        var has_error = self._has_error()
+        var rp = self._result_ptr
+        var ep = self._error_ptr
+        self^._release_coro()
+        if has_error:
+            var err = ep.take_pointee()
+            rp.free()
+            ep.free()
+            raise err^
+        result = rp.take_pointee()
+        ep.free()
+        rp.free()
+
+    # TODO: Add force_destroy() when we have a trait that combines
+    # Movable and ImplicitlyDestructible. Currently, the caller must
+    # call wait() to consume the task.
 
 
 # ===-----------------------------------------------------------------------===#

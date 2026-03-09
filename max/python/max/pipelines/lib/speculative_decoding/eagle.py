@@ -39,15 +39,29 @@ from max.pipelines.lib.interfaces import (
 )
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.profiler import traced
+from transformers import AutoConfig
 
 from ..sampling import PenaltyInputs, SamplerInputs, token_sampler
-from .base import SpeculativeDecodingPipelineBase
+from .base import SpeculativeDecodingPipelineBase, compute_max_num_draft_steps
 from .eagle_hidden_state_graphs import build_gather_graph
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _get_hidden_dim(hf_config: AutoConfig) -> int:
+    if hasattr(hf_config, "hidden_size"):
+        return hf_config.hidden_size
+    elif hasattr(hf_config, "text_config") and hasattr(
+        hf_config.text_config, "hidden_size"
+    ):
+        return hf_config.text_config.hidden_size
+    else:
+        raise ValueError(
+            "Could not determine hidden_size from target model config"
+        )
 
 
 @final
@@ -86,26 +100,19 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_weight_adapters,
         )
 
-        self._target_sampler = self._target_session.load(
+        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
+        self._target_sampler = self._session.load(
             token_sampler(
                 self.pipeline_config.sampling,
                 return_logits=True,
-                device=DeviceRef.from_device(self.target_devices[0]),
+                device=device_refs[0],
             )
         )
 
         # Gather graph for extracting hidden states corresponding to accepted tokens after verification
         hf_config = self._target_model.huggingface_config
-        hidden_dim = getattr(hf_config, "hidden_size", None)
-        if hidden_dim is None and hasattr(hf_config, "text_config"):
-            hidden_dim = hf_config.text_config.hidden_size
-        assert hidden_dim is not None, (
-            "Could not determine hidden_size from target model config"
-        )
-        device_refs = [
-            DeviceRef.from_device(dev) for dev in self.target_devices
-        ]
-        self._hs_gather_model = self._target_session.load(
+        hidden_dim = _get_hidden_dim(hf_config)
+        self._hs_gather_model = self._session.load(
             build_gather_graph(device_refs, DType.bfloat16, hidden_dim)
         )
 
@@ -124,19 +131,17 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         Returns:
             Buffer of sampled tokens with shape [batch_size, 1]
         """
-        sampler_inputs = SamplerInputs.create(
-            context_batch, self.target_devices[0]
-        )
+        sampler_inputs = SamplerInputs.create(context_batch, self.devices[0])
 
         prev_tokens = Buffer.zeros(
             (len(context_batch), 0),
             dtype=DType.int64,
-            device=self.target_devices[0],
+            device=self.devices[0],
         )
         prev_logits = Buffer.zeros(
             (len(context_batch), 0),
             dtype=DType.float32,
-            device=self.target_devices[0],
+            device=self.devices[0],
         )
 
         graph_inputs: list[Buffer] = [
@@ -151,7 +156,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
         if need_penalties and self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
-                context_batch, self.target_devices[0]
+                context_batch, self.devices[0]
             )
             graph_inputs.extend(penalty_inputs.as_list())
 
@@ -159,50 +164,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         assert isinstance(sampled_tokens, Buffer)
 
         return sampled_tokens
-
-    def _prepare_common_setup(
-        self,
-        model: PipelineModel[TextContext],
-        batch: list[TextContext],
-        replica_batches: list[list[TextContext]],
-        num_steps: int,
-        is_draft: bool,
-    ) -> int:
-        """Common setup for both draft and target batch preparation.
-
-        Args:
-            model: The pipeline model to prepare batch for
-            batch: List of text contexts to process
-            replica_batches: Per-replica batches for data parallelism
-            num_steps: Number of steps to prepare for
-            is_draft: Whether preparing for draft model
-
-        Returns:
-            The calculated num_steps for the batch
-        """
-        # Build request_id -> replica_idx mapping from replica_batches
-        request_to_replica: dict[RequestID, int] = {}
-        for replica_idx, replica_batch in enumerate(replica_batches):
-            for ctx in replica_batch:
-                request_to_replica[ctx.request_id] = replica_idx
-
-        for context in batch:
-            num_steps = self.calculate_num_steps(
-                model, model.huggingface_config, num_steps, context, is_draft
-            )
-            # For draft model: claim if not already claimed (target model is claimed by scheduler)
-            # For target model: scheduler handles claiming, so skip here
-            if is_draft:
-                replica_idx = request_to_replica.get(context.request_id, 0)
-                if not self._draft_kv_manager.contains(
-                    context.request_id, replica_idx=replica_idx
-                ):
-                    self._draft_kv_manager.claim(
-                        context.request_id, replica_idx=replica_idx
-                    )
-                self._draft_replica_idx[context.request_id] = replica_idx
-            # For target model, scheduler handles claiming via batch_constructor
-        return num_steps
 
     def _seek_processing_position(
         self,
@@ -246,7 +207,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         model: PipelineModel[TextContext],
         batch: list[TextContext],
         replica_batches: list[list[TextContext]],
-        num_steps: int,
         return_n_logits: int,
         hidden_states: list[Buffer],
         shift_next_tokens: npt.NDArray[np.int64] | None = None,
@@ -260,7 +220,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             model: The draft pipeline model
             batch: List of text contexts to process
             replica_batches: List of per-replica batches for data parallelism
-            num_steps: Number of draft steps to prepare
             return_n_logits: Number of logits to return
             hidden_states: Hidden states from target model
             shift_next_tokens: Tokens to append after dropping the first token
@@ -268,6 +227,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         Returns:
             Tuple of (ModelInputs for draft model, num_steps)
         """
+        num_steps = compute_max_num_draft_steps(
+            replica_batches,
+            desired_num_draft_steps=self._num_draft_steps,
+            max_seq_len=self._max_seq_len,
+            is_draft=True,
+        )
+
         saved_positions = [context.tokens.processed_length for context in batch]
         # Check before accessing spec_decoding_state (which auto-creates it).
         new_request_flags = [
@@ -279,14 +245,15 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 context, context.spec_decoding_state.draft_kv_start_idx
             )
 
-        for replica_idx, replica_batch in enumerate(replica_batches):
-            for ctx in replica_batch:
-                self._draft_kv_manager.alloc(
-                    ctx, replica_idx=replica_idx, num_steps=num_steps
-                )
-        kv_cache_inputs = self._draft_kv_manager.runtime_inputs(
+        kv_cache_inputs = self._target_kv_manager.runtime_inputs(
             replica_batches, num_steps
         )
+        # Huge hack alert!
+        # Swap out the target kv cache buffers for the draft kv cache buffers
+        for replica_input, draft_blocks in zip(
+            kv_cache_inputs.inputs, self._draft_kv_buffers, strict=True
+        ):
+            replica_input.blocks = draft_blocks
 
         for i, context in enumerate(batch):
             if new_request_flags[i]:
@@ -330,7 +297,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
                 base_inputs.batch_context_lengths[i][0] = device_context_length
 
-            if len(replica_batches) != len(self.draft_devices):
+            if len(replica_batches) != len(self.devices):
                 # We only support either DP=1 or DP=n_devices.
                 assert len(replica_batches) == 1
                 # Duplicate the batch context lengths for each device.
@@ -350,9 +317,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     def _prepare_initial_target_step(
         self,
         model: PipelineModel[TextContext],
-        batch: list[TextContext],
         replica_batches: list[list[TextContext]],
-        num_steps: int,
         return_n_logits: int,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for initial target model step.
@@ -362,21 +327,14 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         Args:
             model: The target pipeline model
-            batch: List of text contexts to process
             replica_batches: List of per-replica batches for data parallelism
-            num_steps: Number of steps (will be overridden to 1)
             return_n_logits: Number of logits to return
 
         Returns:
             Tuple of (ModelInputs for target model, 1)
         """
-        for replica_idx, replica_batch in enumerate(replica_batches):
-            for ctx in replica_batch:
-                self._target_kv_manager.alloc(
-                    ctx, replica_idx=replica_idx, num_steps=num_steps
-                )
         kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-            replica_batches, num_steps
+            replica_batches, num_steps=1
         )
 
         inputs = model.prepare_initial_token_inputs(
@@ -391,7 +349,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         model: PipelineModel[TextContext],
         replica_batches: list[list[TextContext]],
-        num_steps: int,
         return_n_logits: int,
         merged_tokens: Buffer | None,
         merged_offsets: Buffer | None,
@@ -408,7 +365,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             model: The target pipeline model
             batch: List of text contexts to process
             replica_batches: List of per-replica batches for data parallelism
-            num_steps: Number of steps to prepare
             return_n_logits: Number of logits to return
             draft_inputs: Draft model inputs (used for data_parallel_splits)
             merged_tokens: Merged draft and input tokens
@@ -422,13 +378,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Tuple of (ModelInputs for target model, num_steps)
         """
         if kv_cache_inputs is None:
-            for replica_idx, replica_batch in enumerate(replica_batches):
-                for ctx in replica_batch:
-                    self._target_kv_manager.alloc(
-                        ctx, replica_idx=replica_idx, num_steps=num_steps
-                    )
             kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-                replica_batches, num_steps
+                replica_batches, 1
             )
 
         inputs = model.prepare_initial_token_inputs(
@@ -441,7 +392,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         inputs.input_row_offsets = merged_offsets  # type: ignore[attr-defined]
         inputs.host_input_row_offsets = host_merged_offsets  # type: ignore[attr-defined]
 
-        return (inputs, num_steps)
+        return (inputs, 1)
 
     @traced
     def prepare_batch(
@@ -449,7 +400,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         model: PipelineModel[TextContext],
         batch: list[TextContext],
         replica_batches: list[list[TextContext]],
-        num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
         draft_inputs: ModelInputs | None = None,
@@ -467,30 +417,26 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         - Initial target step: generates first token and hidden states
         - Verification step: merges and verifies draft tokens
         """
-        num_steps = self._prepare_common_setup(
-            model, batch, replica_batches, num_steps, is_draft
-        )
-
         if is_draft:
             assert hidden_states is not None
             return self._prepare_draft_batch(
                 model,
                 batch,
                 replica_batches,
-                num_steps,
                 return_n_logits,
                 hidden_states,
                 shift_next_tokens,
             )
         elif draft_inputs is None:
             return self._prepare_initial_target_step(
-                model, batch, replica_batches, num_steps, return_n_logits
+                model,
+                replica_batches,
+                return_n_logits,
             )
         else:
             return self._prepare_verification_step(
                 model,
                 replica_batches,
-                num_steps,
                 return_n_logits,
                 merged_tokens,
                 merged_offsets,
@@ -507,7 +453,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> tuple[int, Buffer, Buffer, Buffer | None, Buffer | list[Buffer]]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
-        sampler_inputs = SamplerInputs.create(batch, self.draft_devices[0])
+        sampler_inputs = SamplerInputs.create(batch, self.devices[0])
 
         # Build penalty inputs once for the entire draft generation loop
         need_penalties = any(
@@ -516,15 +462,15 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         penalty_inputs: PenaltyInputs | None = None
         if need_penalties and self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
-                batch, self.draft_devices[0], num_steps=num_steps
+                batch, self.devices[0], num_steps=num_steps
             )
 
         generated_tokens = Buffer.zeros(
-            (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.int64, device=self.devices[0]
         )
 
         generated_logits = Buffer.zeros(
-            (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
+            (len(batch), 0), dtype=DType.float32, device=self.devices[0]
         )
 
         curr_step_inputs = model_inputs
@@ -533,7 +479,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Buffer.zeros(
                 (num_steps, len(batch), self.vocab_size),
                 dtype=DType.float32,
-                device=self.draft_devices[0],
+                device=self.devices[0],
             )
             if self._needs_all_draft_logits
             else None
@@ -564,7 +510,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
             assert curr_step_inputs.kv_cache_inputs is not None
             curr_step_inputs.kv_cache_inputs = (
-                self._draft_kv_manager.increment_cache_lengths(
+                self._target_kv_manager.increment_cache_lengths(
                     curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
@@ -593,7 +539,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         draft_tokens: Buffer,
         draft_logits: Buffer | None,
         all_draft_logits: Buffer | None,
-        data_parallel_splits_np: npt.NDArray[np.int64],
         merged_tokens: Buffer | None = None,
         merged_offsets: Buffer | None = None,
         host_merged_offsets: Buffer | None = None,
@@ -618,27 +563,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         with reserve_token_space_for_batch(
             context_batch, num_draft_tokens_generated
         ):
-            for replica_idx, replica_batch in enumerate(replica_batches):
-                for ctx in replica_batch:
-                    self._target_kv_manager.alloc(
-                        ctx, replica_idx=replica_idx, num_steps=1
-                    )
             kv_cache_inputs = self._target_kv_manager.runtime_inputs(
-                replica_batches, 1
+                replica_batches, num_steps=1
             )
-
-        num_steps = self._prepare_common_setup(
-            self._target_model,
-            context_batch,
-            replica_batches,
-            1,
-            is_draft=False,
-        )
 
         target_inputs, _ = self._prepare_verification_step(
             self._target_model,
             replica_batches,
-            num_steps=num_steps,
             return_n_logits=num_draft_tokens_generated + 1,
             merged_tokens=merged_tokens,
             merged_offsets=merged_offsets,
@@ -669,12 +600,12 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self._call_rejection_sampler(
-                draft_tokens,
-                draft_logits,
-                target_outputs.logits,
-                target_outputs.logit_offsets,
-                all_draft_logits,
+            self._rejection_runner.run(
+                draft_tokens=draft_tokens,
+                draft_logits=draft_logits,
+                target_logits=target_outputs.logits,
+                target_logit_offsets=target_outputs.logit_offsets,
+                all_draft_logits=all_draft_logits,
                 context_batch=context_batch,
             )
         )
@@ -784,7 +715,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         target_inputs, _ = self.prepare_batch(
             self._target_model,
             context_batch,
-            num_steps=1,  # Only generate 1 token initially
             return_n_logits=1,
             is_draft=False,
             draft_inputs=None,
@@ -838,7 +768,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             tokens = ctx.spec_decoding_state.saved_draft_tokens
             batch_tokens[i, : len(tokens)] = tokens
         return (
-            Buffer.from_numpy(batch_tokens).to(self.target_devices[0]),
+            Buffer.from_numpy(batch_tokens).to(self.devices[0]),
             max_num_tokens,
         )
 
@@ -851,7 +781,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     ) -> list[Buffer]:
         """Gather accepted hidden states from verification output for draft input."""
         model_args: list[Buffer] = []
-        for dev_idx in range(len(self.target_devices)):
+        for dev_idx in range(len(self.devices)):
             start = int(data_parallel_splits_np[dev_idx])
             end = int(data_parallel_splits_np[dev_idx + 1])
             local_offset = int(logit_offsets_np[start])
@@ -866,7 +796,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             else:
                 indices_np = np.array([], dtype=np.int64)
             indices_buf = Buffer.from_numpy(indices_np).to(
-                self.target_devices[dev_idx]
+                self.devices[dev_idx]
             )
             model_args.extend([target_hidden_states[dev_idx], indices_buf])
 
@@ -884,12 +814,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
-        """Execute EAGLE speculative decoding.
+        """Executes EAGLE speculative decoding.
 
         EAGLE verify-then-draft flow:
-        1. Prefill: target forward + draft KV warmup + sample 1 draft token
+
+        1. Prefill: target forward + draft KV warmup + sample one draft token.
         2. Decode: verify saved drafts + draft new tokens using verification
-           hidden states
+           hidden states.
         """
         # TODO: The sampled draft token during prefill is only for having something to verify in the first call to decode
         context_batch = inputs.flat_batch
@@ -907,6 +838,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 "Penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
             )
 
+        # Allocate enough kv for 2 * num_draft_steps
+        # This ensures we have enough to verify upwards of num_draft_steps tokens
+        # and then generate num_draft_steps more tokens.
+        # TODO: move this logic to the scheduler
+        for context in context_batch:
+            for replica_idx in range(len(replica_batches)):
+                self._target_kv_manager.alloc(
+                    context,
+                    replica_idx=replica_idx,
+                    num_steps=2 * self._num_draft_steps,
+                )
+
         # If any request is in prefill (generated_length == 0), route entire batch
         # through context encoding path
         has_prefill = any(
@@ -915,7 +858,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         if has_prefill:
             return self._execute_context_encoding(
-                context_batch, replica_batches, data_parallel_splits_np
+                context_batch, replica_batches
             )
         else:
             return self._execute_token_generation(
@@ -926,7 +869,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         context_batch: list[TextContext],
         replica_batches: list[list[TextContext]],
-        data_parallel_splits_np: npt.NDArray[np.int64],
     ) -> dict[RequestID, TextGenerationOutput]:
         target_outputs, _target_sampled_tokens, target_sampled_tokens_np = (
             self._target_forward(context_batch, replica_batches)
@@ -943,7 +885,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             self._draft_model,
             context_batch,
             replica_batches,
-            self._num_draft_steps,
             return_n_logits=1,
             is_draft=True,
             hidden_states=ce_hs,
@@ -953,7 +894,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         assert draft_ce_inputs.kv_cache_inputs is not None
         draft_ce_inputs.kv_cache_inputs = (
-            self._draft_kv_manager.increment_cache_lengths(
+            self._target_kv_manager.increment_cache_lengths(
                 draft_ce_inputs.kv_cache_inputs,
                 draft_ce_inputs,
             )
@@ -988,15 +929,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             [int(context.tokens[-1]) for context in context_batch],
             dtype=np.int64,
         )
-        draft_input_tokens = Buffer.from_numpy(last_tokens).to(
-            self.target_devices[0]
-        )
+        draft_input_tokens = Buffer.from_numpy(last_tokens).to(self.devices[0])
         draft_input_offsets_np = np.cumsum(
             [0] + [1 for _ in context_batch],
             dtype=np.uint32,
         )
         draft_input_offsets = Buffer.from_numpy(draft_input_offsets_np).to(
-            self.target_devices[0]
+            self.devices[0]
         )
         merged_tokens, merged_offsets = self._ragged_token_merger(
             draft_input_tokens,
@@ -1024,7 +963,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_tokens,
             draft_logits=None,
             all_draft_logits=None,
-            data_parallel_splits_np=data_parallel_splits_np,
             merged_tokens=merged_tokens,
             merged_offsets=merged_offsets,
             host_merged_offsets=host_merged_offsets,
@@ -1051,7 +989,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             self._draft_model,
             context_batch,
             replica_batches,
-            self._num_draft_steps,
             return_n_logits=1,
             is_draft=True,
             hidden_states=draft_hidden_states,
@@ -1074,11 +1011,5 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         res = self.build_response(context_batch=context_batch)
 
         self._target_kv_manager.step(replica_batches)
-        self._draft_kv_manager.step(replica_batches)
 
         return res
-
-    @traced
-    def release(self, request_id: RequestID) -> None:
-        """Release resources associated with this request ID."""
-        super().release(request_id)

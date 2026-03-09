@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -118,7 +115,11 @@ fn kernel_3[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -176,9 +177,9 @@ fn kernel_3[
     comptime c_frag_size = MMA_M * MMA_N // Int(
         num_threads
     )  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
-    var c_frag = SIMD[
-        accum_type, c_frag_size
-    ]()  # array of accumulator elements
+    var c_frag: InlineArray[
+        Scalar[accum_type], c_frag_size
+    ]  # array of accumulator elements
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -518,9 +519,9 @@ def test_kernel_2[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)

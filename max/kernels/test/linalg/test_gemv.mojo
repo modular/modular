@@ -20,9 +20,6 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_false
 
 from std.utils.index import Index
@@ -54,20 +51,16 @@ def test_gemv() raises:
     comptime m = 4096
     comptime k = 11008
 
-    var lhs_storage = UnsafePointer[Scalar[type],].alloc(
-        m * k, alignment=alignment
-    )
+    var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
     var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
 
-    var rhs_storage = UnsafePointer[Scalar[type],].alloc(k, alignment=alignment)
+    var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
     var rhs = NDBuffer[type, 1, _, Dim(k)](rhs_storage)
 
-    var out_storage = UnsafePointer[Scalar[type],].alloc(m, alignment=alignment)
+    var out_storage = alloc[Scalar[type],](m, alignment=alignment)
     var out = NDBuffer[type, 1, _, Dim(m)](out_storage)
 
-    var ref_out_storage = UnsafePointer[Scalar[type]].alloc(
-        m, alignment=alignment
-    )
+    var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
     var ref_out = NDBuffer[type, 1, _, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage, m * k)

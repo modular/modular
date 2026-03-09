@@ -39,16 +39,9 @@ from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_shape
-from std.memory import stack_allocation, LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-"""Legacy OpaquePointer migration helper."""
-comptime OpaquePointer = UnsafePointer[NoneType, origin=MutAnyOrigin]
-"""Legacy OpaquePointer migration helper."""
-
+from std.memory import stack_allocation
 from std.utils import IndexList, StaticTuple
 from std.utils.index import Index
-
 from .int_tuple import (
     _get_index_type,
     _get_layout_type,
@@ -368,7 +361,7 @@ struct LayoutTensor[
     comptime rank = Self.layout.rank()
     """The number of dimensions in the tensor's layout."""
 
-    var ptr: LegacyUnsafePointer[
+    var ptr: UnsafePointer[
         Scalar[Self.dtype],
         address_space=Self.address_space,
         origin=Self.origin,
@@ -518,7 +511,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: LegacyUnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -550,7 +543,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: LegacyUnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -583,7 +576,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: LegacyUnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -1096,7 +1089,11 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn ptr_at_offset(
         self, coords: IndexList
-    ) -> UnsafePointer[Scalar[Self.dtype], address_space=Self.address_space]:
+    ) -> UnsafePointer[
+        Scalar[Self.dtype],
+        address_space=Self.address_space,
+        origin=self.origin,
+    ]:
         """Get a pointer offset at the given flattened coordinates.
 
         Args:
@@ -2105,7 +2102,9 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn load[
-        width: Int, load_alignment: Int = Self.alignment
+        width: Int,
+        load_alignment: Int = Self.alignment,
+        non_temporal: Bool = False,
     ](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified 2D coordinates.
 
@@ -2117,6 +2116,9 @@ struct LayoutTensor[
             width: The number of elements to load into the SIMD vector. Should match
                   the target hardware's vector width for optimal performance.
             load_alignment: The alignment to use. Defaults to Self.alignment.
+            non_temporal: If True, issue a non-temporal (streaming) load hint,
+                indicating the data has no temporal locality and should not
+                pollute caches.
 
         Args:
             m: The row index (first dimension).
@@ -2157,13 +2159,15 @@ struct LayoutTensor[
                 0 <= n and n + width <= dim1
             ), "LayoutTensor load out of bounds"
 
-        return self.ptr.load[width=width, alignment=load_alignment](
-            self._offset(m, n)
-        )
+        return self.ptr.load[
+            width=width, alignment=load_alignment, non_temporal=non_temporal
+        ](self._offset(m, n))
 
     @always_inline("nodebug")
     fn load[
-        width: Int, load_alignment: Int = Self.alignment
+        width: Int,
+        load_alignment: Int = Self.alignment,
+        non_temporal: Bool = False,
     ](self, coords: IndexList[...]) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified coordinates.
 
@@ -2176,6 +2180,9 @@ struct LayoutTensor[
             width: The number of elements to load into the SIMD vector. Should match
                     the target hardware's vector width for optimal performance.
             load_alignment: The alignment to use. Defaults to Self.alignment.
+            non_temporal: If True, issue a non-temporal (streaming) load hint,
+                indicating the data has no temporal locality and should not
+                pollute caches.
 
         Args:
             coords: The coordinates to index. Must have the same size as the tensor's rank.
@@ -2200,9 +2207,9 @@ struct LayoutTensor[
         comptime assert self.rank == coords.size
         assert self.runtime_layout.stride.value[self.rank - 1] == 1
 
-        return self.ptr.load[width=width, alignment=load_alignment](
-            self._offset(coords)
-        )
+        return self.ptr.load[
+            width=width, alignment=load_alignment, non_temporal=non_temporal
+        ](self._offset(coords))
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
@@ -2607,7 +2614,7 @@ struct LayoutTensor[
             A null `LayoutTensor` object.
         """
         return Self.StackTensorType(
-            LegacyUnsafePointer[
+            UnsafePointer[
                 Scalar[Self.dtype],
                 address_space=Self.address_space,
                 origin=MutExternalOrigin,
@@ -2642,7 +2649,7 @@ struct LayoutTensor[
         ), "DeviceBuffer is only used on GENERIC address space"
         return DeviceBuffer[Self.dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[Self.dtype]]](self.ptr),
+            self.ptr,
             self.size(),
             owning=False,
         )
@@ -3605,7 +3612,7 @@ struct LayoutTensor[
         ]()[0],
         # Splitting inherently introduces mutable aliases of the same origin -
         # each chunk won't overlap, but the origin can't indicate that.
-        MutAnyOrigin,
+        AnyOrigin[mut=Self.mut],
         address_space=Self.address_space,
         element_layout=Self.element_layout,
         alignment=Self.alignment,
@@ -3662,6 +3669,10 @@ struct LayoutTensor[
         comptime stride = Self.layout.stride[axis].value()
         var tiles = Self.StaticSplitType[count, axis]()
 
+        # Safety: this is to turn off the mutable aliasing origin check, so we
+        # can have multiple LayoutTensors using the same pointer/origin. We've
+        # ensured that we're not overlapping any of the pointers.
+        var ptr = self.ptr.unsafe_origin_cast[AnyOrigin[mut=Self.mut]]()
         comptime for i in range(count):
             # Need tile_size alias to ensure that the ptr passed to LayoutTensor is
             # known at compile time. Otherwise we get compile time failure.
@@ -3674,11 +3685,10 @@ struct LayoutTensor[
                     tile_size=Self.layout.shape[axis].value() // count,
                     axis=axis,
                 ]()[0],
-                MutAnyOrigin,
                 address_space=Self.address_space,
                 element_layout=Self.element_layout,
                 alignment=Self.alignment,
-            ](self.ptr + i * tile_size * stride)
+            ](ptr + i * tile_size * stride)
 
         return tiles
 
@@ -5168,7 +5178,7 @@ struct LayoutTensor[
     @always_inline
     fn distance(
         self,
-        addr: LegacyUnsafePointer[
+        addr: UnsafePointer[
             mut=False,
             Scalar[Self.dtype],
             address_space=Self.address_space,
@@ -6124,7 +6134,7 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor[mut=False, ...]):
     """Synchronously copy data from DRAM (global memory) to SRAM (shared memory)
     in a GPU context.
 
@@ -8011,7 +8021,7 @@ struct LayoutTensorIter[
     ]
     """The unsigned integer type used for indexing into memory."""
 
-    var ptr: LegacyUnsafePointer[
+    var ptr: UnsafePointer[
         Scalar[Self.dtype],
         address_space=Self.address_space,
         origin=Self.origin,
@@ -8067,7 +8077,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: LegacyUnsafePointer[
+        ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -8113,7 +8123,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: LegacyUnsafePointer[
+        ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -8134,7 +8144,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: LegacyUnsafePointer[
+        ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,

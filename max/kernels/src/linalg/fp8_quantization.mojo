@@ -22,7 +22,7 @@ from buffer.dimlist import DimList
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx,
+    block_idx_int as block_idx,
     global_idx,
     thread_idx,
 )
@@ -30,17 +30,17 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import B200, H100
 from layout import (
+    Coord,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
     TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from std.logger import Logger
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
 from std.algorithm import elementwise
@@ -225,8 +225,8 @@ fn quantize_fp8_kernel[
     var thread_max = Scalar[accum_type](0)
 
     var tid = thread_idx.x
-    var row = Int(block_idx.x)
-    var group_idx = Int(block_idx.y)
+    var row = block_idx.x
+    var group_idx = block_idx.y
 
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
@@ -366,9 +366,9 @@ fn batched_quantize_fp8_kernel[
     var thread_max = Scalar[accum_type](0)
 
     var tid = thread_idx.x
-    var row = Int(block_idx.x)
-    var group_idx = Int(block_idx.y)
-    var batch_idx = Int(block_idx.z)
+    var row = block_idx.x
+    var group_idx = block_idx.y
+    var batch_idx = block_idx.z
 
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
@@ -649,7 +649,7 @@ fn matmul_dynamic_scaled_fp8[
             var c_dummy = NDBuffer[
                 DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
             ](
-                UnsafePointer[Scalar[DType.float32]](),
+                UnsafePointer[Scalar[DType.float32], MutExternalOrigin](),
                 IndexList[2](M, N),
             )
 
@@ -860,11 +860,11 @@ fn naive_blockwise_scaled_fp8_matmul[
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
-    var a_scales = from_ndbuffer_row_major(a_scales_device)
-    var b_scales = from_ndbuffer_row_major(b_scales_device)
+    var a = TileTensor(a_device).to_layout_tensor()
+    var b = TileTensor(b_device).to_layout_tensor()
+    var c = TileTensor(c_device).to_layout_tensor()
+    var a_scales = TileTensor(a_scales_device).to_layout_tensor()
+    var b_scales = TileTensor(b_scales_device).to_layout_tensor()
 
     var M = c_device.dim(0)
     var N = c_device.dim(1)
@@ -1199,7 +1199,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     var n = Int(global_idx.x)
     var m_local = Int(global_idx.y)
 
-    var expert_idx = Int(block_idx.z)
+    var expert_idx = block_idx.z
 
     # Determine rows for this expert
     var M_local: Int = Int(a_offsets[expert_idx + 1] - a_offsets[expert_idx])
@@ -1272,8 +1272,8 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 fn convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: LayoutTensor[DType.float8_e4m3fn, ...],
-    output_buffer: LayoutTensor[mut=True, DType.float8_e4m3fnuz, ...],
+    input_buffer: TileTensor[dtype=DType.float8_e4m3fn, ...],
+    output_buffer: TileTensor[mut=True, dtype=DType.float8_e4m3fnuz, ...],
     context: DeviceContext,
 ) raises:
     """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.
@@ -1286,21 +1286,23 @@ fn convert_e4m3fn_to_e4m3fnuz(
         output_buffer: Output tensor to store E4M3FNUZ format.
         context: Device context for kernel execution.
     """
-    comptime assert (
-        input_buffer.layout.shape == output_buffer.layout.shape
-    ), "Input and output shapes must match"
+    comptime assert input_buffer.rank == 2, "expected rank-2 input"
+    comptime assert output_buffer.rank == 2, "expected rank-2 output"
+    debug_assert(
+        Int(input_buffer.dim[0]()) == Int(output_buffer.dim[0]())
+        and Int(input_buffer.dim[1]()) == Int(output_buffer.dim[1]()),
+        "Input and output shapes must match",
+    )
 
     @always_inline
     @parameter
     @__copy_capture(input_buffer, output_buffer)
     fn convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    ](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
 
-        var idx = rebind[IndexList[2]](idx_arg)
-
-        var input_vec_e4m3fn = input_buffer.load[width=width](idx)
+        var input_vec_e4m3fn = input_buffer.load_linear[width](idx)
         var input_vec_int8 = bitcast[DType.int8](input_vec_e4m3fn)
 
         comptime ROCM_FP8_NAN_AS_INT = -128
@@ -1309,7 +1311,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
             Int8(0), input_vec_int8
         )
         var output_vec = bitcast[DType.float8_e4m3fnuz](input_vec_int8)
-        output_buffer.store(idx, output_vec)
+        output_buffer.store_linear(idx, output_vec)
 
     comptime target_simd_width = simd_width_of[
         DType.float8_e4m3fn, target=get_gpu_target()
@@ -1317,7 +1319,10 @@ fn convert_e4m3fn_to_e4m3fnuz(
 
     _elementwise_impl_gpu[
         func=convert_kernel, simd_width=UInt(target_simd_width)
-    ](IndexList[2](input_buffer.dim[0](), input_buffer.dim[1]()), context)
+    ](
+        IndexList[2](Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())),
+        context,
+    )
 
 
 ########################################################
@@ -1399,17 +1404,13 @@ fn blockwise_scaled_fp8_with_epilogue[
                 simd_width_of[c_type, target=get_gpu_target()]()
             )
 
-            var c_ndbuf = NDBuffer[c_type, 2](
-                c.ptr, IndexList[2](Int(c.dim[0]()), Int(c.dim[1]()))
-            )
-
             @parameter
-            @__copy_capture(c_ndbuf)
+            @__copy_capture(c)
             fn epilogue_wrapper[
                 simd_width: Int, rank: Int, alignment: Int = 1
             ](idx: IndexList[rank]):
                 var c_coord = Index(idx[0], idx[1])
-                var c_val = c_ndbuf.load[width=simd_width](c_coord)
+                var c_val = c.load_linear[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
                     c_coord, c_val
                 )
@@ -1436,13 +1437,10 @@ fn blockwise_scaled_fp8_with_epilogue[
             var c_m = Int(c.dim[0]())
             var c_n = Int(c.dim[1]())
             var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_m * c_n)
-            var c_tmp_ndbuf = NDBuffer[c_type, 2, MutExternalOrigin](
-                rebind[UnsafePointer[Scalar[c_type], origin=MutExternalOrigin]](
-                    tmp_device_buffer.unsafe_ptr()
-                ),
-                IndexList[2](c_m, c_n),
+            var c_tmp = TileTensor(
+                tmp_device_buffer.unsafe_ptr(),
+                row_major(Coord(Idx(c_m), Idx(c_n))),
             )
-            var c_tmp = TileTensor(c_tmp_ndbuf)
 
             blockwise_scaled_fp8_with_epilogue[
                 transpose_b=transpose_b,
@@ -1453,6 +1451,8 @@ fn blockwise_scaled_fp8_with_epilogue[
             _ = tmp_device_buffer^
 
     else:
+        # TODO(MSTDL-2368): Migrate naive_blockwise_scaled_fp8_matmul to
+        # TileTensor.
         # For non B200 GPUs, we use the naive blockwise scaled fp8 matmul
         # which supports normal epilogue natively. Construct NDBuffers for
         # the NDBuffer overload.

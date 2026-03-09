@@ -468,8 +468,11 @@ fn test_tma_async_multiple_store_kernel[
         if thread_idx.x == 0:
             tma_tile.async_store(tile, (i * tileN, Int(block_idx.y) * tileM))
             cp_async_bulk_commit_group()
+            # Wait for the TMA store to finish reading from shared memory
+            # before the next iteration overwrites it.
+            cp_async_bulk_wait_group[0]()
 
-    cp_async_bulk_wait_group[0]()
+        barrier()
 
 
 def test_tma_async_store[
