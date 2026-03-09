@@ -1,0 +1,125 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Regression test for MLAProbeStrategy coverage.
+
+For representative (batch_size, cache_length) combinations, verifies that the
+probing strategy discovers every reachable num_partitions bucket using the real
+``mo.mla.compute_dispatch_args.scalar`` custom op.
+"""
+
+import pytest
+from max.driver import CPU, Accelerator
+from max.engine import InferenceSession
+from max.graph import DeviceRef
+from max.nn.kv_cache.utils import AttentionDispatchResolver
+from max.pipelines.lib.graph_capture import MLAProbeStrategy
+
+NUM_HEADS = 128
+BATCH_SIZES = [1, 2, 4, 8, 16, 31, 32, 33, 63, 64, 65, 96, 128]
+
+
+def _resolve_np(
+    resolver: AttentionDispatchResolver,
+    batch_size: int,
+    cache_length: int,
+) -> int:
+    """Returns num_partitions from the real Mojo dispatch kernel."""
+    return resolver(batch_size, 1, cache_length).num_partitions
+
+
+@pytest.fixture(scope="module")
+def mla_resolver() -> AttentionDispatchResolver:
+    """Builds an MLA dispatch resolver backed by the real custom op."""
+    device = DeviceRef.GPU()
+    session = InferenceSession(devices=[CPU(), Accelerator()])
+    return AttentionDispatchResolver(
+        session=session,
+        device=device,
+        is_mla=True,
+        n_kv_heads_per_device=1,
+        num_q_heads=NUM_HEADS,
+    )
+
+
+def test_mla_probe_coverage(
+    mla_resolver: AttentionDispatchResolver,
+) -> None:
+    """Every reachable num_partitions must be covered by the probe strategy.
+
+    For each representative batch size, we:
+    1. Sweep all cache lengths [1..16384] to find reachable num_partitions.
+    2. Run the MLAProbeStrategy to find probed (captured) num_partitions.
+    3. Verify that every reachable np can be bucketed to a captured np.
+    """
+    strategy = MLAProbeStrategy()
+    max_cache_length = 16384
+
+    for batch_size in BATCH_SIZES:
+        # 1. Find all reachable np values by sweeping cache lengths.
+        reachable_nps: set[int] = set()
+        for cl in range(1, max_cache_length + 1):
+            reachable_nps.add(_resolve_np(mla_resolver, batch_size, cl))
+
+        # 2. Simulate what the probe strategy would capture.
+        probe_lengths = strategy.probe_lengths(max_cache_length)
+        captured_nps: set[int] = set()
+        for cl in probe_lengths:
+            captured_nps.add(_resolve_np(mla_resolver, batch_size, cl))
+        captured_nps_sorted = sorted(captured_nps)
+
+        # 3. Every reachable np must be bucketable to some captured np.
+        for runtime_np in sorted(reachable_nps):
+            bucketed = strategy.bucket_num_partitions(
+                runtime_np, captured_nps_sorted
+            )
+            assert bucketed is not None, (
+                f"batch_size={batch_size}: runtime num_partitions={runtime_np} "
+                f"cannot be bucketed. captured={captured_nps_sorted}, "
+                f"reachable={sorted(reachable_nps)}"
+            )
+
+
+def test_mla_probe_coverage_negative(
+    mla_resolver: AttentionDispatchResolver,
+) -> None:
+    """Without bucket_num_partitions, granularity=256 misses np values.
+
+    At granularity=256, probing misses np=2 for many batch sizes.
+    """
+    max_cache_length = 16384
+
+    class CoarseMLAProbeStrategy(MLAProbeStrategy):
+        granularity = 256
+
+    strategy = CoarseMLAProbeStrategy()
+
+    for batch_size in BATCH_SIZES:
+        reachable_nps: set[int] = set()
+        for cl in range(1, max_cache_length + 1):
+            reachable_nps.add(_resolve_np(mla_resolver, batch_size, cl))
+
+        probe_lengths = strategy.probe_lengths(max_cache_length)
+        captured_nps: set[int] = set()
+        for cl in probe_lengths:
+            captured_nps.add(_resolve_np(mla_resolver, batch_size, cl))
+
+        # Exact match (no bucketing) — should find missing np values.
+        missing = reachable_nps - captured_nps
+        if missing:
+            return
+
+    pytest.fail(
+        "Expected granularity=256 without bucketing to miss some "
+        "num_partitions, but all were covered — the test harness may "
+        "be broken."
+    )

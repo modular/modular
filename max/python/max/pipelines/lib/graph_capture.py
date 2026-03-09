@@ -82,9 +82,9 @@ class MHAProbeStrategy(AttentionMetadataProbeStrategy):
 
 
 class MLAProbeStrategy(AttentionMetadataProbeStrategy):
-    """MLA: probe at 256-token granularity, bucket up to nearest captured np."""
+    """MLA: probe at 64-token granularity, bucket up to nearest captured np."""
 
-    granularity = 256
+    granularity = 64
 
     def probe_lengths(self, max_cache_length: int) -> list[int]:
         """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
