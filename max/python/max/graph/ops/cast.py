@@ -31,5 +31,7 @@ def cast(x: StrongTensorValueLike, dtype: DType) -> TensorValue:
         specified dtype.
     """
     x = TensorValue(x)
+    if x.dtype == dtype:
+        return x
     cast_type = x.type.cast(dtype)
     return Graph.current._add_op_generated(mo.CastOp, cast_type, x)[0].tensor

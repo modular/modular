@@ -30,7 +30,15 @@ from max.experimental.tensor import (
     defaults_like,
     driver_tensor_type,
 )
-from max.graph import BufferValue, DeviceRef, Graph
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    ops,
+)
+from max.graph import (
+    TensorType as GraphTensorType,
+)
 
 
 def test_tensor_basic() -> None:
@@ -392,3 +400,36 @@ def test_tensor_to_idempotent_module() -> None:
 
     param_ids_second = {name: id(t) for name, t in model.parameters}
     assert param_ids_first == param_ids_second
+
+
+# ---------------------------------------------------------------------------
+# Tensor.cast() idempotency tests
+# ---------------------------------------------------------------------------
+
+
+def test_tensor_cast_same_dtype_returns_self() -> None:
+    """Realized tensor.cast(same_dtype) returns the same object (no-op)."""
+    buf = Buffer.zeros([3, 4], DType.float32, CPU())
+    t = Tensor(storage=buf)
+    assert t.real
+    result = t.cast(DType.float32)
+    assert result is t
+
+
+def test_ops_cast_different_dtype_emits_op() -> None:
+    """Graph-level ops.cast(x, different_dtype) emits a new CastOp."""
+    input_type = GraphTensorType(DType.float32, shape=[2, 3], device=CPU())
+    with Graph("cast_diff_test", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        y = ops.cast(x, DType.int32)
+        assert y._mlir_value is not x._mlir_value
+        assert y.dtype == DType.int32
+
+
+def test_ops_cast_same_dtype_no_op() -> None:
+    """Graph-level ops.cast(x, x.dtype) returns the same underlying value."""
+    input_type = GraphTensorType(DType.float32, shape=[2, 3], device=CPU())
+    with Graph("cast_noop_test", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        y = ops.cast(x, DType.float32)
+        assert y._mlir_value is x._mlir_value
