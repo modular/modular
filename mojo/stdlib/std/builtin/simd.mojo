@@ -1846,6 +1846,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             return Int(self._refine[new_size=1]().cast[DType.int]()._mlir_value)
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.

@@ -102,6 +102,7 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
     fn __int__(self) -> Int:
         return self.axis
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.

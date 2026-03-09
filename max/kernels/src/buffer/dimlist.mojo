@@ -134,6 +134,7 @@ struct Dim(
             return False
         return self.get() % alignment == 0
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.

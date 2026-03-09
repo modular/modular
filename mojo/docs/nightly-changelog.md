@@ -728,6 +728,14 @@ This version is still a work in progress.
   Multiple kernels generated from the same function are disambiguated with a
   numeric suffix (e.g. `<out>_<kernelfn>_1.ptx`).
 
+- `mojo doc` is now more consistent with Python in its treatment of private
+  members. Any member name starting with an underscore (`_`) is treated as
+  private unless it is a "dunder" member (starting and ending with
+  double-underscores). In practice this means that members that start but don't
+  end with double underscores (`__example()`) are now treated as private. Dunder
+  methods that start with `__mlir` are now treated as public unless marked with
+  the `@doc_private` decorator.
+
 ## ❌ Removed
 
 - The `.🔥` (flame) and `📦` (package) emoji file extensions are no longer
