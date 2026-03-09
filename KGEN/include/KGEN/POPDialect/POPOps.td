@@ -406,7 +406,8 @@ def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType]> {
 // ShlOp
 //===----------------------------------------------------------------------===//
 
-def POP_ShlOp : POP_ArithmeticBinaryOp<"shl", [Pure]> {
+def POP_ShlOp : POP_ArithmeticBinaryOp<"shl", [Pure,
+                DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "shift left";
   let description = [{
     The `pop.shl` operation returns the first operand shifted to the left a
@@ -431,7 +432,8 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl", [Pure]> {
 // ShrOp
 //===----------------------------------------------------------------------===//
 
-def POP_ShrOp : POP_ArithmeticBinaryOp<"shr", [Pure]> {
+def POP_ShrOp : POP_ArithmeticBinaryOp<"shr", [Pure,
+                DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "shift right";
   let description = [{
     The `pop.shr` operation returns the first operand shifted to the right a

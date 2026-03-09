@@ -80,10 +80,6 @@ enum IndexFold : uint8_t {
   kNoIndex,     // no index folding allowed
   kIndexResult, // index operation creates an index
   kOtherResult, // index operation does not create an index
-  k64BitResult, // index operation does not create an index and produces 64-bit
-                // result
-  k32BitResult, // index operation does not create an index and produces 32-bit
-                // result
 };
 
 namespace Detail {
@@ -249,24 +245,10 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
           return value;
       };
 
-      // For a k32BitResult don't try to fold as 64bit index, as it won't always
-      // correct for the result type.
-      if constexpr (foldType == k32BitResult) {
-        OpResultT result32 = op(args.trunc(32)...);
-        if constexpr (isOptional)
-          if (!result32.has_value())
-            return {};
-        return unwrap(result32);
-      }
-
       OpResultT result64 = op(args...);
       if constexpr (isOptional)
         if (!result64.has_value())
           return {};
-      if constexpr (foldType == k64BitResult) {
-        // Return value that matches the result type
-        return unwrap(result64);
-      }
 
       OpResultT result32 = op(args.trunc(32)...);
       if constexpr (isOptional)
@@ -427,20 +409,6 @@ SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, OpFns &&...ops) {
   return Detail::foldBitwiseSIMDReduceOp(operand, dtype, dtype,
                                          std::forward<OpFns>(ops)...);
 }
-
-/// Try to fold a unary index operation of the given result dtype for a given
-/// target. If the target is not specified, or the index bit width is not known,
-/// we only fold if the result is the same on 32 and 64 bit platforms.
-OpFoldResult
-foldIndexForTarget(Attribute operand, KGENDType dtype, TargetInfoAttr target,
-                   llvm::function_ref<std::optional<APSInt>(APSInt)> fn);
-
-/// Try to fold a binary index operation of the given result dtype for a given
-/// target. If the target is not specified, or the index bit width is not known,
-/// we only fold if the result is the same on 32 and 64 bit platforms.
-OpFoldResult foldIndexForTarget(
-    ArrayRef<Attribute> operands, KGENDType dtype, TargetInfoAttr target,
-    llvm::function_ref<std::optional<APSInt>(APSInt, APSInt)> fn);
 
 /// Interpret a memcpy operation.
 ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src, Attribute len,

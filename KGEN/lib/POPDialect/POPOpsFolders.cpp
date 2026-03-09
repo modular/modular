@@ -344,17 +344,12 @@ static OpFoldResult foldDivOp(ArrayRef<Attribute> operands,
   if (!dtype)
     return {};
 
-  if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexForTarget(
-        operands, *dtype, target,
-        [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-          if (rhs.isZero())
-            return std::nullopt;
-          return lhs / rhs;
-        });
+  std::optional<int64_t> indexBitWidth;
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
 
   return foldSIMDOp(
-      operands,
+      operands, indexBitWidth,
       [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
         if (rhs.isZero())
           return std::nullopt;
@@ -406,17 +401,12 @@ static OpFoldResult foldRemOp(ArrayRef<Attribute> operands,
   if (!dtype)
     return {};
 
-  if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexForTarget(
-        operands, *dtype, target,
-        [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-          if (rhs.isZero())
-            return std::nullopt;
-          return lhs % rhs;
-        });
+  std::optional<int64_t> indexBitWidth;
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
 
   return foldSIMDOp(
-      operands,
+      operands, indexBitWidth,
       [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
         if (rhs.isZero())
           return std::nullopt;
@@ -541,6 +531,31 @@ OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+ErrorTreeOrSuccess ShlOp::interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  if (OpFoldResult result =
+          foldSIMDShl(operands[0], operands[1], state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::ShlOp");
+}
+
+ErrorTreeOrSuccess
+ShlOp::parametric_interpret(ArrayRef<Attribute> operands,
+                            ParametricInterpreterState &state) {
+  if (OpFoldResult result =
+          foldSIMDShl(operands[0], operands[1], state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::ShlOp");
+}
+
 OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
   if (auto fold = foldSIMDShr(adaptor.getLhs(), adaptor.getRhs(),
                               lookupTargetInfo(*this))) {
@@ -548,6 +563,31 @@ OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
       return ret;
   }
   return {};
+}
+
+ErrorTreeOrSuccess ShrOp::interpret(ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  if (OpFoldResult result =
+          foldSIMDShr(operands[0], operands[1], state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::ShrOp");
+}
+
+ErrorTreeOrSuccess
+ShrOp::parametric_interpret(ArrayRef<Attribute> operands,
+                            ParametricInterpreterState &state) {
+  if (OpFoldResult result =
+          foldSIMDShr(operands[0], operands[1], state.getTarget())) {
+    if (auto attr = dyn_cast<Attribute>(result)) {
+      state.mapResults(attr);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::ShrOp");
 }
 
 //===----------------------------------------------------------------------===//
@@ -708,18 +748,6 @@ static bool compareConstants(CmpPredicate pred, ArgT lhs, ArgT rhs) {
   llvm_unreachable("invalid cmp predicate");
 }
 
-template <IndexFold T>
-static OpFoldResult doConstCmpFold(POP::CmpPredicate pred,
-                                   ArrayRef<Attribute> operands) {
-  return foldSIMDOpResult<T>(
-      operands, KGENDType::kBool,
-      [&](APSInt lhs, APSInt rhs) { return compareConstants(pred, lhs, rhs); },
-      [&](APFloat lhs, APFloat rhs) {
-        return compareConstants(pred, lhs, rhs);
-      },
-      [&](bool lhs, bool rhs) { return compareConstants(pred, lhs, rhs); });
-}
-
 static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
                                     Value lhs, Value rhs,
                                     POP::CmpPredicate pred,
@@ -753,14 +781,22 @@ static OpFoldResult cmpOpfoldHelper(SIMDType lhsType, SIMDType resultType,
 
   // Handle the case of applying the operation at compile time on the constant
   // values.
-  if (target && target.getIndexBitWidth() == 32) {
-    if (auto result = doConstCmpFold<POP::k32BitResult>(pred, operands))
-      return result;
-  } else if (target && target.getIndexBitWidth() == 64) {
-    if (auto result = doConstCmpFold<POP::k64BitResult>(pred, operands))
-      return result;
-  } else if (auto result = doConstCmpFold<POP::kOtherResult>(pred, operands)) {
-    return result;
+  std::optional<int64_t> indexBitWidth;
+  if (target)
+    indexBitWidth = target.resolveIndexBitWidth();
+
+  if (auto fold = foldSIMDOpResult<POP::kOtherResult>(
+          operands, KGENDType::kBool, indexBitWidth,
+          [&](APSInt lhs, APSInt rhs) {
+            return compareConstants(pred, lhs, rhs);
+          },
+          [&](APFloat lhs, APFloat rhs) {
+            return compareConstants(pred, lhs, rhs);
+          },
+          [&](bool lhs, bool rhs) {
+            return compareConstants(pred, lhs, rhs);
+          })) {
+    return fold;
   }
 
   // Fold `eq(true, x) -> x` and `ne(false, x) -> x`.
@@ -998,20 +1034,12 @@ static OpFoldResult bitcastSIMDIndex(ArrayRef<Attribute> operands,
                                      KGENDType inputDType,
                                      KGENDType outputDType,
                                      TargetInfoAttr target, OpsFns &&...ops) {
-  if (inputDType.isIndex() || inputDType.isUIndex()) {
+  if (inputDType.isIndex() || inputDType.isUIndex() || inputDType.isAddress()) {
     if (!target)
       return {};
-    ssize_t indexWidth = target.resolveIndexBitWidth();
-
-    if (indexWidth == 64) {
-      return foldSIMDOpResult<POP::k64BitResult>(operands, outputDType,
-                                                 std::forward<OpsFns>(ops)...);
-    }
-    if (indexWidth == 32) {
-      return foldSIMDOpResult<POP::k32BitResult>(operands, outputDType,
-                                                 std::forward<OpsFns>(ops)...);
-    }
-    return {};
+    std::optional<int64_t> indexBitWidth = target.resolveIndexBitWidth();
+    return foldSIMDOpResult<POP::kOtherResult>(
+        operands, outputDType, indexBitWidth, std::forward<OpsFns>(ops)...);
   }
   return foldSIMDOpResult<POP::kNoIndex>(operands, outputDType,
                                          std::forward<OpsFns>(ops)...);
@@ -1085,8 +1113,9 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
       typeValues, SIMDType::get(operand.getContext(), outSize, outputDType));
 }
 
-static OpFoldResult evaluate(SIMDType resultType, SIMDType inputType,
-                             TargetInfoAttr target, Attribute operand) {
+static OpFoldResult evaluateBitcastOp(SIMDType resultType, SIMDType inputType,
+                                      TargetInfoAttr target,
+                                      Attribute operand) {
   // Don't fold if the size changes. This requires knowing the endianness of the
   // target.
   std::optional<KGENDType> dtype = resultType.getResolvedDType();
@@ -1141,8 +1170,8 @@ static OpFoldResult evaluate(SIMDType resultType, SIMDType inputType,
 
 ErrorTreeOrSuccess BitcastOp::interpret(ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
-  OpFoldResult result = evaluate(getType(), getInput().getType(),
-                                 state.getTarget(), operands.front());
+  OpFoldResult result = evaluateBitcastOp(getType(), getInput().getType(),
+                                          state.getTarget(), operands.front());
 
   if (result && isa<Attribute>(result)) {
     state.mapResults(cast<Attribute>(result));
@@ -1157,8 +1186,8 @@ BitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
   auto resultType = cast<SIMDType>(state.getReboundType(getType()));
   auto inputType = cast<SIMDType>(cast<TypedAttr>(operands[0]).getType());
 
-  OpFoldResult result =
-      evaluate(resultType, inputType, state.getTarget(), operands.front());
+  OpFoldResult result = evaluateBitcastOp(resultType, inputType,
+                                          state.getTarget(), operands.front());
   if (result && isa<Attribute>(result)) {
     state.mapResults(cast<Attribute>(result));
     return success();
@@ -1169,8 +1198,8 @@ BitcastOp::parametric_interpret(ArrayRef<Attribute> operands,
 OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   SIMDType resultType = getType();
   SIMDType inputType = getInput().getType();
-  return evaluate(resultType, inputType, lookupTargetInfo(*this),
-                  adaptor.getOperands().front());
+  return evaluateBitcastOp(resultType, inputType, lookupTargetInfo(*this),
+                           adaptor.getOperands().front());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1343,7 +1372,7 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
 
   if (auto result =
           castOpfoldHelper(*this, operands, resultType, inputType, outputType,
-                           state.getTarget().getIndexBitWidth())) {
+                           state.getTarget().resolveIndexBitWidth())) {
     state.mapResults(cast<Attribute>(result));
     return success();
   }
@@ -1351,42 +1380,7 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
   if (auto ret = validateSIMDConstruction(resultType, getLoc()))
     return ret;
 
-  auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
-  std::optional<KGENDType> dtype = getType().getResolvedDType();
-  if (!in || !dtype)
-    return ErrorTree(getLoc(), "types must be known at this point");
-
-  auto inDType = in.getType().getResolvedDType();
-  if (!(inDType->isIndex() || inDType->isUIndex()) || !dtype->isInt() ||
-      dtype->getIntegerWidthInBits() != 64)
-    return ErrorTree(getLoc(), "not implemented");
-
-  // A special case when the input is index type and output is 64-bit integer.
-  // Currently, it's only one known case when folder can fail that makes
-  // interpreter unhappy.
-  if (!state.getTarget())
-    return ErrorTree(getLoc(), "target unknown");
-  unsigned ptrWidth = state.getTarget().resolveIndexBitWidth();
-
-  unsigned width = 64;
-  auto res = foldSIMDOpResult<POP::k64BitResult>(
-      operands, *dtype,
-      [&](const APSInt &in) -> APSInt {
-        // First extend or truncate to pointer width and only after that to
-        // 64-bit integer
-        return in.extOrTrunc(ptrWidth).extOrTrunc(width);
-      },
-      [&](const APFloat &in) -> std::optional<APSInt> {
-        APSInt iv(width, dtype->isUInt());
-        bool ignored;
-        if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
-            APFloat::opInvalidOp)
-          return {};
-        return iv;
-      },
-      [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
-  state.mapResults(res);
-  return success();
+  return ErrorTree(getLoc(), "failed to interpret POP::CastOp");
 }
 
 ErrorTreeOrSuccess
@@ -1401,7 +1395,7 @@ CastOp::parametric_interpret(ArrayRef<Attribute> operands,
 
   if (auto result =
           castOpfoldHelper(*this, operands, resultType, inputType, outputType,
-                           state.getTarget().getIndexBitWidth())) {
+                           state.getTarget().resolveIndexBitWidth())) {
     state.mapResults(cast<Attribute>(result));
     return success();
   }
@@ -1409,42 +1403,7 @@ CastOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (auto ret = validateSIMDConstruction(resultType, getLoc()))
     return ret;
 
-  auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
-  std::optional<KGENDType> dtype = resultType.getResolvedDType();
-  if (!in || !dtype)
-    return ErrorTree(getLoc(), "types must be known at this point");
-
-  auto inDType = in.getType().getResolvedDType();
-  if (!(inDType->isIndex() || inDType->isUIndex()) || !dtype->isInt() ||
-      dtype->getIntegerWidthInBits() != 64)
-    return ErrorTree(getLoc(), "not implemented");
-
-  // A special case when the input is index type and output is 64-bit integer.
-  // Currently, it's only one known case when folder can fail that makes
-  // interpreter unhappy.
-  if (!state.getTarget())
-    return ErrorTree(getLoc(), "target unknown");
-
-  unsigned ptrWidth = state.getTarget().resolveIndexBitWidth();
-  unsigned width = 64;
-  auto res = foldSIMDOpResult<POP::k64BitResult>(
-      operands, *dtype,
-      [&](const APSInt &in) -> APSInt {
-        // First extend or truncate to pointer width and only after that to
-        // 64-bit integer
-        return in.extOrTrunc(ptrWidth).extOrTrunc(width);
-      },
-      [&](const APFloat &in) -> std::optional<APSInt> {
-        APSInt iv(width, dtype->isUInt());
-        bool ignored;
-        if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
-            APFloat::opInvalidOp)
-          return {};
-        return iv;
-      },
-      [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
-  state.mapResults(res);
-  return success();
+  return ErrorTree(getLoc(), "failed to interpret POP::CastOp");
 }
 
 //===----------------------------------------------------------------------===//

@@ -322,89 +322,6 @@ OpFoldResult POP::foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
       [](bool lhs, bool rhs) { return lhs & rhs; });
 }
 
-OpFoldResult
-POP::foldIndexForTarget(Attribute operand, KGENDType dtype,
-                        TargetInfoAttr target,
-                        llvm::function_ref<std::optional<APSInt>(APSInt)> fn) {
-  // For index type get its size from the target.
-  if (target) {
-    ssize_t intWidth = target.resolveIndexBitWidth();
-    if (intWidth == 64)
-      return POP::Detail::foldSIMDOpIndex<POP::k64BitResult>(
-          operand, dtype, [&](APSInt operand) -> std::optional<APSInt> {
-            if (auto result = fn(operand); result) {
-              assert(result->isSigned() == dtype.isIndex());
-              return result->extOrTrunc(64);
-            }
-            return {};
-          });
-    if (intWidth == 32)
-      return POP::Detail::foldSIMDOpIndex<POP::k32BitResult>(
-          operand, dtype, [&](APSInt operand) -> std::optional<APSInt> {
-            // Have to extend it because index type is stored internally as
-            // 64-bit integer.
-            if (auto result = fn(operand); result) {
-              assert(result->isSigned() == dtype.isIndex());
-              return result->extend(64);
-            }
-            return {};
-          });
-  }
-
-  // If target is not specified, or the index bit width is not known, we only
-  // fold if the result is the same on 32 and 64 bit platforms.
-  return POP::Detail::foldSIMDOpIndex<POP::kIndexResult>(
-      operand, dtype, [&](APSInt operand) -> std::optional<APSInt> {
-        if (auto result = fn(operand)) {
-          assert(result->isSigned() == dtype.isIndex());
-          return result;
-        }
-        return {};
-      });
-}
-
-OpFoldResult POP::foldIndexForTarget(
-    ArrayRef<Attribute> operands, KGENDType dtype, TargetInfoAttr target,
-    llvm::function_ref<std::optional<APSInt>(APSInt, APSInt)> fn) {
-  // For index type get its size from the target.
-  if (target) {
-    ssize_t intWidth = target.resolveIndexBitWidth();
-    if (intWidth == 64)
-      return POP::Detail::foldSIMDOpIndex<POP::k64BitResult>(
-          operands, dtype,
-          [&](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-            if (auto result = fn(lhs, rhs); result) {
-              assert(result->isSigned() == dtype.isIndex());
-              return result->extOrTrunc(64);
-            }
-            return {};
-          });
-    if (intWidth == 32)
-      return POP::Detail::foldSIMDOpIndex<POP::k32BitResult>(
-          operands, dtype,
-          [&](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-            // Have to extend it because index type is stored internally as
-            // 64-bit integer.
-            if (auto result = fn(lhs, rhs); result) {
-              assert(result->isSigned() == dtype.isIndex());
-              return result->extend(64);
-            }
-            return {};
-          });
-  }
-
-  // If target is not specified, or the index bit width is not known, we only
-  // fold if the result is the same on 32 and 64 bit platforms.
-  return POP::Detail::foldSIMDOpIndex<POP::kIndexResult>(
-      operands, dtype, [&](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-        if (auto result = fn(lhs, rhs)) {
-          assert(result->isSigned() == dtype.isIndex());
-          return result;
-        }
-        return {};
-      });
-}
-
 OpFoldResult POP::foldSIMDShl(Attribute val, Attribute shft,
                               TargetInfoAttr targetInfo) {
   auto valSIMD = dyn_cast_if_present<SIMDAttr>(val);
@@ -414,12 +331,11 @@ OpFoldResult POP::foldSIMDShl(Attribute val, Attribute shft,
   if (!dtype)
     return {};
 
-  if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexForTarget({val, shft}, *dtype, targetInfo,
-                              [](APSInt lhs, APSInt rhs) -> APSInt {
-                                return APSInt(lhs.shl(rhs), !lhs.isSigned());
-                              });
-  return foldSIMDOp({val, shft},
+  std::optional<int64_t> indexBitWidth;
+  if (targetInfo)
+    indexBitWidth = targetInfo.resolveIndexBitWidth();
+
+  return foldSIMDOp({val, shft}, indexBitWidth,
                     [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
                       if (rhs.uge(lhs.getBitWidth()))
                         return std::nullopt;
@@ -436,20 +352,18 @@ OpFoldResult POP::foldSIMDShr(Attribute val, Attribute shft,
   if (!dtype)
     return {};
 
-  if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexForTarget(
-        {val, shft}, *dtype, targetInfo, [](APSInt lhs, APSInt rhs) -> APSInt {
-          return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
-                        !lhs.isSigned());
-        });
+  std::optional<int64_t> indexBitWidth;
+  if (targetInfo)
+    indexBitWidth = targetInfo.resolveIndexBitWidth();
 
-  return foldSIMDOp(
-      {val, shft}, [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-        if (rhs.uge(lhs.getBitWidth()))
-          return std::nullopt;
-        return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
-                      !lhs.isSigned());
-      });
+  return foldSIMDOp({val, shft}, indexBitWidth,
+                    [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+                      if (rhs.uge(lhs.getBitWidth()))
+                        return std::nullopt;
+                      return APSInt(lhs.isSigned() ? lhs.ashr(rhs)
+                                                   : lhs.lshr(rhs),
+                                    !lhs.isSigned());
+                    });
 }
 
 OpFoldResult POP::foldSIMDAbs(Attribute operand, TargetInfoAttr targetInfo) {
@@ -464,20 +378,19 @@ OpFoldResult POP::foldSIMDAbs(Attribute operand, TargetInfoAttr targetInfo) {
   if (dtype->isBool() || dtype->isUInt())
     return operand;
 
-  auto integerAbs = [](APSInt operand) -> std::optional<APSInt> {
-    return APSInt(operand.abs(), /*isUnsigned=*/false);
-  };
-
-  if (dtype->isIndex())
-    return foldIndexForTarget(operand, *dtype, targetInfo, integerAbs);
+  std::optional<int64_t> indexBitWidth;
+  if (targetInfo)
+    indexBitWidth = targetInfo.resolveIndexBitWidth();
 
   return foldSIMDOp(
-      operand,
+      operand, indexBitWidth,
       [](APFloat operand) -> APFloat {
         operand.clearSign();
         return operand;
       },
-      integerAbs);
+      [](APSInt operand) -> std::optional<APSInt> {
+        return APSInt(operand.abs(), /*isUnsigned=*/false);
+      });
 }
 
 OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
@@ -507,30 +420,30 @@ OpFoldResult POP::foldSIMDFloorDiv(Attribute lhs, Attribute rhs,
   if (!dtype || dtype->isBool() || dtype->isInvalid())
     return {};
 
-  auto integerFloorDiv = [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-    // Integer division by zero is UB - don't fold.
-    if (rhs.isZero())
-      return std::nullopt;
-    auto div = lhs / rhs;
-    if (lhs.isUnsigned())
-      return div;
-    // int div = lhs / rhs;
-    // return div * rhs == lhs ? div : div - ((lhs < 0) ^ (rhs < 0));
-    auto xorOp = (lhs < 0) ^ (rhs < 0);
-    return APSInt(div * rhs == lhs ? div : div - xorOp, /*isUnsigned=*/false);
-  };
-
-  if (dtype->isIndex() || dtype->isUIndex())
-    return foldIndexForTarget({lhs, rhs}, *dtype, targetInfo, integerFloorDiv);
+  std::optional<int64_t> indexBitWidth;
+  if (targetInfo)
+    indexBitWidth = targetInfo.resolveIndexBitWidth();
 
   return foldSIMDOp(
-      {lhs, rhs},
+      {lhs, rhs}, indexBitWidth,
       [](APFloat lhs, APFloat rhs) -> APFloat {
         auto div = lhs / rhs;
         div.roundToIntegral(APFloat::rmTowardNegative);
         return div;
       },
-      integerFloorDiv);
+      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        // Integer division by zero is UB - don't fold.
+        if (rhs.isZero())
+          return std::nullopt;
+        APSInt div = lhs / rhs;
+        if (lhs.isUnsigned())
+          return div;
+        // int div = lhs / rhs;
+        // return div * rhs == lhs ? div : div - ((lhs < 0) ^ (rhs < 0));
+        int xorOp = (lhs < 0) ^ (rhs < 0);
+        return APSInt(div * rhs == lhs ? div : div - xorOp,
+                      /*isUnsigned=*/false);
+      });
 }
 
 template <typename State>

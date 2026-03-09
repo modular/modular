@@ -1878,23 +1878,31 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %neg_one = kgen.param.constant: scalar<index> = <-1>
     %one = kgen.param.constant: scalar<index> = <1>
     %_33 = kgen.param.constant: scalar<index> = <33>
-    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <0>
+    // CHECK-DAG: [[N1:%.*]] = kgen.param.constant: scalar<index> = <-1>
+    // CHECK-DAG: [[S1:%.*]] = kgen.param.constant: scalar<index> = <1>
+    // CHECK-DAG: [[S33:%.*]] = kgen.param.constant: scalar<index> = <33>
+    // Cannot fold these as shifting more than LHS' bit width is UB
+    // CHECK: [[T0:%.*]] = pop.shl [[N1]], [[S33]] : !pop.scalar<index>
     %res0 = pop.shl %neg_one, %_33 : !pop.scalar<index>
+    // CHECK: [[T1:%.*]] = pop.shl [[S1]], [[S33]] : !pop.scalar<index>
     %res1 = pop.shl %one, %_33 : !pop.scalar<index>
 
-    // CHECK: kgen.return %[[RES]], %[[RES]]
+    // CHECK: kgen.return [[T0]], [[T1]]
     kgen.return %res0, %res1 : !pop.scalar<index>, !pop.scalar<index>
   }
 
   // CHECK-LABEL: @shr_index
   kgen.func @shr_index() -> (!pop.scalar<index>, !pop.scalar<index>) {
+    // CHECK-DAG: [[N1:%.*]] = kgen.param.constant: scalar<index> = <-1>
+    // CHECK-DAG: [[S63:%.*]] = kgen.param.constant: scalar<index> = <63>
     %neg1 = kgen.param.constant: scalar<index> = <-1>
     %63 = kgen.param.constant: scalar<index> = <63>
     %2 = kgen.param.constant: scalar<index> = <2>
     %neg16 = kgen.param.constant: scalar<index> = <-16>
-    // CHECK: %[[RES:.*]] = kgen.param.constant: scalar<index> = <-1>
+    // Cannot fold this as shifting more than LHS' bit width is UB
+    // CHECK-DAG: %[[RES:.*]] = pop.shr [[N1]], [[S63]] : !pop.scalar<index>
     %res0 = pop.shr %neg1, %63 : !pop.scalar<index>
-    // CHECK: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <-4>
+    // CHECK-DAG: %[[RES1:.*]] = kgen.param.constant: scalar<index> = <-4>
     %res1 = pop.shr %neg16, %2 : !pop.scalar<index>
 
     // CHECK: kgen.return %[[RES]], %[[RES1]]
