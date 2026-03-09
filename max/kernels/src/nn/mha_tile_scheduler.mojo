@@ -418,6 +418,7 @@ struct MHASchedule(TrivialRegisterPassable):
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
+    flip_prompt_idx: Bool,
 ](Defaultable, MHATileScheduler, TrivialRegisterPassable):
     comptime may_advance: Bool = False
     comptime mha_schedule: MHASchedule = MHASchedule.DEFAULT
@@ -434,6 +435,8 @@ struct TransientScheduler[
             + String(Self.tile_shape)
             + ", num_heads = "
             + String(Self.num_heads)
+            + ", flip_prompt_idx = "
+            + String(Self.flip_prompt_idx)
             + "]"
         )
 
@@ -442,9 +445,14 @@ struct TransientScheduler[
         pass
 
     @always_inline
-    fn get_current_work_info(self) -> WorkInfo:
+    fn get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
+        var prompt_tile_idx: UInt32
+        comptime if Self.flip_prompt_idx:
+            prompt_tile_idx = num_prompt_tiles - 1 - UInt32(block_idx.x)
+        else:
+            prompt_tile_idx = UInt32(block_idx.x)
         return WorkInfo(
-            UInt32(block_idx.x) * Self.tile_shape,
+            prompt_tile_idx * Self.tile_shape,
             UInt32(block_idx.y),
             UInt32(block_idx.z),
             True,
@@ -457,7 +465,7 @@ struct TransientScheduler[
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
-        return self.get_current_work_info()
+        return self.get_current_work_info(ts.max_num_prompt_tiles)
 
     @always_inline
     fn advance[
@@ -505,7 +513,9 @@ struct TransientScheduler[
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:
         return SeqInfo.create(
-            self.get_current_work_info(), ts.valid_length, ts.max_seq_len
+            self.get_current_work_info(ts.max_num_prompt_tiles),
+            ts.valid_length,
+            ts.max_seq_len,
         )
 
 

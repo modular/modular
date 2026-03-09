@@ -1377,7 +1377,10 @@ fn mha_sm100_dispatch[
     ](ctx)
 
     comptime SchedulerType = TransientScheduler[
-        UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
+        UInt32(scheduler_tile_shape),
+        UInt32(num_scheduler_heads),
+        flip_prompt_idx=not decoding
+        and MaskType.get_type_name() == "CausalMask",
     ]
     var scheduler: SchedulerType = SchedulerType()
 

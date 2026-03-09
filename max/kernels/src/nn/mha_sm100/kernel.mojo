@@ -358,9 +358,11 @@ struct SM100MHA2Q[
         if warp_idx < 8:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -395,9 +397,11 @@ struct SM100MHA2Q[
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
 
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
             if not seq_info.is_valid():
                 return
             var pos: PositionSummary = PositionSummary.create[
@@ -418,9 +422,11 @@ struct SM100MHA2Q[
         else:
             if warp_idx == 13:  # produce
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
 
                 if not seq_info.is_valid():
                     return
@@ -456,9 +462,11 @@ struct SM100MHA2Q[
 
             elif warp_idx == 12:  # Q @ K', P @ V
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
 
                 if not seq_info.is_valid():
                     var tmem = Self.TmemAllocType.from_shared(
