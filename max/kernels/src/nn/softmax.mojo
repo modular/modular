@@ -703,18 +703,12 @@ fn softmax_kernel[
     var row_size = UInt(shape[axis])
     var num_rows = UInt(shape.flattened_length()) // row_size
 
-    var max_buf = LayoutTensor[
-        accum_type,
-        Layout.row_major(1),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
-    var exp_sum_buf = LayoutTensor[
-        accum_type,
-        Layout.row_major(1),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+    var max_buf = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.SHARED
+    ](row_major[1]())
+    var exp_sum_buf = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.SHARED
+    ](row_major[1]())
 
     @parameter
     @always_inline

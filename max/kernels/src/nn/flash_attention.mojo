@@ -29,6 +29,8 @@ from std.algorithm.reduction import (
 from kv_cache.types import KVCacheT
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import to_index_list
+from layout.tile_layout import row_major
+from layout.tile_tensor import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.matmul.cpu.apple_accelerate import (
     _cblas_f32,
@@ -734,15 +736,18 @@ struct _FlashAttention[
                 Self.dtype,
                 alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
             ]()
-            comptime layout = Layout.row_major(Self._config.block_m)
-            var max_vals_stack = InlineArray[
+            var max_vals_storage = InlineArray[
                 Scalar[Self.dtype], Self._config.block_m
             ](uninitialized=True)
-            var max_vals = LayoutTensor[Self.dtype, layout](max_vals_stack)
-            var sum_vals_stack = InlineArray[
+            var max_vals = TileTensor(
+                Span(max_vals_storage), row_major[Self._config.block_m]()
+            )
+            var sum_vals_storage = InlineArray[
                 Scalar[Self.dtype], Self._config.block_m
             ](uninitialized=True)
-            var sum_vals = LayoutTensor[Self.dtype, layout](sum_vals_stack)
+            var sum_vals = TileTensor(
+                Span(sum_vals_storage), row_major[Self._config.block_m]()
+            )
 
             var packed_ptr = UnsafePointer[
                 Scalar[Self.dtype], MutExternalOrigin
