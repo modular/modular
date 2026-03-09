@@ -388,6 +388,38 @@ void *JITExecutionUnit::MemoryManager::getPointerToNamedFunction(
 // JIT Symbols
 //===----------------------------------------------------------------------===//
 
+/// Check whether the symbol table entry at \p addr has a linkage name that
+/// matches \p expectedName. This guards against false DWARF function matches
+/// where the .debug_names accelerator table matches a C++ method by its
+/// DW_AT_name basename (e.g., "write" matching YAMLVFSWriter::write) and
+/// resolves to the wrong address. If the symtab symbol at the address has a
+/// different linkage name, the DWARF match is a false positive.
+///
+/// Returns true (accept) if the symtab confirms the name or if there is no
+/// symtab information to contradict it.
+///
+/// This performs a reverse address lookup, which is not free but acceptable
+/// because JIT symbol resolution is not a hot path.
+static bool isConfirmedBySymtab(Target &target, ConstString expectedName,
+                                lldb::addr_t addr) {
+  Address resolved;
+  if (!target.ResolveLoadAddress(addr, resolved))
+    return true; // Can't resolve — no evidence to reject.
+
+  SymbolContext sc;
+  resolved.CalculateSymbolContext(&sc, lldb::eSymbolContextSymbol);
+  if (!sc.symbol)
+    return true; // No symtab entry at this address — accept.
+
+  // If the symbol's mangled (linkage) name is set and differs from the
+  // expected name, this is a false DWARF match.
+  ConstString linkageName = sc.symbol->GetMangled().GetMangledName();
+  if (linkageName && linkageName != expectedName)
+    return false;
+
+  return true;
+}
+
 namespace {
 class LoadAddressResolver {
 public:
@@ -454,6 +486,10 @@ public:
     return bestInternalLoadAddr;
   }
 
+  void SetBestInternalLoadAddress(lldb::addr_t addr) {
+    bestInternalLoadAddr = addr;
+  }
+
 private:
   Target *target;
   bool &symbolWasMissingWeak;
@@ -505,23 +541,46 @@ JITExecutionUnit::findInSymbols(const std::vector<ConstString> &names,
   functionOptions.include_inlines = false;
 
   for (const ConstString &name : names) {
+    // Search order follows upstream IRExecutionUnit: DWARF functions first
+    // (module, then all images), then symbol table.
+    //
+    // Differs from upstream: DWARF function matches are cross-referenced
+    // against the symbol table via isConfirmedBySymtab(). LLDB's .debug_names
+    // accelerator table indexes C++ methods by their DW_AT_name (basename),
+    // so FindFunctions("write", eFunctionNameTypeFull) can incorrectly match
+    // a C++ method like llvm::vfs::YAMLVFSWriter::write and resolve to the
+    // wrong address. If the symtab symbol at the resolved address has a
+    // different linkage name, the match is rejected and we keep searching.
+    //
     if (sc.module_sp) {
       SymbolContextList scList;
+      lldb::addr_t prevBest = resolver.GetBestInternalLoadAddress();
       sc.module_sp->FindFunctions(name, CompilerDeclContext(),
                                   lldb::eFunctionNameTypeFull, functionOptions,
                                   scList);
-      if (auto loadAddr = resolver.Resolve(scList))
-        return *loadAddr;
+      if (auto loadAddr = resolver.Resolve(scList)) {
+        if (isConfirmedBySymtab(*target, name, *loadAddr))
+          return *loadAddr;
+        // False DWARF match — roll back any internal address that Resolve()
+        // may have recorded from this batch.
+        resolver.SetBestInternalLoadAddress(prevBest);
+      }
     }
 
     if (sc.target_sp) {
       SymbolContextList scList;
+      lldb::addr_t prevBest = resolver.GetBestInternalLoadAddress();
       sc.target_sp->GetImages().FindFunctions(name, lldb::eFunctionNameTypeFull,
                                               functionOptions, scList);
-      if (auto loadAddr = resolver.Resolve(scList))
-        return *loadAddr;
-      scList.Clear();
+      if (auto loadAddr = resolver.Resolve(scList)) {
+        if (isConfirmedBySymtab(*target, name, *loadAddr))
+          return *loadAddr;
+        resolver.SetBestInternalLoadAddress(prevBest);
+      }
+    }
 
+    if (sc.target_sp) {
+      SymbolContextList scList;
       sc.target_sp->GetImages().FindSymbolsWithNameAndType(
           name, lldb::eSymbolTypeAny, scList);
       if (auto loadAddr = resolver.Resolve(scList))
