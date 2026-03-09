@@ -93,15 +93,7 @@ struct Random[rounds: Int = 10](Copyable, Writable):
         Args:
             writer: The object to write to.
         """
-        writer.write(
-            "Random[",
-            Self.rounds,
-            "](key=",
-            self._key,
-            ", counter=",
-            self._counter,
-            ")",
-        )
+        self.write_repr_to(writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -236,15 +228,7 @@ struct NormalRandom[rounds: Int = 10](Copyable, Writable):
         Args:
             writer: The object to write to.
         """
-        writer.write(
-            "NormalRandom[",
-            Self.rounds,
-            "](key=",
-            self._rng._key,
-            ", counter=",
-            self._rng._counter,
-            ")",
-        )
+        self.write_repr_to(writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
