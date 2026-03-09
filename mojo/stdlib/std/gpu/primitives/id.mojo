@@ -453,7 +453,7 @@ struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
         var b_idx = block_idx.__getattr__[dim]()
         var b_dim = block_dim.__getattr__[dim]()
 
-        return math.fma(b_idx, b_dim, t_idx)
+        return std.math.fma(b_idx, b_dim, t_idx)
 
 
 comptime global_idx = _GlobalIdx()

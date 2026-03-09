@@ -322,7 +322,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        comptime unroll_end = math.align_down(Self.size, batch_size)
+        comptime unroll_end = std.math.align_down(Self.size, batch_size)
 
         var ptr = self.unsafe_ptr()
 

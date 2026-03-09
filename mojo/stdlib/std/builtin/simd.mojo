@@ -3315,7 +3315,7 @@ fn _powf_scalar(
     if fractional and base < 0:
         return _nan[base.dtype]()
 
-    return math.exp(exponent.cast[base.dtype]() * math.log(base))
+    return std.math.exp(exponent.cast[base.dtype]() * std.math.log(base))
 
 
 @always_inline

@@ -35,11 +35,11 @@ def test_create_hardlink() raises:
 
     with open(src, "w") as f:
         f.write("test_create_link")
-    os.link(src, link)
+    std.os.link(src, link)
     with open(link, "r") as f:
         assert_equal(f.read(), "test_create_link")
-    var oldstat = os.stat(src)
-    var newstat = os.stat(link)
+    var oldstat = std.os.stat(src)
+    var newstat = std.os.stat(link)
     assert_equal(oldstat.st_ino, newstat.st_ino)
     assert_equal(oldstat.st_nlink, 2)
     assert_equal(newstat.st_nlink, 2)

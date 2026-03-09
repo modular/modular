@@ -34,7 +34,7 @@ def test_create_symlink() raises:
     except:
         pass
 
-    os.symlink(src, link)
+    std.os.symlink(src, link)
     with open(src, "w") as f:
         f.write("test_create_symlink")
     with open(link, "r") as f:

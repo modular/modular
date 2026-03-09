@@ -21,13 +21,13 @@ from std.testing import TestSuite, assert_equal
 
 def test_split() raises:
     # Normal case
-    head, tail = split(os.path.join("a", "b", "c.txt"))
-    assert_equal(head, os.path.join("a", "b"))
+    head, tail = split(std.os.path.join("a", "b", "c.txt"))
+    assert_equal(head, std.os.path.join("a", "b"))
     assert_equal(tail, "c.txt")
 
     # Absolute and empty tail
     head, tail = split(Path.home() / "a" / "b" / "")
-    assert_equal(head, expanduser(os.path.join("~", "a", "b")))
+    assert_equal(head, expanduser(std.os.path.join("~", "a", "b")))
     assert_equal(tail, "")
 
     # Empty head
@@ -41,29 +41,29 @@ def test_split() raises:
     assert_equal(tail, "")
 
     # Single separator
-    head, tail = split(os.sep)
-    assert_equal(head, String(os.sep))
+    head, tail = split(std.os.sep)
+    assert_equal(head, String(std.os.sep))
     assert_equal(tail, "")
 
     # Two chars, absolute on Linux.
-    head, tail = split(os.path.join(String(os.sep), "a"))
-    assert_equal(head, String(os.sep))
+    head, tail = split(std.os.path.join(String(std.os.sep), "a"))
+    assert_equal(head, String(std.os.sep))
     assert_equal(tail, "a")
 
     # Two chars relative, empty tail
-    head, tail = split(os.path.join("a", ""))
+    head, tail = split(std.os.path.join("a", ""))
     assert_equal(head, "a")
     assert_equal(tail, "")
 
     # Test with Path objects
     head, tail = split(Path("a") / "b" / "c.txt")
-    assert_equal(head, os.path.join("a", "b"))
+    assert_equal(head, std.os.path.join("a", "b"))
     assert_equal(tail, "c.txt")
 
     # Test with source_location()
     source_location = String(source_location().file_name)
     head, tail = split(source_location)
-    assert_equal(head + os.sep + tail, source_location)
+    assert_equal(head + std.os.sep + tail, source_location)
 
 
 def main() raises:

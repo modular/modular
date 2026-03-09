@@ -673,7 +673,7 @@ fn strided_load[
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * math.iota[DType.int, simd_width]()
+        * std.math.iota[DType.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -718,7 +718,7 @@ fn strided_store[
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * math.iota[DType.int, simd_width]()
+        * std.math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
 

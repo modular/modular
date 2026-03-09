@@ -209,7 +209,7 @@ fn create_float64(m: UInt64, p: Int64) -> Float64:
     m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
     p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
     representation_as_int = (m & m_mask) | p_shifted
-    return memory.bitcast[DType.float64](representation_as_int)
+    return std.memory.bitcast[DType.float64](representation_as_int)
 
 
 fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
@@ -224,7 +224,7 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
         return FloatLiteral.infinity
 
     # Step 3
-    l = bit.count_leading_zeros(w)
+    l = std.bit.count_leading_zeros(w)
 
     # Step 4
     w <<= l
@@ -266,7 +266,7 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # Step 16-18
     # Round ties to even
     if product.low <= 1 and (m & 3 == 1) and (Int64(-4) <= q <= Int64(23)):
-        if bit.pop_count(product.high // m) == 1:
+        if std.bit.pop_count(product.high // m) == 1:
             m -= 2
 
     # step 19

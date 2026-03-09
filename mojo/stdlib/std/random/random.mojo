@@ -242,10 +242,10 @@ fn rand[
         return
 
     comptime if dtype.is_signed():
-        var min_ = math.max(
+        var min_ = std.math.max(
             Scalar[dtype].MIN.cast[DType.int64](), min.cast[DType.int64]()
         )
-        var max_ = math.min(
+        var max_ = std.math.min(
             max.cast[DType.int64](), Scalar[dtype].MAX.cast[DType.int64]()
         )
         for i in range(size):
@@ -253,8 +253,8 @@ fn rand[
         return
 
     comptime if dtype == DType.bool or dtype.is_unsigned():
-        var min_ = math.max(min.cast[DType.uint64](), 0)
-        var max_ = math.min(
+        var min_ = std.math.max(min.cast[DType.uint64](), 0)
+        var max_ = std.math.min(
             max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
         )
         for i in range(size):

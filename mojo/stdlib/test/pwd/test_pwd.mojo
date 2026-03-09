@@ -19,31 +19,31 @@ from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 def test_pwuid() raises:
     # Test current process user works
-    passwd = pwd.getpwuid(os.getuid())
+    passwd = std.pwd.getpwuid(std.os.getuid())
     assert_true(len(passwd.pw_dir) > 2)
     assert_true(passwd.pw_uid >= 0)
     assert_true(len(passwd.pw_name) > 0)
     # Test root user works
-    passwd = pwd.getpwuid(0)
+    passwd = std.pwd.getpwuid(0)
     assert_true(len(passwd.pw_dir) > 2)
     assert_equal(passwd.pw_uid, 0)
     assert_equal(passwd.pw_name, "root")
 
     # Ensure incorrect ID fails
     with assert_raises():
-        _ = pwd.getpwuid(456789431974)
+        _ = std.pwd.getpwuid(456789431974)
 
 
 def test_pwnam() raises:
     # Test root user works
-    passwd = pwd.getpwnam("root")
+    passwd = std.pwd.getpwnam("root")
     assert_true(len(passwd.pw_dir) > 2)
     assert_equal(passwd.pw_uid, 0)
     assert_equal(passwd.pw_name, "root")
 
     # Ensure incorrect name fails
     with assert_raises():
-        _ = pwd.getpwnam("zxcvarahoijewklvnab")
+        _ = std.pwd.getpwnam("zxcvarahoijewklvnab")
 
 
 def main() raises:
