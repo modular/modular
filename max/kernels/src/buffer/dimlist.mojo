@@ -285,6 +285,16 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
+fn _get_row_major_dims[shape: IndexList]() -> IndexList[shape.size]:
+    """Get the dimensions in row-major order, propagating unknown."""
+    var result = IndexList[shape.size]()
+    var offset = Dim(1)
+    comptime for i in reversed(range(shape.size)):
+        result[i] = offset.get()
+        offset *= Dim(shape[i])
+    return result
+
+
 struct DimList(ImplicitlyCopyable, Sized, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
@@ -432,6 +442,23 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         """
         comptime assert i >= 0, "index must be positive"
         return self.value[i].__bool__()
+
+    # FIXME: This should become a normal method when DimList is upgraded.
+    @always_inline
+    @staticmethod
+    fn get_row_major_strides[shape: DimList]() -> Self:
+        """Interpret the current index list as a shape, and return the strides
+        to traverse such a shape in row-major order.
+
+        Parameters:
+            shape: The shape to compute the strides for.
+
+        Returns:
+            The strides to traverse the index list in row-major order.
+        """
+        return Self.from_index_list[
+            _get_row_major_dims[shape.to_index_list[len(shape)]()]()
+        ]()
 
     @always_inline
     fn product[length: Int](self) -> Dim:

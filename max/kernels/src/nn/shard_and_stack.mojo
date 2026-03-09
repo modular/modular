@@ -19,16 +19,6 @@ from tensor import InputVariadicTensors, OutputVariadicTensors
 from std.utils import IndexList, product
 
 
-fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:
-    var offset = 1
-    var strides = IndexList[rank]()
-
-    comptime for i in reversed(range(rank)):
-        strides[i] = offset
-        offset *= shape[i]
-    return strides
-
-
 fn _validate_shard_and_stack[
     axis: Int,
 ](
@@ -52,7 +42,7 @@ fn _validate_shard_and_stack[
     comptime assert 0 <= axis < inputs.rank, "axis must be in [0, inputs.rank)"
 
     var input_shape = inputs[0].shape()
-    var row_major_strides = _row_major_strides(input_shape)
+    var row_major_strides = input_shape.get_row_major_strides()
 
     # Validate that all inputs must have the same shape and row-major strides
     for i in range(inputs.size):

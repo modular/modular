@@ -14,7 +14,7 @@
 from std.algorithm.functional import elementwise
 from std.random import NormalRandom
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor._indexing import _dot_prod, _row_major_strides
+from tensor._indexing import _dot_prod
 
 from std.utils import IndexList
 
@@ -54,7 +54,7 @@ fn random_normal[
     if stddev <= 0:
         raise Error("stddev must be positive")
 
-    var strides = _row_major_strides(shape)
+    var strides = shape.get_row_major_strides()
 
     @parameter
     @always_inline

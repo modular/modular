@@ -43,7 +43,7 @@ from tensor import RuntimeTensorSpec
 from std.utils import IndexList, StaticTuple
 from std.utils._serialize import _serialize
 
-from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
+from ._indexing import _dot_prod, _slice_to_tuple
 from .io_spec import IO, IOSpec
 
 # ===----------------------------------------------------------------------=== #
@@ -487,7 +487,7 @@ struct ManagedTensorSlice[
             )
         var slice_spec = RuntimeTensorSpec[Self.dtype](adjusted_shape)
 
-        var slicer_strides = _row_major_strides(adjusted_shape)
+        var slicer_strides = adjusted_shape.get_row_major_strides()
         var start_offset = _dot_prod(start, slicer_strides)
 
         var strides = IndexList[Self.rank]()
@@ -510,7 +510,7 @@ struct ManagedTensorSlice[
         """
         self._ptr = ptr
         self._spec = RuntimeTensorSpec[Self.dtype, Self.rank](shape)
-        self._runtime_strides = _row_major_strides(shape)
+        self._runtime_strides = shape.get_row_major_strides()
 
     fn __init__(
         out self,

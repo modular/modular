@@ -265,16 +265,10 @@ struct RuntimeLayout[
         Returns:
             A `RuntimeLayout` with row-major stride ordering.
         """
-
-        var stride = IndexList[rank, element_type=Self.linear_idx_type]()
-        var c_stride = 1
-        stride[rank - 1] = c_stride
-
-        comptime for i in reversed(range(rank - 1)):
-            var dim = shape[i + 1]
-            stride[i] = dim * c_stride
-            c_stride *= dim
-        return {shape.cast[Self.element_type](), stride}
+        return {
+            shape.cast[Self.element_type](),
+            shape.get_row_major_strides().cast[Self.linear_idx_type](),
+        }
 
     @staticmethod
     fn col_major[

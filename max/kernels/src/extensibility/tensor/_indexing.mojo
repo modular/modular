@@ -37,14 +37,3 @@ fn _slice_to_tuple[
     comptime for i in range(rank):
         tuple[i] = func(slices[i])
     return tuple
-
-
-@always_inline
-fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:
-    var offset = 1
-    var strides = IndexList[rank]()
-
-    comptime for i in reversed(range(rank)):
-        strides[i] = offset
-        offset *= shape[i]
-    return strides

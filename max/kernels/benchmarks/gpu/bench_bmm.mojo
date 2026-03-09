@@ -89,22 +89,6 @@ comptime epilogue_func_type = fn[
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
-fn _row_major_shapes_to_strides[shapes_dim: DimList]() -> DimList:
-    """Compute the strides for a 3D shape. Assuming row-major layout."""
-
-    comptime if shapes_dim.has_value[2]():
-        comptime if shapes_dim.has_value[1]():
-            return DimList(
-                shapes_dim.get[1]() * shapes_dim.get[2](),
-                shapes_dim.get[2](),
-                1,
-            )
-        else:
-            return DimList(Dim(), shapes_dim.get[2](), 1)
-    else:
-        return DimList(Dim(), Dim(), 1)
-
-
 @always_inline
 @parameter
 fn elementwise_epilogue_fn[
@@ -142,13 +126,13 @@ fn bench_bmm[
     ) if transpose_b else DimList(to_dim[B], to_dim[K], to_dim[N])
     comptime batch_static_c_shape = DimList(to_dim[B], to_dim[M], to_dim[N])
 
-    comptime batch_static_a_strides = _row_major_shapes_to_strides[
+    comptime batch_static_a_strides = DimList.get_row_major_strides[
         batch_static_a_shape
     ]()
-    comptime batch_static_b_strides = _row_major_shapes_to_strides[
+    comptime batch_static_b_strides = DimList.get_row_major_strides[
         batch_static_b_shape
     ]()
-    comptime batch_static_c_strides = _row_major_shapes_to_strides[
+    comptime batch_static_c_strides = DimList.get_row_major_strides[
         batch_static_c_shape
     ]()
 
