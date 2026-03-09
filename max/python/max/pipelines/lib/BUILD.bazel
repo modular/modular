@@ -43,6 +43,7 @@ modular_py_library(
         requirement("hf-transfer"),
         requirement("huggingface-hub"),
         requirement("llguidance"),
+        requirement("msgspec"),
         requirement("numpy"),
         requirement("pillow"),
         requirement("pydantic"),
