@@ -2900,6 +2900,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    per_token_scale_rope_aware: Bool = False,
 ](
     q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2913,6 +2914,9 @@ fn generic_flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     @always_inline
     @parameter
@@ -2945,6 +2949,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](
             q,
             input_row_offsets,
@@ -2954,6 +2959,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
             output,
             scalar_args_buf,
             context,
+            q_scale_ptr,
         )
 
 
@@ -2965,6 +2971,7 @@ fn _flare_mla_decode_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    per_token_scale_rope_aware: Bool = False,
 ](
     q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2978,6 +2985,9 @@ fn _flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -2991,6 +3001,8 @@ fn _flare_mla_decode_kv_cache_ragged[
             (batch_size, num_heads, seq_len, head_size).
         scalar_args_buf: Buffer containing scalar arguments for device graph capture.
         context: Pointer containing the runtime context for the target device.
+        q_scale_ptr: Per-token Q scale pointer (float32 array, one per Q token).
+            Default is null (sigma_Q = 1.0).
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -3003,9 +3015,13 @@ fn _flare_mla_decode_kv_cache_ragged[
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_lt)
+    @__copy_capture(k, scalar_args_buf_lt, q_scale_ptr)
     fn _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
-        flare_mla_decoding[rank=q.rank, ragged=True](
+        flare_mla_decoding[
+            rank=q.rank,
+            ragged=True,
+            per_token_scale_rope_aware=per_token_scale_rope_aware,
+        ](
             output,
             q,
             k,
@@ -3014,6 +3030,7 @@ fn _flare_mla_decode_kv_cache_ragged[
             scale,
             context.get_device_context(),
             scalar_args_buf=scalar_args_buf_lt,
+            q_scale_ptr=q_scale_ptr,
         )
 
     dispatch_mask[

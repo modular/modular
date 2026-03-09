@@ -133,6 +133,7 @@ fn flare_mla_decoding[
     },
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
+    per_token_scale_rope_aware: Bool = False,
 ](
     output: LayoutTensor[mut=True, _, address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
@@ -153,6 +154,12 @@ fn flare_mla_decoding[
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
+    # Per-token Q scale pointer: float32 array with one scale per Q token.
+    # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
+    # Default is null (sigma_Q = 1.0, no effect).
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -162,6 +169,11 @@ fn flare_mla_decoding[
     The V tensor is derived by reusing K, where V = K[:, :, :depth_v].
 
     Specifically, for DeepSeek V2/3, depth = 576 and depth_v = 512.
+
+    When per_token_scale_rope_aware is True, Q and KV cache have an interleaved
+    FP8+BF16 layout: FP8 content (512 bytes) + BF16 rope (128 bytes) = 640
+    bytes/row. Q's last dimension is 640 (FP8 elements) but represents 576
+    logical dimensions (512 nope + 64 rope).
 
     This kernel computes attention without needing to load V twice. This kernel
     only handles decoding requests. In this case q_max_seq_len = 1.
@@ -215,25 +227,55 @@ fn flare_mla_decoding[
 
         var k_operand = KVCacheMHAOperand(k)
 
-        flare_mla_decoding_dispatch[
-            kv_num_heads=Int(kv_num_heads),
-            config=config,
-            ragged=ragged,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            output,
-            q,
-            k_operand,
-            mask_functor,
-            valid_length,
-            max_prompt_len,
-            num_keys,
-            scale,
-            ctx,
-            scalar_args_buf,
-            kv_input_row_offsets,
-            num_partitions,
-        )
+        # For per_token_scale_rope_aware: Q's last dim is 640 (interleaved FP8+BF16)
+        # but the logical depth is 576. Override config to use 576.
+        comptime if per_token_scale_rope_aware:
+            comptime rope_aware_config = MHAConfig[dtype](
+                config.num_heads, UInt(576)
+            )
+            flare_mla_decoding_dispatch[
+                kv_num_heads=Int(kv_num_heads),
+                config=rope_aware_config,
+                ragged=ragged,
+                decoding_warp_split_k=decoding_warp_split_k,
+                per_token_scale_rope_aware=True,
+            ](
+                output,
+                q,
+                k_operand,
+                mask_functor,
+                valid_length,
+                max_prompt_len,
+                num_keys,
+                scale,
+                ctx,
+                scalar_args_buf,
+                kv_input_row_offsets,
+                num_partitions,
+                q_scale_ptr,
+            )
+        else:
+            flare_mla_decoding_dispatch[
+                kv_num_heads=Int(kv_num_heads),
+                config=config,
+                ragged=ragged,
+                decoding_warp_split_k=decoding_warp_split_k,
+                per_token_scale_rope_aware=False,
+            ](
+                output,
+                q,
+                k_operand,
+                mask_functor,
+                valid_length,
+                max_prompt_len,
+                num_keys,
+                scale,
+                ctx,
+                scalar_args_buf,
+                kv_input_row_offsets,
+                num_partitions,
+                q_scale_ptr,
+            )
 
 
 # entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]as K input, used by tests.
@@ -328,6 +370,7 @@ fn flare_mla_decoding_dispatch[
     # to avoid overhead in benchmark.
     _use_valid_length: Bool = True,
     decoding_warp_split_k: Bool = False,
+    per_token_scale_rope_aware: Bool = False,
 ](
     output: LayoutTensor[address_space=AddressSpace.GENERIC, ...],
     q: LayoutTensor[dtype, q_layout, address_space=AddressSpace.GENERIC, ...],
@@ -349,6 +392,9 @@ fn flare_mla_decoding_dispatch[
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -358,9 +404,20 @@ fn flare_mla_decoding_dispatch[
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
     comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
-    comptime assert (
-        depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576
-    ), "flareMLA_decoding only supports head_dim == 576."
+    # For per_token_scale_rope_aware: Q's physical last dim is 640 (interleaved
+    # FP8+BF16) but the logical depth (from config) is 576. Only validate
+    # the config depth; the Q physical dim is checked separately.
+    comptime if per_token_scale_rope_aware:
+        comptime assert (
+            depth == 576
+        ), "per_token_scale_rope_aware requires logical depth == 576."
+        comptime assert (
+            UInt(Int(q.layout.shape[q.rank - 1])) == 640
+        ), "per_token_scale_rope_aware requires Q physical dim == 640."
+    else:
+        comptime assert (
+            depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576
+        ), "flareMLA_decoding only supports head_dim == 576."
     comptime assert (
         kv_num_heads == 1
     ), "flareMLA_decoding only supports kv_num_heads == 1."
@@ -404,6 +461,7 @@ fn flare_mla_decoding_dispatch[
                 ragged=ragged,
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
+                per_token_scale_rope_aware=per_token_scale_rope_aware,
             ](
                 q,
                 k,
@@ -416,6 +474,7 @@ fn flare_mla_decoding_dispatch[
                 max_prompt_len,
                 max_cache_valid_length,
                 ctx,
+                q_scale_ptr,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -449,6 +508,7 @@ fn flare_mla_decoding_dispatch[
                 ragged=ragged,
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
+                per_token_scale_rope_aware=per_token_scale_rope_aware,
             ](
                 q,
                 k,
@@ -461,6 +521,7 @@ fn flare_mla_decoding_dispatch[
                 local_args.q_max_seq_len,
                 local_args.max_cache_valid_length,
                 ctx,
+                q_scale_ptr,
             )
             _ = local_args^
 

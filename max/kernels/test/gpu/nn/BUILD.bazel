@@ -46,6 +46,10 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mla_decode_qkv_fp8_per_token_scale_rope_aware.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
