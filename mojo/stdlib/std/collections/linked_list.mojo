@@ -626,22 +626,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return True
 
-    fn __ne__(
-        self, other: Self
-    ) -> Bool where conforms_to(Self.ElementType, Equatable):
-        """Checks if the two lists are not equal.
-
-        Args:
-            other: The list to compare to.
-
-        Returns:
-            Whether the lists are not equal.
-
-        Notes:
-            Time Complexity: O(n) in min(len(self), len(other)) compares.
-        """
-        return not (self == other)
-
     fn _get_node_ptr[
         I: Indexer, //
     ](ref self, idx: I) -> UnsafePointer[

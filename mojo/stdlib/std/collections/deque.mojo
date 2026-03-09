@@ -296,19 +296,6 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 return False
         return True
 
-    fn __ne__(
-        self, other: Self
-    ) -> Bool where conforms_to(Self.ElementType, Equatable):
-        """Checks if two deques are not equal.
-
-        Args:
-            other: The deque to compare with.
-
-        Returns:
-            `True` if the deques are not equal, `False` otherwise.
-        """
-        return not (self == other)
-
     fn __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):

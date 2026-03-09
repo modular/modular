@@ -464,26 +464,6 @@ struct List[T: Copyable](
             index += 1
         return True
 
-    @always_inline
-    fn __ne__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
-        """Checks if two lists are not equal.
-
-        Args:
-            other: The list to compare with.
-
-        Returns:
-            True if the lists are not equal, False otherwise.
-
-        Examples:
-
-        ```mojo
-        var x = [1, 2, 3]
-        var y = [1, 2, 4]
-        print("x and y are not equal" if x != y else "x and y are equal")
-        ```
-        """
-        return not (self == other)
-
     fn __contains__[
         U: Equatable & Copyable, //
     ](self: List[U, ...], value: U) -> Bool:
