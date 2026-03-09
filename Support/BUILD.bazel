@@ -372,20 +372,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "HTTP",
-    srcs = glob(["lib/HTTP/*.cpp"]),
-    hdrs = glob(["include/Support/HTTP/*.h"]),
-    deps = [
-        ":Base",
-        ":Configuration",
-        ":Threading",
-        ":URI",
-        "@curl",
-        "@llvm-project//llvm:Support",
-    ],
-)
-
-modular_cc_library(
     name = "ML",
     srcs = glob(["lib/ML/*.cpp"]),
     hdrs = glob([
@@ -545,7 +531,6 @@ modular_cc_library(
         ":Base64",
         ":Configuration",
         ":Filesystem",
-        ":HTTP",
         ":MArchTarget",
         ":MArchTargetMinimal",
         ":Threading",

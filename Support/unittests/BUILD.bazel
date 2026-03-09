@@ -161,16 +161,6 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "HTTPTest",
-    srcs = glob(["HTTP/*.cpp"]),
-    deps = [
-        "//Support:Filesystem",
-        "//Support:HTTP",
-        "@llvm-project//llvm:Support",
-    ],
-)
-
-modular_cc_test(
     name = "MLTest",
     srcs = [
         "DTypeTest.cpp",
