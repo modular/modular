@@ -1518,11 +1518,13 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   // Read the cached package.
   OpBuilder builder = parentState.decl->getDeclEndBuilder();
   Block *block = builder.getBlock();
+  // bytecodeReader refers to sourceMgr by reference,
+  // so sourceMgr lifetime must be same or longer.
+  auto sourceMgr = std::make_shared<llvm::SourceMgr>();
   std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
   {
     CompilerTimeTraceScope timeScope("readBytecodeFile");
     // Create a source manager to extend the lifetime of the package buffer.
-    auto sourceMgr = std::make_shared<llvm::SourceMgr>();
     sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
     const llvm::MemoryBuffer *memoryBuf =
         sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
