@@ -264,7 +264,7 @@ fn test[
     rtol = 1e-2
 
     comptime if qkv_perm_dim:
-        for qkv_idx, m, n in itertools.product(
+        for qkv_idx, m, n in std.itertools.product(
             range(3), range(total_num_tokens), range(N)
         ):
             var expect = c_ref_host[m, qkv_idx * N + n][0]
@@ -280,7 +280,7 @@ fn test[
                 rtol=rtol,
             )
     else:
-        for m, n in itertools.product(range(total_num_tokens), range(N)):
+        for m, n in std.itertools.product(range(total_num_tokens), range(N)):
             var expect: Scalar[out_type]
 
             comptime if has_epilogue:

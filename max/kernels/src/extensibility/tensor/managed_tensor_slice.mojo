@@ -1379,7 +1379,7 @@ fn foreach[
         var val = func[width, alignment](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store[element_alignment=alignment](index, val)
 
-    algorithm.functional.elementwise[
+    std.algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         use_blocking_impl=use_blocking_impl,
@@ -1434,7 +1434,7 @@ fn foreach[
         idx = rebind[IndexList[rank]](index)
         out_func[_width](idx)
 
-    algorithm.functional.elementwise[
+    std.algorithm.functional.elementwise[
         out_func_shim,
         simd_width,
         use_blocking_impl=use_blocking_impl,

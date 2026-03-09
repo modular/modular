@@ -284,7 +284,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
                         var sum = SIMD[dtype, vec_size](0)
 
                         fn dot[simd_size: Int](k: Int) unified {mut}:
-                            sum = math.fma(
+                            sum = std.math.fma(
                                 lhs_cache.load[vec_size](m, k),
                                 rhs_cache.aligned_load[vec_size](n, k),
                                 sum,
@@ -315,7 +315,7 @@ fn bench[
     fn test_fn():
         _ = func(C, A, B)
 
-    var secs = benchmark.run[test_fn](max_runtime_secs=0.5).mean()
+    var secs = std.benchmark.run[test_fn](max_runtime_secs=0.5).mean()
 
     A.data.free()
     B.data.free()

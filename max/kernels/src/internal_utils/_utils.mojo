@@ -337,12 +337,12 @@ struct Timer:
     var report: List[String]
 
     fn __init__(out self):
-        self.start = Float64(time.perf_counter_ns())
+        self.start = Float64(std.time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
     fn measure(mut self, msg: String):
-        var current = Float64(time.perf_counter_ns())
+        var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")

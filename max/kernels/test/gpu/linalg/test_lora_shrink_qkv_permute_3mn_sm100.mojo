@@ -202,7 +202,7 @@ fn test[
 
     rtol = 1e-2
 
-    for qkv_idx, m, n in itertools.product(
+    for qkv_idx, m, n in std.itertools.product(
         range(3), range(total_num_tokens), range(N)
     ):
         var expect = c_ref_host[m, qkv_idx * N + n][0]

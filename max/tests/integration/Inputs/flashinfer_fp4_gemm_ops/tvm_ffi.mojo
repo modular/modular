@@ -94,7 +94,7 @@ struct TVMFFIObject:
 
 
 struct TVMFFIErrorCell(
-    ImplicitlyCopyable, Movable, TVMFFIType, format.Writable
+    ImplicitlyCopyable, Movable, TVMFFIType, std.format.Writable
 ):
     comptime type_index: Int32 = Types.ERROR
 
@@ -103,12 +103,12 @@ struct TVMFFIErrorCell(
     var backtrace: TVMFFIByteArray
     # Unused fields omitted (update_backtrace, cause_chain, extra_context)
 
-    fn write_to(self, mut writer: Some[format.Writer]):
+    fn write_to(self, mut writer: Some[std.format.Writer]):
         writer.write(StringSlice(unsafe_from_utf8=self.kind))
         writer.write(": ")
         writer.write(StringSlice(unsafe_from_utf8=self.message))
 
-    fn write_repr_to(self, mut writer: Some[format.Writer]):
+    fn write_repr_to(self, mut writer: Some[std.format.Writer]):
         writer.write("TVMFFIErrorCell('")
         self.write_to(writer)
         writer.write("')")

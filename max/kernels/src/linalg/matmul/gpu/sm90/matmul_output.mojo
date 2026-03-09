@@ -259,7 +259,7 @@ struct MatmulTileWriter[
             max_row,
         )
 
-        comptime for row_tile, col_tile in itertools.product(
+        comptime for row_tile, col_tile in std.itertools.product(
             range(Self.num_m_mmas), range(Self.num_n_mmas)
         ):
             reg_writer.write_tile(

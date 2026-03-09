@@ -725,8 +725,8 @@ fn test_tile_mask():
     # CHECK: True True True False
     # CHECK: True True True False
     # CHECK: False False False False
-    for tile_i in range(math.ceildiv(11, 4)):
-        for tile_j in range(math.ceildiv(15, 4)):
+    for tile_i in range(std.math.ceildiv(11, 4)):
+        for tile_j in range(std.math.ceildiv(15, 4)):
             print("---tile[", tile_i, tile_j, "]---")
             var tile_mas = _tile_mask[4, 4](
                 IndexList[2](11, 15), IndexList[2](tile_i, tile_j)
@@ -773,8 +773,8 @@ fn test_vectorize_mask():
     # CHECK: ---tile[ 2 3 ]---
     # CHECK: True x (2, 2) False x (2, 1)
     # CHECK: False x (1, 2) False x (1, 1)
-    for tile_i in range(math.ceildiv(11, 4)):
-        for tile_j in range(math.ceildiv(15, 4)):
+    for tile_i in range(std.math.ceildiv(11, 4)):
+        for tile_j in range(std.math.ceildiv(15, 4)):
             print("---tile[", tile_i, tile_j, "]---")
             var tile_mas = _tile_mask[4, 4](
                 IndexList[2](11, 15), IndexList[2](tile_i, tile_j)
@@ -966,8 +966,8 @@ fn test_composed_tile_vectorize_distribute():
     # CHECK: ---thread-[ 3 ]-mask---
     # CHECK: False False
     # CHECK: False False
-    for tile_m in range(math.ceildiv(M, BM)):
-        for tile_n in range(math.ceildiv(N, BN)):
+    for tile_m in range(std.math.ceildiv(M, BM)):
+        for tile_n in range(std.math.ceildiv(N, BN)):
             print("---tile[", tile_m, tile_n, "]---")
             var tile_mask = _tile_mask[BM, BN](
                 IndexList[2](M, N), IndexList[2](tile_m, tile_n)
@@ -1132,8 +1132,8 @@ fn test_composed_tile_vectorize_distribute_small():
     # CHECK: ---thread-[ 3 ]-mask---
     # CHECK: False : 4 x 0
 
-    for tile_m in range(math.ceildiv(M, BM)):
-        for tile_n in range(math.ceildiv(N, BN)):
+    for tile_m in range(std.math.ceildiv(M, BM)):
+        for tile_n in range(std.math.ceildiv(N, BN)):
             print("---tile[", tile_m, tile_n, "]---")
             var tile_mask = _tile_mask[BM, BN](
                 IndexList[2](M, N), IndexList[2](tile_m, tile_n)

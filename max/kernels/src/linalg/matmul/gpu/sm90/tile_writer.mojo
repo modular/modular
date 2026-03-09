@@ -602,7 +602,7 @@ struct FragmentToSMemWriter[
         ) // ST_MATRIX_WIDTH_BYTES
 
         # Store all fragments using st.matrix
-        comptime for m_frag, n_frag in itertools.product(
+        comptime for m_frag, n_frag in std.itertools.product(
             range(Self.num_m_mmas),
             range(Self.tile_n_size // ST_MATRIX_WIDTH_BYTES),
         ):
@@ -906,7 +906,7 @@ struct RegisterToGMemWriter[
             warp_tile_coords = self.tile_coords.value().adjust(warp_tile_coords)
 
         # Process fragment matrices
-        comptime for m_frag, n_frag in itertools.product(
+        comptime for m_frag, n_frag in std.itertools.product(
             range(Self.num_m_frag_mat), range(Self.num_n_frag_mat)
         ):
             comptime frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag

@@ -130,7 +130,7 @@ fn assert_almost_equal[
         ```
     """
     for i in range(num_elements):
-        testing.assert_almost_equal(
+        std.testing.assert_almost_equal(
             x[i],
             y[i],
             msg=t"{msg} at {_format_index(i, shape)}",
@@ -187,7 +187,7 @@ fn assert_equal[
         ```
     """
     for i in range(num_elements):
-        testing.assert_equal(
+        std.testing.assert_equal(
             x[i],
             y[i],
             msg=t"{msg} at {_format_index(i, shape)}",

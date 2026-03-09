@@ -30,8 +30,8 @@ comptime alignment = 64
 @parameter
 fn bench_run[
     func: fn() raises capturing[_] -> None
-]() raises -> benchmark.Report:
-    return benchmark.run[func](2, 1_000_000, 1, 3)
+]() raises -> std.benchmark.Report:
+    return std.benchmark.run[func](2, 1_000_000, 1, 3)
 
 
 def test_gemv() raises:
@@ -112,7 +112,7 @@ def test_gemv() raises:
         gemv[parallelize=False](out, lhs, rhs)
 
     var serial_perf = bench_run[bench_fn_serial]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
     var serial_bandwidth = (
         Float64(bytes_per_iteration) / serial_perf.mean()
     ) / gigabyte
@@ -133,7 +133,7 @@ def test_gemv() raises:
         gemv[parallelize=True](out, lhs, rhs)
 
     var par_perf = bench_run[bench_fn_parallel]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
 
     var rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
     var out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
@@ -166,7 +166,7 @@ def test_gemv() raises:
     bench_fn_matmul()
 
     var matmul_perf = bench_run[bench_fn_matmul]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
     matmul_perf.print()
     print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))
 

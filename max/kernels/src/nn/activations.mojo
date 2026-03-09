@@ -91,7 +91,7 @@ fn elu[
         The result of the ELU operation.
     """
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
-    return x.ge(0).select(x, math.expm1(x))
+    return x.ge(0).select(x, std.math.expm1(x))
 
 
 # ===----------------------------------------------------------------------=== #

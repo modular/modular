@@ -999,7 +999,7 @@ struct PRegisterBuffer[
                     tile_idx
                 ]
 
-                comptime for m, j in itertools.product(
+                comptime for m, j in std.itertools.product(
                     range(Self.num_m_mmas), range(Self.output_frag_size)
                 ):
                     mma_reg_tile[m, j] = reg_tile_split[m, j].cast[
@@ -1131,7 +1131,7 @@ struct PRegisterBuffer[
                 warp_row, i
             )
 
-            comptime for m_mma, n_mma in itertools.product(
+            comptime for m_mma, n_mma in std.itertools.product(
                 range(Self.num_m_mmas), range(num_n_mmas_per_bk)
             ):
                 var p_smem_mma_tile = p_smem_warp_tile.tile[
