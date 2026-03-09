@@ -61,8 +61,3 @@ modular_py_test(
         requirement("pathspec"),
     ],
 )
-
-filegroup(
-    name = "mblack_files",
-    srcs = glob(["src/**"]),
-)
