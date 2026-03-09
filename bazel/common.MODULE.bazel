@@ -547,6 +547,16 @@ http_file(
     ],
 )
 
+# Similar to above, transitive dep of transformers v4 vs v5
+http_file(
+    name = "huggingface_hub_v0_wheel",
+    downloaded_file_path = "huggingface_hub-0.36.2-py3-none-any.whl",
+    sha256 = "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270",
+    urls = [
+        "https://files.pythonhosted.org/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl",
+    ],
+)
+
 # Intersphinx oject inventory for Python
 http_archive(
     name = "python-objects-inv",
