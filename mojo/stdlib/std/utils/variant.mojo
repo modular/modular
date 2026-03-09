@@ -20,7 +20,12 @@ from std.format._utils import (
     TypeNames,
 )
 from std.memory import UnsafeMaybeUninit
-from std.reflection.traits import AllWritable
+from std.hashlib.hasher import Hasher
+from std.reflection.traits import (
+    AllEquatable,
+    AllHashable,
+    AllWritable,
+)
 from ._nicheable import UnsafeNicheable, NicheIndex
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq, size_of
@@ -301,6 +306,12 @@ when eligible, falling back to the general discriminant-tagged storage."""
 
 
 struct Variant[*Ts: Movable](
+    Equatable where AllEquatable[*Ts],
+    Hashable where AllHashable[*Ts],
+    # TODO(MOCO-3365): Copyable and ImplicitlyCopyable should be conditional,
+    # but conditional ImplicitlyDestructible is not yet supported by the
+    # compiler, and making Copyable conditional cascades into Optional and
+    # other types that embed Variant.
     ImplicitlyCopyable,
     Writable where AllWritable[*Ts],
 ):
@@ -507,6 +518,61 @@ struct Variant[*Ts: Movable](
             abort("get: wrong variant type")
 
         return self.unsafe_get[T]()
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
+        """Compares two variants for equality.
+
+        Two variants are equal if they hold the same type and the held
+        values are equal.
+
+        Args:
+            other: The other variant to compare against.
+
+        Returns:
+            True if the variants hold the same type and equal values.
+        """
+        comptime for i in range(Variadic.size(Self.Ts)):
+            comptime T = Self.Ts[i]
+            if self.isa[T]():
+                if not other.isa[T]():
+                    return False
+                return trait_downcast[Equatable](
+                    self.unsafe_get[T]()
+                ) == trait_downcast[Equatable](other.unsafe_get[T]())
+        return False
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
+        """Compares two variants for inequality.
+
+        Args:
+            other: The other variant to compare against.
+
+        Returns:
+            True if the variants hold different types or unequal values.
+        """
+        return not self == other
+
+    fn __hash__[H: Hasher](self, mut hasher: H) where AllHashable[*Self.Ts]:
+        """Hashes the variant using the given hasher.
+
+        The hash incorporates both the type discriminant and the held
+        value's hash, so variants holding different types are unlikely to
+        collide.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        comptime for i in range(Variadic.size(Self.Ts)):
+            comptime T = Self.Ts[i]
+            if self.isa[T]():
+                hasher.update(UInt8(i))
+                trait_downcast[Hashable](self.unsafe_get[T]()).__hash__(hasher)
+                return
 
     # ===-------------------------------------------------------------------===#
     # Methods

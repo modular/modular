@@ -120,3 +120,41 @@ comptime _AllEquatableReducer[
     From: Variadic.TypesOfTrait[AnyType],
     idx: Int,
 ] = Variadic.values[conforms_to(From[idx], Equatable) and Prev[0]]
+
+comptime AllHashable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
+    BaseVal=Variadic.values[True],
+    VariadicType=Ts,
+    Reducer=_AllHashableReducer,
+][0]
+"""Evaluates to `True` if all types in `Ts` conform to `Hashable`, `False` otherwise.
+
+Parameters:
+    Ts: The types to check for conformance to `Hashable`.
+"""
+
+comptime _AllHashableReducer[
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[AnyType],
+    idx: Int,
+] = Variadic.values[conforms_to(From[idx], Hashable) and Prev[0]]
+
+comptime AllImplicitlyDestructible[
+    *Ts: AnyType
+]: Bool = _ReduceVariadicAndIdxToValue[
+    BaseVal=Variadic.values[True],
+    VariadicType=Ts,
+    Reducer=_AllImplicitlyDestructibleReducer,
+][
+    0
+]
+"""Evaluates to `True` if all types in `Ts` conform to `ImplicitlyDestructible`, `False` otherwise.
+
+Parameters:
+    Ts: The types to check for conformance to `ImplicitlyDestructible`.
+"""
+
+comptime _AllImplicitlyDestructibleReducer[
+    Prev: Variadic.ValuesOfType[Bool],
+    From: Variadic.TypesOfTrait[AnyType],
+    idx: Int,
+] = Variadic.values[conforms_to(From[idx], ImplicitlyDestructible) and Prev[0]]
