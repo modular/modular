@@ -151,10 +151,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             prev_logits,
         ]
 
-        need_penalties = any(
-            context.sampling_params.needs_penalties for context in context_batch
-        )
-        if need_penalties and self.pipeline_config.sampling.enable_penalties:
+        if self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
                 context_batch, self.devices[0]
             )
@@ -456,11 +453,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         sampler_inputs = SamplerInputs.create(batch, self.devices[0])
 
         # Build penalty inputs once for the entire draft generation loop
-        need_penalties = any(
-            context.sampling_params.needs_penalties for context in batch
-        )
         penalty_inputs: PenaltyInputs | None = None
-        if need_penalties and self.pipeline_config.sampling.enable_penalties:
+        if self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
                 batch, self.devices[0], num_steps=num_steps
             )
