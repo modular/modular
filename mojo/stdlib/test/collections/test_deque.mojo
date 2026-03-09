@@ -1187,7 +1187,7 @@ def test_deque_conditional_conformances() raises:
 
 
 def test_getitem_slice_basic() raises:
-    """Basic contiguous slicing iterates the expected elements without allocating.
+    """Basic contiguous slicing iterates the expected elements without materializing a new deque.
     """
     var d: Deque[Int] = [1, 2, 3, 4, 5]
     var result = List[Int]()
