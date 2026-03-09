@@ -22,11 +22,11 @@ struct Timer(ImplicitlyCopyable):
         self.start_time = 0
 
     fn __enter__(mut self) -> Self:
-        self.start_time = Int(time.perf_counter_ns())
+        self.start_time = Int(std.time.perf_counter_ns())
         return self
 
     fn __exit__(mut self):
-        end_time = time.perf_counter_ns()
+        end_time = std.time.perf_counter_ns()
         elapsed_time_ms = round(
             Float64(end_time - UInt(self.start_time)) / 1e6, 3
         )
@@ -36,8 +36,8 @@ struct Timer(ImplicitlyCopyable):
 def main() raises:
     with Timer():
         print("Beginning execution")
-        time.sleep(1.0)
-        if len(sys.argv()) > 1:
+        std.time.sleep(1.0)
+        if len(std.sys.argv()) > 1:
             raise "simulated error"
-        time.sleep(1.0)
+        std.time.sleep(1.0)
         print("Ending execution")

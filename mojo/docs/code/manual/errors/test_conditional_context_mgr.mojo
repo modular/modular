@@ -19,7 +19,7 @@ from std.testing import assert_raises, TestSuite
 def test_conditional_timer_no_error() raises:
     with ConditionalTimer():
         print("Beginning no-error execution")
-        time.sleep(0.1)
+        std.time.sleep(0.1)
         i = 1
         _ = flaky_identity(i)
         print("Ending no-error execution")
@@ -32,7 +32,7 @@ def test_conditional_timer_suppressed_error() raises:
 
     with ConditionalTimer():
         print("Beginning no-error execution")
-        time.sleep(0.1)
+        std.time.sleep(0.1)
         _ = flaky_identity(i)
         print("Ending no-error execution")
 
@@ -41,7 +41,7 @@ def test_conditional_timer_propagated_error() raises:
     with assert_raises(contains="really bad"):
         with ConditionalTimer():
             print("Beginning propagated error execution")
-            time.sleep(0.1)
+            std.time.sleep(0.1)
             i = 4
             _ = flaky_identity(i)
             # We should not reach this line

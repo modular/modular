@@ -29,10 +29,10 @@ fn test_mkdtemp() raises:
     import std.os
 
     dir_path = mkdtemp()
-    assert_true(os.path.exists(dir_path))
-    assert_true(os.path.isdir(dir_path))
-    os.rmdir(dir_path)
-    assert_false(os.path.exists(dir_path))
+    assert_true(std.os.path.exists(dir_path))
+    assert_true(std.os.path.isdir(dir_path))
+    std.os.rmdir(dir_path)
+    assert_false(std.os.path.exists(dir_path))
 
 
 fn test_rmtree() raises:
@@ -40,10 +40,10 @@ fn test_rmtree() raises:
     import std.os
 
     dir_path = mkdtemp()
-    assert_true(os.path.exists(dir_path))
+    assert_true(std.os.path.exists(dir_path))
 
-    os.rmdir(dir_path)
-    assert_false(os.path.exists(dir_path))
+    std.os.rmdir(dir_path)
+    assert_false(std.os.path.exists(dir_path))
 
 
 fn test_temporary_directory_context_manager() raises:
@@ -53,10 +53,10 @@ fn test_temporary_directory_context_manager() raises:
     var temp_dir_copy: String
     with TemporaryDirectory() as temp_dir:
         temp_dir_copy = temp_dir.copy()
-        assert_true(os.path.exists(temp_dir))
-        assert_true(os.path.isdir(temp_dir))
+        assert_true(std.os.path.exists(temp_dir))
+        assert_true(std.os.path.isdir(temp_dir))
 
-    assert_false(os.path.exists(temp_dir_copy))
+    assert_false(std.os.path.exists(temp_dir_copy))
 
 
 fn test_named_temporary_file_context_manager() raises:
@@ -79,13 +79,13 @@ fn test_file_close() raises:
     var temp_file = NamedTemporaryFile()  # delete=True by default
     temp_file.write("Temporary data")
     temp_file.close()  # File is deleted if delete=True
-    assert_false(os.path.exists(temp_file.name))
+    assert_false(std.os.path.exists(temp_file.name))
 
     temp_file = NamedTemporaryFile(delete=False)
     temp_file.write("Temporary data")
     temp_file.close()  # File is not deleted
-    assert_true(os.path.exists(temp_file.name))
-    os.remove(temp_file.name)  # Clean up manually
+    assert_true(std.os.path.exists(temp_file.name))
+    std.os.remove(temp_file.name)  # Clean up manually
 
 
 fn test_file_read() raises:

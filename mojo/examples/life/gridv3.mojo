@@ -49,12 +49,12 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     @staticmethod
     fn random(seed: Optional[Int] = None) -> Self:
         if seed:
-            random.seed(seed.value())
+            std.random.seed(seed.value())
         else:
-            random.seed()
+            std.random.seed()
 
         grid = Self()
-        random.randint(grid.data, grid.num_cells, 0, 1)
+        std.random.randint(grid.data, grid.num_cells, 0, 1)
 
         return grid^
 
