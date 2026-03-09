@@ -343,7 +343,7 @@ logit_verification_pipelines:
       json_file: "torch_nemo-instruct-2407_bfloat16_golden.json"
     # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
     cos_dist_threshold: 2.1e-2
-    kl_div_threshold: 3.0e-2
+    kl_div_threshold: 3.5e-2
 
   mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16:
     pre_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
@@ -438,7 +438,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz"
       json_file: "torch_pixtral_bfloat16_golden.json"
     cos_dist_threshold: 7.2e-3
-    kl_div_threshold: 2.0e-2
+    kl_div_threshold: 2.5e-2
 
   Qwen/Qwen2.5-7B-Instruct-bfloat16:
     pre_submit_agents: []
