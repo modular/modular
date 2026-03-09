@@ -1,0 +1,27 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %repl <%s 2>&1 | FileCheck %s
+
+# Regression test: print() crashed in the JIT/REPL with SIGSEGV because
+# LLDB's symbol resolution matched the POSIX `write` symbol to a C++ method
+# instead of libc's write(2).
+
+print()
+
+# CHECK: {{^$}}
+
+print(42)
+
+# CHECK: 42
+
+print("hello world")
+
+# CHECK: hello world
+
+print(1, 2, 3)
+
+# CHECK: 1 2 3
