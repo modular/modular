@@ -18,14 +18,10 @@ from max.experimental.nn.common_layers.rotary_embedding import (
 )
 
 from .attention import Olmo3Attention
-from .rms_norm import Olmo3RMSNorm
-from .transformer_block import Olmo3TransformerBlock
 
 __all__ = [
     "MLP",
     "Olmo3Attention",
-    "Olmo3RMSNorm",
-    "Olmo3TransformerBlock",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
 ]

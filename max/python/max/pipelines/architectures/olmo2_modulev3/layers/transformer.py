@@ -22,8 +22,6 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import PagedCacheValues
 
-from .attention import Olmo2Attention
-
 
 class Olmo2TransformerBlock(
     Module[[Tensor, Tensor, PagedCacheValues, Tensor], Tensor]
@@ -36,7 +34,7 @@ class Olmo2TransformerBlock(
 
     def __init__(
         self,
-        attention: Olmo2Attention,
+        attention: Module[[Tensor, PagedCacheValues, Tensor], Tensor],
         mlp: MLP,
         post_attention_layernorm: RMSNorm,
         post_feedforward_layernorm: RMSNorm,

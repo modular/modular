@@ -31,8 +31,9 @@ from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-
-from .rms_norm import Olmo3RMSNorm
+from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
+    Olmo2RMSNorm,
+)
 
 
 class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
@@ -121,11 +122,11 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         )
 
         # QK normalization layers (used in Olmo3)
-        self.q_norm = Olmo3RMSNorm(
+        self.q_norm = Olmo2RMSNorm(
             self.q_weight_dim,
             self.qk_norm_eps,
         )
-        self.k_norm = Olmo3RMSNorm(
+        self.k_norm = Olmo2RMSNorm(
             self.kv_weight_dim,
             self.qk_norm_eps,
         )

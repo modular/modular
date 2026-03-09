@@ -36,10 +36,14 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     unflatten_ragged_attention_inputs,
 )
+from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
+    Olmo2RMSNorm,
+)
+from max.pipelines.architectures.olmo2_modulev3.layers.transformer import (
+    Olmo2TransformerBlock,
+)
 
 from .layers.attention import Olmo3Attention
-from .layers.rms_norm import Olmo3RMSNorm
-from .layers.transformer_block import Olmo3TransformerBlock
 from .model_config import Olmo3Config
 
 
@@ -100,7 +104,7 @@ class Olmo3TextModel(
             dim=config.hidden_size,
         )
 
-        self.norm = Olmo3RMSNorm(
+        self.norm = Olmo2RMSNorm(
             config.hidden_size,
             config.rms_norm_eps,
         )
@@ -115,7 +119,7 @@ class Olmo3TextModel(
             )
 
         create_norm = functools.partial(
-            Olmo3RMSNorm,
+            Olmo2RMSNorm,
             config.hidden_size,
             eps=config.rms_norm_eps,
         )
@@ -136,7 +140,7 @@ class Olmo3TextModel(
                 basic_rope if layer_type == "sliding_attention" else yarn_rope
             )
             layers.append(
-                Olmo3TransformerBlock(
+                Olmo2TransformerBlock(
                     attention=Olmo3Attention(
                         rope=layer_rope,
                         num_attention_heads=config.num_attention_heads,
