@@ -221,7 +221,7 @@ fn main():
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
-    var time = benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
     print(time, end="")
     print(" seconds")

@@ -44,8 +44,8 @@ comptime do_benchmarking = False
 @parameter
 fn bench_run[
     func: fn() raises capturing[_] -> None
-]() raises -> benchmark.Report:
-    return benchmark.run[func3=func](2, 1_000_000, 1, 3)
+]() raises -> std.benchmark.Report:
+    return std.benchmark.run[func3=func](2, 1_000_000, 1, 3)
 
 
 fn gemm_naive[
@@ -178,7 +178,7 @@ def test_matmul[
 
     comptime if do_benchmarking:
         var matmul_perf = bench_run[bench_fn_matmul]()
-        benchmark.keep(c[0, 0])
+        std.benchmark.keep(c[0, 0])
         print(
             "Apple Matmul GFLOP/s for (M, N, K) = (",
             m,
@@ -534,7 +534,7 @@ def test_batched_matmul[
 
     comptime if do_benchmarking:
         var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
-        benchmark.keep(c[0, 0, 0])
+        std.benchmark.keep(c[0, 0, 0])
         print(
             "Apple Batched Matmul GFLOP/s for (BATCHES, M, N, K) = (",
             batches,
