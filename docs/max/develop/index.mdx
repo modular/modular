@@ -98,6 +98,20 @@ control over graph structure, data flow, and device placement. Eager-style
 execution lets you write natural Python code while MAX handles graph building
 and optimization automatically.
 
+:::note
+
+MAX provides two module APIs, one for each programming pattern:
+
+- [`max.nn.Module`](/max/api/python/nn/layer#max.nn.layer.Module): works
+  directly inside `with Graph(...)` and is the right choice for existing
+  pipeline code.
+- [`max.experimental.nn.Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module):
+  uses a `forward()` method and [`compile()`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module.compile)
+  to build the same MAX graph automatically. You can't use it directly inside
+  a `with Graph(...)` block.
+
+:::
+
 ## Use standard Python operators
 
 You can perform arithmetic operations using Python operators on tensors:
