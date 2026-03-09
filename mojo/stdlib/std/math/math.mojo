@@ -2531,7 +2531,7 @@ fn hypot[dtype: DType](args: Span[Scalar[dtype], _]) -> Scalar[dtype]:
     var max_vec = SIMD[dtype, w](0)
     var i = 0
     while i + w <= n:
-        var v = abs((ptr + i).load[width=w]())
+        var v = abs(ptr.load[width=w](i))
         max_vec = max(max_vec, v)
         i += w
     # Scalar tail.
@@ -2550,7 +2550,7 @@ fn hypot[dtype: DType](args: Span[Scalar[dtype], _]) -> Scalar[dtype]:
     var sum_vec = SIMD[dtype, w](0)
     i = 0
     while i + w <= n:
-        var v = (ptr + i).load[width=w]() * inv_max
+        var v = ptr.load[width=w](i) * inv_max
         sum_vec += v * v
         i += w
     # Scalar tail.
