@@ -337,6 +337,14 @@ struct StmtParser : public ParserBase {
   // Declarations.
   ParseResult parseFromImportStmt();
   ParseResult parseImportStmt();
+  /// Emit an error and return failure if the current scope is not a valid
+  /// location for an import statement. Imports are permitted at module scope
+  /// (FileModuleOp) and at function scope (FnOp), including inside comptime
+  /// control-flow (ParamIfOp, ParamForOp) which is transparent to this check.
+  /// Runtime control-flow bodies (HLCF::IfOp, LIT::LoopOp, etc.) are
+  /// rejected. \p kwLoc should be the location of the leading `from` or
+  /// `import` keyword so the diagnostic caret lands on the keyword.
+  ParseResult checkImportScope(SMLoc kwLoc);
   ParseResult
   parseImportModuleName(StringAttr &parsedName,
                         StringRef *nonIdentLeafModuleName = nullptr);
@@ -2960,6 +2968,42 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   return parseParamIf(ifLoc, startCursor, curIndent);
 }
 
+/// Validates that an import statement appears at a permitted scope: either
+/// directly at module scope (FileModuleOp) or at function scope (FnOp).
+/// Within a function, comptime control-flow ops (ParamIfOp, ParamForOp) are
+/// transparent — the check walks through them. Any other intervening op
+/// (e.g. HLCF::IfOp, LIT::LoopOp) indicates runtime control flow and is
+/// rejected. Struct, trait, and extension bodies are also rejected.
+ParseResult StmtParser::checkImportScope(SMLoc kwLoc) {
+  Operation *parent = getParentDecl().getIfOperation();
+  // Module scope is always valid.
+  if (isa_and_nonnull<FileModuleOp>(parent))
+    return success();
+  // Within a function, walk up the region chain from the current insertion
+  // point to the FnOp. Comptime control-flow ops (ParamIfOp, ParamForOp) are
+  // transparent — we continue walking through them. Any other op in between
+  // (HLCF::IfOp, LIT::LoopOp, etc.) is runtime control flow and the import
+  // is rejected.
+  if (isa_and_nonnull<FnOp>(parent)) {
+    Block *block = builder.getInsertionBlock();
+    while (block) {
+      Operation *op = block->getParentOp();
+      if (!op)
+        break;
+      if (isa<FnOp>(op))
+        return success();
+      if (isa<ParamIfOp, ParamForOp>(op)) {
+        block = op->getBlock();
+        continue;
+      }
+      break; // runtime control-flow op
+    }
+  }
+  emitError(kwLoc)
+      << "import statements are only supported at module or function scope";
+  return failure();
+}
+
 /// import_stmt     ::=  "from" relative_module "import" identifier
 ///                        ["as" identifier] ("," identifier ["as" identifier])*
 ///                      | "from" relative_module "import" "(" identifier
@@ -2969,7 +3013,11 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
 /// module          ::=  (identifier ".")* identifier
 /// relative_module ::=  "."* module | "."+
 ParseResult StmtParser::parseFromImportStmt() {
+  SMLoc kwLoc = getToken().getLoc();
   consumeToken(Token::kw_from);
+
+  if (failed(checkImportScope(kwLoc)))
+    return failure();
 
   SMLoc importLoc = getToken().getLoc();
   StringAttr moduleAttr;
@@ -3069,7 +3117,11 @@ ParseResult StmtParser::parseFromImportStmt() {
 ///                  ("," module ["as" identifier])*
 /// module      ::=  (identifier ".")* identifier
 ParseResult StmtParser::parseImportStmt() {
+  SMLoc kwLoc = getToken().getLoc();
   consumeToken(Token::kw_import);
+
+  if (failed(checkImportScope(kwLoc)))
+    return failure();
 
   // Parse the next module to import.
   do {
