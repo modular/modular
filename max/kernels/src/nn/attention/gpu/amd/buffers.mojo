@@ -21,7 +21,6 @@ from layout import Layout, LayoutTensor
 from layout._utils import idx2crd
 from layout.layout import blocked_product
 from layout.layout_tensor import (
-    LayoutTensorIter,
     ThreadScope,
     copy_dram_to_local,
     copy_local_to_shared,
@@ -229,19 +228,20 @@ struct KVBufferImpl[
     comptime wtile_dim0 = Self.config.wtile_dim0
     comptime wtile_dim1 = Self.config.wtile_dim1
 
-    comptime SharedIterType = LayoutTensorIter[
+    comptime SharedTileType = LayoutTensor[
         Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-        circular=True,
     ]
-
-    var smem_iter: Self.SharedIterType
-
-    comptime SharedTileType = Self.SharedIterType.LayoutTensorType
     comptime SharedWarpTileType = Self.SharedTileType.TileType[
         Self.wtile_dim0, Self.wtile_dim1
+    ]
+
+    var smem_ptr: UnsafePointer[
+        Scalar[Self.dtype],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     var bounds: Int
@@ -280,7 +280,7 @@ struct KVBufferImpl[
         # comptime assert
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
+        self.smem_ptr = shared_ptr
         comptime stride = Self.GlobalTiledIteratorType.layout.stride[0].value()
         self.bounds = num_b_rows.value() * stride if num_b_rows else Int.MAX
         self.global_iterator = global_tile.tiled_iterator[
@@ -317,7 +317,7 @@ struct KVBufferImpl[
     fn copy_to_shared[
         tile_id: Int = 0
     ](self,):
-        var smem_tile = self.smem_iter.next_unsafe(0)[]
+        var smem_tile = Self.SharedTileType(self.smem_ptr)
         copy_local_to_shared[
             thread_layout=Self.thread_layout,
             swizzle=Self.swizzle,
@@ -335,7 +335,7 @@ struct KVBufferImpl[
     ](self):
         comptime num_warps_n = Self.BN // Self.WN
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        var smem_tile = self.smem_iter.next_unsafe(0)[]
+        var smem_tile = Self.SharedTileType(self.smem_ptr)
 
         var wtile_coord0 = Self.config.get_wtile_coord()[0]
         var wtile_coord1 = Self.config.get_wtile_coord()[1]
@@ -521,17 +521,18 @@ struct VBufferTransposeLoads[
 
     var mma_tile: Self.MMATileType
 
-    comptime SharedIterType = LayoutTensorIter[
+    comptime SharedTileType = LayoutTensor[
         Self.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-        circular=True,
     ]
 
-    var smem_iter: Self.SharedIterType
-
-    comptime SharedTileType = Self.SharedIterType.LayoutTensorType
+    var smem_ptr: UnsafePointer[
+        Scalar[Self.dtype],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
 
     comptime GlobalTensorType = LayoutTensor[
         Self.dtype,
@@ -581,7 +582,7 @@ struct VBufferTransposeLoads[
 
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
+        self.smem_ptr = shared_ptr
         self.current_stage = 0
 
     @always_inline
@@ -686,11 +687,11 @@ struct VBufferTransposeLoads[
         var lane_row = lane_coords[0]
         var lane_col = lane_coords[1]
 
-        var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
+        var smem_tensor = Self.SharedTileType(self.smem_ptr)
         var load_tile = self.load_tile.split[Self.num_stages]()[tile_id]
 
         comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
-            var smem_warp_tile = smem_iter_tensor.tile[
+            var smem_warp_tile = smem_tensor.tile[
                 Self.pad[Self.depth](),
                 Self.simd_width,
             ](0, Int(warp_id)).tile[
@@ -724,12 +725,12 @@ struct VBufferTransposeLoads[
         # threads in 16x4 layout
         # each column loads depth x 8 elements from smem
         var col_idx, lane = divmod(lane_id(), 32)
-        var smem_iter_tensor = self.smem_iter.next_unsafe(0)[]
+        var smem_tensor = Self.SharedTileType(self.smem_ptr)
 
         comptime for depth_idx in range(Self.num_depth_tiles):
             # TODO: document and parameterize this magic
             var smem_fragment = (
-                smem_iter_tensor.tile[Self.pad[Self.depth](), 8](
+                smem_tensor.tile[Self.pad[Self.depth](), 8](
                     0, Int(col_idx + UInt(k_mma * 2))
                 )
                 .vectorize[1, Self.simd_width]()
@@ -999,7 +1000,7 @@ struct PRegisterBuffer[
                     tile_idx
                 ]
 
-                comptime for m, j in itertools.product(
+                comptime for m, j in std.itertools.product(
                     range(Self.num_m_mmas), range(Self.output_frag_size)
                 ):
                     mma_reg_tile[m, j] = reg_tile_split[m, j].cast[
@@ -1131,7 +1132,7 @@ struct PRegisterBuffer[
                 warp_row, i
             )
 
-            comptime for m_mma, n_mma in itertools.product(
+            comptime for m_mma, n_mma in std.itertools.product(
                 range(Self.num_m_mmas), range(num_n_mmas_per_bk)
             ):
                 var p_smem_mma_tile = p_smem_warp_tile.tile[

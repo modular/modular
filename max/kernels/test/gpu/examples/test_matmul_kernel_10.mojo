@@ -77,12 +77,12 @@ fn sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    mat_b: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    mat_c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    mat_a: NDBuffer[rank=2, a_type, MutAnyOrigin, a_shape],
+    mat_b: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
-):
+) where (a_type.is_numeric() and b_type.is_numeric()):
     var K = mat_a.dim[1]()
     var N = mat_c.dim[1]()
 
@@ -91,8 +91,7 @@ fn sgemm_warp_tiling_kernel[
 
     # Placement of the warp in the threadblock tile.
     var warp_idx = warp_id()  # the warp this thread is in
-    var warp_col = warp_idx % UInt(BN // WN)
-    var warp_row = warp_idx // UInt(BN // WN)
+    var warp_row, warp_col = divmod(warp_idx, UInt(BN // WN))
 
     # Size of the warp sub-tile.
     comptime w_sub_m = WM // WMITER  # 64/2=32
@@ -100,10 +99,9 @@ fn sgemm_warp_tiling_kernel[
 
     # Placement of the thread in the warp sub-tile.
     var thread_Idx_In_warp = thread_idx.x % UInt(WARP_SIZE)  # [0, 31]
-    var thread_col_in_warp = thread_Idx_In_warp % UInt(
-        w_sub_n // TN
-    )  # i%(16/4)
-    var thread_row_in_warp = thread_Idx_In_warp // UInt(w_sub_n // TN)  # i/4
+    var thread_row_in_warp, thread_col_in_warp = divmod(
+        thread_Idx_In_warp, UInt(w_sub_n // TN)
+    )
 
     # Allocate space for the current blocktile in SMEM.
     # Pad the A tile in share memory to avoid bank conflicts.
@@ -111,15 +109,15 @@ fn sgemm_warp_tiling_kernel[
     comptime sram_bank_padding_size = 4
     comptime BM_padded = BM + sram_bank_padding_size
     var a_sram = NDBuffer[
+        rank=1,
         a_type,
-        1,
         MutAnyOrigin,
         DimList(BK * BM_padded),
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
+        rank=1,
         b_type,
-        1,
         MutAnyOrigin,
         DimList(BK * BN),
         address_space=AddressSpace.SHARED,
@@ -135,18 +133,16 @@ fn sgemm_warp_tiling_kernel[
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = thread_idx.x // UInt(BK // 4)
-    var inner_col_a = thread_idx.x % UInt(BK // 4)
+    var inner_row_a, inner_col_a = divmod(thread_idx.x, UInt(BK // 4))
     comptime row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = thread_idx.x // UInt(BN // 4)
-    var inner_co_ib = thread_idx.x % UInt(BN // 4)
+    var inner_row_b, inner_co_ib = divmod(thread_idx.x, UInt(BN // 4))
     comptime row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
     var thread_results = NDBuffer[
+        rank=4,
         c_type,
-        4,
         MutAnyOrigin,
         DimList(WMITER, WNITER, TM, TN),
     ]().stack_allocation()
@@ -154,12 +150,12 @@ fn sgemm_warp_tiling_kernel[
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, MutAnyOrigin, DimList(WMITER, TM)
+        rank=2, a_type, MutAnyOrigin, DimList(WMITER, TM)
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, MutAnyOrigin, DimList(WNITER, TN)
+        rank=2, b_type, MutAnyOrigin, DimList(WNITER, TN)
     ]().stack_allocation()
     reg_n.zero()
 
@@ -301,9 +297,9 @@ fn matmul_naive(
     if x >= m or y >= n:
         return
 
-    var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[DType.float32, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[DType.float32, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, DType.float32](a_ptr, Index(m, k))
+    var b = NDBuffer[rank=2, DType.float32](b_ptr, Index(k, n))
+    var c = NDBuffer[rank=2, DType.float32](c_ptr, Index(m, n))
 
     var accum = Float32(0)
     for i in range(k):
@@ -412,13 +408,13 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
+    var c_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, N)](
         c_device.unsafe_ptr()
     )
-    var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
+    var a_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](
         a_device.unsafe_ptr()
     )
-    var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
+    var b_buffer = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](
         b_device.unsafe_ptr()
     )
 

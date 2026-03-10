@@ -102,6 +102,7 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
     fn __int__(self) -> Int:
         return self.axis
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -141,7 +142,7 @@ fn gather_reduce[
     comptime assert reduce_axis == 1
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
-    if input.numel() == 0 or indices.numel() == 0:
+    if input.num_elements() == 0 or indices.num_elements() == 0:
         return
 
     # TODO: find a heuristic to replace the magic number.
@@ -304,7 +305,7 @@ fn gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr + indices.numel()
+    var end_indices_ptr = indices.ptr + indices.num_elements()
 
     @parameter
     @__copy_capture(end_indices_ptr)
@@ -410,7 +411,7 @@ fn gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr + indices.numel()
+    var end_indices_ptr = indices.ptr + indices.num_elements()
 
     @parameter
     @__copy_capture(end_indices_ptr)
@@ -947,8 +948,12 @@ fn scatter_nd_generator[
                 " indices_shape[-1] - 1"
             )
 
-        var output_flat = TileTensor(output.ptr, row_major(Idx(output.numel())))
-        var data_flat = TileTensor(data.ptr, row_major(Idx(data.numel())))
+        var output_flat = TileTensor(
+            output.ptr, row_major(Idx(output.num_elements()))
+        )
+        var data_flat = TileTensor(
+            data.ptr, row_major(Idx(data.num_elements()))
+        )
 
         # Always copy input to output first.
         comptime if is_gpu[target]():
@@ -958,10 +963,12 @@ fn scatter_nd_generator[
             var outp = DeviceBuffer(
                 ctx,
                 output.ptr,
-                data.numel(),
+                data.num_elements(),
                 owning=False,
             )
-            var inp = DeviceBuffer(ctx, data.ptr, data.numel(), owning=False)
+            var inp = DeviceBuffer(
+                ctx, data.ptr, data.num_elements(), owning=False
+            )
             ctx.enqueue_copy(
                 outp,
                 inp,
@@ -971,15 +978,15 @@ fn scatter_nd_generator[
             memcpy(
                 dest=output_flat.ptr,
                 src=data_flat.ptr,
-                count=output_flat.numel(),
+                count=output_flat.num_elements(),
             )
 
-        if updates.numel() == 0:
+        if updates.num_elements() == 0:
             # Nothing to update.
             return
 
         var updates_flat = TileTensor(
-            updates.ptr, row_major(Idx(updates.numel()))
+            updates.ptr, row_major(Idx(updates.num_elements()))
         )
 
         var data_shape = coord_to_index_list(data.layout.shape_coord())

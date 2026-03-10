@@ -13,7 +13,11 @@
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import lane_id, thread_idx, block_idx
+from std.gpu import (
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
+    block_idx,
+)
 from std.gpu import warp_id as get_warp_id, WARP_SIZE
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
@@ -23,6 +27,7 @@ from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import num_matrix_reg
 from std.memory import AddressSpace as BaseAddressSpace
 from std.memory import stack_allocation
+from std.math.uutils import umod, ufloordiv
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
@@ -435,7 +440,7 @@ fn _load_tr16_b64_row(
     )
 
     comptime thread_layout = Layout.row_major(4, 4)
-    var lane_in_row = lane_id() % 16
+    var lane_in_row = umod(lane_id(), 16)
     var dist_result = tile.vectorize[1, 4]().distribute_with_offset[
         thread_layout
     ](lane_in_row)
@@ -489,7 +494,7 @@ fn _load_tr16_b64_warp[
         tile.shape[1](),
     )
 
-    var coords = idx2crd[row_layout](Int(lane_id() // 16))
+    var coords = idx2crd[row_layout](ufloordiv(lane_id(), 16))
     var shared_b_tile = tile.tile[4, 16](coords[0], coords[1])
     return _load_tr16_b64_row(shared_b_tile)
 
@@ -599,16 +604,16 @@ fn copy_dram_to_sram_lds[
         # dst need to be contiguous
         comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
         comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
-        var worker_idx_with_offset = worker_idx + UInt(m_sub_tile * WARP_SIZE)
+        var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
         var src_dist = src_partitions.vectorize[
             1, simd_width_of[src.dtype]()
         ]().distribute[thread_layout](
-            (
-                UInt(
-                    swizzle.value()(Int(worker_idx_with_offset))
-                ) if swizzle else worker_idx_with_offset
+            umod(
+                swizzle.value()(
+                    worker_idx_with_offset
+                ) if swizzle else worker_idx_with_offset,
+                WARP_SIZE,
             )
-            % UInt(WARP_SIZE)
         )
         comptime dtype = src.dtype
         var ptr = dst_partitions.ptr

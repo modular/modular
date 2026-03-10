@@ -29,7 +29,7 @@ from .layers.flux2_attention import (
     Flux2PosEmbed,
 )
 from .layers.normalizations import AdaLayerNormContinuous
-from .model_config import Flux2ConfigBase
+from .model_config import Flux2Config
 
 
 def get_can_use_cache(
@@ -441,7 +441,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
 class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
     def __init__(
         self,
-        config: Flux2ConfigBase,
+        config: Flux2Config,
     ):
         """Initialize Flux2Transformer2DModel.
 

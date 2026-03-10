@@ -206,7 +206,9 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
     )
 
     var data_host_ptr = alloc[Float32](n)
-    var data_host = NDBuffer[DType.float32, 1, _, DimList(n)](data_host_ptr)
+    var data_host = NDBuffer[rank=1, DType.float32, _, DimList(n)](
+        data_host_ptr
+    )
 
     ctx.enqueue_copy(data_host_ptr, data)
     ctx.synchronize()

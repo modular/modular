@@ -45,10 +45,7 @@ from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
-from max.nn.linear import (
-    MLP,
-    ColumnParallelLinear,
-)
+from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
@@ -57,9 +54,7 @@ from max.nn.rotary_embedding import (
     RotaryEmbedding,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
@@ -771,9 +766,7 @@ class DeepseekV3(Module):
         if logits is not None and offsets is not None:
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += tuple(h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+        if self.return_hidden_states == ReturnHiddenStates.LAST:
             if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
@@ -781,8 +774,6 @@ class DeepseekV3(Module):
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.norm_shards, h)
             ret_val += tuple(norm_h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += tuple(norm_last_token)
 
         return ret_val
 

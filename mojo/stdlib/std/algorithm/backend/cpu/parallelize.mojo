@@ -84,8 +84,9 @@ fn sync_parallelize[
     # default runtime will be that established by the engine. Otherwise a
     # suitable runtime will be created if it does not already exist.
     var num_threads = parallelism_level()
-    var num_per_lq_tasks = num_work_items // num_threads
-    var num_global_queue_tasks = num_work_items % num_threads
+    var num_per_lq_tasks, num_global_queue_tasks = divmod(
+        num_work_items, num_threads
+    )
     var tg = TaskGroup()
     var count = 0
     for _ in range(num_per_lq_tasks):
@@ -157,9 +158,7 @@ fn _parallelize_impl[
     """
     assert num_workers > 0, "Number of workers must be positive"
     # Calculate how many items are picked up by each worker.
-    var chunk_size = num_work_items // num_workers
-    # Calculate how many workers need to add an extra item to their work.
-    var extra_items = num_work_items % num_workers
+    var chunk_size, extra_items = divmod(num_work_items, num_workers)
 
     # We coalesce consecutive groups of work items into a single dispatch by
     # using the coarse_grained_func below.

@@ -161,9 +161,9 @@ fn bench_reduce[
 
     # Create and initialize input and output buffers.
     var in_bufs = InlineArray[
-        NDBuffer[dtype, rank, ImmutAnyOrigin], num_buffers
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_buffers
     ](fill={})
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -179,7 +179,7 @@ fn bench_reduce[
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
 
         # All GPUs use the same multicast pointer
-        in_bufs[0] = NDBuffer[dtype, rank](
+        in_bufs[0] = NDBuffer[rank=rank, dtype](
             multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
             IndexList[rank](length),
         )
@@ -188,12 +188,12 @@ fn bench_reduce[
         ).unsafe_ptr()
     else:
         comptime for i in range(ngpus):
-            in_bufs[i] = NDBuffer[dtype, rank](
+            in_bufs[i] = NDBuffer[rank=rank, dtype](
                 cb_inputs[i].unsafe_ptr(), IndexList[rank](length)
             )
 
     for i in range(ngpus):
-        out_bufs[i] = NDBuffer[dtype, rank](
+        out_bufs[i] = NDBuffer[rank=rank, dtype](
             out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
         # Ensure setup has propagated.
@@ -206,11 +206,11 @@ fn bench_reduce[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutAnyOrigin]())
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
+    ](NDBuffer[rank=rank, dtype, MutAnyOrigin]())
 
     comptime for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[dtype, rank](
+        out_bufs_capture[i] = NDBuffer[rank=rank, dtype](
             out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
@@ -230,12 +230,12 @@ fn bench_reduce[
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
-                    in_bufs[i] = NDBuffer[dtype, rank](
+                    in_bufs[i] = NDBuffer[rank=rank, dtype](
                         cb_inputs[i].offset_ptr(cache_iter),
                         IndexList[rank](length),
                     )
             else:
-                in_bufs[0] = NDBuffer[dtype, rank](
+                in_bufs[0] = NDBuffer[rank=rank, dtype](
                     multi_ptr + cb_template.offset(cache_iter),
                     IndexList[rank](length),
                 )

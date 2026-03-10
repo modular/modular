@@ -114,9 +114,9 @@ fn warp_specialize_gemm_with_multicasting[
     raster_order: RasterOrder = RasterOrder.AlongM,
     swapAB: Bool = False,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: NDBuffer[rank=2, c_type, _, c_shape],
+    a_device: NDBuffer[rank=2, a_type, _, a_shape],
+    b_device: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     """Unified dispatcher for all matmul kernel variants."""
@@ -183,9 +183,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     hilbert_swizzle: Bool = False,
     swapAB: Bool = False,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: NDBuffer[rank=2, c_type, _, c_shape],
+    a_device: NDBuffer[rank=2, a_type, _, a_shape],
+    b_device: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var a = TileTensor(a_device).to_layout_tensor()
@@ -670,9 +670,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         elementwise_compute_lambda_type
     ] = None,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c_device: NDBuffer[rank=2, c_type, _, c_shape],
+    a_device: NDBuffer[rank=2, a_type, _, a_shape],
+    b_device: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var a = TileTensor(a_device).to_layout_tensor()
@@ -785,7 +785,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     var workspace_data = ctx.enqueue_create_buffer[accum_type](
         NUM_TILES * BM * BN
     )
-    var reduction_workspace = NDBuffer[accum_type, 3](
+    var reduction_workspace = NDBuffer[rank=3, accum_type](
         workspace_data.unsafe_ptr(),
         Index(NUM_TILES, BM, BN),
     )

@@ -111,7 +111,7 @@ def update_context_and_prepare_responses(
 
             if overwrite_future:
                 # If generated_length is still 0, then there is no placeholder
-                # future token. This is possible due to chunked prefill.
+                # future token. This is possible due to chunked prefill or preemption.
                 if context.tokens.generated_length:
                     context.realize_future_token(
                         new_token=next_token, log_probabilities=log_probs

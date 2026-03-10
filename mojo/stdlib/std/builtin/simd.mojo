@@ -1846,6 +1846,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             return Int(self._refine[new_size=1]().cast[DType.int]()._mlir_value)
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -3315,7 +3316,7 @@ fn _powf_scalar(
     if fractional and base < 0:
         return _nan[base.dtype]()
 
-    return math.exp(exponent.cast[base.dtype]() * math.log(base))
+    return std.math.exp(exponent.cast[base.dtype]() * std.math.log(base))
 
 
 @always_inline

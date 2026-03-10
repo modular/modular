@@ -33,7 +33,7 @@ comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int](
 
 fn fill_buffer[
     dtype: DType, rank: Int, shape: DimList
-](buf: NDBuffer[mut=True, dtype, rank, _, shape]):
+](buf: NDBuffer[mut=True, rank=rank, dtype, _, shape]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
@@ -45,8 +45,8 @@ fn fill_buffer[
 fn assert_allclose[
     dtype: DType, rank: Int, shape: DimList
 ](
-    h_output_ref: NDBuffer[dtype, rank, _, shape],
-    h_output_gpu: NDBuffer[dtype, rank, _, shape],
+    h_output_ref: NDBuffer[rank=rank, dtype, _, shape],
+    h_output_gpu: NDBuffer[rank=rank, dtype, _, shape],
 ) raises:
     var shape_ = h_output_ref.get_shape()
     for i in range(shape_.flattened_length()):
@@ -82,24 +82,24 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
 
     fill_buffer(h_input)
     h_output.fill(0)
     h_output_ref.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
@@ -172,7 +172,7 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
 
@@ -249,24 +249,24 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
     h_output.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
@@ -341,7 +341,7 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
 
@@ -417,24 +417,24 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
     h_output.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
@@ -510,7 +510,7 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
 
@@ -593,24 +593,24 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         dtype, Layout.row_major(1, output_height, output_width, 1)
     ](ctx)
 
-    var h_input = NDBuffer[dtype, rank, MutAnyOrigin, input_shape](
+    var h_input = NDBuffer[rank=rank, dtype, MutAnyOrigin, input_shape](
         d_input_managed.tensor[update=False]().ptr, input_shape_dyn
     )
-    var h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    var h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor[update=False]().ptr, output_shape_dyn
     )
     var h_output_ref = NDBuffer[
-        dtype, rank, MutAnyOrigin, output_shape
+        rank=rank, dtype, MutAnyOrigin, output_shape
     ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
     h_output.fill(0)
 
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_managed.device_tensor().ptr, input_shape_dyn
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_managed.device_tensor().ptr, output_shape_dyn
     )
 
@@ -685,7 +685,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     ](ctx, d_output.get_shape(), d_input.get_shape())
 
     # Refresh host view; tensor() handles device-to-host transfer and sync.
-    h_output = NDBuffer[dtype, rank, MutAnyOrigin, output_shape](
+    h_output = NDBuffer[rank=rank, dtype, MutAnyOrigin, output_shape](
         d_output_managed.tensor().ptr, output_shape_dyn
     )
     # ctx.enqueue_copy(h_input.data, d_input_buf)

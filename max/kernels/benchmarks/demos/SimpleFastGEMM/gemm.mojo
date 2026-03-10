@@ -42,7 +42,7 @@ comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
 fn print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
-    var a = NDBuffer[dtype, 2](a_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, dtype](a_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
             print(a[i, j], end=" ")
@@ -50,9 +50,9 @@ fn print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
 
 
 fn gemm_naive(
-    a: NDBuffer[dtype, 2],
-    b: NDBuffer[dtype, 2],
-    c: NDBuffer[dtype, 2],
+    a: NDBuffer[rank=2, dtype],
+    b: NDBuffer[rank=2, dtype],
+    c: NDBuffer[rank=2, dtype],
     m: Int,
     n: Int,
     k: Int,
@@ -71,13 +71,13 @@ fn kernel(
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[dtype, 1](a_ptr, MR * k)
-    var b = NDBuffer[dtype, 1](b_ptr, k * NR)
-    var c = NDBuffer[dtype, 1](c_ptr, MR * n)
+    var a = NDBuffer[rank=1, dtype](a_ptr, MR * k)
+    var b = NDBuffer[rank=1, dtype](b_ptr, k * NR)
+    var c = NDBuffer[rank=1, dtype](c_ptr, MR * n)
 
-    var c_local = NDBuffer[dtype, 1, MutAnyOrigin, MR * NR]().stack_allocation[
-        alignment=alignment
-    ]()
+    var c_local = NDBuffer[
+        rank=1, dtype, MutAnyOrigin, MR * NR
+    ]().stack_allocation[alignment=alignment]()
 
     comptime NR2 = NR // simd_size
 
@@ -116,8 +116,8 @@ fn pack_B(
     kc: Int,
     nc: Int,
 ):
-    var b = NDBuffer[dtype, 1](b_ptr, k * n)
-    var bc = NDBuffer[dtype, 1](b2_ptr, k * n)
+    var b = NDBuffer[rank=1, dtype](b_ptr, k * n)
+    var bc = NDBuffer[rank=1, dtype](b2_ptr, k * n)
     for pr in range(kc):
         for ir in range(nc // NR):
             for v in range(NR):
@@ -188,15 +188,15 @@ def main() raises:
     var b2_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
     var c_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
     var c2_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
-    var a = NDBuffer[dtype, 1](a_ptr, m * k)
-    var b = NDBuffer[dtype, 1](b_ptr, k * n)
-    var b2 = NDBuffer[dtype, 1](b2_ptr, k * n)
-    var c = NDBuffer[dtype, 1](c_ptr, m * n)
-    var c2 = NDBuffer[dtype, 1](c2_ptr, m * n)
+    var a = NDBuffer[rank=1, dtype](a_ptr, m * k)
+    var b = NDBuffer[rank=1, dtype](b_ptr, k * n)
+    var b2 = NDBuffer[rank=1, dtype](b2_ptr, k * n)
+    var c = NDBuffer[rank=1, dtype](c_ptr, m * n)
+    var c2 = NDBuffer[rank=1, dtype](c2_ptr, m * n)
 
-    var am = NDBuffer[dtype, 2](a_ptr, Index(m, k))
-    var bm = NDBuffer[dtype, 2](b_ptr, Index(k, n))
-    var cm = NDBuffer[dtype, 2](c_ptr, Index(m, n))
+    var am = NDBuffer[rank=2, dtype](a_ptr, Index(m, k))
+    var bm = NDBuffer[rank=2, dtype](b_ptr, Index(k, n))
+    var cm = NDBuffer[rank=2, dtype](c_ptr, Index(m, n))
 
     for i in range(m * k):
         a[i] = i
@@ -225,7 +225,7 @@ def main() raises:
         gemm(a.data, b2.data, c2.data, m, n, k, mc, nc, kc)
 
     var num_warmup: Int = 1
-    var time = benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
     var flops = 2.0 * m * n * k / time / 1e9
     print(time, end="")
     print(" seconds")

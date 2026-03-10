@@ -17,7 +17,7 @@ from collections.abc import Iterable
 
 from max._mlir.dialects import _ods_common
 from max._mlir.dialects.mo import *
-from max._mlir.dialects.mo import GraphOp, IfOp, _Dialect
+from max._mlir.dialects.mo import GraphOp, IfOp, ParallelOp, _Dialect
 
 from .. import Attribute, Block, FunctionType, Type, TypeAttr
 
@@ -94,6 +94,44 @@ def while_(  # type: ignore[no-redef]
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
         WhileOp(results_=results_, inputs=inputs, loc=loc, ip=ip)
+    )
+
+
+@_ods_common._cext.register_operation(_Dialect, replace=True)
+class ParallelOp(ParallelOp):  # type: ignore[no-redef]
+    """Extends mo.parallel op with a simpler builder that creates block args."""
+
+    def __init__(
+        self,
+        results_,  # noqa: ANN001
+        inputs,  # noqa: ANN001
+        *,
+        loc=None,  # noqa: ANN001
+        ip=None,  # noqa: ANN001
+    ) -> None:
+        super().__init__(
+            results_=results_,
+            inputs=inputs,
+            loc=loc,
+            ip=ip,
+        )
+        Block.create_at_start(self.bodyRegion, [self.inputs[0].type])
+
+
+def parallel_(
+    results_,  # noqa: ANN001
+    inputs,  # noqa: ANN001
+    *,
+    loc=None,  # noqa: ANN001
+    ip=None,  # noqa: ANN001
+) -> _ods_common.VariadicResultValueT:
+    return _ods_common.get_op_result_or_op_results(
+        ParallelOp(
+            results_=results_,
+            inputs=inputs,
+            loc=loc,
+            ip=ip,
+        )
     )
 
 

@@ -241,7 +241,7 @@ fn _get_tile_n_k[
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-](b: NDBuffer[_, 2, _, _]) -> IndexList[2]:
+](b: NDBuffer[rank=2, _, _, _]) -> IndexList[2]:
     var tile_n_k: IndexList[2]
 
     comptime if not transpose_b:
@@ -412,8 +412,9 @@ fn partition_work(
     task_id: Int, num_tasks: Int, work: Int, work_block_size: Int
 ) -> IndexList[2]:
     var num_work_blocks = ceildiv(work, work_block_size)
-    var blocks_per_task = num_work_blocks // num_tasks
-    var blocks_per_task_extra = num_work_blocks % num_tasks
+    var blocks_per_task, blocks_per_task_extra = divmod(
+        num_work_blocks, num_tasks
+    )
 
     var work_per_task = blocks_per_task * work_block_size
     var work_id = (
@@ -467,8 +468,7 @@ fn get_partitioned_matmul_mojo[
     ](m, n, k, num_tasks)
     var num_row_tasks = shape[0]
     var num_col_tasks = shape[1]
-    var row_task_id = task_id // num_col_tasks
-    var col_task_id = task_id % num_col_tasks
+    var row_task_id, col_task_id = divmod(task_id, num_col_tasks)
 
     var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_rows)
     var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_cols)
@@ -752,8 +752,7 @@ fn apply_epilogue[
                     alignment=align_of[SIMD[src.dtype, vec_width]](),
                 ](src_idx)
 
-                var m = (dst_idx + offset) // N
-                var n = (dst_idx + offset) % N
+                var m, n = divmod(dst_idx + offset, N)
 
                 elementwise_lambda[src.dtype, vec_width]((m, n), vec)
 
@@ -769,7 +768,6 @@ fn apply_epilogue[
             # preserves the matrix dimension.
             comptime N = dst_layout.stride[0].value()
 
-            var m = (src_idx + offset) // N
-            var n = (src_idx + offset) % N
+            var m, n = divmod(src_idx + offset, N)
 
             elementwise_lambda[src.dtype, 1]((m, n), src.ptr[src_idx + offset])

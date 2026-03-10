@@ -199,20 +199,20 @@ fn bench_grouped_block_scaled_gemm[
 
     # Create TileTensors - 3D with batch=1
     comptime static_a_3d_shape = DimList(1, m.dim, k_array_dim)
-    var a_template_nd = NDBuffer[a_type, 3, _, static_a_3d_shape](
+    var a_template_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
         a_device.unsafe_ptr(), IndexList[3](1, M, k_array_val)
     )
     comptime static_b_3d_shape = DimList(
         1, n.dim, k_array_dim
     ) if transpose_b else DimList(1, k_array_dim, n.dim)
-    var b_template_nd = NDBuffer[b_type, 3, _, static_b_3d_shape](
+    var b_template_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
         b_device.unsafe_ptr(),
         IndexList[3](1, n.value, k_array_val) if transpose_b else IndexList[3](
             1, k_array_val, n.value
         ),
     )
     comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
-    var c_template_nd = NDBuffer[c_type, 3, _, static_c_3d_shape](
+    var c_template_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
         c_device.unsafe_ptr(), IndexList[3](1, M, n.value)
     )
 
@@ -224,7 +224,9 @@ fn bench_grouped_block_scaled_gemm[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var a_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_5d_shape](
+    var a_scales_5d_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_a_scales_5d_shape
+    ](
         sfa_device.unsafe_ptr(),
         IndexList[5](
             1,
@@ -241,7 +243,9 @@ fn bench_grouped_block_scaled_gemm[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var b_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_5d_shape](
+    var b_scales_5d_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_b_scales_5d_shape
+    ](
         sfb_device.unsafe_ptr(),
         IndexList[5](
             1,

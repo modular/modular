@@ -430,7 +430,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             c_gmem_frag, _c_gmem_frag_coords, _ = c_gmem_warp_tile.vectorize[
                 1, 2
-            ]().distribute_with_offset[Layout.row_major(8, 4)](lane_id())
+            ]().distribute_with_offset[Layout.row_major(8, 4)](Int(lane_id()))
             new_c_gmem_frag_coords = rebind[c_coord_type](_c_gmem_frag_coords)
             new_c_gmem_frag_coords[1] *= 2
             c_gmem_frag_coords = (
@@ -450,8 +450,9 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
-                    comptime dst_m_offset = dst_idx // c_row_stride
-                    comptime dst_n_offset = dst_idx % c_row_stride
+                    comptime dst_m_offset, dst_n_offset = divmod(
+                        dst_idx, c_row_stride
+                    )
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 

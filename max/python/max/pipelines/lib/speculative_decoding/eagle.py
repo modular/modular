@@ -151,10 +151,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             prev_logits,
         ]
 
-        need_penalties = any(
-            context.sampling_params.needs_penalties for context in context_batch
-        )
-        if need_penalties and self.pipeline_config.sampling.enable_penalties:
+        if self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
                 context_batch, self.devices[0]
             )
@@ -450,17 +447,14 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         batch: list[TextContext],
         num_steps: int,
         model_inputs: ModelInputs,
-    ) -> tuple[int, Buffer, Buffer, Buffer | None, Buffer | list[Buffer]]:
+    ) -> tuple[int, Buffer]:
         """Generates draft tokens for the batch using the draft model."""
         # Create sampling parameters once for the entire batch
         sampler_inputs = SamplerInputs.create(batch, self.devices[0])
 
         # Build penalty inputs once for the entire draft generation loop
-        need_penalties = any(
-            context.sampling_params.needs_penalties for context in batch
-        )
         penalty_inputs: PenaltyInputs | None = None
-        if need_penalties and self.pipeline_config.sampling.enable_penalties:
+        if self.pipeline_config.sampling.enable_penalties:
             penalty_inputs = PenaltyInputs.create(
                 batch, self.devices[0], num_steps=num_steps
             )
@@ -475,25 +469,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         curr_step_inputs = model_inputs
 
-        all_draft_logits = (
-            Buffer.zeros(
-                (num_steps, len(batch), self.vocab_size),
-                dtype=DType.float32,
-                device=self.devices[0],
-            )
-            if self._needs_all_draft_logits
-            else None
-        )
-
-        for i in range(num_steps):
+        for _ in range(num_steps):
             model_outputs = self._draft_model.execute(
                 model_inputs=curr_step_inputs
             )
-
-            if all_draft_logits is not None:
-                all_draft_logits[i, :, :].inplace_copy_from(
-                    model_outputs.logits
-                )
 
             new_tokens, new_generated_tokens, new_generated_logits = (
                 self.sample_draft_logits(
@@ -522,13 +501,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             curr_step_inputs.hidden_states = model_outputs.hidden_states
 
         assert model_outputs.hidden_states is not None
-        return (
-            num_steps,
-            generated_tokens,
-            generated_logits,
-            all_draft_logits,
-            model_outputs.hidden_states,
-        )
+        return num_steps, generated_tokens
 
     @traced
     def verify_draft_tokens_with_target_model(
@@ -723,14 +696,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         target_outputs = self._target_model.execute(model_inputs=target_inputs)
 
-        assert target_inputs.kv_cache_inputs is not None
-        target_inputs.kv_cache_inputs = (
-            self._target_kv_manager.increment_cache_lengths(
-                target_inputs.kv_cache_inputs,
-                target_inputs,
-            )
-        )
-
         target_sampled_tokens = self.sample_target_token(
             target_outputs, context_batch
         )
@@ -892,14 +857,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
         draft_outputs = self._draft_model.execute(model_inputs=draft_ce_inputs)
 
-        assert draft_ce_inputs.kv_cache_inputs is not None
-        draft_ce_inputs.kv_cache_inputs = (
-            self._target_kv_manager.increment_cache_lengths(
-                draft_ce_inputs.kv_cache_inputs,
-                draft_ce_inputs,
-            )
-        )
-
         draft_logits_np = draft_outputs.logits.to_numpy()
         draft_sampled_tokens = draft_logits_np.argmax(axis=-1)
 
@@ -994,13 +951,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             hidden_states=draft_hidden_states,
         )
 
-        (
-            new_num_draft_tokens,
-            new_draft_tokens,
-            _new_draft_logits,
-            _new_all_draft_logits,
-            _,
-        ) = self.generate_draft_tokens(
+        new_num_draft_tokens, new_draft_tokens = self.generate_draft_tokens(
             context_batch, draft_num_steps, draft_inputs
         )
 

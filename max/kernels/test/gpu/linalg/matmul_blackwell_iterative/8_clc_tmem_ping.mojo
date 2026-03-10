@@ -775,9 +775,10 @@ fn kernel_8[
     var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
+    var peer_cta_quot, peer_cta_rem = divmod(rank_m, UInt(cta_group))
     var peer_cta_coord = (
-        rank_m % UInt(cta_group),
-        rank_m // UInt(cta_group),
+        peer_cta_rem,
+        peer_cta_quot,
         rank_n,
     )  # v,m,n
 

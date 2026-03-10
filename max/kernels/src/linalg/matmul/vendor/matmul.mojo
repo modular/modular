@@ -35,9 +35,9 @@ fn matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     """This implements the matmul kernel for the Blackwell architecture. Note
@@ -99,7 +99,7 @@ fn matmul[
         )
 
         # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[c.type, 2, MutExternalOrigin](
+        var c_tmp = NDBuffer[rank=2, c.type, MutExternalOrigin](
             rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),

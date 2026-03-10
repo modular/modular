@@ -61,8 +61,7 @@ fn test_ldmatrix_fp32(
 
     # Transpose B to fit ld_matrix layout.
     for i in range(tid, mma_k * mma_n, WARP_SIZE):
-        var x = i % Int(mma_n)
-        var y = i // Int(mma_n)
+        var y, x = divmod(i, Int(mma_n))
         b_shared[x * Int(mma_k) + y] = b_ptr[i]
 
     barrier()

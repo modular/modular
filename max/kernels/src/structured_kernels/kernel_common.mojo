@@ -219,9 +219,12 @@ struct KernelContext[
         self.rank_n = block_id_in_cluster.y
 
         # Peer CTA coordinate: (peer_id, mma_coord_m, mma_coord_n)
+        var cta_quotient, cta_remainder = divmod(
+            self.rank_m, UInt(Self.cta_group)
+        )
         self.peer_cta_coord = (
-            self.rank_m % UInt(Self.cta_group),
-            self.rank_m // UInt(Self.cta_group),
+            cta_remainder,
+            cta_quotient,
             self.rank_n,
         )
 

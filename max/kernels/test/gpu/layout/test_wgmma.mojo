@@ -134,7 +134,7 @@ fn wgmma_kernel_rs[
     var th_local_res = (
         c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id())
+        .distribute[Layout.row_major(8, 4)](Int(lane_id()))
     )
 
     for i in range(num_output_regs):
@@ -218,7 +218,7 @@ fn wgmma_kernel_ss[
     var th_local_res = (
         c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id())
+        .distribute[Layout.row_major(8, 4)](Int(lane_id()))
     )
 
     for i in range(num_output_regs):
@@ -274,13 +274,13 @@ fn wgmma_bf16_bf16_f32[
     )
     ctx.synchronize()
 
-    var a_buf = NDBuffer[DType.bfloat16, 2, _, DimList(M, K)](
+    var a_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList(M, K)](
         a.device_tensor().ptr
     )
-    var b_buf = NDBuffer[DType.bfloat16, 2, _, DimList(N, K)](
+    var b_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList(N, K)](
         b.device_tensor().ptr
     )
-    var c_ref_buf = NDBuffer[DType.bfloat16, 2, _, DimList(M, N)](
+    var c_ref_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList(M, N)](
         c_ref.device_tensor().ptr
     )
 

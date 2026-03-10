@@ -460,8 +460,7 @@ fn gemv_split_k[
     # Sum across warps' results in shared memory then output.
     # TODO: should be able to vectorize and maybe use larger tile_n.
     for ii in range(tid, tile_m * tile_n, num_threads):
-        var mid = ii // tile_n
-        var nid = ii % tile_n
+        var mid, nid = divmod(ii, tile_n)
         var val = Scalar[accum_type]()
         comptime ValType = type_of(val)
 
@@ -1016,9 +1015,9 @@ fn gemv[
     parallelize: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, c_type, 1, _, c_size],
-    a_buf: NDBuffer[mut=False, a_type, 2, _, a_shape],
-    b_buf: NDBuffer[mut=False, b_type, 1, _, b_size],
+    c_buf: NDBuffer[mut=True, rank=1, c_type, _, c_size],
+    a_buf: NDBuffer[mut=False, rank=2, a_type, _, a_shape],
+    b_buf: NDBuffer[mut=False, rank=1, b_type, _, b_size],
 ) raises:
     comptime simd_width = simd_width_of[c_type]()
 
@@ -1073,9 +1072,9 @@ fn naive_gemv[
     b_size: Dim,
     dtype: DType,
 ](
-    c_buf: NDBuffer[mut=True, dtype, 1, _, c_size],
-    a_buf: NDBuffer[dtype, 2, _, a_shape],
-    b_buf: NDBuffer[dtype, 1, _, b_size],
+    c_buf: NDBuffer[mut=True, rank=1, dtype, _, c_size],
+    a_buf: NDBuffer[rank=2, dtype, _, a_shape],
+    b_buf: NDBuffer[rank=1, dtype, _, b_size],
 ):
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()

@@ -6,9 +6,10 @@
 
 import enum
 from collections.abc import Callable, Sequence
-from typing import overload
+from typing import Any, overload
 
 import max._mlir._mlir_libs._mlir.ir
+import max._mlir.ir
 
 class GreedyRewriteStrictness(enum.Enum):
     ANY_OP = 0
@@ -59,19 +60,27 @@ class PatternRewriter:
 
 class RewritePatternSet:
     def __init__(self, context: Context | None = None) -> None: ...
-    def add(self, root: object, fn: Callable, benefit: int = 1) -> None:
+    def add(
+        self,
+        root: type | str,
+        fn: Callable[[max._mlir.ir.Operation, PatternRewriter], Any],
+        benefit: int = 1,
+    ) -> None:
         """
-        Add a new rewrite pattern on the specified root operation, using
-                      the provided callable for matching and rewriting, and assign it
-                      the given benefit.
+        Add a new rewrite pattern on the specified root operation, using the provided callable
+        for matching and rewriting, and assign it the given benefit.
 
-                      Args:
-                        root: The root operation to which this pattern applies. This may
-                              be either an OpView subclass or an operation name.
-                        fn: The callable to use for matching and rewriting, which takes
-                            an operation and a pattern rewriter. The match is considered
-                            successful iff the callable returns a falsy value.
-                        benefit: The benefit of the pattern, defaulting to 1.
+        Args:
+          root: The root operation to which this pattern applies.
+                This may be either an OpView subclass (e.g., ``arith.AddIOp``) or
+                an operation name string (e.g., ``"arith.addi"``).
+          fn: The callable to use for matching and rewriting,
+              which takes an operation and a pattern rewriter as arguments.
+              The match is considered successful iff the callable returns
+              a value where ``bool(value)`` is ``False`` (e.g. ``None``).
+              If possible, the operation is cast to its corresponding OpView subclass
+              before being passed to the callable.
+          benefit: The benefit of the pattern, defaulting to 1.
         """
 
     def add_conversion(
@@ -88,11 +97,15 @@ class RewritePatternSet:
 
         Args:
           root: The root operation to which this pattern applies.
-                This may be either an OpView subclass or an operation name.
-          fn: The callable to use for matching and rewriting, which takes an
-              operation, its adaptor, the type converter and a pattern
-              rewriter. The match is considered successful iff the callable
-              returns a falsy value.
+                This may be either an OpView subclass (e.g., ``arith.AddIOp``) or
+                an operation name string (e.g., ``"arith.addi"``).
+          fn: The callable to use for matching and rewriting,
+              which takes an operation, its adaptor,
+              the type converter and a pattern rewriter as arguments.
+              The match is considered successful iff the callable returns
+              a value where ``bool(value)`` is ``False`` (e.g. ``None``).
+              If possible, the operation is cast to its corresponding OpView subclass
+              before being passed to the callable.
           type_converter: The type converter to convert types in the IR.
           benefit: The benefit of the pattern, defaulting to 1.
         """
@@ -101,9 +114,7 @@ class RewritePatternSet:
         """Freeze the pattern set into a frozen one."""
 
 class ConversionPatternRewriter(PatternRewriter):
-    def convert_region_types(
-        self, arg0: max._mlir._mlir_libs._mlir.ir.Region, arg1: TypeConverter, /
-    ) -> None: ...
+    pass
 
 class ConversionTarget:
     def __init__(self, context: Context | None = None) -> None: ...

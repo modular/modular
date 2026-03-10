@@ -118,47 +118,47 @@ fn test_grouped_gemm_epilogue[
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
     var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
     var c_host_original_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_original = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_original = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_original_ptr, dynamic_c_shape
     )
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -198,21 +198,21 @@ fn test_grouped_gemm_epilogue[
 
     # Scale factor device allocations
     var sfa_device = ctx.enqueue_create_buffer[scales_dtype](sfa_size)
-    var sfa_device_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
-        sfa_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
+    var sfa_device_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_a_scales_shape
+    ](sfa_device.unsafe_ptr(), dynamic_a_scales_shape)
     var sfb_device = ctx.enqueue_create_buffer[scales_dtype](sfb_size)
-    var sfb_device_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
-        sfb_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
+    var sfb_device_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_b_scales_shape
+    ](sfb_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     # Scale factor host allocations
     var sfa_host_ptr = alloc[Scalar[scales_dtype]](sfa_size)
-    var sfa_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
+    var sfa_host = NDBuffer[rank=5, scales_dtype, _, static_a_scales_shape](
         sfa_host_ptr, dynamic_a_scales_shape
     )
     var sfb_host_ptr = alloc[Scalar[scales_dtype]](sfb_size)
-    var sfb_host = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
+    var sfb_host = NDBuffer[rank=5, scales_dtype, _, static_b_scales_shape](
         sfb_host_ptr, dynamic_b_scales_shape
     )
 
@@ -338,20 +338,20 @@ fn test_grouped_gemm_epilogue[
 
     # Template tensors - 3D TileTensors with batch=1
     comptime static_a_3d_shape = DimList(1, m.dim, k.dim)
-    var a_template_nd = NDBuffer[a_type, 3, _, static_a_3d_shape](
+    var a_template_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
         a_device.unsafe_ptr(), IndexList[3](1, m.value, k.value)
     )
     comptime static_b_3d_shape = DimList(
         1, n.dim, k.dim
     ) if transpose_b else DimList(1, k.dim, n.dim)
-    var b_template_nd = NDBuffer[b_type, 3, _, static_b_3d_shape](
+    var b_template_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
         b_device.unsafe_ptr(),
         IndexList[3](1, n.value, k.value) if transpose_b else IndexList[3](
             1, k.value, n.value
         ),
     )
     comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
-    var c_template_nd = NDBuffer[c_type, 3, _, static_c_3d_shape](
+    var c_template_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
         c_device.unsafe_ptr(), IndexList[3](1, m.value, n.value)
     )
 
@@ -363,7 +363,9 @@ fn test_grouped_gemm_epilogue[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var a_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_5d_shape](
+    var a_scales_5d_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_a_scales_5d_shape
+    ](
         sfa_device.unsafe_ptr(),
         IndexList[5](
             1,
@@ -380,7 +382,9 @@ fn test_grouped_gemm_epilogue[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var b_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_5d_shape](
+    var b_scales_5d_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_b_scales_5d_shape
+    ](
         sfb_device.unsafe_ptr(),
         IndexList[5](
             1,

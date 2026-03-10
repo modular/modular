@@ -52,7 +52,7 @@ from std.gpu.memory import (
     external_memory,
 )
 from kv_cache.types import KVCacheT
-from layout import Layout, TileTensor
+from layout import Layout, TileTensor, row_major
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import *
 from layout.layout_tensor import (
@@ -466,6 +466,16 @@ fn q_num_matrix_view_rows[
 
     comptime for i in range(1, q.rank - 2):
         num_rows *= q.dim[i]()
+    return num_rows
+
+
+@always_inline
+fn q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
+    # TileTensor overload for the same computation.
+    var num_rows: Int = Int(q.dim[0]())
+
+    comptime for i in range(1, q.rank - 2):
+        num_rows *= Int(q.dim[i]())
     return num_rows
 
 
@@ -4591,12 +4601,14 @@ fn mha_splitk_reduce[
     var qk_max = warp.lane_group_max[WARP_SIZE](l)
 
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
-    var exp_sums = LayoutTensor[
-        accum_type,
-        Layout(WARP_SIZE),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+    var exp_sums = TileTensor(
+        stack_allocation[
+            WARP_SIZE,
+            Scalar[accum_type],
+            address_space=AddressSpace.SHARED,
+        ](),
+        row_major[WARP_SIZE](),
+    )
 
     comptime intermediate_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, Int(num_heads), Int(depth)
@@ -5300,16 +5312,16 @@ fn _naive_attention_with_transpose[
     # O = Score * V. It's transposed and will be transposed back to output.
     var ot_ptr = alloc[Scalar[dtype]](output.size())
 
-    var qt = NDBuffer[dtype, 4](
+    var qt = NDBuffer[rank=4, dtype](
         qt_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
-    var kt = NDBuffer[dtype, 4](
+    var kt = NDBuffer[rank=4, dtype](
         kt_ptr, Index(batch_size, num_heads, depth, num_keys)
     )
-    var vt = NDBuffer[dtype, 4](
+    var vt = NDBuffer[rank=4, dtype](
         vt_ptr, Index(batch_size, num_heads, num_keys, depth)
     )
-    var ot = NDBuffer[dtype, 4](
+    var ot = NDBuffer[rank=4, dtype](
         ot_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
 
@@ -5341,7 +5353,7 @@ fn _naive_attention_with_transpose[
 
     # BSHD -> BHSD
     var q_perm_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
-    var q_perm = LayoutTensor[DType.int, Layout(4)](q_perm_stack)
+    var q_perm = TileTensor(q_perm_stack, row_major[4]())
     q_perm[0] = 0
     q_perm[1] = 2
     q_perm[2] = 1
@@ -5349,7 +5361,7 @@ fn _naive_attention_with_transpose[
 
     # BSHD -> BHDS
     var k_perm_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
-    var k_perm = LayoutTensor[DType.int, Layout(4)](k_perm_stack)
+    var k_perm = TileTensor(k_perm_stack, row_major[4]())
     k_perm[0] = 0
     k_perm[1] = 2
     k_perm[2] = 3
@@ -5357,7 +5369,7 @@ fn _naive_attention_with_transpose[
 
     # BHSD -> BSHD
     var o_perm_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
-    var o_perm = LayoutTensor[DType.int, Layout(4)](o_perm_stack)
+    var o_perm = TileTensor(o_perm_stack, row_major[4]())
     o_perm[0] = 0
     o_perm[1] = 2
     o_perm[2] = 1
@@ -5365,7 +5377,7 @@ fn _naive_attention_with_transpose[
 
     transpose(
         qt,
-        NDBuffer[q.dtype, 4, q.origin](
+        NDBuffer[rank=4, q.dtype, q.origin](
             q.ptr,
             rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5373,7 +5385,7 @@ fn _naive_attention_with_transpose[
     )
     transpose(
         kt,
-        NDBuffer[k.dtype, 4, k.origin](
+        NDBuffer[rank=4, k.dtype, k.origin](
             k.ptr,
             rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5381,7 +5393,7 @@ fn _naive_attention_with_transpose[
     )
     transpose(
         vt,
-        NDBuffer[v.dtype, 4, v.origin](
+        NDBuffer[rank=4, v.dtype, v.origin](
             v.ptr,
             rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5393,7 +5405,7 @@ fn _naive_attention_with_transpose[
     )
 
     transpose(
-        NDBuffer[output.dtype, 4, output.origin](
+        NDBuffer[rank=4, output.dtype, output.origin](
             output.ptr,
             rebind[IndexList[4]](
                 output.runtime_layout.shape.value.canonicalize()
@@ -5438,24 +5450,16 @@ fn _naive_attention[
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
     var score_ptr = alloc[Scalar[dtype]](score_size)
-    var score = NDBuffer[dtype, 4](
+    var score = NDBuffer[rank=4, dtype](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
-    comptime layout_4d = Layout.row_major[4]()
-    var score_lt = LayoutTensor[dtype, layout_4d](
-        score_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
-    )
-
     batched_matmul[transpose_b=transpose_k](
         score,
-        NDBuffer[q.dtype, 4, q.origin](
+        NDBuffer[rank=4, q.dtype, q.origin](
             q.ptr,
             rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
         ),
-        NDBuffer[k.dtype, 4, k.origin](
+        NDBuffer[rank=4, k.dtype, k.origin](
             k.ptr,
             rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5475,7 +5479,7 @@ fn _naive_attention[
         score.store[width=width](rebind[IndexList[4]](coords), vec)
 
     elementwise[scale_and_mask, simd_size](
-        score_lt.runtime_layout.shape.value.canonicalize()
+        Index(batch_size, num_heads, seq_len, num_keys)
     )
 
     var score_tt = TileTensor(score)
@@ -5486,14 +5490,14 @@ fn _naive_attention[
     )
 
     batched_matmul[transpose_b=False](
-        NDBuffer[output.dtype, 4, output.origin](
+        NDBuffer[rank=4, output.dtype, output.origin](
             output.ptr,
             rebind[IndexList[4]](
                 output.runtime_layout.shape.value.canonicalize()
             ),
         ),
         score.get_immutable(),
-        NDBuffer[v.dtype, 4, v.origin](
+        NDBuffer[rank=4, v.dtype, v.origin](
             v.ptr,
             rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
         ),

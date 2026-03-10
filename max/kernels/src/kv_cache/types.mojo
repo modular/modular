@@ -323,6 +323,28 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         through the MMA reduction."""
         ...
 
+    @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
+        DType.bfloat16,
+        IndexList[3](BN, 1, BK),
+        swizzle_mode,
+    ]:
+        """Creates a BF16 TMA tile for the rope portion of the KV cache.
+
+        For the per-tensor rope-aware layout, each token row in the KV cache is
+        stored as `padded_depth` FP8 bytes (content) followed by `BK` BF16
+        elements (rope). This method returns a TMA descriptor that points at
+        the rope data starting at byte offset `padded_depth` within each row,
+        reinterpreted as BF16.
+        """
+        ...
+
 
 struct ContinuousBatchingKVCache[
     dtype_: DType,
@@ -654,6 +676,27 @@ struct ContinuousBatchingKVCache[
         )
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Not supported for ContinuousBatchingKVCache."""
+        comptime assert (
+            False
+        ), "create_rope_tma_tile is not supported for ContinuousBatchingKVCache"
+
+    @always_inline
     fn block_paged_ptr[
         tile_size: Int
     ](
@@ -903,7 +946,7 @@ struct PagedKVCache[
         ), "KVCache tok_idx out of range"
 
         assert batch_idx < UInt32(
-            self.cache_lengths.numel()
+            self.cache_lengths.num_elements()
         ), "batch_idx is oob"
         debug_assert(
             lut_block_index < Int(self.blocks.dim[0]()),
@@ -992,6 +1035,61 @@ struct PagedKVCache[
         )
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Creates a BF16 TMA tile for the rope portion of the per-tensor rope-aware KV cache.
+
+        In the per-tensor rope-aware layout each token row is:
+          `padded_depth` FP8 bytes (content) | `BK` BF16 elements (rope)
+        Total row bytes = padded_depth + BK * 2.
+
+        The TMA descriptor points at the rope data by offsetting `blocks.ptr`
+        by `padded_depth` bytes, then reinterpreting as BF16.  The global
+        memory stride dimension (last dim of gmem_shape) is the total row size
+        expressed in BF16 units: (padded_depth + BK * 2) // 2.
+        """
+        comptime assert (
+            BK % swizzle_granularity[DType.bfloat16, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity for BF16"
+        # Compute the total row width in BF16 elements:
+        #   padded_depth FP8 bytes + BK BF16 elements
+        #   = (padded_depth + BK * 2) bytes total
+        #   = (padded_depth + BK * 2) // 2 BF16 elements per row
+        comptime bf16_row_stride = (padded_depth + BK * 2) // 2
+
+        var total_blocks = self.blocks.dim[0]()
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            Self.page_size
+        )
+        # Offset past the FP8 content to reach the BF16 rope data,
+        # then reinterpret the pointer as BF16.
+        var rope_ptr = (self.blocks.ptr + padded_depth).bitcast[
+            Scalar[DType.bfloat16]
+        ]()
+        comptime smem_dim = IndexList[3](BN, 1, BK)
+        comptime gmem_dim = IndexList[3](
+            UNKNOWN_VALUE,
+            Int(Self.kv_params.num_heads),
+            bf16_row_stride,
+        )
+        tma = create_split_tma[smem_dim, gmem_dim, swizzle_mode](
+            ctx, rope_ptr, Int(rows)
+        )
+
+    @always_inline
     fn _get_idx(
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> DynamicCoord[DType.int64, 4]:
@@ -1011,7 +1109,7 @@ struct PagedKVCache[
             self.blocks.dim[1]()
         ), "KVCache tok_idx out of range"
 
-        assert bs < self.cache_lengths.numel(), "batch_idx is oob"
+        assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
             lut_block_index < Int(self.blocks.dim[0]()),
             "block_idx is OOB. Attempted to access block index ",
@@ -1045,7 +1143,7 @@ struct PagedKVCache[
             self.blocks.dim[1]()
         ), "KVCache tok_idx out of range"
 
-        assert bs < self.cache_lengths.numel(), "batch_idx is oob"
+        assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
             lut_block_index < Int(self.blocks.dim[0]()),
             "block_idx is OOB. Attempted to access block index ",

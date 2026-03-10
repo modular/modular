@@ -141,7 +141,9 @@ fn bench_topk_batched[
         K_host_ptr[i] = Int64(K)
 
     var max_k = Int(
-        reduce_max(Span(ptr=K_host_buffer.ptr, length=K_host_buffer.numel()))
+        reduce_max(
+            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+        )
     )
 
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
@@ -187,7 +189,7 @@ fn bench_topk_batched[
         "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
     )
 
-    var num_bytes = device_in.numel() * size_of[dtype]()
+    var num_bytes = device_in.num_elements() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -220,7 +222,7 @@ fn bench_topk_batched[
             k=K_host_buffer.as_any_origin().as_immut(),
         )
 
-        for i in range(topk_vals.numel()):
+        for i in range(topk_vals.num_elements()):
             assert_almost_equal(
                 topk_vals_ptr[i],
                 topk_vals_cpu_ptr[i],
@@ -333,7 +335,9 @@ fn bench_topk_multi_rank[
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
     ctx.synchronize()
     var max_k = Int(
-        reduce_max(Span(ptr=K_host_buffer.ptr, length=K_host_buffer.numel()))
+        reduce_max(
+            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+        )
     )
 
     @parameter
@@ -359,7 +363,7 @@ fn bench_topk_multi_rank[
         b.iter_custom[kernel_launch](ctx)
 
     var kernel_name = "topk-multirank"
-    var num_bytes = device_in.numel() * size_of[dtype]()
+    var num_bytes = device_in.num_elements() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name), [ThroughputMeasure(BenchMetric.bytes, num_bytes)]
     )
@@ -391,7 +395,7 @@ fn bench_topk_multi_rank[
             k=K_host_buffer.as_any_origin().as_immut(),
         )
 
-        for i in range(topk_vals.numel()):
+        for i in range(topk_vals.num_elements()):
             assert_almost_equal(
                 topk_vals_ptr[i],
                 topk_vals_cpu_ptr[i],
@@ -512,7 +516,7 @@ fn bench_topk_fi[
         top_p,
     )
 
-    var num_bytes = device_in.numel() * size_of[dtype]()
+    var num_bytes = device_in.num_elements() * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(kernel_name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -533,7 +537,7 @@ fn fill_random[
 ](mut buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e9
     comptime max_val = 1e9
-    var total_elements = buffer.numel()
+    var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
         buffer.ptr[i] = random_value.cast[dtype]()
@@ -542,7 +546,7 @@ fn fill_random[
 fn fill_constant[
     rank: Int, dtype: DType
 ](mut buffer: TileTensor[mut=True, dtype, ...]):
-    var total_elements = buffer.numel()
+    var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
             buffer.ptr[i] = 1.0

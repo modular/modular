@@ -21,6 +21,7 @@ from std.math import (
     ceil,
     ceildiv,
     clamp,
+    comb,
     copysign,
     cos,
     cosh,
@@ -38,6 +39,7 @@ from std.math import (
     log,
     log1p,
     log2,
+    perm,
     pi,
     rsqrt,
     sin,
@@ -105,6 +107,29 @@ fn test_factorial() raises:
     assert_equal(factorial(1), 1)
     assert_equal(factorial(15), 1307674368000)
     assert_equal(factorial(20), 2432902008176640000)
+
+
+fn test_comb() raises:
+    assert_equal(comb(0, 0), 1)
+    assert_equal(comb(5, 0), 1)
+    assert_equal(comb(5, 5), 1)
+    assert_equal(comb(5, 1), 5)
+    assert_equal(comb(5, 2), 10)
+    assert_equal(comb(10, 3), 120)
+    assert_equal(comb(3, 5), 0)  # k > n returns 0
+    # Symmetry: C(n, k) == C(n, n-k)
+    assert_equal(comb(10, 4), comb(10, 6))
+
+
+fn test_perm() raises:
+    assert_equal(perm(5, 0), 1)
+    assert_equal(perm(5, 1), 5)
+    assert_equal(perm(5, 2), 20)
+    assert_equal(perm(5, 5), 120)
+    # perm(n) with default k=-1 delegates to factorial(n)
+    assert_equal(perm(5), factorial(5))
+    assert_equal(perm(0), 1)
+    assert_equal(perm(10, 3), 720)
 
 
 def test_copysign() raises:
@@ -371,7 +396,9 @@ def test_rsqrt() raises:
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
-def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64) raises:
+def _test_frexp_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = frexp(Scalar[dtype](123.45))
     assert_almost_equal(
         res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol

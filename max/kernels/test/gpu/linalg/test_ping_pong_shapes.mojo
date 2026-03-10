@@ -78,8 +78,7 @@ fn test_shape[
             if diff > tol:
                 errors += 1
                 if errors <= 5:
-                    var row = i // N
-                    var col = i % N
+                    var row, col = divmod(i, N)
                     print(
                         "  Mismatch at row",
                         row,

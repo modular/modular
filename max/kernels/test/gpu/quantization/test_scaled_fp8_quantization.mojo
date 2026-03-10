@@ -158,15 +158,17 @@ fn test_dynamic_fp8_quant[
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
-    var in_ndbuffer = NDBuffer[in_dtype, 2, _, static_shape](
+    var in_ndbuffer = NDBuffer[rank=2, in_dtype, _, static_shape](
         in_device.unsafe_ptr(),
         IndexList[2](m, n),
     )
-    var out_ndbuffer = NDBuffer[out_dtype, 2, _, static_shape](
+    var out_ndbuffer = NDBuffer[rank=2, out_dtype, _, static_shape](
         out_device.unsafe_ptr(),
         IndexList[2](m, n),
     )
-    var scales_ndbuffer = NDBuffer[scales_dtype, 2, _, static_scales_shape](
+    var scales_ndbuffer = NDBuffer[
+        rank=2, scales_dtype, _, static_scales_shape
+    ](
         scales_device.unsafe_ptr(),
         IndexList[2](n // group_size, m),
     )
@@ -306,15 +308,17 @@ fn test_batched_dynamic_fp8_quant[
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
-    var in_ndbuffer = NDBuffer[in_dtype, 3, _, static_shape](
+    var in_ndbuffer = NDBuffer[rank=3, in_dtype, _, static_shape](
         in_device.unsafe_ptr(),
         IndexList[3](bs, m, k),
     )
-    var out_ndbuffer = NDBuffer[out_dtype, 3, _, static_shape](
+    var out_ndbuffer = NDBuffer[rank=3, out_dtype, _, static_shape](
         out_device.unsafe_ptr(),
         IndexList[3](bs, m, k),
     )
-    var scales_ndbuffer = NDBuffer[scales_dtype, 3, _, static_scales_shape](
+    var scales_ndbuffer = NDBuffer[
+        rank=3, scales_dtype, _, static_scales_shape
+    ](
         scales_device.unsafe_ptr(),
         IndexList[3](bs, k // group_size, m),
     )

@@ -640,11 +640,18 @@ class TokenBuffer:
     # State Management and Reset
     # ============================================================================
 
-    def reset_as_new_prompt(self) -> None:
+    def reset_as_new_prompt(
+        self, delete_last_generated_token: bool = False
+    ) -> None:
         """Treat the current sequence as a fresh prompt.
 
         Marks all existing tokens as prompt tokens so the next generation pass
         starts from this state.
+
+        Args:
+            delete_last_generated_token: If True, deletes the last generated token
+                before resetting the buffer. This is useful when the last token is
+                a placeholder future token.
 
         Raises:
             ValueError: If the buffer state is invalid.
@@ -655,6 +662,13 @@ class TokenBuffer:
                 f"Internal error: processing range end ({self._processing_range.end}) "
                 f"exceeds current length ({self._current_length})"
             )
+
+        if delete_last_generated_token:
+            if not self.generated_length:
+                raise ValueError(
+                    "Cannot delete the last generated token if there are no generated tokens."
+                )
+            self._current_length -= 1
 
         # Reset ranges and make all current tokens the new prompt
         self._processing_range = Range(0, self._current_length)

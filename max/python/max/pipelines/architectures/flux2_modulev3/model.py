@@ -38,7 +38,7 @@ class Flux2TransformerModel(ComponentModel):
             devices,
             weights,
         )
-        self.config = Flux2Config.generate(
+        self.config = Flux2Config.initialize_from_config(
             config,
             encoding,
             devices,
