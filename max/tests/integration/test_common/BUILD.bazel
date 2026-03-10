@@ -201,6 +201,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         # the normal one pulled from rules_pycross transitively.
+        ":storage",
         ":test_data",
         requirement("numpy"),
     ] + select({

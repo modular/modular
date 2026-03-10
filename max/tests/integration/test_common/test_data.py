@@ -365,6 +365,23 @@ DEFAULT_PIXEL_GENERATION = [
     for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
 ]
 
+# No `messages` param — the vLLM path loads images from `request.images`
+# directly via `multi_modal_data`, and there is no torch path for this model.
+# The prompt must contain Kimi-specific media tokens so vLLM can locate the
+# placeholder to insert vision-chunk embeddings.
+KIMIK2_5_REQUESTS = [
+    MockTextGenerationRequest.with_images(
+        prompt=(
+            "<|im_user|>user<|media_begin|>image<|media_content|>"
+            "<|media_pad|><|media_end|>Describe this image.<|im_end|>"
+            "<|im_assistant|>assistant<|im_middle|></think>"
+        ),
+        images=[
+            "s3://modular-bazel-artifacts-public/artifacts/model_testdata/kimik2_5_image.jpg"
+        ],
+    ),
+]
+
 FLUX2_PIXEL_GENERATION_I2I = [
     MockPixelGenerationRequest.from_prompt(
         prompt="Transform this image into a cinematic nighttime scene with neon reflections, wet streets, and dramatic contrast.",

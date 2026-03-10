@@ -338,6 +338,8 @@ def run_vllm_model(
             trust_remote_code=vllm_pipeline.trust_remote_code,
             max_batch_size=max_batch_size,
             tensor_parallel_size=vllm_pipeline.tensor_parallel_size,
+            extra_kwargs=vllm_pipeline.extra_kwargs,
+            mm_data_key=vllm_pipeline.mm_data_key,
         )
     else:
         raise NotImplementedError(
