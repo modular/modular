@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
+from std.hashlib import hash
 
 from test_utils import check_write_to
 from std.testing import (
@@ -539,6 +540,25 @@ def test_set_write_repr_to() raises:
     empty.write_repr_to(empty_output)
     assert_true(empty_output.startswith("Set[Int, Hasher="))
     assert_true(empty_output.endswith("]({})"), empty_output)
+
+
+def test_set_hash() raises:
+    var s1 = {1, 2, 3}
+    var s2 = {1, 2, 3}
+    var s3 = {3, 2, 1}
+    assert_equal(hash(s1), hash(s2))
+    # Set hash is order-independent, so different insertion order gives same hash
+    assert_equal(hash(s1), hash(s3))
+    # Different sets should (very likely) produce different hash
+    assert_true(hash(s1) != hash({4, 5, 6}))
+
+
+def test_set_conditional_conformances() raises:
+    assert_true(conforms_to(Set[Int], Copyable))
+    assert_true(conforms_to(Set[Int], Equatable))
+    assert_true(conforms_to(Set[Int], Comparable))
+    assert_true(conforms_to(Set[Int], Hashable))
+    assert_true(conforms_to(Set[Int], Writable))
 
 
 def main() raises:

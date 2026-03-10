@@ -345,10 +345,10 @@ This version is still a work in progress.
   - `Deque`: `Equatable`, `Hashable`, `Writable`
   - `Dict`: `Writable`, `Equatable`, `Hashable`
   - `InlineArray`: `Copyable`, `Equatable`, `Hashable`, `Writable`
-  - `LinkedList`: `Equatable`, `Writable`
+  - `LinkedList`: `Equatable`, `Hashable`, `Writable`
   - `List`: `Equatable`, `Writable`
   - `Optional`: `Writable`, `Copyable`, `ImplicitlyCopyable`
-  - `Set`: `Writable`
+  - `Set`: `Copyable`, `Comparable`, `Equatable`, `Hashable`, `Writable`
   - `Tuple`: `Copyable`, `ImplicitlyCopyable`, `Writable`
   - `Variant`: `Writable`
 

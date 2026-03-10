@@ -21,6 +21,7 @@ traversal.
 
 from std.collections._index_normalization import normalize_index
 import std.format._utils as fmt
+from std.hashlib.hasher import Hasher
 from std.os import abort
 
 
@@ -141,6 +142,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Copyable,
     Defaultable,
     Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
     Iterable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -625,6 +627,23 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             other_cursor = other_cursor[].next
 
         return True
+
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Hash the elements of this list.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        var curr = self._head
+        while curr:
+            ref elt = trait_downcast[Hashable](curr[].value)
+            elt.__hash__(hasher)
+            curr = curr[].next
 
     fn _get_node_ptr[
         I: Indexer, //
