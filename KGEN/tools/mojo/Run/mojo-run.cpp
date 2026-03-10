@@ -371,7 +371,7 @@ static int run(const State &subcommandState) {
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return LIT::importMojoFile(runtime, sourceManager, parserConfig, ts);
+        return LIT::importMojoFile(ctx, sourceManager, parserConfig, ts);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());

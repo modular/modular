@@ -7,6 +7,7 @@
 #ifndef KGEN_MOJOPARSER_ENTRYPOINT_H
 #define KGEN_MOJOPARSER_ENTRYPOINT_H
 
+#include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <filesystem>
 
@@ -107,7 +108,7 @@ struct ParserConfig {
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 OwningOpRef<ModuleOp>
-importMojoFile(AsyncRT::Runtime &runtime, llvm::SourceMgr &sourceMgr,
+importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
                ParserConfig &config, mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles = nullptr);
 
@@ -118,9 +119,9 @@ importMojoFile(AsyncRT::Runtime &runtime, llvm::SourceMgr &sourceMgr,
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
-importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
-                  StringRef packageName, llvm::SourceMgr &sourceMgr,
-                  ParserConfig &config, mlir::TimingScope &ts,
+importMojoPackage(ContextRef context, StringRef path, StringRef packageName,
+                  llvm::SourceMgr &sourceMgr, ParserConfig &config,
+                  mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Parse the binary Mojo package at the given path as a fully self contained

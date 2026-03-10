@@ -504,9 +504,9 @@ static int package(const State &subcommandState) {
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         parserConfig.exportKgenModule = isKgenModule;
         OwningOpRef<ModuleOp> moduleOp;
-        std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
-            runtime, packageArgs.inputPath, packageArgs.name, sourceMgr,
-            parserConfig, ts);
+        std::tie(moduleOp, packageOp) =
+            LIT::importMojoPackage(ctx, packageArgs.inputPath, packageArgs.name,
+                                   sourceMgr, parserConfig, ts);
         return moduleOp;
       });
   if (failed(module))

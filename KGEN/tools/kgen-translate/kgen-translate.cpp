@@ -133,8 +133,8 @@ int main(int argc, char *argv[]) {
         config.disablePrebuiltPackages = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
         OwningOpRef<ModuleOp> output =
-            LIT::importMojoFile(*(*ctxOr)->get<AsyncRT::Runtime>(), sourceMgr,
-                                config, ts, /*includedFiles=*/nullptr);
+            LIT::importMojoFile(*ctxOr, sourceMgr, config, ts,
+                                /*includedFiles=*/nullptr);
 
         if (!output)
           return {};

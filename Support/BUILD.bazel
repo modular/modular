@@ -228,6 +228,7 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Context",
+    srcs = ["lib/Context.cpp"],
     hdrs = ["include/Support/Context.h"],
     deps = [
         ":ADT",

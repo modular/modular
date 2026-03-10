@@ -21,7 +21,6 @@
 #include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
-#include "Support/Context.h"
 #include "Support/STLExtras.h"
 #include "Support/StringExtras.h"
 #include "Support/Threading/HWInfo.h"
@@ -33,7 +32,8 @@
 
 namespace M {
 class Error;
-}
+struct DebugTensorPrintOptions;
+} // namespace M
 
 namespace M::AsyncRT {
 class Allocator;
@@ -341,8 +341,7 @@ public:
   ///
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
-  Runtime(CompactRuntimePtr runtimePtr, Context *context,
-          std::unique_ptr<Allocator> allocator,
+  Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
           uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
           RuntimeOptions::ProfilerDebuginfo profilerDebuginfo =
@@ -374,6 +373,14 @@ public:
     Runtime *runtime = getCurrentRuntimeOrNull();
     assert(runtime && "no runtime is associated with the current thread");
     return *runtime;
+  }
+
+  void setDebugPrintOptionsForExecution(M::DebugTensorPrintOptions *opts) {
+    debugPrintOptionsForExecution_ = opts;
+  }
+
+  M::DebugTensorPrintOptions *getDebugPrintOptionsForExecution() const {
+    return debugPrintOptionsForExecution_;
   }
 
   //===--------------------------------------------------------------------===//
@@ -412,11 +419,6 @@ public:
   /// interface with the higher level algorithms in Algorithms.h.
   WorkQueue *getWorkQueue() { return workQueue.get(); }
 
-  /// Reference to our shared global context. Note that this doesn't hold the
-  /// reference properly, in order to fix the cycle. This should be removed as
-  /// soon as possible.
-  Context *context;
-
 private:
   Runtime(const Runtime &) = delete;
   void operator=(const Runtime &) = delete;
@@ -446,6 +448,14 @@ private:
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
+
+  /// Set by engine before execution for use by debug_tensor_print on worker
+  /// threads. Cleared after execution.
+
+  /// Optional debug print options for the current execution. Set by the engine
+  /// before running a model so that MGP primitives can use them on whichever
+  /// thread runs, and then cleared after execution.
+  M::DebugTensorPrintOptions *debugPrintOptionsForExecution_ = nullptr;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
 };
