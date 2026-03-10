@@ -475,7 +475,7 @@ class PixelGenerationTokenizer(
             assert delegate is not None
 
             if self._pipeline_class_name == PipelineClassName.FLUX2:
-                from max.pipelines.architectures.flux2_modulev3.system_messages import (
+                from max.pipelines.architectures.flux2.system_messages import (
                     SYSTEM_MESSAGE,
                     format_input,
                 )

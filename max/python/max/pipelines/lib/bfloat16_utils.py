@@ -14,6 +14,8 @@
 
 import numpy as np
 import numpy.typing as npt
+from max.driver import Buffer, Device
+from max.dtype import DType
 
 
 def float32_to_bfloat16_as_uint16(
@@ -45,3 +47,29 @@ def float32_to_bfloat16_as_uint16(
     # On little-endian systems, upper 16 bits are at odd indices in uint16 view.
     # Copy to return a contiguous array that owns its data (slicing creates a view).
     return rounded.view(np.uint16)[1::2].reshape(arr.shape).copy()
+
+
+def float32_array_to_buffer(
+    array: npt.NDArray[np.float32],
+    *,
+    dtype: DType,
+    device: Device,
+) -> Buffer:
+    """Create a device buffer from float32 host data without a cast-only graph.
+
+    For ``bfloat16``, the host array is converted to bf16 bit-patterns stored
+    as ``uint16`` and then reinterpreted as ``bfloat16`` in MAX.
+    """
+    array = np.ascontiguousarray(array, dtype=np.float32)
+
+    if dtype == DType.bfloat16:
+        return Buffer.from_numpy(float32_to_bfloat16_as_uint16(array)).view(
+            DType.bfloat16, array.shape
+        ).to(device)
+
+    if dtype == DType.float32:
+        return Buffer.from_numpy(array).to(device)
+
+    return Buffer.from_numpy(
+        array.astype(dtype.to_numpy(), copy=False)
+    ).to(device)

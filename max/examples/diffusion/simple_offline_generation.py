@@ -22,6 +22,11 @@ Usage:
     ./bazelw run //max/examples/diffusion:simple_offline_generation -- \
         --model black-forest-labs/FLUX.2-dev \
         --prompt "A cat in a garden"
+
+    ./bazelw run //max/examples/diffusion:simple_offline_generation -- \
+        --model black-forest-labs/FLUX.2-dev \
+        --prompt "A cat in a garden" \
+        --prefer-module-v3
 """
 
 from __future__ import annotations
@@ -61,6 +66,13 @@ from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
 from PIL import Image
+
+_FLUX2_ARCH_NAMES = {
+    "Flux2Pipeline",
+    "Flux2KleinPipeline",
+    "Flux2Pipeline_ModuleV3",
+    "Flux2KleinPipeline_ModuleV3",
+}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -166,6 +178,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=3,
         help="Number of iterations to run for profiling.",
     )
+    parser.add_argument(
+        "--prefer-module-v3",
+        action="store_true",
+        help="Use the ModuleV3 FLUX implementation instead of the default architecture.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -251,7 +268,7 @@ async def generate_image(args: argparse.Namespace) -> None:
             device_specs=[DeviceSpec.accelerator()],
         ),
         runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
+            prefer_module_v3=args.prefer_module_v3,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -278,10 +295,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         max_length = components_config["tokenizer"]["config_dict"].get(
             "model_max_length", None
         )
-        if arch.name in (
-            "Flux2Pipeline_ModuleV3",
-            "Flux2KleinPipeline_ModuleV3",
-        ):
+        if arch.name in _FLUX2_ARCH_NAMES:
             max_length = 512
         print(f"Using max length: {max_length} for tokenizer")
 
