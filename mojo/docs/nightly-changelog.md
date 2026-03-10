@@ -209,21 +209,18 @@ This version is still a work in progress.
   ```
 
 - `def` functions now allows a `raises` specifier, and support typed errors.
-  `def` will soon *require* an exception specifier to throw, so you must
-  change `def` functions to have an explicit `raises` keyword. To
-  help with migration, the Mojo compiler now produces an error for `def`
-  functions that lack a `raises` specifier.
+  `def` will subsume `fn` in the next release, so we recommend switching to it.
+  Mojo currently accepts both of them with the same behavior.
 
   ```mojo
   # Older behavior
   def foo():        # implicitly raises Error.
   def bar() raises: # was invalid
   # Current behavior
-  def bar():        # Is now an error - use explicit 'raises'.
-  def bar() raises: # Explicit raises Error (recommended)
-  # Near future behavior
   def bar():        # Does not raise.
-  def bar() raises: # Explicit raises Error (required)
+  def bar() raises: # Explicit raises Error
+  # Future behavior
+  fn bar():        # Invalid: use 'def' instead.
   ```
 
 ## Language changes
