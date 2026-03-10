@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .forked_pdb import ForkedPdb
 from .human_readable_formatter import (
     to_human_readable_bytes,
     to_human_readable_latency,
@@ -18,6 +19,7 @@ from .human_readable_formatter import (
 from .networked_data import fetch_bytes_from_s3
 
 __all__ = [
+    "ForkedPdb",
     "fetch_bytes_from_s3",
     "to_human_readable_bytes",
     "to_human_readable_latency",
