@@ -7,6 +7,7 @@ This version is still a work in progress.
 ## Documentation {#26-2-docs}
 
 - Removed `--cache-strategy` cli flag.
+- Added an [image generation guide](/max/inference/image-generation).
 
 ## MAX models {#26-2-models}
 
@@ -17,6 +18,7 @@ This version is still a work in progress.
   `MODULAR_MAX_DISABLE_GEMMA3_VISION` environment variable.
 - Implement multi-GPU support (tensor parallelism) for GPT-OSS.
 - Common MAX models like Qwen 2.5 can now run on AMD RDNA consumer GPUs.
+- Add support for `black-forest-labs/FLUX.2-dev` model.
 
 ## MAX framework {#26-2-max}
 
@@ -51,6 +53,8 @@ This version is still a work in progress.
   for device graph memory observability.
 
 ### Inference server {#26-2-max-serve}
+
+- Added image generation support via the `v1/responses` API endpoint.
 
 - Enabled overlap scheduling for select model architectures like
   `LlamaForCausalLM_Legacy` by default. This optimization reduces CPU overhead

@@ -18,10 +18,11 @@ info:
     our [MAX container](/max/container)—see our [Get started with
     MAX](/max/get-started) and then see our tutorials on using MAX:
 
-    - [Start a chat endpoint](/max/tutorials/start-a-chat-endpoint)
-    - [Serve an embedding model with MAX](/max/tutorials/run-embeddings-with-max-serve)
+    - [Start a chat endpoint](/max/inference/text-to-text)
+    - [Serve an embedding model](/max/inference/embeddings)
     - [Image-to-text use cases](/max/inference/image-to-text)
-    - [Deploy Llama 3 on GPU-powered Kubernetes clusters](/max/tutorials/max-serve-local-to-cloud)
+    - [Image generation](/max/inference/image-generation)
+    - [Deploy MAX on GPU in the cloud](/max/tutorials/max-serve-local-to-cloud)
 
     ## OpenAI API compatibility
 
@@ -32,10 +33,11 @@ info:
 
     - **Supported endpoints:**
 
+        - [Responses](#operation/createResponse) (`/v1/responses`)
         - [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
         - [Completions](#operation/createCompletion) (`/v1/completions`)
         - [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
-        - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available as part of [Batch Inference](https://www.modular.com/batch-inference) in Modular's Dedicated Endpoint and Enterprise editions.
+        - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available as part of Modular's Dedicated Endpoint and Enterprise [editions](https://www.modular.com/pricing).
         - [List models](#operation/listModels) (`/v1/models`)
         - [Health check](#operation/health) (`/health`)
 
@@ -50,6 +52,144 @@ info:
     performance.
 
 paths:
+  /v1/responses:
+    post:
+      operationId: createResponse
+      summary: Create response
+      description: |
+        Creates a response for the given input using the
+        [Responses API](/max/inference/image-generation), which supports
+        multi-modal AI tasks including text-to-image and image-to-image
+        generation. This endpoint follows the
+        [Open Responses](https://huggingface.co/blog/open-responses)
+        specification.
+
+        To enable this endpoint, set the `MAX_SERVE_API_TYPES` environment
+        variable:
+
+        ```
+        export MAX_SERVE_API_TYPES='["responses"]'
+        ```
+
+        For detailed usage examples, see the
+        [image generation guide](/max/inference/image-generation).
+      x-codeSamples:
+        - lang: curl
+          label: Text-to-image
+          source: |
+            curl -X POST http://localhost:8000/v1/responses \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "black-forest-labs/FLUX.2-dev",
+                "input": "A serene mountain landscape at sunset",
+                "provider_options": {
+                  "image": {"height": 1024, "width": 1024, "steps": 50}
+                }
+              }' | jq -r '.output[0].content[0].image_data' | base64 -d > output.png
+        - lang: curl
+          label: Image-to-image
+          source: |
+            curl -X POST http://localhost:8000/v1/responses \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "black-forest-labs/FLUX.2-dev",
+                "input": [
+                  {"role": "user", "content": [
+                    {"type": "input_image", "image_url": "https://example.com/input.jpg"},
+                    {"type": "input_text", "text": "Transform this into a watercolor painting"}
+                  ]}
+                ],
+                "provider_options": {
+                  "image": {"height": 1024, "width": 1024, "steps": 50}
+                }
+              }' | jq -r '.output[0].content[0].image_data' | base64 -d > output.png
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - model
+                - input
+              properties:
+                model:
+                  type: string
+                  description: ID of the model to use.
+                input:
+                  description: |
+                    The input for the response. Can be a string for text-to-image,
+                    or a structured message array for image-to-image.
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: object
+                provider_options:
+                  type: object
+                  description: |
+                    Provider-specific options for image generation.
+                  properties:
+                    image:
+                      type: object
+                      properties:
+                        height:
+                          type: integer
+                          description: Output image height in pixels (must be a multiple of 16).
+                          default: 1024
+                        width:
+                          type: integer
+                          description: Output image width in pixels (must be a multiple of 16).
+                          default: 1024
+                        steps:
+                          type: integer
+                          description: Number of denoising steps.
+                          default: 28
+                        guidance_scale:
+                          type: number
+                          description: Prompt adherence strength.
+                          default: 3.5
+                        negative_prompt:
+                          type: string
+                          description: What to avoid generating.
+            examples:
+              textToImage:
+                summary: Text-to-image generation
+                value:
+                  model: "black-forest-labs/FLUX.2-dev"
+                  input: "A serene mountain landscape at sunset"
+                  provider_options:
+                    image:
+                      height: 1024
+                      width: 1024
+                      steps: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  output:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        content:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              image_data:
+                                type: string
+                                description: Base64-encoded image data.
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/chat/completions:
     post:
       operationId: createChatCompletion

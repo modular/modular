@@ -57,6 +57,7 @@ For more information on serving a model with MAX, explore the
 | `MAX_SERVE_METRICS_ENDPOINT_PORT` | Port for the Prometheus metrics endpoint | Integer | `8001` |
 | `MAX_SERVE_ALLOWED_IMAGE_ROOTS` | Allowed root directories for `file://` URI access | Comma-separated paths | Empty |
 | `MAX_SERVE_MAX_LOCAL_IMAGE_BYTES` | Maximum size in bytes for local image files | Integer | `20971520` (20 MiB) |
+| `MAX_SERVE_API_TYPES` | Configures which API types MAX serve exposes. Accepts a JSON array of API type strings (e.g., `'["responses"]'`). Use this to enable the [Responses API](/max/inference/image-generation) for tasks like image generation. | JSON array string | None |
 
 ## Logging
 
