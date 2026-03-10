@@ -271,7 +271,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
 /// resultant IR, and the decl for the module or package. This abstracts away
 /// the shared setup between module and package parsing.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
+importMojoImpl(ContextRef context, StringRef moduleIdentifier,
                SourceMgr &sourceMgr, SharedState &sharedState,
                mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles,
@@ -281,7 +281,7 @@ importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
       {"filename", fileLoc.getFilename().str()}};
   [[maybe_unused]] auto timeScope =
-      runtime.context->get<M::Telemetry::TelemetryContext>()
+      context->get<Telemetry::TelemetryContext>()
           ->createUInt64Timer<std::chrono::milliseconds>(
               "mojo.parser.compile.time", M::Telemetry::Level::L2, attrs);
 
@@ -334,7 +334,7 @@ importMojoImpl(AsyncRT::Runtime &runtime, StringRef moduleIdentifier,
 /// Parse the specified Mojo file into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module represented by the input file.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoFileImpl(AsyncRT::Runtime &runtime, SourceMgr &sourceMgr,
+importMojoFileImpl(ContextRef context, SourceMgr &sourceMgr,
                    SharedState &sharedState, mlir::TimingScope &ts,
                    SmallVectorImpl<std::string> *includedFiles) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
@@ -342,7 +342,7 @@ importMojoFileImpl(AsyncRT::Runtime &runtime, SourceMgr &sourceMgr,
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   return importMojoImpl(
-      runtime, bufName, sourceMgr, sharedState, ts, includedFiles,
+      context, bufName, sourceMgr, sharedState, ts, includedFiles,
       [&](ModuleOp module) -> ASTDecl & {
         Lexer lexer(sharedState.diags, sourceBuf);
         auto startSMLoc = lexer.getToken().getLoc();
@@ -373,7 +373,7 @@ importMojoFileImpl(AsyncRT::Runtime &runtime, SourceMgr &sourceMgr,
 }
 
 std::pair<OwningOpRef<ModuleOp>, PackageOp>
-LIT::importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
+LIT::importMojoPackage(ContextRef context, StringRef path,
                        StringRef packageName, llvm::SourceMgr &sourceMgr,
                        ParserConfig &config, mlir::TimingScope &ts,
                        SmallVectorImpl<std::string> *includedFiles) {
@@ -388,9 +388,9 @@ LIT::importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   auto [module, packageDecl] = importMojoImpl(
-      runtime, path, sourceMgr, sharedState, ts, includedFiles,
+      context, path, sourceMgr,
       // TODO(MOCO-1295): Generate Python bindings for Mojo packages.
-      [&](ModuleOp module) -> ASTDecl & {
+      sharedState, ts, includedFiles, [&](ModuleOp module) -> ASTDecl & {
         // Create the top-level outer decl, which will contain all things we
         // parse.
         ASTDecl &topLevelDecl = sharedState.declResolver->addDecl(
@@ -527,12 +527,12 @@ OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
 }
 
 OwningOpRef<mlir::ModuleOp>
-LIT::importMojoFile(AsyncRT::Runtime &runtime, llvm::SourceMgr &sourceMgr,
+LIT::importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
                     ParserConfig &config, mlir::TimingScope &ts,
                     SmallVectorImpl<std::string> *includedFiles) {
   SharedState sharedState(sourceMgr, config);
   auto [module, topLevelDecl] =
-      importMojoFileImpl(runtime, sourceMgr, sharedState, ts, includedFiles);
+      importMojoFileImpl(context, sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
 }
 

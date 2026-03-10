@@ -62,6 +62,16 @@ private:
 /// Convenience definitions.
 using ContextRef = RCRef<Context>;
 
+/// Thread-local "current" Max context for execution boundaries (e.g. MGP
+/// primitives) where the call stack does not have Context. Returns nullptr if
+/// not set.
+Context *getCurrentMaxContext();
+
+/// Set the thread-local current Max context. Call before running code that
+/// needs it (e.g. model setup/execute); clear with
+/// setCurrentMaxContext(nullptr) when done.
+void setCurrentMaxContext(Context *context);
+
 } // namespace M
 
 #endif // SUPPORT_CONTEXT_H

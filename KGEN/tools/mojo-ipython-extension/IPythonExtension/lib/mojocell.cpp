@@ -378,7 +378,6 @@ static int build(llvm::StringRef code, llvm::StringRef inputName) {
   TargetInfoAttr target = targetOr.takeValue();
 
   // Lower the input file to an MLIR module.
-  AsyncRT::Runtime &runtime = *ctxref->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
 
   MLIRContext *ctx = &mlirCtx;
@@ -405,7 +404,7 @@ static int build(llvm::StringRef code, llvm::StringRef inputName) {
 
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
   OwningOpRef<ModuleOp> module =
-      LIT::importMojoFile(runtime, sourceMgr, parseConfig, timing, nullptr);
+      LIT::importMojoFile(ctxref, sourceMgr, parseConfig, timing, nullptr);
 
   if (!module)
     exit(2);

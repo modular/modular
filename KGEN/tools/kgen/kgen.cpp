@@ -227,7 +227,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return failure();
   registerContext(registry, *ctxOr,
                   /*enableThreadPool=*/!clOptions.enableMLIRCrashReproducer);
-  AsyncRT::Runtime &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
 
   // Set up the dialects in the context.
   ctx->appendDialectRegistry(registry);
@@ -324,7 +323,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     config.stripFilePrefix = clOptions.stripFilePrefix;
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
-    theModule = importMojoFile(runtime, mgr, config, litScope, &includedFiles);
+    theModule = importMojoFile(*ctxOr, mgr, config, litScope, &includedFiles);
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   }

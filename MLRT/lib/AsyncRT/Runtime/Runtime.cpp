@@ -14,7 +14,6 @@
 #include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
-#include "Support/Context.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -43,13 +42,12 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 // Runtime
 //===----------------------------------------------------------------------===//
 
-Runtime::Runtime(CompactRuntimePtr runtimePtr, Context *context,
+Runtime::Runtime(CompactRuntimePtr runtimePtr,
                  std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
                  StringRef profileFilename, uint64_t runtimeProfilingTypeMask,
                  RuntimeOptions::ProfilerDebuginfo profilerDebuginfo)
-    : context(context),
-      signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
+    : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profilerDebuginfo(profilerDebuginfo), runtimeIndex(runtimePtr.index),
       readyChain(createReadyChain(*this)) {
@@ -121,7 +119,7 @@ AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
                 std::chrono::microseconds(options.threadBusyWaitTime),
                 options.poolName);
   return std::make_unique<Runtime>(
-      runtimePtr, nullptr, std::move(allocator), std::move(workQueue),
+      runtimePtr, std::move(allocator), std::move(workQueue),
       options.profileFilename, options.runtimeProfilingTypeMask,
       options.profilerDebuginfo);
 }
