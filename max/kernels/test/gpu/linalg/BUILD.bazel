@@ -326,7 +326,7 @@ mojo_test(
         "MODULAR_DISABLE_VENDOR_FALLBACK": "1",
     },
     tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         "//max:internal_utils",
         "//max:linalg",

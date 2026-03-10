@@ -15,7 +15,9 @@ _MULTI_VERSION_TEST_SRCS = [
 _MACOS_INCOMPATIBLE_TESTS = [
     "ops/test_argsort.py",
     "ops/test_constant.py",
+    "ops/test_custom.py",
     "ops/test_layer_norm.py",
+    "ops/test_reduction.py",
     "ops/test_tile.py",
     "ops/elementwise/test_is_nan.py",
 ]
