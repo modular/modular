@@ -404,20 +404,21 @@ static Attribute getUnboundParameters(KGENModule &kgenModule,
   if (allValues.empty())
     return builder.getUnitAttr();
 
-  auto decl = kgenModule.lookup<LIT::StructDeclOp>(type.getSymbol());
+  auto structDecl = kgenModule.lookup<LIT::StructDeclOp>(type.getSymbol());
 
-  ASSERT_STREAM(decl.getAllParams().size() == allValues.size(),
+  ASSERT_STREAM(structDecl.getInputParams().size() == allValues.size(),
                 << "number of parameters does not match struct declaration");
 
   SmallVector<NamedAttribute> result;
   result.reserve(allValues.size());
 
-  for (auto [decl, value] : llvm::zip(decl.getAllParams(), allValues)) {
+  for (auto [paramDecl, value] :
+       llvm::zip(structDecl.getInputParams(), allValues)) {
     Attribute stubbedValue = value;
     if (!stubbedValue)
       stubbedValue = builder.getUnitAttr();
 
-    result.emplace_back(LIT::demangleParameterName(decl.getName()),
+    result.emplace_back(LIT::demangleParameterName(paramDecl.getName()),
                         stubbedValue);
   }
 
