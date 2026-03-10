@@ -19,7 +19,7 @@ from std.testing import testing, TestSuite
 
 
 fn test_read_until_delimiter_raises_eof() raises:
-    var stdin = _fdopen["r"](sys.stdin)
+    var stdin = _fdopen["r"](std.sys.stdin)
     with testing.assert_raises(contains="EOF"):
         _ = stdin.read_until_delimiter("\n")
 
