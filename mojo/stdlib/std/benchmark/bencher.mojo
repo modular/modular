@@ -23,6 +23,7 @@ from std.collections import Dict, Optional
 import std.format._utils as fmt
 from std.os import abort, getenv
 from std.pathlib import Path
+from std.sys import get_defined_bool
 from std.sys.arg import argv
 
 from std.gpu.host import DeviceContext
@@ -450,6 +451,12 @@ struct BenchConfig(Copyable):
                 # TODO: add an arg for bench batchsize
                 else:
                     i += 1
+
+            # KBENCH_OUTFILE overrides -o (used by kbench driver mode).
+            comptime if get_defined_bool["KBENCH_USE_ENV_ARGS", False]():
+                var env_outfile = getenv("KBENCH_OUTFILE", "")
+                if env_outfile:
+                    self.out_file = Path(env_outfile)
 
         argparse()
 
