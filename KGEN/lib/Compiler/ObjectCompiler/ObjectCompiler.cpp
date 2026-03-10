@@ -1672,11 +1672,14 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
 
   // xcrun path must always be the same on MacOS.
   const char *xcrunPath = "/usr/bin/xcrun";
+  const std::string optLevel =
+      std::string("-O") + std::to_string(options.optimizationLevel);
 
   // Convert AIR bitcode to metallib using xcrun metallib
   std::vector<llvm::StringRef> metallibArgs = {
-      xcrunPath,   "-sdk", "macosx",        "metallib",
-      airTempFile, "-o",   metallibTempFile};
+      xcrunPath, "-sdk",      "macosx", "metal",
+      optLevel,  airTempFile, "-o",     metallibTempFile,
+  };
 
   // Need to keep customAIR variable alive as metallibArgs reference to it.
   std::optional<std::string> customAIR =
@@ -1684,14 +1687,8 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
   if (customAIR) {
     llvm::errs() << "WARNING: Using custom AIR file: " << *customAIR << '\n';
     metallibArgs = {
-        xcrunPath,
-        "-sdk",
-        "macosx",
-        "metal",
-        std::string("-O") + std::to_string(options.optimizationLevel),
-        *customAIR,
-        "-o",
-        metallibTempFile,
+        xcrunPath, "-sdk",     "macosx", "metal",
+        optLevel,  *customAIR, "-o",     metallibTempFile,
     };
   }
 
