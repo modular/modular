@@ -55,20 +55,23 @@ fn test_naive_blockwise_fp8_matmul[
         transpose_b,
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
 
-    comptime static_a_scale_shape = DimList(
+    comptime static_a_scale_shape = DimList[
         ceildiv(k.dim, BLOCK_SCALE_K), ceildiv(m.dim, BLOCK_SCALE_M)
-    )
-    comptime static_b_scale_shape = DimList(
-        ceildiv(n.dim, BLOCK_SCALE_N), ceildiv(k.dim, BLOCK_SCALE_K)
-    ) if transpose_b else DimList(
-        ceildiv(k.dim, BLOCK_SCALE_K), ceildiv(n.dim, BLOCK_SCALE_N)
-    )
+    ]()
+    comptime static_b_scale_shape = DimList[
+        ceildiv(n.dim, BLOCK_SCALE_N) if transpose_b else ceildiv(
+            k.dim, BLOCK_SCALE_K
+        ),
+        ceildiv(k.dim, BLOCK_SCALE_K) if transpose_b else ceildiv(
+            n.dim, BLOCK_SCALE_N
+        ),
+    ]()
 
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[2](

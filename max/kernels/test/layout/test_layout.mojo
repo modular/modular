@@ -103,7 +103,7 @@ fn test_layout_basic() raises:
     )
 
     # testing col major
-    comptime dl = DimList(3, 64, 128)
+    comptime dl = DimList[3, 64, 128]()
 
     assert_equal(
         Layout.col_major[dims=dl](),
@@ -111,7 +111,7 @@ fn test_layout_basic() raises:
     )
 
     assert_equal(
-        Layout.col_major[dims=DimList(Dim(), 64, 128)](),
+        Layout.col_major[dims=DimList[Dim(), 64, 128]()](),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),

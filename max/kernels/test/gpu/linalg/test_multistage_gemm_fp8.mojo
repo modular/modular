@@ -35,9 +35,11 @@ fn test_fp8_multistage_gemm[
 ](ctx: DeviceContext) raises:
     print("test fp8 multistage matmul")
 
-    comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    comptime static_c_shape = DimList(M, N)
+    comptime static_a_shape = DimList[M, K]()
+    comptime static_b_shape = DimList[
+        N if transpose_b else K, K if transpose_b else N
+    ]()
+    comptime static_c_shape = DimList[M, N]()
 
     comptime a_size = M * K
     comptime b_size_0 = N if transpose_b else K
@@ -144,7 +146,7 @@ fn test_fp8_multistage_gemm[
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
         comptime b_col_major_size = N * K
         var b_host_col_major_ptr = alloc[Scalar[dtype]](b_col_major_size)
-        var b_host_col_major = NDBuffer[rank=2, dtype, _, DimList(N, K)](
+        var b_host_col_major = NDBuffer[rank=2, dtype, _, DimList[N, K]()](
             b_host_col_major_ptr
         )
 
@@ -155,7 +157,7 @@ fn test_fp8_multistage_gemm[
         var b_device_col_major = ctx.enqueue_create_buffer[dtype](
             b_col_major_size
         )
-        var b_device_col_major_nd = NDBuffer[rank=2, dtype, _, DimList(N, K)](
+        var b_device_col_major_nd = NDBuffer[rank=2, dtype, _, DimList[N, K]()](
             b_device_col_major.unsafe_ptr()
         )
         ctx.enqueue_copy(b_device_col_major, b_host_col_major_ptr)

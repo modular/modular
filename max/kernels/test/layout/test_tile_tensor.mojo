@@ -677,7 +677,7 @@ fn test_from_ndbuffer_row_major_strides() raises:
     var ptr = stack.unsafe_ptr()
 
     # Mixed shape: dim 0 dynamic, dim 1 static (128).
-    comptime shape = DimList(Dim(), 128)
+    comptime shape = DimList[Dim(), 128]()
     var ndbuf = NDBuffer[rank=2, DType.float32, _, shape](
         ptr, IndexList[2](2, 128)
     )

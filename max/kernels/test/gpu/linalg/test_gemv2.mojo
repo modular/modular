@@ -68,11 +68,11 @@ fn test[
 
     print(m, "x", n, "x", k, "transpose_b", transpose_b)
 
-    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
-    comptime static_b_shape = DimList(
-        to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[K], to_dim[N])
-    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
+    comptime static_b_shape = DimList[
+        to_dim[N if transpose_b else K], to_dim[K if transpose_b else N]
+    ]()
+    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
 
     var a_size = m * k
     var b_size = k * n

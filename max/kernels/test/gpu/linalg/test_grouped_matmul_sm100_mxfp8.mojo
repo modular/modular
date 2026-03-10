@@ -112,11 +112,11 @@ def _test_kernel_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    comptime static_a_shape = DimList(Dim(), expert_shape[1])
-    comptime static_b_shape = DimList(
+    comptime static_a_shape = DimList[Dim(), expert_shape[1]]()
+    comptime static_b_shape = DimList[
         num_experts, expert_shape[0], expert_shape[1]
-    )
-    comptime static_c_shape = DimList(Dim(), expert_shape[0])
+    ]()
+    comptime static_c_shape = DimList[Dim(), expert_shape[0]]()
     var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var dynamic_b_shape = IndexList[3](
         num_experts, expert_shape[0], expert_shape[1]
@@ -204,22 +204,22 @@ def _test_kernel_impl[
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         # ceildiv(total_num_tokens, SF_MN_GROUP_SIZE),
         Dim(),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         num_experts,
         ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         a_scale_dim0,

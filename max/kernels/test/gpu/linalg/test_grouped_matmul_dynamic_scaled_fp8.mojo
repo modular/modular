@@ -75,15 +75,15 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var num_expert_ids = max(num_active_experts, 0)
 
     # Create host buffers
-    comptime static_a_shape = DimList(Dim(), K)
+    comptime static_a_shape = DimList[Dim(), K]()
     var dynamic_a_shape = IndexList[2](total_tokens, K)
     var a_size = total_tokens * K
 
-    comptime static_b_shape = DimList(num_experts, N, K)
+    comptime static_b_shape = DimList[num_experts, N, K]()
     var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
-    comptime static_c_shape = DimList(Dim(), N)
+    comptime static_c_shape = DimList[Dim(), N]()
     var dynamic_c_shape = IndexList[2](total_tokens, N)
     var c_size = total_tokens * N
 
@@ -117,13 +117,13 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         expert_ids_host_ptr[i] = Int32(i % num_experts)
 
     # Create scale buffers
-    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
+    comptime static_a_scales_shape = DimList[K // BLOCK_SCALE_K, Dim()]()
     var dynamic_a_scales_shape = IndexList[2](K // BLOCK_SCALE_K, total_tokens)
     var a_scales_size = (K // BLOCK_SCALE_K) * total_tokens
 
-    comptime static_b_scales_shape = DimList(
+    comptime static_b_scales_shape = DimList[
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
+    ]()
     var dynamic_b_scales_shape = IndexList[3](
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )

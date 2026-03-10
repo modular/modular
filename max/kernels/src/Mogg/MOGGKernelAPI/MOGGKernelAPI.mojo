@@ -1822,12 +1822,14 @@ struct StaticBroadcastTo:
         in_rank: Int,
         input_shape: DimList,
         input_strides: DimList,
-    ]() -> DimList:
-        return DimList.from_index_list[
+    ]() -> DimList[
+        *DimList.from_index_list[
             Self.get_view_strides_list[
                 out_rank, in_rank, input_shape, input_strides
             ]()
-        ]()
+        ]().values
+    ]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -1882,8 +1884,10 @@ struct StaticBroadcastTo:
 @compiler.view_kernel
 struct StaticReshape:
     @staticmethod
-    fn get_view_strides[out_shape: DimList]() -> DimList:
-        return DimList.get_row_major_strides[out_shape]()
+    fn get_view_strides[
+        out_shape: DimList
+    ]() -> DimList[*out_shape.get_row_major_strides().values]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -1993,12 +1997,12 @@ struct Transpose:
     @staticmethod
     fn get_view_strides[
         permutations: DimList, rank: Int, input_strides: DimList
-    ]() -> DimList:
-        return DimList(
-            Variadic.tabulate[
-                rank, _transpose_tabulate[permutations, input_strides, _]
-            ]
-        )
+    ]() -> DimList[
+        *Variadic.tabulate[
+            rank, _transpose_tabulate[permutations, input_strides, _]
+        ]
+    ]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -2090,10 +2094,10 @@ struct Slice:
     @staticmethod
     fn get_view_strides[
         rank: Int, input_strides: DimList, steps: DimList
-    ]() -> DimList:
-        return DimList(
-            Variadic.tabulate[rank, _slice_stride_at[input_strides, steps, _]]
-        )
+    ]() -> DimList[
+        *Variadic.tabulate[rank, _slice_stride_at[input_strides, steps, _]]
+    ]:
+        return {}
 
     @staticmethod
     fn update_input_view[
@@ -2245,12 +2249,12 @@ struct SliceDim:
         axis: Int,
         input_strides: DimList,
         step: Dim,
-    ]() -> DimList:
-        return DimList(
-            Variadic.tabulate[
-                rank, _slice_dim_stride_at[input_strides, axis, step, _]
-            ]
-        )
+    ]() -> DimList[
+        *Variadic.tabulate[
+            rank, _slice_dim_stride_at[input_strides, axis, step, _]
+        ]
+    ]:
+        return {}
 
     @staticmethod
     fn get_view_alignment[
@@ -11354,7 +11358,7 @@ struct MatmulStaticScaledFloat8:
         comptime N = weight.shape.get[0]()
         var M = input.dim[0]()
         var output_dummy = NDBuffer[
-            rank=2, DType.float32, MutAnyOrigin, DimList(Dim(), N)
+            rank=2, DType.float32, MutAnyOrigin, DimList[Dim(), N]()
         ](
             {},
             IndexList[2](M, N),

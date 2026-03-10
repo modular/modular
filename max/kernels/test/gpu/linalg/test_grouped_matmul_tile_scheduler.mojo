@@ -40,7 +40,7 @@ fn test_kernel[
 
 def test(ctx: DeviceContext) raises:
     comptime group_len = 3
-    comptime offset_shape = DimList(group_len + 1)
+    comptime offset_shape = DimList[group_len + 1]()
 
     # Host allocation
     var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)

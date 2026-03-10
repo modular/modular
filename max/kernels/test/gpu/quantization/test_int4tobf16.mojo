@@ -18,7 +18,7 @@
 
 from std.sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import lop
 from std.memory.unsafe import bitcast
@@ -69,7 +69,7 @@ fn call_int4tobf16[
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
     var out_host = NDBuffer[
-        rank=1, DType.bfloat16, MutAnyOrigin, 8
+        rank=1, DType.bfloat16, MutAnyOrigin, DimList[8]()
     ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 

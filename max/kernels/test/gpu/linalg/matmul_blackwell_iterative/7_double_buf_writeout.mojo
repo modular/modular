@@ -937,14 +937,14 @@ def test_blackwell_kernel_7[
             )
         )
 
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
+    comptime static_b_shape = DimList[
+        n.dim if transpose_b else k.dim, k.dim if transpose_b else n.dim
+    ]()
 
     # Define layouts for LayoutTensor
-    comptime a_layout = Layout.row_major[dims=DimList(m.dim, k.dim)]()
+    comptime a_layout = Layout.row_major[dims=DimList[m.dim, k.dim]()]()
     comptime b_layout = Layout.row_major[dims=static_b_shape]()
-    comptime c_layout = Layout.row_major[dims=DimList(m.dim, n.dim)]()
+    comptime c_layout = Layout.row_major[dims=DimList[m.dim, n.dim]()]()
 
     # Host memory allocation
     var a_host_ptr = alloc[Scalar[a_type]](M * K)

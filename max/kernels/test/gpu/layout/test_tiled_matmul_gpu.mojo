@@ -460,10 +460,10 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     var mat_c = NDBuffer[rank=2, DType.float32, _, DimList.create_unknown[2]()](
         mat_c_dev.unsafe_ptr(), dynamic_shape=Index(M, N)
     )
-    var mat_a = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](
+    var mat_a = NDBuffer[rank=2, DType.float32, _, DimList[M, K]()](
         mat_a_dev.unsafe_ptr(), dynamic_shape=Index(M, K)
     )
-    var mat_b = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](
+    var mat_b = NDBuffer[rank=2, DType.float32, _, DimList[K, N]()](
         mat_b_dev.unsafe_ptr(), dynamic_shape=Index(K, N)
     )
 

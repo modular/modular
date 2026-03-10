@@ -19,7 +19,7 @@
 
 from std.sys.info import CompilationTarget
 
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
@@ -32,20 +32,20 @@ from std.testing import assert_equal
 
 def test_i8_to_i32() raises:
     var a = NDBuffer[
-        rank=1, DType.uint8, MutAnyOrigin, 16 * 64
+        rank=1, DType.uint8, MutAnyOrigin, DimList[16 * 64]()
     ].stack_allocation[alignment=64]()
     var asat = NDBuffer[
-        rank=1, DType.uint8, MutAnyOrigin, 16 * 64
+        rank=1, DType.uint8, MutAnyOrigin, DimList[16 * 64]()
     ].stack_allocation[alignment=64]()
     var b = NDBuffer[
-        rank=1, DType.int8, MutAnyOrigin, 64 * 16
+        rank=1, DType.int8, MutAnyOrigin, DimList[64 * 16]()
     ].stack_allocation[alignment=64]()
 
     var c = NDBuffer[
-        rank=1, DType.int32, MutAnyOrigin, 16 * 16
+        rank=1, DType.int32, MutAnyOrigin, DimList[16 * 16]()
     ].stack_allocation[alignment=64]()
     var csat = NDBuffer[
-        rank=1, DType.int32, MutAnyOrigin, 16 * 16
+        rank=1, DType.int32, MutAnyOrigin, DimList[16 * 16]()
     ].stack_allocation[alignment=64]()
 
     for i in range(16 * 64):

@@ -1589,7 +1589,7 @@ comptime _DimsToCoordLike[
     dtype: DType, dims: DimList
 ] = _ReduceValueAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=dims.value.value,
+    VariadicType=dims.values,
     Reducer=_DimToCoordLikeMapper[dtype, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
@@ -1608,7 +1608,7 @@ Example:
     from layout.coord import _DimsToCoordLike, Coord
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList(Dim(3), Dim(), Dim(5))
+    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
     comptime coord_types = _DimsToCoordLike[DType.int32, dims]
     # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
@@ -1662,7 +1662,7 @@ Example:
     from layout.coord import _DimsToCoordLike, Coord
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
-    comptime dims = DimList(Dim(3), Dim(), Dim(5))
+    comptime dims = DimList[Dim(3), Dim(), Dim(5)]()
     comptime coord_types = _DimsToCoordLike[DType.int32, dims]
     # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
 
@@ -1688,15 +1688,13 @@ Uses direct field access rather than methods for compile-time evaluation.
 """
 
 
-comptime _CoordToDimList[*dims: CoordLike] = DimList(
-    VariadicParamList(
-        _ReduceVariadicAndIdxToValue[
-            BaseVal=Variadic.empty_of_type[Dim],
-            VariadicType=dims,
-            Reducer=_CoordToDimMapper,
-        ]
-    )
-)
+comptime _CoordToDimList[*dims: CoordLike] = DimList[
+    *_ReduceVariadicAndIdxToValue[
+        BaseVal=Variadic.empty_of_type[Dim],
+        VariadicType=dims,
+        Reducer=_CoordToDimMapper,
+    ]
+]()
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
 Note:
@@ -1715,7 +1713,7 @@ Example:
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
     var coords = Coord(Idx(3), Idx[5]())
     comptime dimlist = _CoordToDimList[*coords.element_types]
-    # dims is equivalent to DimList(Dim(), 5)
+    # dims is equivalent to DimList[Dim(), 5]()
     ```
 """
 

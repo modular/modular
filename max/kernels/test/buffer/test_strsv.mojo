@@ -14,6 +14,7 @@
 from buffer import NDBuffer
 from std.testing import TestSuite
 from std.utils import IndexList
+from buffer import DimList
 
 comptime simd_width = 8
 
@@ -21,15 +22,15 @@ comptime simd_width = 8
 fn strsv[
     size: Int
 ](
-    L: NDBuffer[rank=1, DType.float32, _, size * size],
-    x: NDBuffer[mut=True, rank=1, DType.float32, _, size],
+    L: NDBuffer[rank=1, DType.float32, _, _],
+    x: NDBuffer[mut=True, rank=1, DType.float32, _, _],
 ):
     # assuming size is a multiple of simd_width
     var x_ptr = x.data
     var L_ptr = L.data
     var n: Int = size
     var x_solved = NDBuffer[
-        rank=1, DType.float32, MutAnyOrigin, simd_width * simd_width
+        rank=1, DType.float32, MutAnyOrigin, DimList[simd_width * simd_width]()
     ].stack_allocation[alignment=64]()
 
     while True:
@@ -71,9 +72,7 @@ fn strsv[
 
 
 # Fill the lower triangle matrix.
-fn fill_L[
-    size: Int
-](L: NDBuffer[mut=True, rank=1, DType.float32, _, size * size]):
+fn fill_L[size: Int](L: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
     for j in range(size):
         for i in range(size):
             if i == j:
@@ -83,7 +82,7 @@ fn fill_L[
 
 
 # Fill the rhs, which is also used to save the solution vector.
-fn fill_x[size: Int](x: NDBuffer[mut=True, rank=1, DType.float32, _, size]):
+fn fill_x[size: Int](x: NDBuffer[mut=True, rank=1, DType.float32, _, _]):
     for i in range(size):
         x[i] = 1.0
 
@@ -91,8 +90,8 @@ fn fill_x[size: Int](x: NDBuffer[mut=True, rank=1, DType.float32, _, size]):
 fn naive_strsv[
     size: Int
 ](
-    L: NDBuffer[rank=1, DType.float32, _, size * size],
-    x: NDBuffer[mut=True, rank=1, DType.float32, _, size],
+    L: NDBuffer[rank=1, DType.float32, _, _],
+    x: NDBuffer[mut=True, rank=1, DType.float32, _, _],
 ):
     for j in range(size):
         var x_j = x[j]
@@ -106,13 +105,17 @@ def test_strsv() raises:
 
     comptime size: Int = 64
     var l_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var L = NDBuffer[rank=1, DType.float32, _, size * size](
+    var L = NDBuffer[rank=1, DType.float32, _, DimList[size * size]()](
         l_stack.unsafe_ptr()
     )
     var x0_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x0 = NDBuffer[rank=1, DType.float32, _, size](x0_stack.unsafe_ptr())
+    var x0 = NDBuffer[rank=1, DType.float32, _, DimList[size]()](
+        x0_stack.unsafe_ptr()
+    )
     var x1_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x1 = NDBuffer[rank=1, DType.float32, _, size](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[rank=1, DType.float32, _, DimList[size]()](
+        x1_stack.unsafe_ptr()
+    )
 
     fill_L[size](L)
     fill_x[size](x0)

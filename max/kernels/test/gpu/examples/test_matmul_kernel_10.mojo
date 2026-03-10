@@ -112,14 +112,14 @@ fn sgemm_warp_tiling_kernel[
         rank=1,
         a_type,
         MutAnyOrigin,
-        DimList(BK * BM_padded),
+        DimList[BK * BM_padded](),
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         rank=1,
         b_type,
         MutAnyOrigin,
-        DimList(BK * BN),
+        DimList[BK * BN](),
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -144,18 +144,18 @@ fn sgemm_warp_tiling_kernel[
         rank=4,
         c_type,
         MutAnyOrigin,
-        DimList(WMITER, WNITER, TM, TN),
+        DimList[WMITER, WNITER, TM, TN](),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        rank=2, a_type, MutAnyOrigin, DimList(WMITER, TM)
+        rank=2, a_type, MutAnyOrigin, DimList[WMITER, TM]()
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        rank=2, b_type, MutAnyOrigin, DimList(WNITER, TN)
+        rank=2, b_type, MutAnyOrigin, DimList[WNITER, TN]()
     ]().stack_allocation()
     reg_n.zero()
 
@@ -408,23 +408,23 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    var c_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, N)](
+    var c_buffer = NDBuffer[rank=2, DType.float32, _, DimList[M, N]()](
         c_device.unsafe_ptr()
     )
-    var a_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](
+    var a_buffer = NDBuffer[rank=2, DType.float32, _, DimList[M, K]()](
         a_device.unsafe_ptr()
     )
-    var b_buffer = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](
+    var b_buffer = NDBuffer[rank=2, DType.float32, _, DimList[K, N]()](
         b_device.unsafe_ptr()
     )
 
     comptime sgemm_type = sgemm_warp_tiling_kernel[
         DType.float32,
-        DimList(M, N),
+        DimList[M, N](),
         DType.float32,
-        DimList(M, K),
+        DimList[M, K](),
         DType.float32,
-        DimList(K, N),
+        DimList[K, N](),
         BM=K10_BM,
         BN=K10_BN,
         BK=K10_BK,

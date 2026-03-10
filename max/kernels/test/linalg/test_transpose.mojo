@@ -36,7 +36,7 @@ fn test_transpose_4x4_ndbuffer():
         rank=2,
         DType.int,
         MutAnyOrigin,
-        DimList(4, 4),
+        DimList[4, 4](),
     ].stack_allocation()
 
     matrix[IndexList[2](0, 0)] = 0
@@ -118,7 +118,7 @@ fn test_transpose_8x8_ndbuffer():
         rank=2,
         DType.int,
         MutAnyOrigin,
-        DimList(num_rows, num_cols),
+        DimList[num_rows, num_cols](),
     ].stack_allocation()
 
     for i in range(num_rows):
@@ -148,7 +148,7 @@ fn test_transpose_16x16_ndbuffer():
         rank=2,
         DType.int,
         MutAnyOrigin,
-        DimList(num_rows, num_cols),
+        DimList[num_rows, num_cols](),
     ].stack_allocation()
 
     for i in range(num_rows):
@@ -171,7 +171,7 @@ fn test_transpose_16x16_ndbuffer():
 fn test_transpose_2d_identity_ndbuffer() raises:
     print("== test_transpose_2d_identity_ndbuffer")
 
-    comptime in_shape = DimList(3, 3)
+    comptime in_shape = DimList[3, 3]()
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -191,7 +191,9 @@ fn test_transpose_2d_identity_ndbuffer() raises:
 
     # Create an identity permutation array of the form
     # [0, 1]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 2].stack_allocation()
+    var perm = NDBuffer[
+        rank=1, DType.int, MutAnyOrigin, DimList[2]()
+    ].stack_allocation()
     perm[0] = 0
     perm[1] = 1
 
@@ -199,7 +201,7 @@ fn test_transpose_2d_identity_ndbuffer() raises:
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    comptime out_shape = DimList(3, 3)
+    comptime out_shape = DimList[3, 3]()
     var output = NDBuffer[
         rank=2, DType.int, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -237,7 +239,7 @@ fn test_transpose_2d_identity_ndbuffer() raises:
 fn test_transpose_2d_ndbuffer() raises:
     print("== test_transpose_2d_ndbuffer")
 
-    comptime in_shape = DimList(3, 3)
+    comptime in_shape = DimList[3, 3]()
     # Create an input matrix of the form
     # [[1, 2, 3],
     #  [4, 5, 6],
@@ -257,7 +259,9 @@ fn test_transpose_2d_ndbuffer() raises:
 
     # Create a permutation array of the form
     # [1, 0]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 2].stack_allocation()
+    var perm = NDBuffer[
+        rank=1, DType.int, MutAnyOrigin, DimList[2]()
+    ].stack_allocation()
     perm[0] = 1
     perm[1] = 0
 
@@ -265,7 +269,7 @@ fn test_transpose_2d_ndbuffer() raises:
     # [[-1, -1, -1],
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
-    comptime out_shape = DimList(3, 3)
+    comptime out_shape = DimList[3, 3]()
     var output = NDBuffer[
         rank=2, DType.int, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -303,7 +307,7 @@ fn test_transpose_2d_ndbuffer() raises:
 fn test_transpose_3d_identity_ndbuffer() raises:
     print("== test_transpose_3d_identity_ndbuffer")
 
-    comptime in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList[2, 2, 3]()
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -327,7 +331,9 @@ fn test_transpose_3d_identity_ndbuffer() raises:
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 3].stack_allocation()
+    var perm = NDBuffer[
+        rank=1, DType.int, MutAnyOrigin, DimList[3]()
+    ].stack_allocation()
     perm[0] = 0
     perm[1] = 1
     perm[2] = 2
@@ -337,7 +343,7 @@ fn test_transpose_3d_identity_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    comptime out_shape = DimList(2, 2, 3)
+    comptime out_shape = DimList[2, 2, 3]()
     var output = NDBuffer[
         rank=3, DType.int, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -382,7 +388,7 @@ fn test_transpose_3d_identity_ndbuffer() raises:
 fn test_transpose_3d_ndbuffer() raises:
     print("== test_transpose_3d_ndbuffer")
 
-    comptime in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList[2, 2, 3]()
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -406,7 +412,9 @@ fn test_transpose_3d_ndbuffer() raises:
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 3].stack_allocation()
+    var perm = NDBuffer[
+        rank=1, DType.int, MutAnyOrigin, DimList[3]()
+    ].stack_allocation()
     perm[0] = 2
     perm[1] = 0
     perm[2] = 1
@@ -416,7 +424,7 @@ fn test_transpose_3d_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    comptime out_shape = DimList(3, 2, 2)
+    comptime out_shape = DimList[3, 2, 2]()
     var output = NDBuffer[
         rank=3, DType.int, MutAnyOrigin, out_shape
     ].stack_allocation()
@@ -463,7 +471,7 @@ fn test_transpose_3d_ndbuffer() raises:
 fn test_transpose_si64_ndbuffer() raises:
     print("== test_transpose_si64_ndbuffer")
 
-    comptime in_shape = DimList(2, 2, 3)
+    comptime in_shape = DimList[2, 2, 3]()
     # Create an input matrix of the form
     # [[[1, 2, 3],
     #   [4, 5, 6]],
@@ -487,7 +495,9 @@ fn test_transpose_si64_ndbuffer() raises:
 
     # Create a identity permutation array of the form
     # [2, 1, 0]
-    var perm = NDBuffer[rank=1, DType.int, MutAnyOrigin, 3].stack_allocation()
+    var perm = NDBuffer[
+        rank=1, DType.int, MutAnyOrigin, DimList[3]()
+    ].stack_allocation()
     perm[0] = 2
     perm[1] = 1
     perm[2] = 0
@@ -497,7 +507,7 @@ fn test_transpose_si64_ndbuffer() raises:
     #   [-1, -1, -1]],
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
-    comptime out_shape = DimList(3, 2, 2)
+    comptime out_shape = DimList[3, 2, 2]()
     var output = NDBuffer[
         rank=3, DType.int64, MutAnyOrigin, out_shape
     ].stack_allocation()

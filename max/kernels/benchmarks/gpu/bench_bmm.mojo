@@ -120,27 +120,23 @@ fn bench_bmm[
     k: Int,
     init_type: InitializationType,
 ) raises:
-    comptime batch_static_a_shape = DimList(to_dim[B], to_dim[M], to_dim[K])
-    comptime batch_static_b_shape = DimList(
-        to_dim[B], to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[B], to_dim[K], to_dim[N])
-    comptime batch_static_c_shape = DimList(to_dim[B], to_dim[M], to_dim[N])
+    comptime batch_static_a_shape = DimList[to_dim[B], to_dim[M], to_dim[K]]()
+    comptime batch_static_b_shape = DimList[
+        to_dim[B],
+        to_dim[N if transpose_b else K],
+        to_dim[K if transpose_b else N],
+    ]()
+    comptime batch_static_c_shape = DimList[to_dim[B], to_dim[M], to_dim[N]]()
 
-    comptime batch_static_a_strides = DimList.get_row_major_strides[
-        batch_static_a_shape
-    ]()
-    comptime batch_static_b_strides = DimList.get_row_major_strides[
-        batch_static_b_shape
-    ]()
-    comptime batch_static_c_strides = DimList.get_row_major_strides[
-        batch_static_c_shape
-    ]()
+    comptime batch_static_a_strides = batch_static_a_shape.get_row_major_strides()
+    comptime batch_static_b_strides = batch_static_b_shape.get_row_major_strides()
+    comptime batch_static_c_strides = batch_static_c_shape.get_row_major_strides()
 
-    comptime static_a_shape = DimList(to_dim[M], to_dim[K])
-    comptime static_b_shape = DimList(
-        to_dim[N], to_dim[K]
-    ) if transpose_b else DimList(to_dim[K], to_dim[N])
-    comptime static_c_shape = DimList(to_dim[M], to_dim[N])
+    comptime static_a_shape = DimList[to_dim[M], to_dim[K]]()
+    comptime static_b_shape = DimList[
+        to_dim[N if transpose_b else K], to_dim[K if transpose_b else N]
+    ]()
+    comptime static_c_shape = DimList[to_dim[M], to_dim[N]]()
 
     var batch_dynamic_a_shape = IndexList[3](
         B.or_else(b), M.or_else(m), K.or_else(k)

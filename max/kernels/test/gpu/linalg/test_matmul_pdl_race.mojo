@@ -118,9 +118,9 @@ fn run_pdl_race_test[
     ctx.enqueue_copy(b_device, b_host)
 
     # Create NDBuffers for matmul
-    comptime a_static_shape = DimList(Dim(), Dim(K))
-    comptime b_static_shape = DimList(Dim(N), Dim(K))
-    comptime c_static_shape = DimList(Dim(), Dim(N))
+    comptime a_static_shape = DimList[Dim(), Dim(K)]()
+    comptime b_static_shape = DimList[Dim(N), Dim(K)]()
+    comptime c_static_shape = DimList[Dim(), Dim(N)]()
 
     var a_buf = NDBuffer[rank=2, dtype, MutAnyOrigin, a_static_shape](
         a_device.unsafe_ptr(), IndexList[2](M, K)

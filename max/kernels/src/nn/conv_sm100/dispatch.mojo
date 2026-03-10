@@ -222,7 +222,7 @@ fn dispatch_sm100_conv2d[
             pad_w=symmetric_padding[1],
         )
 
-        comptime static_shape = DimList(-1, -1, -1, -1)
+        comptime static_shape = DimList[-1, -1, -1, -1]()
         var act_nd = NDBuffer[rank=4, input_type, _, static_shape](
             input.ptr, IndexList[4](batch, in_h, in_w, in_c)
         )

@@ -81,7 +81,7 @@ fn stencil2d_smem(
         rank=2,
         DType.float32,
         MutAnyOrigin,
-        DimList(BLOCK_DIM + 2, BLOCK_DIM + 2),
+        DimList[BLOCK_DIM + 2, BLOCK_DIM + 2](),
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
 

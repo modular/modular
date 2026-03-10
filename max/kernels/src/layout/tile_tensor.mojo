@@ -2697,9 +2697,9 @@ fn _int_to_dim(value: Int) -> Dim:
 comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
     it[idx].value()
 )
-comptime _LTDims[it: _IntTuple] = DimList(
-    Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
-)
+comptime _LTDims[it: _IntTuple] = DimList[
+    *Variadic.tabulate[len(it), _int_to_dim_tabulator[it, _]]
+]()
 """Convert a flat IntTuple to a DimList.
 
 UNKNOWN_VALUE entries become dynamic Dims; known values become static Dims.

@@ -274,13 +274,13 @@ fn wgmma_bf16_bf16_f32[
     )
     ctx.synchronize()
 
-    var a_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList(M, K)](
+    var a_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList[M, K]()](
         a.device_tensor().ptr
     )
-    var b_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList(N, K)](
+    var b_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList[N, K]()](
         b.device_tensor().ptr
     )
-    var c_ref_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList(M, N)](
+    var c_ref_buf = NDBuffer[rank=2, DType.bfloat16, _, DimList[M, N]()](
         c_ref.device_tensor().ptr
     )
 

@@ -1052,9 +1052,9 @@ fn grouped_matmul[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime is_expert_shape_static = b_shape.all_known[
-        3
-    ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
+    comptime is_expert_shape_static = b_shape.all_known() and a_shape.has_value[
+        1
+    ]() and c_shape.has_value[1]()
     comptime is_sm90_kernel_applicable = ctx.default_device_info == H100 and is_expert_shape_static
     comptime is_sm100_kernel_applicable = ctx.default_device_info == B200 and is_expert_shape_static
     comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static

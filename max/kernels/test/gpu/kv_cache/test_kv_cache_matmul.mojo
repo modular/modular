@@ -98,7 +98,7 @@ def execute_fused_qkv_matmul[
     random(hidden_state_host)
 
     var hidden_state_device_2d = NDBuffer[
-        rank=2, dtype, MutAnyOrigin, DimList(Dim(), hidden_size)
+        rank=2, dtype, MutAnyOrigin, DimList[Dim(), hidden_size]()
     ](
         hidden_state.device_tensor().ptr,
         IndexList[2](batch_size * prompt_len, hidden_size),
@@ -201,13 +201,13 @@ def execute_fused_qkv_matmul[
     )
 
     var ref_output_device_ndbuffer = NDBuffer[
-        rank=2, dtype, MutAnyOrigin, DimList(Dim(), fused_hidden_size)
+        rank=2, dtype, MutAnyOrigin, DimList[Dim(), fused_hidden_size]()
     ](
         ref_output.device_tensor().ptr,
         ref_output_shape,
     )
     var weight_device_ndbuffer = NDBuffer[
-        rank=2, dtype, MutAnyOrigin, DimList(fused_hidden_size, hidden_size)
+        rank=2, dtype, MutAnyOrigin, DimList[fused_hidden_size, hidden_size]()
     ](
         weight_device.unsafe_ptr(),
         weight_shape,

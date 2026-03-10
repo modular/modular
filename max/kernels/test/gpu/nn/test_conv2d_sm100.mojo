@@ -134,9 +134,9 @@ fn test_conv2d_implicit_im2col[
     var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
@@ -335,9 +335,9 @@ fn test_conv2d_1sm[
     var out_host_ref_ptr = alloc[Scalar[out_type]](out_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
@@ -535,9 +535,9 @@ fn test_conv2d_epilogue_lambda[
     var bias_host_ptr = alloc[Scalar[out_type]](bias_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
@@ -579,7 +579,7 @@ fn test_conv2d_epilogue_lambda[
 
     # Create bias tensor view for epilogue lambda
     # Bias is 1D [out_c], needs to be broadcast over [M, N] output
-    comptime bias_shape = DimList(-1)
+    comptime bias_shape = DimList[-1]()
     var dynamic_bias_shape = IndexList[1](out_c)
     var bias_tensor = NDBuffer[rank=1, out_type, _, bias_shape](
         bias_device.unsafe_ptr(), dynamic_bias_shape
@@ -791,7 +791,7 @@ fn test_conv2d_bias_fusion[
     ctx.enqueue_copy(bias_dev, bias_host)
 
     # Create NDBuffers
-    comptime dyn_shape_4d = DimList(-1, -1, -1, -1)
+    comptime dyn_shape_4d = DimList[-1, -1, -1, -1]()
     var act_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         act_dev.unsafe_ptr(), IndexList[4](batch, in_h, in_w, in_c)
     )
@@ -803,7 +803,7 @@ fn test_conv2d_bias_fusion[
     )
 
     # Create bias tensor for capture
-    comptime dyn_shape_1d = DimList(-1)
+    comptime dyn_shape_1d = DimList[-1]()
     var bias_tensor = NDBuffer[rank=1, dtype, _, dyn_shape_1d](
         bias_dev.unsafe_ptr(), IndexList[1](out_c)
     )
@@ -991,9 +991,9 @@ fn test_conv2d_residual_api[
     var source_host_ptr = alloc[Scalar[dtype]](out_size)
 
     # NDBuffers with dynamic dimensions
-    comptime static_act_shape = DimList(-1, -1, -1, -1)
-    comptime static_filter_shape = DimList(-1, -1, -1, -1)
-    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    comptime static_act_shape = DimList[-1, -1, -1, -1]()
+    comptime static_filter_shape = DimList[-1, -1, -1, -1]()
+    comptime static_out_shape = DimList[-1, -1, -1, -1]()
     var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)

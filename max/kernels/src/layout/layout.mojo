@@ -430,7 +430,7 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a col-major layout with compile-time rank
-            comptime dims = DimList(3, 4)
+            comptime dims = DimList[3, 4]()
             comptime layout = Layout.col_major[dims]()
             # Result: Layout with shape (3,4) and stride (1,3)
             ```
@@ -553,7 +553,7 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a row-major layout with compile-time rank
-            comptime dims = DimList(3, 4)
+            comptime dims = DimList[3, 4]()
             comptime layout = Layout.row_major[2](dims)
             # Result: Layout with shape (3,4) and stride (4,1)
             ```

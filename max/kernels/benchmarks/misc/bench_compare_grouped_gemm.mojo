@@ -107,23 +107,23 @@ fn bench_cublas_per_group[
         * SF_ATOM_K
     )
 
-    comptime static_a_shape = DimList(m.dim, k_array_dim)
-    comptime static_b_shape = DimList(n.dim, k_array_dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_shape = DimList[m.dim, k_array_dim]()
+    comptime static_b_shape = DimList[n.dim, k_array_dim]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
-    )
+    ]()
 
     var a_host = alloc[Scalar[a_type]](a_size)
     var b_host = alloc[Scalar[b_type]](b_size)
@@ -316,28 +316,28 @@ fn bench_structured_kernel[
     ctx.synchronize()
 
     # Template tensors - 3D with batch=1
-    comptime static_a_3d_shape = DimList(1, m.dim, k_array_dim)
+    comptime static_a_3d_shape = DimList[1, m.dim, k_array_dim]()
     var a_template_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
         a_device.unsafe_ptr(), IndexList[3](1, m.value, k_array_val)
     )
-    comptime static_b_3d_shape = DimList(1, n.dim, k_array_dim)
+    comptime static_b_3d_shape = DimList[1, n.dim, k_array_dim]()
     var b_template_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
         b_device.unsafe_ptr(),
         IndexList[3](1, n.value, k_array_val),
     )
-    comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
+    comptime static_c_3d_shape = DimList[1, m.dim, n.dim]()
     var c_template_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
         c_device.unsafe_ptr(), IndexList[3](1, m.value, n.value)
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
-    comptime static_a_scales_5d_shape = DimList(
+    comptime static_a_scales_5d_shape = DimList[
         1,
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]()
     var a_scales_5d_nd = NDBuffer[
         rank=5, scales_dtype, _, static_a_scales_5d_shape
     ](
@@ -350,13 +350,13 @@ fn bench_structured_kernel[
             SF_ATOM_M[1] * SF_ATOM_K,
         ),
     )
-    comptime static_b_scales_5d_shape = DimList(
+    comptime static_b_scales_5d_shape = DimList[
         1,
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]()
     var b_scales_5d_nd = NDBuffer[
         rank=5, scales_dtype, _, static_b_scales_5d_shape
     ](

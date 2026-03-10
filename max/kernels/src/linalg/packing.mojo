@@ -145,7 +145,7 @@ struct PackMatrixRows[
             rank=2,
             Self.dtype,
             _,
-            DimList(Self.simd_size, Self.simd_size),
+            DimList[Self.simd_size, Self.simd_size](),
         ],
         local_off_set: IndexList[2],
     ):
@@ -246,7 +246,7 @@ struct PackMatrixRows[
             rank=2,
             Self.dtype,
             MutAnyOrigin,
-            DimList(Self.simd_size, Self.simd_size),
+            DimList[Self.simd_size, Self.simd_size](),
         ].stack_allocation[
             alignment=align_of[SIMD[Self.dtype, Self.simd_size]]()
         ]()
@@ -791,12 +791,12 @@ fn _pack_b_ndbuffer_impl[
             # If already transposed, skip transpose step and do a memcpy.
             comptime if not transposed:
                 var perm = NDBuffer[
-                    rank=1, DType.int, MutAnyOrigin, 2
+                    rank=1, DType.int, MutAnyOrigin, DimList[2]()
                 ].stack_allocation()
                 perm[0] = 1
                 perm[1] = 0
 
-                transpose(output_buffer, b_input, perm.data)
+                transpose[rank=2](output_buffer, b_input, perm.data)
 
             else:
                 memcpy(dest=output_buffer.data, src=b_input.data, count=n * k)

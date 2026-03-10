@@ -28,7 +28,9 @@ def test_basic_construction() raises:
     """Test basic ManagedTensorSlice construction from pointer and shape."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     # Shape-only constructor computes row-major strides automatically
-    comptime spec = get_row_major_tensor_spec[DType.float32, 2, DimList(3, 4)]()
+    comptime spec = get_row_major_tensor_spec[
+        DType.float32, 2, DimList[3, 4]()
+    ]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 4)
     )
@@ -41,7 +43,7 @@ def test_shape_and_strides() raises:
     """Test shape() and strides() methods."""
     var storage = InlineArray[Float32, 2 * 3 * 4](uninitialized=True)
     comptime spec = get_row_major_tensor_spec[
-        DType.float32, 3, DimList(2, 3, 4)
+        DType.float32, 3, DimList[2, 3, 4]()
     ]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[3](2, 3, 4)
@@ -61,7 +63,9 @@ def test_shape_and_strides() raises:
 def test_dim_size() raises:
     """Test dim_size methods (compile-time and runtime)."""
     var storage = InlineArray[Float32, 5 * 7](uninitialized=True)
-    comptime spec = get_row_major_tensor_spec[DType.float32, 2, DimList(5, 7)]()
+    comptime spec = get_row_major_tensor_spec[
+        DType.float32, 2, DimList[5, 7]()
+    ]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](5, 7)
     )
@@ -78,7 +82,9 @@ def test_dim_size() raises:
 def test_getitem_setitem() raises:
     """Test __getitem__ and __setitem__ operations."""
     var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-    comptime spec = get_row_major_tensor_spec[DType.float32, 2, DimList(2, 3)]()
+    comptime spec = get_row_major_tensor_spec[
+        DType.float32, 2, DimList[2, 3]()
+    ]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](2, 3))
@@ -107,7 +113,7 @@ def test_getitem_setitem() raises:
 def test_simd_load_store() raises:
     """Test SIMD load and store operations."""
     var storage = InlineArray[Float32, 8](uninitialized=True)
-    comptime spec = get_row_major_tensor_spec[DType.float32, 1, DimList(8)]()
+    comptime spec = get_row_major_tensor_spec[DType.float32, 1, DimList[8]()]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[1](8))
@@ -130,7 +136,9 @@ def test_simd_load_store() raises:
 def test_to_layout_tensor() raises:
     """Test to_layout_tensor() conversion."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
-    comptime spec = get_row_major_tensor_spec[DType.float32, 2, DimList(3, 4)]()
+    comptime spec = get_row_major_tensor_spec[
+        DType.float32, 2, DimList[3, 4]()
+    ]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))
@@ -156,7 +164,9 @@ def test_to_layout_tensor() raises:
 def test_stride_length() raises:
     """Test stride_length methods."""
     var storage = InlineArray[Float32, 3 * 5](uninitialized=True)
-    comptime spec = get_row_major_tensor_spec[DType.float32, 2, DimList(3, 5)]()
+    comptime spec = get_row_major_tensor_spec[
+        DType.float32, 2, DimList[3, 5]()
+    ]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 5)
     )
@@ -173,7 +183,9 @@ def test_stride_length() raises:
 def test_simd_load_store_2d() raises:
     """Test SIMD load and store operations on 2D tensor."""
     var storage = InlineArray[Float32, 4 * 8](uninitialized=True)
-    comptime spec = get_row_major_tensor_spec[DType.float32, 2, DimList(4, 8)]()
+    comptime spec = get_row_major_tensor_spec[
+        DType.float32, 2, DimList[4, 8]()
+    ]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](4, 8))
@@ -210,7 +222,9 @@ def test_simd_load_store_2d() raises:
 def test_to_tile_tensor() raises:
     """Test to_tile_tensor() conversion."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
-    comptime spec = get_row_major_tensor_spec[DType.float32, 2, DimList(3, 4)]()
+    comptime spec = get_row_major_tensor_spec[
+        DType.float32, 2, DimList[3, 4]()
+    ]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))

@@ -51,9 +51,9 @@ comptime WO = (
 ) // stride_w + 1
 comptime num_micro_tile = F // micro_kernel_f_size
 
-comptime output_shape = DimList(N, WO, F)
-comptime input_shape = DimList(N, W, C)
-comptime filter_shape = DimList(num_micro_tile, S, C, micro_kernel_f_size)
+comptime output_shape = DimList[N, WO, F]()
+comptime input_shape = DimList[N, W, C]()
+comptime filter_shape = DimList[num_micro_tile, S, C, micro_kernel_f_size]()
 
 
 @export(ABI="C")

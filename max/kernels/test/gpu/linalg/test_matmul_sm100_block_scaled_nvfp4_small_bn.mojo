@@ -126,9 +126,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         sep=" ",
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(n.dim, k.dim // 2)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim // 2]()
+    comptime static_b_shape = DimList[n.dim, k.dim // 2]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value // 2)
     var dynamic_b_shape = IndexList[2](n.value, k.value // 2)
     var dynamic_c_shape = IndexList[2](m.value, n.value)
@@ -171,20 +171,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    comptime static_a_scales_shape = DimList(
+    comptime static_a_scales_shape = DimList[
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),
         Dim(SF_ATOM_M[1]),
         Dim(SF_ATOM_K),
-    )
-    comptime static_b_scales_shape = DimList(
+    ]()
+    comptime static_b_scales_shape = DimList[
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
         Dim(SF_ATOM_M[0]),
         Dim(SF_ATOM_M[1]),
         Dim(SF_ATOM_K),
-    )
+    ]()
 
     var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),

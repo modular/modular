@@ -55,15 +55,15 @@ fn bench_stencil_avg_pool[
     comptime stencil_rank = 2
     comptime simd_width = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, num_channels)
+    comptime input_shape = DimList[1, input_height, input_width, num_channels]()
     comptime dynamic_input_shape = IndexList[4](
         1, input_height, input_width, num_channels
     )
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
-    comptime output_shape = DimList(
+    comptime output_shape = DimList[
         1, output_height, output_width, num_channels
-    )
+    ]()
     comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, num_channels
     )
@@ -279,15 +279,15 @@ fn bench_stencil_max_pool[
     comptime stencil_rank = 2
     comptime simd_width = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, num_channels)
+    comptime input_shape = DimList[1, input_height, input_width, num_channels]()
     comptime dynamic_input_shape = IndexList[4](
         1, input_height, input_width, num_channels
     )
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
-    comptime output_shape = DimList(
+    comptime output_shape = DimList[
         1, output_height, output_width, num_channels
-    )
+    ]()
     comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, num_channels
     )
@@ -499,11 +499,11 @@ fn bench_stencil_avg_pool_padded[
     comptime simd_width = 1
     comptime dilation = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var dynamic_input_shape = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, 1
     )

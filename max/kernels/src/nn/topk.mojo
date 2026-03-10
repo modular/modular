@@ -1254,15 +1254,15 @@ fn _topk_gpu[
             The context for GPU execution.
         max_k: Int
             Largest number of top elements to keep for each batch element.
-        input_buf: NDBuffer[rank=rank, dtype, DimList(batch_size,N)]
+        input_buf: NDBuffer[rank=rank, dtype, DimList[batch_size,N]()]
             Input tensor as a device NDBuffer.
-        device_local_topk_vals: NDBuffer[rank=2, dtype, DimList(batch_size, num_blocks_per_input * max(K))]
+        device_local_topk_vals: NDBuffer[rank=2, dtype, DimList[batch_size, num_blocks_per_input * max(K)]()]
             Temporary buffer for locally reduced top-K values from stage 1.
-        device_local_topk_idxs: NDBuffer[rank=2, DType.int, DimList(batch_size, num_blocks_per_input * max(K))]
+        device_local_topk_idxs: NDBuffer[rank=2, DType.int, DimList[batch_size, num_blocks_per_input * max(K)]()]
             Temporary buffer for locally reduced top-K indices from stage 1.
-        out_vals: NDBuffer[rank=2, dtype, DimList(batch_size, max(K))]
+        out_vals: NDBuffer[rank=2, dtype, DimList[batch_size, max(K)]()]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[rank=2, DType.int, DimList(batch_size, 1 if sampling else max(K))]
+        out_idxs: NDBuffer[rank=2, DType.int, DimList[batch_size, 1 if sampling else max(K)]()]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
         k: Optional NDBuffer[rank=1, DType.int64]]
             Device buffer of top elements to keep for each batch element.

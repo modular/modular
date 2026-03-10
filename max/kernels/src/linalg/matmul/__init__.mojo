@@ -74,10 +74,10 @@ fn matmul[
             rank=2,
             c.dtype,
             c.origin,
-            DimList(
+            DimList[
                 _to_value_or_dim(Int(c.layout.shape[0])),
                 _to_value_or_dim(Int(c.layout.shape[1])),
-            ),
+            ](),
         ](
             c.ptr,
             rebind[IndexList[2]](c.runtime_layout.shape.value.canonicalize()),
@@ -86,10 +86,10 @@ fn matmul[
             rank=2,
             a.dtype,
             a.origin,
-            DimList(
+            DimList[
                 _to_value_or_dim(Int(a.layout.shape[0])),
                 _to_value_or_dim(Int(a.layout.shape[1])),
-            ),
+            ](),
         ](
             a.ptr,
             rebind[IndexList[2]](a.runtime_layout.shape.value.canonicalize()),
@@ -98,10 +98,10 @@ fn matmul[
             rank=2,
             b.dtype,
             b.origin,
-            DimList(
+            DimList[
                 _to_value_or_dim(Int(b.layout.shape[0])),
                 _to_value_or_dim(Int(b.layout.shape[1])),
-            ),
+            ](),
         ](
             b.ptr,
             rebind[IndexList[2]](b.runtime_layout.shape.value.canonicalize()),

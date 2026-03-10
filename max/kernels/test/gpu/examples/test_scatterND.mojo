@@ -183,15 +183,15 @@ fn scatter_nd[
     # NDBuffer below will store both input_strides and data NDBuffer dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
     var ptr = alloc[Int64](last_shape_of_indices * 2)
-    var element_counts_and_input_dims = NDBuffer[rank=1, DType.int64](
-        ptr, DimList(last_shape_of_indices * 2)
+    var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
+        ptr, DimList[last_shape_of_indices * 2]()
     )
 
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
     var input_strides = NDBuffer[
-        rank=1, DType.int64, MutAnyOrigin, DimList(data_rank)
+        rank=1, DType.int64, MutAnyOrigin, DimList[data_rank]()
     ]().stack_allocation()
     for i in range(data_rank):
         var total_stride = 1
@@ -374,9 +374,9 @@ fn main():
 
         _ = test_case[
             DType.float32,
-            input_shape=DimList(4, 4, 4),
-            indices_shape=DimList(2, 1),
-            updates_shape=DimList(2, 4, 4),
+            input_shape=DimList[4, 4, 4](),
+            indices_shape=DimList[2, 1](),
+            updates_shape=DimList[2, 4, 4](),
         ]
         (
             data,

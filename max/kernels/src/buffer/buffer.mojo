@@ -180,7 +180,7 @@ fn _compute_ndbuffer_offset(
 
 @always_inline
 fn _compute_ndbuffer_stride[
-    rank: Int
+    rank: Int, //
 ](shape: IndexList[rank, ...]) -> type_of(shape):
     """Computes the NDBuffer's default dynamic strides using the input shape.
     The default strides correspond to contiguous memory layout.
@@ -299,16 +299,14 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
         """
-        comptime assert Self.shape.all_known[
-            Self.rank
-        ](), "dimensions must all be known"
+        comptime assert Self.shape.all_known(), "dimensions must all be known"
 
         self.data = ptr
-        self.dynamic_shape = comptime (Self.shape.to_index_list[Self.rank]())
-
-        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
-            self.dynamic_shape
+        self.dynamic_shape = rebind[IndexList[Self.rank]](
+            Self.shape.to_index_list[Self.rank]()
         )
+
+        self.dynamic_stride = _compute_ndbuffer_stride(self.dynamic_shape)
 
     @always_inline
     @implicit
@@ -376,9 +374,7 @@ struct NDBuffer[
         self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
             dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
-        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
-            self.dynamic_shape
-        )
+        self.dynamic_stride = _compute_ndbuffer_stride(self.dynamic_shape)
 
     @always_inline
     fn __init__(
@@ -399,9 +395,7 @@ struct NDBuffer[
         self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
             dynamic_shape.cast[type_of(self.dynamic_shape).element_type]()
         )
-        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
-            self.dynamic_shape
-        )
+        self.dynamic_stride = _compute_ndbuffer_stride(self.dynamic_shape)
 
     @always_inline
     fn __init__(
@@ -753,7 +747,7 @@ struct NDBuffer[
         rank=Self.rank,
         Self.dtype,
         Self.origin,
-        DimList(tile_sizes),
+        DimList[*tile_sizes](),
         address_space=Self.address_space,
     ]:
         """Returns an n-d tile "slice" of the buffer of size tile_sizes at
@@ -775,9 +769,9 @@ struct NDBuffer[
             num_tile_sizes == Self.rank
         ), "The tile should have the same rank as the buffer"
 
-        comptime assert DimList(tile_sizes).all_known[
-            Self.rank
-        ](), "Static tile sizes are only supported"
+        comptime assert DimList[
+            *tile_sizes
+        ]().all_known(), "Static tile sizes are only supported"
 
         var offset = 0
         var dyn_shape = IndexList[Self.rank]()
@@ -800,7 +794,7 @@ struct NDBuffer[
             rank=Self.rank,
             Self.dtype,
             Self.origin,
-            DimList(tile_sizes),
+            DimList[*tile_sizes](),
             address_space=Self.address_space,
         ](
             self.data + offset,
@@ -1113,7 +1107,7 @@ struct NDBuffer[
             rank=1,
             Self.dtype,
             Self.origin,
-            Self.shape.product(),
+            DimList[Self.shape.product()](),
             address_space=Self.address_space,
         ],
     ):
@@ -1163,7 +1157,7 @@ struct NDBuffer[
         """
         assert self.is_contiguous(), "Function requires contiguous buffer."
 
-        comptime if Self.shape.all_known[Self.rank]():
+        comptime if Self.shape.all_known():
             comptime count = Int(Self.shape.product())
             memset_zero[count=count](self.data)
         else:
@@ -1262,7 +1256,7 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        comptime assert Self.shape.all_known[Self.rank](), (
+        comptime assert Self.shape.all_known(), (
             "the shape of the NDBuffer must be known to allow for stack"
             " allocation"
         )

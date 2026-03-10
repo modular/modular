@@ -38,9 +38,7 @@ fn view_kernel():
 
 fn get_row_major_tensor_spec[
     dtype: DType, rank: Int, shape: DimList
-]() -> StaticTensorSpec[
-    dtype, rank, shape, DimList.get_row_major_strides[shape]()
-]:
+]() -> StaticTensorSpec[dtype, rank, shape, shape.get_row_major_strides()]:
     """
     Returns a row-major StaticTensorSpec with the specified shape and dtype.
     """

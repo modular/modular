@@ -16,8 +16,7 @@ from std.random import rand
 from std.sys import simd_width_of, size_of
 
 import std.benchmark
-from buffer import NDBuffer
-from buffer.dimlist import Dim
+from buffer import NDBuffer, Dim, DimList
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
 from std.testing import assert_false
@@ -55,13 +54,13 @@ def test_gemv() raises:
     var lhs = NDBuffer[rank=2, type](lhs_storage, Index(m, k))
 
     var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
-    var rhs = NDBuffer[rank=1, type, _, Dim(k)](rhs_storage)
+    var rhs = NDBuffer[rank=1, type, _, DimList[k]()](rhs_storage)
 
     var out_storage = alloc[Scalar[type],](m, alignment=alignment)
-    var out = NDBuffer[rank=1, type, _, Dim(m)](out_storage)
+    var out = NDBuffer[rank=1, type, _, DimList[m]()](out_storage)
 
     var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
-    var ref_out = NDBuffer[rank=1, type, _, Dim(m)](ref_out_storage)
+    var ref_out = NDBuffer[rank=1, type, _, DimList[m]()](ref_out_storage)
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)

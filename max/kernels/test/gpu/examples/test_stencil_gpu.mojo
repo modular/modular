@@ -68,11 +68,11 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     comptime pool_window_w = 3
     comptime dilation = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var d_input_managed = ManagedLayoutTensor[
@@ -235,11 +235,11 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     comptime pad_h = 2
     comptime pad_w = 2
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var d_input_managed = ManagedLayoutTensor[
@@ -403,11 +403,11 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     comptime pool_window_w = 3
     comptime dilation = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = (input_height - pool_window_h) // stride + 1
     comptime output_width = (input_width - pool_window_w) // stride + 1
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var d_input_managed = ManagedLayoutTensor[
@@ -572,7 +572,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     comptime pool_window_w = 3
     comptime dilation = 1
 
-    comptime input_shape = DimList(1, input_height, input_width, 1)
+    comptime input_shape = DimList[1, input_height, input_width, 1]()
     var input_shape_dyn = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = (
         input_height - pool_window_h - (pool_window_h - 1) * (dilation - 1)
@@ -581,7 +581,7 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         input_width - pool_window_w - (pool_window_w - 1) * (dilation - 1)
     ) // stride + 1
 
-    comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime output_shape = DimList[1, output_height, output_width, 1]()
     var output_shape_dyn = IndexList[4](1, output_height, output_width, 1)
 
     var pad_value = 0

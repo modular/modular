@@ -630,7 +630,7 @@ struct IntTuple(
         self._store[0] = len(dimlist)
 
         var i = 0
-        for dim in dimlist.value:
+        for dim in VariadicParamList(dimlist.values):
             var value = dim.get() if dim else UNKNOWN_VALUE
             debug_assert(
                 value >= Self.MinimumValue,

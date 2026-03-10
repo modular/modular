@@ -326,9 +326,9 @@ def test_gemv_tma[
     var N = n.value
     var K = k.value
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(k.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
+    comptime static_a_shape = DimList[m.dim, k.dim]()
+    comptime static_b_shape = DimList[k.dim]()
+    comptime static_c_shape = DimList[m.dim, n.dim]()
     var dynamic_a_shape = IndexList[2](m.value, k.value)
     var dynamic_b_shape = IndexList[1](k.value)
     var dynamic_c_shape = IndexList[2](m.value, n.value)

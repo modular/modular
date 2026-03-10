@@ -39,7 +39,7 @@ fn _transpose_inplace_4x4[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 4
     comptime assert cols == 4
     var buf = rebind[
@@ -47,7 +47,7 @@ fn _transpose_inplace_4x4[
             rank=2,
             dtype,
             bufloat0.origin,
-            DimList(4, 4),
+            DimList[4, 4](),
         ],
     ](bufloat0)
 
@@ -127,7 +127,7 @@ fn _transpose_inplace_8x8[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 8
     comptime assert cols == 8
     var buf = rebind[
@@ -135,7 +135,7 @@ fn _transpose_inplace_8x8[
             rank=2,
             dtype,
             bufloat0.origin,
-            DimList(8, 8),
+            DimList[8, 8](),
         ],
     ](bufloat0)
 
@@ -357,7 +357,7 @@ fn _transpose_inplace_16x16[
     rows: Int,
     cols: Int,
     dtype: DType,
-](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     comptime assert rows == 16
     comptime assert cols == 16
     var buf = rebind[
@@ -365,7 +365,7 @@ fn _transpose_inplace_16x16[
             rank=2,
             dtype,
             bufloat0.origin,
-            DimList(16, 16),
+            DimList[16, 16](),
         ],
     ](bufloat0)
 
@@ -797,7 +797,7 @@ fn _transpose_inplace_naive[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     for i in range(rows):
         for j in range(i + 1, cols):
             var tmp = buf[i, j]
@@ -822,7 +822,7 @@ fn transpose_inplace[
     rows: Int,
     cols: Int,
     dtype: DType,
-](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, rank=2, dtype, _, DimList[rows, cols]()]):
     # Reject sizes covered by specialized implementations
     comptime assert rows == cols
 
@@ -889,7 +889,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    _fill_strides(buf, NDBuffer[rank=1, DType.int, _, rank](strides))
+    _fill_strides(buf, NDBuffer[rank=1, DType.int, _, DimList[rank]()](strides))
 
 
 fn _fill_strides[
@@ -898,7 +898,7 @@ fn _fill_strides[
     dtype: DType,
 ](
     buf: NDBuffer[rank=rank, dtype, _, input_shape],
-    strides: NDBuffer[mut=True, rank=1, DType.int, _, rank],
+    strides: NDBuffer[mut=True, rank=1, DType.int, _, DimList[rank]()],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming

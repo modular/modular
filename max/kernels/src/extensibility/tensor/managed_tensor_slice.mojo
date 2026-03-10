@@ -1298,8 +1298,8 @@ struct StaticTensorSpecList[
     internals_list: Variadic.ValuesOfType[
         StaticTensorSpecInternal[dtype, rank]
     ],
-    shapes_list: Variadic.ValuesOfType[DimList],
-    strides_list: Variadic.ValuesOfType[DimList],
+    shapes_list: Variadic.ValuesOfType[IndexList[rank]],
+    strides_list: Variadic.ValuesOfType[IndexList[rank]],
 ]:
     """A statically indexable list of data that can be assembled into a
     StaticTensorSpecList on demand. This handles the complexities that arise
@@ -1313,8 +1313,8 @@ struct StaticTensorSpecList[
         out result: StaticTensorSpec[
             Self.dtype,
             Self.rank,
-            Self.shapes_list[index],
-            Self.strides_list[index],
+            DimList.from_index_list[Self.shapes_list[index]](),
+            DimList.from_index_list[Self.strides_list[index]](),
         ],
     ):
         return {Self.internals_list[index]}

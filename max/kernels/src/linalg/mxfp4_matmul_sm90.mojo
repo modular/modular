@@ -105,7 +105,7 @@ fn mxfp4_matmul_sm90(
         Index(M, static_K),
     )
     var b_fp8_ndbuf = NDBuffer[
-        rank=2, fp8_type, MutAnyOrigin, DimList(static_N, static_K)
+        rank=2, fp8_type, MutAnyOrigin, DimList[static_N, static_K]()
     ](
         b_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
     )

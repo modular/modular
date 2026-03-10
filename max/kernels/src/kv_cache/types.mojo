@@ -862,21 +862,21 @@ struct PagedKVCache[
     comptime scales_tt_layout = InternalLayout[
         shape_types=_DimsToCoordLike[
             DType.int64,
-            DimList(
+            DimList[
                 Dim(),
                 Dim(Self.page_size),
                 Dim(Int(Self.kv_params.num_heads)),
                 Dim(Self.head_dim_granularity),
-            ),
+            ](),
         ],
         stride_types=_DimsToCoordLike[
             DType.int64,
-            DimList(
+            DimList[
                 Dim(),
                 Dim(Int(Self.kv_params.num_heads) * Self.head_dim_granularity),
                 Dim(Self.head_dim_granularity),
                 Dim(1),
-            ),
+            ](),
         ],
     ]
     comptime scales_tt_type = TileTensor[
