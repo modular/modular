@@ -3176,6 +3176,46 @@ def factorial(n: Int) -> Int:
     return table[n]
 
 
+def factorial[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes the factorial of a `Scalar` integer value.
+
+    Parameters:
+        dtype: The integer data type of the argument and result.
+
+    Args:
+        n: The input value. Must be non-negative and small enough that `n!`
+           fits in `dtype` (e.g. at most 12 for 32-bit types, 20 for 64-bit).
+
+    Returns:
+        The factorial `n!` as `Scalar[dtype]`. Asserts if `n` is negative
+        (for signed dtypes) or if the result would overflow the dtype.
+
+    Examples:
+
+    ```mojo
+    from std.math import factorial
+    print(factorial(Int32(5)))   # 120
+    print(factorial(UInt64(10))) # 3628800
+    ```
+    """
+    comptime assert dtype.is_integral(), "factorial() requires an integer dtype"
+    comptime if not dtype.is_unsigned():
+        assert n >= 0, "factorial() requires non-negative input"
+    # Determine the largest n whose factorial fits in dtype.
+    comptime bits = size_of[dtype]() * 8
+    comptime max_n = (
+        5
+        if bits <= 8
+        else (7 if dtype.is_signed() else 8)
+        if bits <= 16
+        else 12
+        if bits <= 32
+        else 20
+    )
+    assert Int(n) <= max_n, "factorial() input causes overflow for the given dtype"
+    return Scalar[dtype](factorial(Int(n)))
+
+
 def comb(n: Int, k: Int) -> Int:
     """Computes the number of ways to choose `k` items from `n` items without
     repetition and without order (binomial coefficient).
@@ -3336,7 +3376,7 @@ def perm[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
     ```
     """
     comptime assert dtype.is_integral(), "perm() requires an integer dtype"
-    return Scalar[dtype](factorial(Int(n)))
+    return factorial(n)
 
 
 def perm[dtype: DType, //](n: Scalar[dtype], k: Scalar[dtype]) -> Scalar[dtype]:
