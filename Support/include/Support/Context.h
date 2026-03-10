@@ -11,6 +11,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include <memory>
 
@@ -55,6 +56,8 @@ public:
     return storage.get<T>();
   }
 
+  MODULAR_CXX_EXPORT ~Context();
+
 private:
   GenericUniquePtrSet storage;
 };
@@ -62,15 +65,18 @@ private:
 /// Convenience definitions.
 using ContextRef = RCRef<Context>;
 
-/// Thread-local "current" Max context for execution boundaries (e.g. MGP
-/// primitives) where the call stack does not have Context. Returns nullptr if
-/// not set.
-Context *getCurrentMaxContext();
+/// Global "current" Max context. Set by Init::createContext, cleared in
+/// Context destructor. Visible to all threads. Asserts if nullptr (context
+/// should always be set when in use). Returns a reference-counted ref.
+MODULAR_CXX_EXPORT ContextRef getCurrentMaxContext();
 
-/// Set the thread-local current Max context. Call before running code that
-/// needs it (e.g. model setup/execute); clear with
-/// setCurrentMaxContext(nullptr) when done.
-void setCurrentMaxContext(Context *context);
+/// Same as getCurrentMaxContext but returns nullptr if none set (no assert).
+MODULAR_CXX_EXPORT Context *getCurrentMaxContextOrNull();
+
+/// Sets the current Max context (visible to all threads). Stores
+/// a raw pointer only; the global does not hold a ref. Cleared in ~Context()
+/// when the last ContextRef to that context is released.
+MODULAR_CXX_EXPORT void setCurrentMaxContext(Context *ptr);
 
 } // namespace M
 

@@ -5,23 +5,26 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Context.h"
+#include "Support/ContextGlobal.h"
 
 #include <cassert>
 
 namespace M {
 
-static Context *&getCurrentMaxContextInTLS() {
-  static thread_local Context *currentContext = nullptr;
-  return currentContext;
+ContextRef getCurrentMaxContext() {
+  Context *ptr = getCurrentMaxContextPointerOrNull();
+  assert(ptr != nullptr &&
+         "getCurrentMaxContext() returned nullptr; M::Context should be set at "
+         "creation (Init::createContext) and cleared only in ~Context()");
+  return ContextRef::copy(ptr);
 }
 
-Context *getCurrentMaxContext() { return getCurrentMaxContextInTLS(); }
-
-void setCurrentMaxContext(Context *context) {
-  assert((context == nullptr || getCurrentMaxContextInTLS() == nullptr) &&
-         "Max context already set; clear with setCurrentMaxContext(nullptr) "
-         "before setting again");
-  getCurrentMaxContextInTLS() = context;
+Context *getCurrentMaxContextOrNull() {
+  return getCurrentMaxContextPointerOrNull();
 }
+
+void setCurrentMaxContext(Context *ptr) { setCurrentMaxContextPointer(ptr); }
+
+Context::~Context() { clearGlobalContextPointerIfEquals(this); }
 
 } // namespace M

@@ -14,6 +14,40 @@
 
 using namespace M;
 
+namespace {
+
+bool runtimeOptionsEqualIgnoringPoolName(const AsyncRT::RuntimeOptions &a,
+                                         const AsyncRT::RuntimeOptions &b) {
+  return a.numThreads == b.numThreads && a.maxThreads == b.maxThreads &&
+         a.singleThreaded == b.singleThreaded &&
+         a.profileFilename == b.profileFilename &&
+         a.runtimeProfilingTypeMask == b.runtimeProfilingTypeMask &&
+         a.mainWillDonate == b.mainWillDonate &&
+         a.threadBusyWaitTime == b.threadBusyWaitTime &&
+         a.withAffinity == b.withAffinity &&
+         a.leakCheckedAllocator == b.leakCheckedAllocator &&
+         a.tcmallocAllocator == b.tcmallocAllocator &&
+         a.profilingAllocator == b.profilingAllocator &&
+         a.useAfterFreeAllocator == b.useAfterFreeAllocator &&
+         a.onFailure == b.onFailure && a.workQueueType == b.workQueueType &&
+         a.allocatorType == b.allocatorType &&
+         a.profilerDebuginfo == b.profilerDebuginfo &&
+         a.defaultWorkQueue == b.defaultWorkQueue;
+}
+
+} // namespace
+
+bool Init::optionsEqualIgnoringPoolName(const Options &a, const Options &b) {
+  if (a.forceDisableCrashReporting != b.forceDisableCrashReporting)
+    return false;
+  if (a.runtimeOptions.has_value() != b.runtimeOptions.has_value())
+    return false;
+  if (a.runtimeOptions.has_value())
+    return runtimeOptionsEqualIgnoringPoolName(*a.runtimeOptions,
+                                               *b.runtimeOptions);
+  return true;
+}
+
 static constexpr bool isProductionBuild() {
 #ifdef MODULAR_PRODUCTION
   return true;
@@ -24,6 +58,18 @@ static constexpr bool isProductionBuild() {
 
 ErrorOr<ContextRef> Init::createContext(StringRef programName,
                                         const Init::Options &options) {
+  // If a global context already exists (e.g. second InferenceSession), return
+  // a ref to it instead of creating a second context.
+  Context *existing = getCurrentMaxContextOrNull();
+  if (existing) {
+    Init::Options *existingOptions = existing->get<Init::Options>();
+    assert(existingOptions &&
+           "Existing Max context has no Init::Options (cannot compare).");
+    assert(Init::optionsEqualIgnoringPoolName(*existingOptions, options) &&
+           "Existing Max context was created with different Init::Options.");
+    return getCurrentMaxContext();
+  }
+
   // Create the top-level context.
   ContextRef ctx = ContextRef::create();
 
@@ -80,6 +126,15 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
 
   // Finally move the settings.
   ctx->emplace<Config>(std::move(settings));
+
+  // Store a copy of the init options so we can compare when reusing the
+  // global context.
+  ctx->emplace<Init::Options>(options);
+
+  // Set as the global current context so any thread can use
+  // getCurrentMaxContext(). We store only a raw pointer; the global does not
+  // hold a ref. Cleared in ~Context() when the last ContextRef is destroyed.
+  setCurrentMaxContext(ctx.getPointer());
 
   // Return the useable context.
   return std::move(ctx);

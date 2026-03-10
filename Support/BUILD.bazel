@@ -226,13 +226,20 @@ modular_cc_library(
     ],
 )
 
+# Context class and public API; global context pointer lives in Support:Globals
+# (single definition per process).
 modular_cc_library(
     name = "Context",
     srcs = ["lib/Context.cpp"],
-    hdrs = ["include/Support/Context.h"],
+    hdrs = [
+        "include/Support/Context.h",
+        "include/Support/ContextGlobal.h",
+    ],
     deps = [
         ":ADT",
         ":Base",
+        ":Globals",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -922,7 +929,9 @@ td_library(
 modular_shared_library(
     name = "Globals",
     srcs = glob(["lib/Globals/*.cpp"]),
-    hdrs = glob(["include/Support/Globals/*.h"]),
+    hdrs = glob(["include/Support/Globals/*.h"]) + [
+        "include/Support/ContextGlobal.h",
+    ],
     # Always link and expose the FallbackTypeIDResolver::registerImplicitTypeID
     # function. This is used by downstream libraries to decide whether MLIR types
     # in different SOs are the same type or not.
