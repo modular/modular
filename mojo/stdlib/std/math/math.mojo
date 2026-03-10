@@ -3214,8 +3214,9 @@ def factorial[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
         assert n >= 0, "factorial() requires non-negative input"
     # Determine the largest n whose factorial fits in dtype.
     comptime bits = size_of[dtype]() * 8
+    comptime max_n_hi = 12 if bits <= 32 else 20
     comptime max_n = 5 if bits <= 8 else (
-        (7 if dtype.is_signed() else 8) if bits <= 16 else (12 if bits <= 32 else 20)
+        (7 if dtype.is_signed() else 8) if bits <= 16 else max_n_hi
     )
     assert (
         Int(n) <= max_n
