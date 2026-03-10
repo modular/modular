@@ -223,6 +223,47 @@ This version is still a work in progress.
   fn bar():        # Invalid: use 'def' instead.
   ```
 
+- Mojo now supports **conditional trait conformances** on struct declarations.
+  A struct can declare that it conforms to a trait only when its type parameters
+  satisfy certain conditions, using `where` clauses in the conformance list.
+  The `where` clause accepts any `Bool`-typed parameter expression. For example,
+  `List` now uses this to conditionally conform to `Equatable` and `Writable`
+  only when its element type does:
+
+  ```mojo
+  struct List[T: Movable](
+      Copyable,
+      Equatable where conforms_to(T, Equatable),
+      Movable,
+      Writable where conforms_to(T, Writable),
+  ):
+      ...
+  ```
+
+  Here is a small self-contained example:
+
+  ```mojo
+  @fieldwise_init
+  struct Wrapper[T: Copyable & ImplicitlyDestructible](
+      Writable where conforms_to(T, Writable),
+  ):
+      var value: Self.T
+
+  @fieldwise_init
+  struct NotWritable(Copyable, ImplicitlyDestructible):
+      var data: Int
+
+  fn main():
+      var w = Wrapper[Int](42)
+      print(w)  # OK — Int is Writable. Prints: Wrapper[Int](value=42)
+
+      var w2 = Wrapper[NotWritable](NotWritable(10))  # OK to construct
+      print(w2)  # errors at parse time
+  ```
+
+  **Current limitations:** Conditional conformance to `RegisterPassable`,
+  `TrivialRegisterPassable`, and `ImplicitlyDestructible` is not yet supported.
+
 ## Language changes
 
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
