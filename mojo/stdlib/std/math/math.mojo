@@ -3239,25 +3239,7 @@ def comb(n: Int, k: Int) -> Int:
     print(comb(3, 5))  # 0
     ```
     """
-    assert n >= 0, "n must be non-negative"
-    assert k >= 0, "k must be non-negative"
-    if k > n:
-        return 0
-    # Use the smaller of k and n-k to minimise the number of iterations.
-    var k2 = k if k <= n - k else n - k
-    var result = 1
-    for i in range(k2):
-        # Reduce (n-i) and (i+1) by their gcd before multiplying to avoid
-        # intermediate overflow when the final result fits in Int.
-        var num = n - i
-        var den = i + 1
-        var g = gcd(num, den)
-        num //= g
-        den //= g
-        # After removing gcd(num, den), the remaining den divides result
-        # exactly (since C(n, i+1) is always an integer).
-        result = (result // den) * num
-    return result
+    return Int(comb(Scalar[DType.int](n), Scalar[DType.int](k)))
 
 
 def comb[dtype: DType, //](n: Scalar[dtype], k: Scalar[dtype]) -> Scalar[dtype]:
@@ -3342,14 +3324,9 @@ def perm(n: Int, k: Int = -1) -> Int:
     print(perm(5, 0))  # 1
     ```
     """
-    assert n >= 0, "n must be non-negative"
     if k == -1:
         return factorial(n)
-    assert 0 <= k <= n, "k must be between 0 and n"
-    var result = 1
-    for i in range(k):
-        result *= n - i
-    return result
+    return Int(perm(Scalar[DType.int](n), Scalar[DType.int](k)))
 
 
 def perm[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
