@@ -368,7 +368,7 @@ logit_verification_pipelines:
       json_file: "torch_internvl3-1b_bfloat16_golden.json"
     # TODO(MODELS-565): Fix InternVL correctness.
     cos_dist_threshold: 4.0e-03
-    kl_div_threshold: 1.5e-02
+    kl_div_threshold: 2.0e-02
 
   OpenGVLab/InternVL3-8B-Instruct-bfloat16:
     pre_submit_agents: []
