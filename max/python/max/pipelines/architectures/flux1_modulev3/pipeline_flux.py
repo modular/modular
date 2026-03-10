@@ -25,7 +25,12 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.interfaces import PixelGenerationContext, TokenBuffer
-from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
+from max.pipelines.lib.interfaces import (
+    CacheMixin,
+    DenoisingCacheState,
+    DiffusionPipeline,
+    PixelModelInputs,
+)
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 
 from ..autoencoders import AutoencoderKLModel
@@ -55,12 +60,6 @@ class FluxModelInputs(PixelModelInputs):
     guidance_scale: float = 3.5
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
-    rdt: float = 0.05
-    taylorseer: bool = False
-    taylorseer_cache_interval: int = 5
-    taylorseer_warmup_steps: int = 3
-    taylorseer_max_order: int = 1
-    step_cache: bool = False
 
     @property
     def do_true_cfg(self) -> bool:
@@ -80,7 +79,7 @@ class FluxPipelineOutput:
     images: np.ndarray | Tensor
 
 
-class FluxPipeline(DiffusionPipeline):
+class FluxPipeline(DiffusionPipeline, CacheMixin):
     vae: AutoencoderKLModel
     text_encoder: ClipModel
     text_encoder_2: T5Model
@@ -105,21 +104,21 @@ class FluxPipeline(DiffusionPipeline):
         self.build_prepare_scheduler()
         self.build_scheduler_step()
         self.build_decode_latents()
-        self.build_taylorseer(
-            self.transformer.config.dtype, self.transformer.devices[0]
-        )
 
         self._transformer_device: Device = self.transformer.devices[0]
         self._guidance_embeds: bool = self.transformer.config.guidance_embeds
+
+        self.init_cache(
+            cache_config=self.cache_config,
+            transformer=self.transformer,
+            dtype=self.transformer.config.dtype,
+            device=self.transformer.devices[0],
+        )
 
         # Tensor caches.
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
-
-        enable_fbc = self.pipeline_config.runtime.enable_fbc
-        self.transformer.compile_model(enable_fbc)
-        self._enable_fbc = enable_fbc
 
     def prepare_inputs(
         self, context: PixelGenerationContext
@@ -380,6 +379,32 @@ class FluxPipeline(DiffusionPipeline):
         cpu_image: Tensor = image.to(CPU())
         return np.from_dlpack(cpu_image)
 
+    def run_transformer(
+        self,
+        cache_state: DenoisingCacheState,
+        *,
+        latents: Tensor,
+        prompt_embeds: Tensor,
+        pooled_prompt_embeds: Tensor,
+        timestep: Tensor,
+        latent_image_ids: Tensor,
+        text_ids: Tensor,
+        guidance: Tensor,
+    ) -> tuple[Tensor, ...]:
+        return self.transformer(
+            latents,
+            prompt_embeds,
+            pooled_prompt_embeds,
+            timestep,
+            latent_image_ids,
+            text_ids,
+            guidance,
+            prev_residual=cache_state.prev_residual,
+            prev_output=cache_state.prev_output,
+            step_cache_flag=self._cache_step_cache_flag,
+            rdt=self._cache_rdt_tensor,
+        )
+
     def execute(  # type: ignore[override]
         self,
         model_inputs: FluxModelInputs,
@@ -464,269 +489,55 @@ class FluxPipeline(DiffusionPipeline):
         timesteps_batched = Tensor.from_dlpack(timesteps_np).to(
             self.transformer.devices[0]
         )
-        # Step-cache runtime control.
-        step_cache_enabled = self._enable_fbc
-        taylorseer_enabled = bool(model_inputs.taylorseer)
-        prev_residual = None
-        prev_output = None
-        prev_neg_residual = None
-        prev_neg_output = None
-        cfg = self.transformer.config
+        # Cache state initialization.
         dev = self.transformer.devices[0]
-        batch_size_int = int(prompt_embeds.shape[0])
         image_seq_len = int(latents.shape[1])
-        inner_dim = cfg.num_attention_heads * cfg.attention_head_dim
-        out_dim = (
-            cfg.patch_size
-            * cfg.patch_size
-            * (cfg.out_channels or cfg.in_channels)
+        cache_pos = self.create_cache_state(
+            batch_size, image_seq_len, self.transformer.config
         )
-        if step_cache_enabled:
-            rdt_tensor = Tensor.full(
-                [1],
-                model_inputs.rdt,
-                device=dev,
-                dtype=DType.float32,
+        cache_neg = (
+            self.create_cache_state(
+                batch_size, image_seq_len, self.transformer.config
             )
-        if step_cache_enabled:
-            prev_residual = Tensor.zeros(
-                (batch_size_int, image_seq_len, inner_dim),
-                dtype=dtype,
-                device=dev,
-            )
-            prev_output = Tensor.zeros(
-                (batch_size_int, image_seq_len, out_dim),
-                dtype=dtype,
-                device=dev,
-            )
-            prev_neg_residual = Tensor.zeros(
-                (batch_size_int, image_seq_len, inner_dim),
-                dtype=dtype,
-                device=dev,
-            )
-            prev_neg_output = Tensor.zeros(
-                (batch_size_int, image_seq_len, out_dim),
-                dtype=dtype,
-                device=dev,
-            )
-        if not step_cache_enabled:
-            prev_output = None
-            prev_neg_output = None
-
-        # TaylorSeer state initialization.
-        ts_factor_0: Tensor | None = None
-        ts_factor_1: Tensor | None = None
-        ts_factor_2: Tensor | None = None
-        ts_last_compute_step: int | None = None
-        ts_max_order_tensor: Tensor | None = None
-        ts_neg_factor_0: Tensor | None = None
-        ts_neg_factor_1: Tensor | None = None
-        ts_neg_factor_2: Tensor | None = None
-        ts_neg_last_compute_step: int | None = None
-        if taylorseer_enabled:
-            ts_factor_0 = Tensor.zeros(
-                (batch_size_int, image_seq_len, out_dim),
-                dtype=dtype,
-                device=dev,
-            )
-            ts_factor_1 = Tensor.zeros(
-                (batch_size_int, image_seq_len, out_dim),
-                dtype=dtype,
-                device=dev,
-            )
-            ts_factor_2 = Tensor.zeros(
-                (batch_size_int, image_seq_len, out_dim),
-                dtype=dtype,
-                device=dev,
-            )
-            ts_max_order_tensor = Tensor.full(
-                [1],
-                model_inputs.taylorseer_max_order,
-                dtype=DType.int32,
-                device=dev,
-            )
-            if model_inputs.do_true_cfg:
-                ts_neg_factor_0 = Tensor.zeros(
-                    (batch_size_int, image_seq_len, out_dim),
-                    dtype=dtype,
-                    device=dev,
-                )
-                ts_neg_factor_1 = Tensor.zeros(
-                    (batch_size_int, image_seq_len, out_dim),
-                    dtype=dtype,
-                    device=dev,
-                )
-                ts_neg_factor_2 = Tensor.zeros(
-                    (batch_size_int, image_seq_len, out_dim),
-                    dtype=dtype,
-                    device=dev,
-                )
+            if model_inputs.do_true_cfg
+            else None
+        )
 
         for i in range(num_timesteps):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 
-            # TaylorSeer scheduling.
-            ts_should_compute = True
-            if taylorseer_enabled:
-                ts_should_compute = self.taylorseer_should_compute(
-                    i,
-                    model_inputs.taylorseer_warmup_steps,
-                    model_inputs.taylorseer_cache_interval,
-                )
-
-            if taylorseer_enabled and not ts_should_compute:
-                # TaylorSeer predict path: skip transformer.
-                assert ts_factor_0 is not None
-                assert ts_factor_1 is not None
-                assert ts_factor_2 is not None
-                assert ts_last_compute_step is not None
-                assert ts_max_order_tensor is not None
-                step_offset = Tensor.full(
-                    [1],
-                    float(i - ts_last_compute_step),
-                    dtype=DType.float32,
-                    device=dev,
-                )
-                noise_pred = self.taylor_predict(
-                    ts_factor_0,
-                    ts_factor_1,
-                    ts_factor_2,
-                    step_offset,
-                    ts_max_order_tensor,
-                )
-            else:
-                if step_cache_enabled:
-                    noise_pred, new_residual = self.transformer(
-                        latents,
-                        prompt_embeds,
-                        pooled_prompt_embeds,
-                        timestep,
-                        latent_image_ids,
-                        text_ids,
-                        guidance,
-                        prev_residual,
-                        prev_output,
-                        rdt_tensor,
-                    )
-                else:
-                    noise_pred = self.transformer(
-                        latents,
-                        prompt_embeds,
-                        pooled_prompt_embeds,
-                        timestep,
-                        latent_image_ids,
-                        text_ids,
-                        guidance,
-                    )[0]
-                if step_cache_enabled:
-                    prev_residual = new_residual
-                    prev_output = noise_pred
-
-                # TaylorSeer factor update after full computation.
-                if taylorseer_enabled:
-                    assert ts_factor_0 is not None
-                    assert ts_factor_1 is not None
-                    assert ts_max_order_tensor is not None
-                    if ts_last_compute_step is not None:
-                        delta = float(i - ts_last_compute_step)
-                    else:
-                        delta = 1.0
-                    delta_tensor = Tensor.full(
-                        [1], delta, dtype=DType.float32, device=dev
-                    )
-                    ts_factor_0, ts_factor_1, ts_factor_2 = (
-                        self.taylor_update(
-                            noise_pred,
-                            ts_factor_0,
-                            ts_factor_1,
-                            delta_tensor,
-                            ts_max_order_tensor,
-                        )
-                    )
-                    ts_last_compute_step = i
+            noise_pred = self.run_denoising_step(
+                step=i,
+                cache_state=cache_pos,
+                device=dev,
+                latents=latents,
+                prompt_embeds=prompt_embeds,
+                pooled_prompt_embeds=pooled_prompt_embeds,
+                timestep=timestep,
+                latent_image_ids=latent_image_ids,
+                text_ids=text_ids,
+                guidance=guidance,
+            )
 
             if model_inputs.do_true_cfg:
                 assert negative_prompt_embeds is not None
                 assert negative_pooled_prompt_embeds is not None
                 assert negative_text_ids is not None
+                assert cache_neg is not None
 
-                if taylorseer_enabled and not ts_should_compute:
-                    # TaylorSeer predict for negative branch.
-                    assert ts_neg_factor_0 is not None
-                    assert ts_neg_factor_1 is not None
-                    assert ts_neg_factor_2 is not None
-                    assert ts_neg_last_compute_step is not None
-                    assert ts_max_order_tensor is not None
-                    neg_step_offset = Tensor.full(
-                        [1],
-                        float(i - ts_neg_last_compute_step),
-                        dtype=DType.float32,
-                        device=dev,
-                    )
-                    neg_noise_pred = self.taylor_predict(
-                        ts_neg_factor_0,
-                        ts_neg_factor_1,
-                        ts_neg_factor_2,
-                        neg_step_offset,
-                        ts_max_order_tensor,
-                    )
-                else:
-                    if step_cache_enabled:
-                        neg_noise_pred, new_neg_residual = self.transformer(
-                            latents,
-                            negative_prompt_embeds,
-                            negative_pooled_prompt_embeds,
-                            timestep,
-                            latent_image_ids,
-                            negative_text_ids,
-                            guidance,
-                            prev_neg_residual,
-                            prev_neg_output,
-                            rdt_tensor,
-                        )
-                    else:
-                        neg_noise_pred = self.transformer(
-                            latents,
-                            negative_prompt_embeds,
-                            negative_pooled_prompt_embeds,
-                            timestep,
-                            latent_image_ids,
-                            negative_text_ids,
-                            guidance,
-                        )[0]
-                    if step_cache_enabled:
-                        prev_neg_residual = new_neg_residual
-                        prev_neg_output = neg_noise_pred
-
-                    # TaylorSeer factor update for negative branch.
-                    if taylorseer_enabled:
-                        assert ts_neg_factor_0 is not None
-                        assert ts_neg_factor_1 is not None
-                        assert ts_max_order_tensor is not None
-                        if ts_neg_last_compute_step is not None:
-                            neg_delta = float(
-                                i - ts_neg_last_compute_step
-                            )
-                        else:
-                            neg_delta = 1.0
-                        neg_delta_tensor = Tensor.full(
-                            [1],
-                            neg_delta,
-                            dtype=DType.float32,
-                            device=dev,
-                        )
-                        ts_neg_factor_0, ts_neg_factor_1, ts_neg_factor_2 = (
-                            self.taylor_update(
-                                neg_noise_pred,
-                                ts_neg_factor_0,
-                                ts_neg_factor_1,
-                                neg_delta_tensor,
-                                ts_max_order_tensor,
-                            )
-                        )
-                        ts_neg_last_compute_step = i
-
+                neg_noise_pred = self.run_denoising_step(
+                    step=i,
+                    cache_state=cache_neg,
+                    device=dev,
+                    latents=latents,
+                    prompt_embeds=negative_prompt_embeds,
+                    pooled_prompt_embeds=negative_pooled_prompt_embeds,
+                    timestep=timestep,
+                    latent_image_ids=latent_image_ids,
+                    text_ids=negative_text_ids,
+                    guidance=guidance,
+                )
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred
                 )

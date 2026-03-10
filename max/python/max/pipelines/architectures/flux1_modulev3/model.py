@@ -20,7 +20,6 @@ from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
-from max.profiler import traced
 
 from .flux1 import FluxTransformer2DModel
 from .model_config import FluxConfig
@@ -46,7 +45,6 @@ class Flux1TransformerModel(ComponentModel):
             encoding,
             devices,
         )
-        self._enable_fbc = False
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
@@ -57,26 +55,30 @@ class Flux1TransformerModel(ComponentModel):
             flux = FluxTransformer2DModel(self.config)
             flux.to(self.devices[0])
         self._flux_model = flux
-        # Model is not yet compiled; compile_model() must be called before use.
-        self.model = self._not_compiled
+        self._standard_model: Callable[..., Any] | None = None
+        self._step_cache_model: Callable[..., Any] | None = None
+        self.model = self._standard_model
         return self.model
 
-    @staticmethod
-    def _not_compiled(*_args: Any, **_kwargs: Any) -> Any:
-        raise RuntimeError(
-            "Flux1 transformer not compiled. Call compile_model() first."
-        )
+    def use_standard_model(self) -> None:
+        if self._standard_model is None:
+            self._standard_model = self._flux_model.compile(
+                *self._flux_model.input_types(step_cache_enabled=False),
+                weights=self._state_dict,
+            )
+        if self.model is self._step_cache_model:
+            self._step_cache_model = None
+        self.model = self._standard_model
 
-    @traced
-    def compile_model(self, enable_fbc: bool) -> None:
-        self._enable_fbc = enable_fbc
-        self.model = self._flux_model.compile(
-            *self._flux_model.input_types(step_cache_enabled=enable_fbc),
-            weights=self._state_dict,
-        )
-        # Free weight dict and graph — no second compilation will happen.
-        del self._state_dict
-        del self._flux_model
+    def use_step_cache_model(self) -> None:
+        if self._step_cache_model is None:
+            self._step_cache_model = self._flux_model.compile(
+                *self._flux_model.input_types(step_cache_enabled=True),
+                weights=self._state_dict,
+            )
+        if self.model is self._standard_model:
+            self._standard_model = None
+        self.model = self._step_cache_model
 
     def __call__(
         self,
@@ -89,23 +91,10 @@ class Flux1TransformerModel(ComponentModel):
         guidance: Tensor | None,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        step_cache_flag: Tensor | None = None,
         rdt: Tensor | None = None,
     ) -> Any:
-        if self._enable_fbc:
-            return self.model(
-                hidden_states,
-                encoder_hidden_states,
-                pooled_projections,
-                timestep,
-                img_ids,
-                txt_ids,
-                guidance,
-                prev_residual,
-                prev_output,
-                rdt,
-            )
-
-        return self.model(
+        args = (
             hidden_states,
             encoder_hidden_states,
             pooled_projections,
@@ -114,3 +103,6 @@ class Flux1TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
+        if prev_residual is not None:
+            args += (prev_residual, prev_output, step_cache_flag, rdt)
+        return self.model(*args)

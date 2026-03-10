@@ -56,6 +56,7 @@ from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
+from max.pipelines.lib.interfaces.cache_mixin import CacheConfig
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
@@ -172,10 +173,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Enable first-block step cache optimization.",
     )
     parser.add_argument(
-        "--residual-threshold",
+        "--rdt",
         type=float,
         default=None,
-        help="Residual threshold for step cache early stopping.",
+        help="Relative-difference threshold for step cache.",
     )
     parser.add_argument(
         "--taylorseer",
@@ -214,6 +215,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "num-inference-steps must be a positive integer."
     )
     assert args.guidance_scale > 0.0, "guidance-scale must be positive."
+    if args.rdt is not None:
+        assert args.rdt >= 0.0, "rdt must be non-negative."
     assert args.taylorseer_cache_interval >= 1, (
         "taylorseer-cache-interval must be >= 1."
     )
@@ -293,7 +296,6 @@ async def generate_image(args: argparse.Namespace) -> None:
         ),
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=True,
-            enable_fbc=args.step_cache,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -358,9 +360,18 @@ async def generate_image(args: argparse.Namespace) -> None:
             f"{arch.pipeline_model}"
         )
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
+    cache_config = CacheConfig(
+        step_cache=args.step_cache,
+        rdt=args.rdt,
+        taylorseer=args.taylorseer,
+        taylorseer_cache_interval=args.taylorseer_cache_interval,
+        taylorseer_warmup_steps=args.taylorseer_warmup_steps,
+        taylorseer_max_order=args.taylorseer_max_order,
+    )
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
         pipeline_model=pipeline_model,
+        cache_config=cache_config,
     )
 
     print(f"Generating image for prompt: '{args.prompt}'")
@@ -397,11 +408,6 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
-                    **(
-                        {"residual_threshold": args.residual_threshold}
-                        if args.residual_threshold is not None
-                        else {}
-                    ),
                 )
             ),
         )
@@ -418,11 +424,6 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
-                    **(
-                        {"residual_threshold": args.residual_threshold}
-                        if args.residual_threshold is not None
-                        else {}
-                    ),
                 )
             ),
         )
@@ -438,18 +439,13 @@ async def generate_image(args: argparse.Namespace) -> None:
     # latent initialization, and all other preprocessing
     # Image is now extracted from the message content automatically
     context = await tokenizer.new_context(request)
-    context.taylorseer = args.taylorseer
-    context.taylorseer_cache_interval = args.taylorseer_cache_interval
-    context.taylorseer_warmup_steps = args.taylorseer_warmup_steps
-    context.taylorseer_max_order = args.taylorseer_max_order
 
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
     )
     if args.step_cache:
-        print(
-            f"Step cache enabled, residual_threshold={context.residual_threshold}."
-        )
+        rdt_info = f", rdt={args.rdt}" if args.rdt is not None else ""
+        print(f"Step cache enabled{rdt_info}.")
     if args.taylorseer:
         print(
             f"TaylorSeer enabled: order={args.taylorseer_max_order}, "
@@ -477,11 +473,6 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
-                    **(
-                        {"residual_threshold": args.residual_threshold}
-                        if args.residual_threshold is not None
-                        else {}
-                    ),
                 )
             ),
         )

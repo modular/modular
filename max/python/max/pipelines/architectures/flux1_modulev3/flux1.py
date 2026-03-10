@@ -37,38 +37,7 @@ from .model_config import FluxConfig
 logger = logging.getLogger(__name__)
 
 
-def get_can_use_cache(
-    intermediate_residual: Tensor,
-    prev_intermediate_residual: Tensor | None,
-    rdt: Tensor,
-) -> Tensor:
-    """Return whether previous residual cache is reusable."""
-    dev = intermediate_residual.device
-    if (
-        prev_intermediate_residual is None
-        or intermediate_residual.shape != prev_intermediate_residual.shape
-    ):
-        return F.constant(False, DType.bool, device=dev)
-
-    reduced_last_dim_shape = tuple(intermediate_residual.shape[:-1]) + (1,)
-    reduced_last_dim_type = TensorType(
-        intermediate_residual.dtype,
-        shape=reduced_last_dim_shape,
-        device=dev,
-    )
-    # A single full-tensor reduction was slower here, so we first reduce over the
-    # last dimension and then take the global mean from the per-row results.
-    mean_diff_rows = F.mean(
-        F.abs(intermediate_residual - prev_intermediate_residual), axis=-1
-    )
-    mean_prev_rows = F.mean(F.abs(prev_intermediate_residual), axis=-1)
-    mean_diff = F.mean(mean_diff_rows, axis=None)
-    mean_prev = F.mean(mean_prev_rows, axis=None)
-    eps = 1e-9
-    relative_diff = mean_diff / (mean_prev + eps)
-    pred = relative_diff < F.cast(rdt, relative_diff.dtype)
-    # cond predicate must be scalar bool.
-    return F.squeeze(pred, 0)
+from max.pipelines.lib.interfaces.cache_mixin import CacheMixin, can_use_step_cache
 
 
 class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
@@ -452,6 +421,11 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             ],
             device=self.device,
         )
+        cache_enabled_type = TensorType(
+            DType.bool,
+            shape=[1],
+            device=self.device,
+        )
         rdt_type = TensorType(
             DType.float32,
             shape=[1],
@@ -461,6 +435,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         return base_types + (
             prev_residual_type,
             prev_output_type,
+            cache_enabled_type,
             rdt_type,
         )
 
@@ -475,6 +450,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         guidance: Tensor | None = None,
         prev_residual: Tensor | None = None,
         prev_output: Tensor | None = None,
+        cache_enabled: Tensor | None = None,
         rdt: Tensor | None = None,
     ) -> tuple[Tensor] | tuple[Tensor, Tensor]:
         """Apply Flux Transformer 2D model forward pass.
@@ -489,6 +465,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             guidance: Guidance scale values.
             prev_residual: First-block residual from previous step.
             prev_output: Previous step output for cache reuse.
+            cache_enabled: Scalar bool tensor ([1]) indicating step-cache on/off.
             rdt: Relative difference threshold tensor ([1]) for cache check.
 
         Returns:
@@ -520,7 +497,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         ids = F.concat((txt_ids, img_ids), axis=0)
         image_rotary_emb = self.pos_embed(ids)
 
-        if prev_residual is None:
+        if cache_enabled is None:
             # Standard path: no cache overhead, identical to original graph.
             for block in self.transformer_blocks:
                 encoder_hidden_states, hidden_states = block(
@@ -543,7 +520,36 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             return (output,)
 
         # Step-cache path: F.cond branching for cache reuse.
+        if (
+            prev_residual is None
+            or prev_output is None
+            or cache_enabled is None
+            or rdt is None
+        ):
+            # Fallback path if cache tensors/flags are unavailable at runtime.
+            for block in self.transformer_blocks:
+                encoder_hidden_states, hidden_states = block(
+                    hidden_states=hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
+                    temb=temb,
+                    image_rotary_emb=image_rotary_emb,
+                )
+
+            for single_block in self.single_transformer_blocks:
+                encoder_hidden_states, hidden_states = single_block(
+                    hidden_states=hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
+                    temb=temb,
+                    image_rotary_emb=image_rotary_emb,
+                )
+
+            hidden_states = self.norm_out(hidden_states, temb)
+            output = self.proj_out(hidden_states)
+            return (output,)
+
+        assert prev_residual is not None
         assert prev_output is not None
+        assert cache_enabled is not None
         assert rdt is not None
         prev_output_tensor = prev_output
         first_block_residual = hidden_states
@@ -559,6 +565,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
                     new_hidden_states - hidden_states
                 )
                 first_block_residual = intermediate_hidden_states_residual
+                cache_enabled_scalar = F.squeeze(cache_enabled, 0)
                 output_type = TensorType(
                     self.max_dtype,
                     shape=[
@@ -611,15 +618,33 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
                         TensorValue(_first_block_residual),
                     )
 
-                can_use_cache = get_can_use_cache(
-                    first_block_residual,
-                    prev_residual,
-                    rdt,
-                )
+                def cache_enabled_then_fn(
+                    _first_block_residual: Tensor = first_block_residual,
+                    _output_type: TensorType = output_type,
+                    _residual_type: TensorType = residual_type,
+                ) -> tuple[TensorValue, TensorValue]:
+                    use_step_cache = can_use_step_cache(
+                        _first_block_residual,
+                        prev_residual,
+                        rdt,
+                    )
+                    result = F.cond(
+                        use_step_cache,
+                        [_output_type, _residual_type],
+                        then_fn,
+                        else_fn,
+                    )
+                    return (
+                        TensorValue(result[0]),
+                        TensorValue(result[1]),
+                    )
+
+                # Skip the residual-difference reduction entirely when step-cache
+                # is disabled, since the full path is required anyway.
                 result = F.cond(
-                    can_use_cache,
+                    cache_enabled_scalar,
                     [output_type, residual_type],
-                    then_fn,
+                    cache_enabled_then_fn,
                     else_fn,
                 )
                 return (result[0], result[1])
@@ -627,4 +652,14 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             hidden_states = new_hidden_states
             encoder_hidden_states = new_encoder_hidden_states
 
-        raise RuntimeError("transformer_blocks must not be empty")
+        for single_block in self.single_transformer_blocks:
+            encoder_hidden_states, hidden_states = single_block(
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                temb=temb,
+                image_rotary_emb=image_rotary_emb,
+            )
+
+        hidden_states = self.norm_out(hidden_states, temb)
+        output = self.proj_out(hidden_states)
+        return (output, first_block_residual)
