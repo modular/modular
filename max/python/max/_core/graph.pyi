@@ -73,14 +73,14 @@ class Analysis:
     """
 
     def __init__(
-        self, arg0: object, arg1: Sequence[str | os.PathLike], /
+        self, context: object, paths: Sequence[str | os.PathLike]
     ) -> None:
         """
         Creates an analysis by loading the given Mojo libraries.
 
         Args:
-            arg0: A Mojo library object or path.
-            arg1: Additional library search paths.
+            context: A Mojo library object or path.
+            paths: Additional library search paths.
         """
 
     @property
