@@ -54,7 +54,10 @@ from structured_kernels.tile_types import (
     create_tma_tile,
 )
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -75,6 +78,7 @@ fn conv2d_fprop[
     config: Conv2dConfig[act_type, filter_type, out_type] = Conv2dConfig[
         act_type, filter_type, out_type
     ].default_bf16(),
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -110,6 +114,8 @@ fn conv2d_fprop[
         filter_type: Data type of the filter weights tensor.
         out_type: Data type of the output tensor.
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
+        elementwise_lambda_fn: Optional void epilogue lambda applied after
+            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
         elementwise_compute_lambda_fn: Optional element-wise lambda function
             for epilogue fusion (bias add, activation, residual connection).
             Signature: `fn(coords: IndexList[2], val: SIMD) -> SIMD`.
@@ -228,6 +234,7 @@ fn conv2d_fprop[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
+        elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ]
@@ -339,6 +346,7 @@ fn conv2d_fprop_with_residual[
     config: Conv2dConfig[act_type, filter_type, out_type] = Conv2dConfig[
         act_type, filter_type, out_type
     ].default_bf16(),
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -372,6 +380,8 @@ fn conv2d_fprop_with_residual[
         filter_type: Data type of the filter weights tensor.
         out_type: Data type of the output tensor.
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
+        elementwise_lambda_fn: Optional void epilogue lambda applied after
+            output write. Signature: `fn(IndexList[2], SIMD) -> None`.
         elementwise_compute_lambda_fn: Optional element-wise lambda function
             for epilogue fusion (bias add, activation). Applied before residual.
         register_based_epilogue: If True, apply lambda in registers (faster).
@@ -479,6 +489,7 @@ fn conv2d_fprop_with_residual[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
+        elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
     ]

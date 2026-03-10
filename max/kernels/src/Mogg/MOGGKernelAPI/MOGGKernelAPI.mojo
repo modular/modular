@@ -4899,6 +4899,103 @@ struct Conv:
         )
 
 
+@compiler.register("conv2d_residual_add")
+struct Conv2dResidualAdd:
+    """Fused conv2d + TMA residual add + bias for SM100 (Blackwell).
+
+    Computes: D = Conv(input, filter) + bias + source
+    The residual (source) is loaded via TMA pre-fetch overlapped with MMA,
+    and the bias is applied in the epilogue.
+
+    This op is intended for ResNet-style skip connections where a residual
+    tensor is added to the convolution output.
+    """
+
+    @staticmethod
+    fn execute[
+        stride_h: Int,
+        stride_w: Int,
+        pad_top: Int,
+        pad_bottom: Int,
+        pad_left: Int,
+        pad_right: Int,
+        has_bias: Bool,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=4, ...],
+        filter: InputTensor[rank=4, ...],
+        source: InputTensor[dtype=output.dtype, rank=4, ...],
+        bias: InputTensor[dtype=output.dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn output_fn[
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            var result = val
+
+            comptime if has_bias:
+                var c_idx = coords[_rank - 1]
+                var bias_vec = (bias.unsafe_ptr() + c_idx).load[width=_width]()
+                result = val + bias_vec.cast[_dtype]()
+
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](result),
+            )
+
+        comptime assert not is_cpu[
+            target
+        ](), "conv2d_residual_add is only supported on GPU"
+
+        var cuda_ctx = ctx.get_device_context()
+        var input_buf = input.to_layout_tensor()
+        var filter_buf = filter.to_layout_tensor()
+        var output_buf = output.to_layout_tensor()
+
+        var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
+        var stride_tuple = IndexList[2](stride_h, stride_w)
+        var dilation_tuple = IndexList[2](1, 1)
+
+        with Trace[TraceLevel.OP, target=target](
+            "conv2d_residual_add", task_id=get_safe_task_id(ctx)
+        ):
+            conv_gpu[
+                input_buf.layout,
+                filter_buf.layout,
+                output_buf.layout,
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                output_fn,
+                True,  # filter_is_fcrs
+                has_residual=True,
+            ](
+                input_buf,
+                filter_buf,
+                output_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
+                1,  # num_groups
+                cuda_ctx,
+                source.unsafe_ptr().as_any_origin(),
+                Float32(1.0),  # beta
+            )
+
+    @staticmethod
+    fn shape(
+        input: InputTensor[rank=4, ...],
+        filter: InputTensor[rank=4, ...],
+        source: InputTensor[rank=4, ...],
+        bias: InputTensor[rank=1, ...],
+    ) raises -> IndexList[4]:
+        # Output shape is the same as source shape (residual tensor).
+        return source.shape()
+
+
 @compiler.register("mo.conv_transpose")
 struct ConvTranspose:
     @staticmethod
