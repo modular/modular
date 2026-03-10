@@ -1288,8 +1288,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse the function effects from the leading keyword.
   fnSignature.effects.setAsync(consumeIf(Token::kw_async));
-  // 'def' implies throws.
-  bool isDef = consumeToken().is(Token::kw_def);
+  // TODO(26.3): Remove support for 'fn'.
+  consumeToken();
 
   // Parameter signature, argument list and the function effects next.
   if (paramList.parseParametersIfPresent(*this,
@@ -1308,17 +1308,6 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse the result type.
   SMLoc endLoc = getToken().getEndLoc();
-
-  // If not already specified, 'def' implies raises.
-  if (isDef) {
-    if (!fnSignature.effects.isThrows()) {
-      emitError(baseLoc,
-                "'def' functions will soon stop implying 'raises', add an "
-                "explicit 'raises'")
-          << FixIt::insertBeforeToken(endLoc, "raises ");
-    }
-    fnSignature.effects.setThrows();
-  }
 
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(*this, stmtIndent);
