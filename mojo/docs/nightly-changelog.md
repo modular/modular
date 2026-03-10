@@ -62,8 +62,9 @@ This version is still a work in progress.
   `math.comb()` and `math.perm()`. `comb(n, k)` computes the binomial
   coefficient C(n, k) without computing full factorials, returning 0 when
   `k > n`. `perm(n, k)` computes permutations P(n, k); omitting `k` (default
-  `-1`) returns `n!`. Both functions also accept `Scalar[dtype]` arguments for
-  any integer dtype (e.g. `Int32`, `Int64`, `UInt32`).
+  `-1`) returns `n!`. `factorial()`, `comb()`, and `perm()` also accept
+  `Scalar[dtype]` arguments for any integer dtype (e.g. `Int32`, `Int64`,
+  `UInt32`).
 
 ## Tooling changes
 
