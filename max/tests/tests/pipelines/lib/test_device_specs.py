@@ -181,6 +181,19 @@ def test_coerce_device_specs_input_passthrough() -> None:
     ]
 
 
+def test_coerce_device_specs_input_dict_list() -> None:
+    """JSON round-trip: list[dict] from serialized list[DeviceSpec] is accepted."""
+    assert coerce_device_specs_input([{"id": -1, "device_type": "cpu"}]) == [
+        DeviceSpec.cpu()
+    ]
+    assert coerce_device_specs_input([{"id": 0, "device_type": "gpu"}]) == [
+        DeviceSpec.accelerator(0)
+    ]
+    assert coerce_device_specs_input(
+        [{"id": 0, "device_type": "gpu"}, {"id": 2, "device_type": "gpu"}]
+    ) == [DeviceSpec.accelerator(0), DeviceSpec.accelerator(2)]
+
+
 def test_coerce_device_specs_input_string_list(
     mocker: MockerFixture,
 ) -> None:

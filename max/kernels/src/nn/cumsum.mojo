@@ -77,11 +77,11 @@ fn cumsum[
 
     var output_data = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     var input_data = TileTensor(
         input.ptr,
-        row_major(Coord(Idx(input.numel()))),
+        row_major(Coord(Idx(input.num_elements()))),
     )
 
     for outer_index in range(outer):

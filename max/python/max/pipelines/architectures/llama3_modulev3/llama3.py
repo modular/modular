@@ -236,14 +236,10 @@ class Llama3TextModel(
             assert logits is not None
             ret_val += (logits, offsets)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += (h,)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+        if self.return_hidden_states == ReturnHiddenStates.LAST:
             ret_val += (last_h,)
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             ret_val += (self.norm(h),)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += (self.norm(last_h),)
 
         return ret_val
 

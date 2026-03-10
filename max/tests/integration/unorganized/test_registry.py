@@ -23,12 +23,17 @@ from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
-from test_common.mocks import mock_pipeline_config_hf_dependencies
+from test_common.mocks import (
+    DummyPipelineConfig,
+    mock_pipeline_config_hf_dependencies,
+)
 from test_common.pipeline_model_dummy import (
     DUMMY_GEMMA_ARCH,
     DUMMY_LLAMA_ARCH,
     DummyLlamaArchConfig,
     DummyPipelineModel,
+    DummyPixelArchConfig,
+    DummyPixelTokenizer,
 )
 from test_common.registry import prepare_registry
 
@@ -93,6 +98,39 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         )
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(config)
         assert task == PipelineTask.TEXT_GENERATION
+
+
+@prepare_registry
+def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
+    pixel_arch = SupportedArchitecture(
+        name="DummyPixelPipeline",
+        task=PipelineTask.PIXEL_GENERATION,
+        example_repo_ids=["dummy/pixel-model"],
+        default_encoding="bfloat16",
+        supported_encodings={"bfloat16"},
+        pipeline_model=DummyPipelineModel,
+        tokenizer=DummyPixelTokenizer,
+        context_type=TextContext,
+        default_weights_format=WeightsFormat.safetensors,
+        config=DummyPixelArchConfig,
+    )
+    PIPELINE_REGISTRY.register(pixel_arch)
+
+    pipeline_config = DummyPipelineConfig(
+        model_path="dummy/pixel-model",
+        quantization_encoding="bfloat16",
+        max_batch_size=1,
+        max_length=1,
+    )
+    pipeline_config.model._diffusers_config = {"components": {}}
+
+    PIPELINE_REGISTRY.retrieve_factory(
+        pipeline_config,
+        task=PipelineTask.PIXEL_GENERATION,
+        override_architecture="DummyPixelPipeline",
+    )
+
+    assert DummyPixelTokenizer.init_kwargs["max_length"] == 123
 
 
 def test_supported_architecture__eq__method() -> None:

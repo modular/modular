@@ -328,9 +328,9 @@ fn matmul[
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
@@ -553,9 +553,9 @@ fn matmul[
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,

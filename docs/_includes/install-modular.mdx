@@ -3,15 +3,22 @@ import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 import Admonition from '@theme/Admonition';
 import Link from '@docusaurus/Link';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
 
 export default function InstallModular({ folder = "example-project", extraLibraries = [] }) {
   const extraLibsString = extraLibraries.length > 0 ? ' ' + extraLibraries.join(' ') : '';
-  const installDescription = extraLibraries.length > 0
-    ? <>Install <code>modular</code> and other required packages:</>
-    : <>Install the <code>modular</code> conda package:</>;
-  const installDescriptionPython = extraLibraries.length > 0
-    ? <>Install <code>modular</code> and other required packages:</>
-    : <>Install the <code>modular</code> Python package:</>;
+  const extraLibsDescription = extraLibraries.length > 0
+    ? ' and other required packages'
+    : '';
+  const tooltipNightly = (<Tooltip
+    parent="nightly"
+    content="To get the stable build, change the version in the website header."
+  />);
+  const tooltipStable = (<Tooltip
+    parent="stable"
+    content="To get the nightly build, change the version in the website header."
+  />);
   return (
     <>
       <Tabs groupId="install">
@@ -46,21 +53,22 @@ export default function InstallModular({ folder = "example-project", extraLibrar
 
             </li>
 
-            <li>
-              {installDescription}
-              <Tabs groupId="release">
-                <TabItem value="nightly" label="Nightly">
-                  <CodeBlock language="sh">
-                    {`pixi add modular${extraLibsString}`}
-                  </CodeBlock>
-                </TabItem>
-                <TabItem value="stable" label="Stable">
-                  <CodeBlock language="sh">
-                    {`pixi add "modular==26.1"${extraLibsString}`}
-                  </CodeBlock>
-                </TabItem>
-              </Tabs>
-            </li>
+            <ConditionalVersionDocs version="nightly">
+              <li>
+                Install <code>modular</code> ({tooltipNightly}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`pixi add modular${extraLibsString}`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+            <ConditionalVersionDocs version="stable">
+              <li>
+                Install <code>modular</code> ({tooltipStable}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`pixi add "modular==26.2"${extraLibsString}`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
 
             <li>
               Start the virtual environment:
@@ -96,117 +104,28 @@ export default function InstallModular({ folder = "example-project", extraLibrar
               </CodeBlock>
             </li>
 
-            <li>
-              {installDescriptionPython}
-              <Tabs groupId="release">
-                <TabItem value="nightly" label="Nightly">
-                  <CodeBlock language="sh">
-                    {`uv pip install modular${extraLibsString} \\
-  --index https://whl.modular.com/nightly/simple/ \\
-  --prerelease allow`}
-                  </CodeBlock>
-                </TabItem>
-                <TabItem value="stable" label="Stable">
-                  <CodeBlock language="sh">
-                    {`uv pip install modular${extraLibsString} \\
-  --extra-index-url https://modular.gateway.scarf.sh/simple/`}
-                  </CodeBlock>
-                </TabItem>
-              </Tabs>
-            </li>
+            <ConditionalVersionDocs version="nightly">
+              <li>
+                Install <code>modular</code> ({tooltipNightly}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`uv pip install modular${extraLibsString} \\
+    --index https://whl.modular.com/nightly/simple/ \\
+    --prerelease allow`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+            <ConditionalVersionDocs version="stable">
+              <li>
+                Install <code>modular</code> ({tooltipStable}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {`uv pip install modular${extraLibsString} \\
+    --extra-index-url https://modular.gateway.scarf.sh/simple/`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
           </ol>
         </TabItem>
 
-        <TabItem value="pip" label="pip">
-          <ol>
-            <li>
-              Create a project folder:
-              <CodeBlock language="sh">
-                {`mkdir ${folder} && cd ${folder}`}
-              </CodeBlock>
-            </li>
-
-            <li>
-              Create and activate a virtual environment:
-              <CodeBlock language="sh">
-                {`python3 -m venv .venv/${folder} \\
-  && source .venv/${folder}/bin/activate`}
-              </CodeBlock>
-            </li>
-
-            <li>
-              {installDescriptionPython}
-              <Tabs groupId="release">
-                <TabItem value="nightly" label="Nightly">
-                  <CodeBlock language="sh">
-                    {`pip install --pre modular${extraLibsString} \\
-  --extra-index-url https://whl.modular.com/nightly/simple/`}
-                  </CodeBlock>
-                </TabItem>
-                <TabItem value="stable" label="Stable">
-                  <CodeBlock language="sh">
-                    {`pip install modular${extraLibsString} \\
-  --extra-index-url https://modular.gateway.scarf.sh/simple/`}
-                  </CodeBlock>
-                </TabItem>
-              </Tabs>
-            </li>
-          </ol>
-        </TabItem>
-
-        <TabItem value="conda" label="conda">
-          <ol>
-            <li>If you don't have it, install <a
-              href="https://docs.conda.io/projects/conda/en/latest/index.html"
-            >conda</a>. A common choice is with <code>brew</code>:
-              <CodeBlock language="sh">
-                {`brew install miniconda`}
-              </CodeBlock>
-            </li>
-
-            <li>
-              Initialize <code>conda</code> for shell interaction:
-              <CodeBlock language="sh">
-                {`conda init`}
-              </CodeBlock>
-              <p>If you're on a Mac, instead use:</p>
-              <CodeBlock language="sh">
-                {`conda init zsh`}
-              </CodeBlock>
-              <p>Then restart your terminal for the changes to take effect.</p>
-            </li>
-
-            <li>
-              Create a project:
-              <CodeBlock language="sh">
-                {`conda create -n ${folder}`}
-              </CodeBlock>
-            </li>
-
-            <li>
-              Start the virtual environment:
-              <CodeBlock language="sh">
-                {`conda activate ${folder}`}
-              </CodeBlock>
-            </li>
-
-            <li>
-              {installDescription}
-              <Tabs groupId="release">
-                <TabItem value="nightly" label="Nightly">
-                  <CodeBlock language="sh">
-                    {`conda install -c conda-forge -c https://conda.modular.com/max-nightly/ modular${extraLibsString}`}
-                  </CodeBlock>
-                </TabItem>
-                <TabItem value="stable" label="Stable">
-                  <CodeBlock language="sh">
-                    {`conda install -c conda-forge -c https://conda.modular.com/max/ modular${extraLibsString}`}
-                  </CodeBlock>
-                </TabItem>
-              </Tabs>
-            </li>
-          </ol>
-        </TabItem>
       </Tabs>
     </>
   );

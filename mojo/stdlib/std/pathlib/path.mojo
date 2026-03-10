@@ -274,7 +274,7 @@ struct Path(
         print(p.stat())      # os.stat_result(...)
         ```
         """
-        return os.stat(self)
+        return std.os.stat(self)
 
     fn lstat(self) raises -> stat_result:
         """Returns the lstat information on the path. This is similar to stat,
@@ -287,7 +287,7 @@ struct Path(
         Raises:
             If the operation fails.
         """
-        return os.lstat(self)
+        return std.os.lstat(self)
 
     @always_inline
     fn exists(self) -> Bool:
@@ -305,7 +305,7 @@ struct Path(
         print("Exists" if p.exists() else "Does not exist") # Does not exist
         ```
         """
-        return os.path.exists(self)
+        return std.os.path.exists(self)
 
     fn expanduser(self) raises -> Path:
         """Expands a prefixed `~` with `$HOME` on posix
@@ -328,7 +328,7 @@ struct Path(
         assert_true(p.expanduser() == Path.home())
         ```
         """
-        return os.path.expanduser(self)
+        return std.os.path.expanduser(self)
 
     @staticmethod
     fn home() raises -> Path:
@@ -351,7 +351,7 @@ struct Path(
         assert_true(p.expanduser() == Path.home())
         ```
         """
-        return os.path.expanduser("~")
+        return std.os.path.expanduser("~")
 
     fn is_dir(self) -> Bool:
         """Returns True if the path is a directory and False otherwise.
@@ -370,7 +370,7 @@ struct Path(
         assert_true(p.is_dir())
         ```
         """
-        return os.path.isdir(self)
+        return std.os.path.isdir(self)
 
     fn is_file(self) -> Bool:
         """Returns True if the path is a file and False otherwise.
@@ -389,7 +389,7 @@ struct Path(
         assert_false(p.is_file())
         ```
         """
-        return os.path.isfile(self)
+        return std.os.path.isfile(self)
 
     fn read_text(self) raises -> String:
         """Returns content of the file.
@@ -606,7 +606,7 @@ struct Path(
         Path("a/path/foo.txt").name()  # returns "foo.txt"
         ```
         """
-        return os.path.basename(self)
+        return std.os.path.basename(self)
 
     fn parts(self) -> List[StringSlice[origin_of(self.path)]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.

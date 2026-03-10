@@ -41,9 +41,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
 )
 from max.nn.transformer import ReturnHiddenStates
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from ..deepseekV3.deepseekV3 import DeepseekV3DecoderLayer
 from .model_config import DeepseekV3NextNConfig
@@ -301,9 +299,7 @@ class DeepseekV3NextN(Module):
 
         ret_val: tuple[TensorValue, ...] = (last_logits,)
 
-        if self.return_hidden_states == ReturnHiddenStates.ALL:
-            ret_val += tuple(h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+        if self.return_hidden_states == ReturnHiddenStates.LAST:
             if self.config.data_parallel_degree > 1:
                 ret_val += tuple(last_token_per_dev)
             else:
@@ -311,8 +307,6 @@ class DeepseekV3NextN(Module):
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.shared_head_norm_shards, h)
             ret_val += tuple(norm_h)
-        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += tuple(norm_last_token)
 
         return ret_val
 

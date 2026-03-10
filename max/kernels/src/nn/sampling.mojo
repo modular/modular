@@ -267,7 +267,7 @@ fn update_frequency_data[
                     compressed_frequency_data[tok_id, 1] = 1
                     break
 
-        var dispatch_shape = IndexList[1](new_tokens.numel())
+        var dispatch_shape = IndexList[1](new_tokens.num_elements())
         elementwise[
             func=update_frequency_data_fn,
             simd_width=1,

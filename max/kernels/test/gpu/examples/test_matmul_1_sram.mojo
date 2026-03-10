@@ -45,9 +45,9 @@ fn matmul_sram(
     access.
     """
 
-    var a = NDBuffer[DType.float32, 2](a_ptr, Index(M, K))
-    var b = NDBuffer[DType.float32, 2](b_ptr, Index(K, N))
-    var c = NDBuffer[DType.float32, 2](c_ptr, Index(M, N))
+    var a = NDBuffer[rank=2, DType.float32](a_ptr, Index(M, K))
+    var b = NDBuffer[rank=2, DType.float32](b_ptr, Index(K, N))
+    var c = NDBuffer[rank=2, DType.float32](c_ptr, Index(M, N))
 
     # Allocate A, B tile in shared memory.
     var a_shared = stack_allocation[
@@ -136,11 +136,11 @@ fn run_matmul(ctx: DeviceContext) raises:
     comptime K = 511
 
     var a_host_ptr = alloc[Float32](M * K)
-    var a_host = NDBuffer[DType.float32, 2, _, DimList(M, K)](a_host_ptr)
+    var a_host = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](a_host_ptr)
     var b_host_ptr = alloc[Float32](K * N)
-    var b_host = NDBuffer[DType.float32, 2, _, DimList(K, N)](b_host_ptr)
+    var b_host = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](b_host_ptr)
     var c_host_ptr = alloc[Float32](M * N)
-    var c_host = NDBuffer[DType.float32, 2, _, DimList(M, N)](c_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.float32, _, DimList(M, N)](c_host_ptr)
 
     for i in range(M):
         for j in range(K):

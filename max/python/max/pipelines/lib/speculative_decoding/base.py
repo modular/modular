@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, load_devices
-from max.engine import InferenceSession, Model
+from max.driver import Buffer, load_devices
+from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
@@ -41,6 +41,10 @@ from max.kv_cache.registry import load_multi_kv_managers
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
+from max.pipelines.lib.sampling import (
+    RejectionRunner,
+    rejection_runner_registry,
+)
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -55,11 +59,7 @@ from ..sampling import (
     PenaltyInputs,
     SamplerInputs,
     SamplingConfig,
-    greedy_acceptance_sampler,
-    rejection_sampler,
-    rejection_sampler_with_residuals,
     token_sampler,
-    typical_acceptance_sampler,
 )
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
@@ -175,193 +175,6 @@ def get_vocab_size(huggingface_config: AutoConfig) -> int:
     else:
         raise ValueError(
             "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
-        )
-
-
-class RejectionRunner(Protocol):
-    """Interface for rejection sampling runners."""
-
-    def run(
-        self,
-        draft_tokens: Buffer,
-        draft_logits: Buffer | None,
-        target_logits: Buffer,
-        target_logit_offsets: Buffer,
-        all_draft_logits: Buffer | None,
-        context_batch: list[TextContext],
-    ) -> tuple[Buffer, Buffer, Buffer | None]:
-        """Run the rejection sampler."""
-        ...
-
-
-class _TypicalAcceptanceRunner(RejectionRunner):
-    """Routes per-batch: temp=0 uses greedy (argmax), temp>0 uses stochastic."""
-
-    def __init__(
-        self,
-        greedy_model: Any,
-        stochastic_model: Any,
-        target_device: Device,
-    ) -> None:
-        self._greedy = greedy_model
-        self._stochastic = stochastic_model
-        self._device = target_device
-
-    def run(
-        self,
-        draft_tokens: Buffer,
-        draft_logits: Buffer | None,
-        target_logits: Buffer,
-        target_logit_offsets: Buffer,
-        all_draft_logits: Buffer | None,
-        context_batch: list[TextContext],
-    ) -> tuple[Buffer, Buffer, Buffer]:
-        temps = [ctx.sampling_params.temperature for ctx in context_batch]
-        all_greedy = all(t == 0 for t in temps)
-        if all_greedy:
-            a, b, c = self._greedy(
-                draft_tokens,
-                target_logits,
-                target_logit_offsets,
-            )
-        else:
-            top_k_np = np.array(
-                [ctx.sampling_params.top_k for ctx in context_batch],
-                dtype=np.int64,
-            )
-            top_p_np = np.array(
-                [ctx.sampling_params.top_p for ctx in context_batch],
-                dtype=np.float32,
-            )
-            temps_np = np.array(temps, dtype=np.float32)
-            np.clip(temps_np, a_min=1e-6, a_max=None, out=temps_np)
-            a, b, c = self._stochastic(
-                draft_tokens,
-                target_logits,
-                target_logit_offsets,
-                Buffer.from_numpy(temps_np).to(self._device),
-                Buffer.from_numpy(top_k_np).to(self._device),
-                Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
-                Buffer.from_numpy(top_p_np).to(self._device),
-                Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
-            )
-        assert isinstance(a, Buffer)
-        assert isinstance(b, Buffer)
-        assert isinstance(c, Buffer)
-        return a, b, c
-
-
-class _GreedyRunner(RejectionRunner):
-    """Always argmax acceptance. No draft logits needed."""
-
-    def __init__(self, model: Model) -> None:
-        self._model = model
-
-    def run(
-        self,
-        draft_tokens: Buffer,
-        draft_logits: Buffer | None,
-        target_logits: Buffer,
-        target_logit_offsets: Buffer,
-        all_draft_logits: Buffer | None,
-        context_batch: list[TextContext],
-    ) -> tuple[Buffer, Buffer, Buffer]:
-        a, b, c = self._model(
-            draft_tokens,
-            target_logits,
-            target_logit_offsets,
-        )
-        assert isinstance(a, Buffer)
-        assert isinstance(b, Buffer)
-        assert isinstance(c, Buffer)
-        return a, b, c
-
-
-class _LogitComparisonRunner(RejectionRunner):
-    """draft_logit <= target_logit + eps. No bonus token (returns None)."""
-
-    def __init__(self, model: Model) -> None:
-        self._model = model
-
-    def run(
-        self,
-        draft_tokens: Buffer,
-        draft_logits: Buffer | None,
-        target_logits: Buffer,
-        target_logit_offsets: Buffer,
-        all_draft_logits: Buffer | None,
-        context_batch: list[TextContext],
-    ) -> tuple[Buffer, Buffer, None]:
-        assert all_draft_logits is not None
-        assert draft_logits is not None
-        a, b = self._model(
-            draft_tokens,
-            draft_logits,
-            target_logits,
-            target_logit_offsets,
-        )
-        assert isinstance(a, Buffer)
-        assert isinstance(b, Buffer)
-        return a, b, None
-
-
-class _ResidualRunner(RejectionRunner):
-    """p_target/p_draft ratio acceptance. Needs all_draft_logits."""
-
-    def __init__(self, model: Model) -> None:
-        self._model = model
-
-    def run(
-        self,
-        draft_tokens: Buffer,
-        draft_logits: Buffer | None,
-        target_logits: Buffer,
-        target_logit_offsets: Buffer,
-        all_draft_logits: Buffer | None,
-        context_batch: list[TextContext],
-    ) -> tuple[Buffer, Buffer, Buffer]:
-        assert draft_logits is not None
-        assert all_draft_logits is not None
-        a, b, c = self._model(
-            draft_tokens,
-            draft_logits,
-            target_logits,
-            target_logit_offsets,
-            all_draft_logits,
-        )
-        assert isinstance(a, Buffer)
-        assert isinstance(b, Buffer)
-        assert isinstance(c, Buffer)
-        return a, b, c
-
-
-def _build_rejection_runner(
-    strategy: str,
-    session: InferenceSession,
-    device_ref: DeviceRef,
-) -> RejectionRunner:
-    """Loads the compiled rejection sampler graph and returns a runner."""
-    if strategy == "typical-acceptance":
-        return _TypicalAcceptanceRunner(
-            greedy_model=session.load(
-                greedy_acceptance_sampler(device=device_ref)
-            ),
-            stochastic_model=session.load(
-                typical_acceptance_sampler(device=device_ref)
-            ),
-            target_device=device_ref.to_device(),
-        )
-    if strategy == "greedy":
-        return _GreedyRunner(
-            session.load(greedy_acceptance_sampler(device=device_ref))
-        )
-    if strategy == "logit-comparison":
-        return _LogitComparisonRunner(
-            session.load(rejection_sampler(device=device_ref))
-        )
-    else:
-        return _ResidualRunner(
-            session.load(rejection_sampler_with_residuals(device=device_ref))
         )
 
 
@@ -531,8 +344,9 @@ class SpeculativeDecodingPipelineBase(
                 " 'typical-acceptance', or 'logit-comparison' instead."
             )
         logger.info(f"Using '{strategy}' rejection sampling strategy")
-        self._rejection_runner: RejectionRunner = _build_rejection_runner(
-            strategy, self._session, device_refs[0]
+        rejection_runner_type = rejection_runner_registry(strategy)
+        self._rejection_runner: RejectionRunner = rejection_runner_type(
+            self._session, device_refs[0]
         )
         self._needs_all_draft_logits = strategy == "residual"
 

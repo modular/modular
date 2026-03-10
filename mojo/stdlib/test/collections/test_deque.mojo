@@ -1175,7 +1175,17 @@ def test_deque_conditional_conformances() raises:
     # `Deque[NonEquatable]` to `fn foo[T: Equatable](x: T)` is an error).
     # assert_false(conforms_to(Deque[NonEquatable], Equatable))
 
+    assert_true(conforms_to(Deque[Int], Hashable))
+    # TODO(MOCO-3413): `conforms_to` doesn't evaluate `where` clauses.
+    # assert_false(conforms_to(Deque[NonEquatable], Hashable))
+
+    # Verify equal deques produce equal hashes.
+    var d1 = Deque[Int](1, 2, 3)
+    var d2 = Deque[Int](1, 2, 3)
+    assert_equal(hash(d1), hash(d2))
+
     assert_true(conforms_to(Deque[Int], Writable))
+    # TODO(MOCO-3413): `conforms_to` doesn't evaluate `where` clauses.
     # assert_false(conforms_to(Deque[NonEquatable], Writable))
 
 

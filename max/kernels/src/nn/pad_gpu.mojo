@@ -165,7 +165,7 @@ fn _pad_constant_impl[
     ctx: DeviceContext,
 ) raises:
     var row_length = Int(input_tensor.dim(input_tensor.rank - 1))
-    var total_rows = input_tensor.numel() // row_length
+    var total_rows = input_tensor.num_elements() // row_length
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 

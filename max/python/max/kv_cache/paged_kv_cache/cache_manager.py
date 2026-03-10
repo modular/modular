@@ -535,6 +535,7 @@ class PagedKVCacheManager:
                     if replica.device_buffer.scales is not None
                     else None,
                     attention_dispatch_metadata=metadata,
+                    dispatch_scalars=resolved_metadata,
                 )
             )
 

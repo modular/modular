@@ -214,7 +214,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             autoencoder_class=AutoencoderKLFlux2,
         )
 
-    def load_model(self) -> Any:
+    def load_model(self) -> Callable[..., Any]:
         """Load and compile the decoder and encoder models with BatchNorm statistics.
 
         Extracts BatchNorm statistics (bn.*) which are specific to Flux2, then

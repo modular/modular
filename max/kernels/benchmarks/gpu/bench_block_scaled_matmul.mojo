@@ -274,8 +274,8 @@ fn bench_matmul[
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
-        var a_host = NDBuffer[dtype, 1](a_host_ptr, cb_a.alloc_size())
-        var b_host = NDBuffer[dtype, 1](b_host_ptr, cb_b.alloc_size())
+        var a_host = NDBuffer[rank=1, dtype](a_host_ptr, cb_a.alloc_size())
+        var b_host = NDBuffer[rank=1, dtype](b_host_ptr, cb_b.alloc_size())
 
         comptime if dtype.is_float8():
             rand(a_host.data, a_host.num_elements())
@@ -308,15 +308,15 @@ fn bench_matmul[
     @__copy_capture(dynamic_a_scales_shape, dynamic_b_scales_shape)
     fn run_vendor_blas(
         ctx: DeviceContext,
-        tensor_a: NDBuffer[dtype, 2, MutAnyOrigin, shape_a],
-        tensor_b: NDBuffer[dtype, 2, MutAnyOrigin, shape_b],
-        tensor_c: NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c],
+        tensor_a: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a],
+        tensor_b: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b],
+        tensor_c: NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c],
     ) raises:
         var a_scales_nd = NDBuffer[
-            scales_type, 5, MutAnyOrigin, static_a_scales_shape
+            rank=5, scales_type, MutAnyOrigin, static_a_scales_shape
         ](buffer_a_scales.unsafe_ptr(), dynamic_a_scales_shape)
         var b_scales_nd = NDBuffer[
-            scales_type, 5, MutAnyOrigin, static_b_scales_shape
+            rank=5, scales_type, MutAnyOrigin, static_b_scales_shape
         ](buffer_b_scales.unsafe_ptr(), dynamic_b_scales_shape)
 
         var a_tensor = from_ndbuffer_row_major(tensor_a)
@@ -351,21 +351,21 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+            var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
                 cb_a.offset_ptr(iteration), shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+            var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
                 cb_b.offset_ptr(iteration), shape_b_dim
             )
-            var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
-                cb_c.offset_ptr(iteration), shape_c_dim
-            )
+            var tensor_c = NDBuffer[
+                rank=2, DType.bfloat16, MutAnyOrigin, shape_c
+            ](cb_c.offset_ptr(iteration), shape_c_dim)
 
             var a_scales_nd = NDBuffer[
-                scales_type, 5, MutAnyOrigin, static_a_scales_shape
+                rank=5, scales_type, MutAnyOrigin, static_a_scales_shape
             ](buffer_a_scales.unsafe_ptr(), dynamic_a_scales_shape)
             var b_scales_nd = NDBuffer[
-                scales_type, 5, MutAnyOrigin, static_b_scales_shape
+                rank=5, scales_type, MutAnyOrigin, static_b_scales_shape
             ](buffer_b_scales.unsafe_ptr(), dynamic_b_scales_shape)
 
             @parameter
@@ -434,14 +434,14 @@ fn bench_matmul[
     comptime if not use_vendor_blas and not epilogue:
         if verify:
             # Create tensors at offset 0 for verification
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+            var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
                 cb_a.unsafe_ptr(), shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+            var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
                 cb_b.unsafe_ptr(), shape_b_dim
             )
             var tensor_c_ref = NDBuffer[
-                DType.bfloat16, 2, MutAnyOrigin, shape_c
+                rank=2, DType.bfloat16, MutAnyOrigin, shape_c
             ](buffer_c_ref.unsafe_ptr(), shape_c_dim)
 
             # Run vendor BLAS to get reference output

@@ -84,13 +84,13 @@ fn bench_matmul[
         shape_b_dim[0] * shape_b_dim[1]
     )
 
-    var mat_c = NDBuffer[out_dtype, 2, _, shape_c](
+    var mat_c = NDBuffer[rank=2, out_dtype, _, shape_c](
         mat_c_buf.unsafe_ptr(), shape_c_dim
     )
-    var mat_a = NDBuffer[in_dtype, 2, _, shape_a](
+    var mat_a = NDBuffer[rank=2, in_dtype, _, shape_a](
         mat_a_buf.unsafe_ptr(), shape_a_dim
     )
-    var mat_b = NDBuffer[in_dtype, 2, _, shape_b](
+    var mat_b = NDBuffer[rank=2, in_dtype, _, shape_b](
         mat_b_buf.unsafe_ptr(), shape_b_dim
     )
 
@@ -149,13 +149,13 @@ fn bench_matmul_transpose[
         shape_b_dim[0] * shape_b_dim[1]
     )
 
-    var mat_c = NDBuffer[out_dtype, 2, _, shape_c](
+    var mat_c = NDBuffer[rank=2, out_dtype, _, shape_c](
         mat_c_buf.unsafe_ptr(), shape_c_dim
     )
-    var mat_a = NDBuffer[in_dtype, 2, _, shape_a](
+    var mat_a = NDBuffer[rank=2, in_dtype, _, shape_a](
         mat_a_buf.unsafe_ptr(), shape_a_dim
     )
-    var mat_b = NDBuffer[in_dtype, 2, _, shape_b](
+    var mat_b = NDBuffer[rank=2, in_dtype, _, shape_b](
         mat_b_buf.unsafe_ptr(), shape_b_dim
     )
 

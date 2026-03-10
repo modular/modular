@@ -63,11 +63,11 @@ struct PackMatrixRows[
 
     # packed matrix
     var packed_matrix: NDBuffer[
-        Self.dtype, 3, Self.packed_origin, Self.packed_shape
+        rank=3, Self.dtype, Self.packed_origin, Self.packed_shape
     ]
     # original matrix:
     var original_matrix: NDBuffer[
-        Self.dtype, 2, Self.original_origin, Self.original_shape
+        rank=2, Self.dtype, Self.original_origin, Self.original_shape
     ]
     # offsets in original matrix
     var global_offset: IndexList[2]
@@ -84,10 +84,10 @@ struct PackMatrixRows[
     @staticmethod
     fn run(
         packed_matrix: NDBuffer[
-            Self.dtype, 3, Self.packed_origin, Self.packed_shape
+            rank=3, Self.dtype, Self.packed_origin, Self.packed_shape
         ],
         original_matrix: NDBuffer[
-            Self.dtype, 2, Self.original_origin, Self.original_shape
+            rank=2, Self.dtype, Self.original_origin, Self.original_shape
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -142,8 +142,8 @@ struct PackMatrixRows[
         self,
         transpose_buffer: NDBuffer[
             mut=True,
+            rank=2,
             Self.dtype,
-            2,
             _,
             DimList(Self.simd_size, Self.simd_size),
         ],
@@ -221,8 +221,9 @@ struct PackMatrixRows[
                 Index(idx, 0)
             )
             # compute the packed index
-            var _row_outer = local_off_set[0] // Self.row_inner_size
-            var _row_inner = local_off_set[0] % Self.row_inner_size
+            var _row_outer, _row_inner = divmod(
+                local_off_set[0], Self.row_inner_size
+            )
 
             if skip_col_bound or (idx < write_bound[1]):
                 self.packed_matrix.store[width=Self.simd_size](
@@ -242,8 +243,8 @@ struct PackMatrixRows[
         """
 
         var transpose_buffer = NDBuffer[
+            rank=2,
             Self.dtype,
-            2,
             MutAnyOrigin,
             DimList(Self.simd_size, Self.simd_size),
         ].stack_allocation[
@@ -316,11 +317,11 @@ struct PackMatrixCols[
 
     # packed matrix
     var packed_matrix: NDBuffer[
-        Self.dtype, 3, Self.packed_origin, Self.packed_shape
+        rank=3, Self.dtype, Self.packed_origin, Self.packed_shape
     ]
     # original matrix:
     var original_matrix: NDBuffer[
-        Self.dtype, 2, Self.original_origin, Self.original_shape
+        rank=2, Self.dtype, Self.original_origin, Self.original_shape
     ]
     # offsets in original matrix:
     var global_offset: IndexList[2]
@@ -334,10 +335,10 @@ struct PackMatrixCols[
     @staticmethod
     fn run(
         packed_matrix: NDBuffer[
-            Self.dtype, 3, Self.packed_origin, Self.packed_shape
+            rank=3, Self.dtype, Self.packed_origin, Self.packed_shape
         ],
         original_matrix: NDBuffer[
-            Self.dtype, 2, Self.original_origin, Self.original_shape
+            rank=2, Self.dtype, Self.original_origin, Self.original_shape
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -410,8 +411,9 @@ struct PackMatrixCols[
                 )
 
             # map to packed index
-            var col_idx_outer = col_idx // Self.column_inner_size
-            var col_idx_inner = col_idx % Self.column_inner_size
+            var col_idx_outer, col_idx_inner = divmod(
+                col_idx, Self.column_inner_size
+            )
             self.packed_matrix.store[width=Self.simd_size](
                 Index(col_idx_outer, row_idx, col_idx_inner),
                 data,
@@ -549,7 +551,8 @@ fn _pack_matmul_b_shape_func_impl[
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape], kernel_type_m: Int = 0
+    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
+    kernel_type_m: Int = 0,
 ) -> IndexList[2]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
     argument.
@@ -616,7 +619,7 @@ fn pack_matmul_b_shape_func[
     c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[mut=False, b_type, 2, _, b_shape]) -> IndexList[2]:
+](b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape]) -> IndexList[2]:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
@@ -645,8 +648,8 @@ fn pack_b[
     src_shape: DimList,
     dst_shape: DimList,
 ](
-    dst: NDBuffer[mut=True, b_type, 2, _, dst_shape],
-    src: NDBuffer[b_type, 2, _, src_shape],
+    dst: NDBuffer[mut=True, rank=2, b_type, _, dst_shape],
+    src: NDBuffer[rank=2, b_type, _, src_shape],
     tile_n: Int,
     tile_k: Int,
 ):
@@ -679,7 +682,7 @@ fn pack_b[
             var tile_k2 = align_up(min(tile_k, k_out - idx_k), factor)
 
             for idx_n in range(0, n_out, tile_n):
-                var packed_dst_view = NDBuffer[b_type, 3](
+                var packed_dst_view = NDBuffer[rank=3, b_type](
                     dst_flat.data + dst_offset,
                     IndexList[3](
                         tile_n // inner_size2,
@@ -723,7 +726,7 @@ fn pack_b[
 
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
-                var packed_dst_view_t = NDBuffer[b_type, 3](
+                var packed_dst_view_t = NDBuffer[rank=3, b_type](
                     dst_flat.data + dst_offset,
                     IndexList[3](tile_n // inner_size, tile_k, inner_size),
                 )
@@ -760,8 +763,8 @@ fn _pack_b_ndbuffer_impl[
     transposed: Bool,
     output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
-    output_buffer: NDBuffer[b_type, 2, output_origin],
+    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
+    output_buffer: NDBuffer[rank=2, b_type, output_origin],
     kernel_type_m: Int,
 ) raises:
     """Performs the layout transformation on `b_input` expected by
@@ -788,7 +791,7 @@ fn _pack_b_ndbuffer_impl[
             # If already transposed, skip transpose step and do a memcpy.
             comptime if not transposed:
                 var perm = NDBuffer[
-                    DType.int, 1, MutAnyOrigin, 2
+                    rank=1, DType.int, MutAnyOrigin, 2
                 ].stack_allocation()
                 perm[0] = 1
                 perm[1] = 0
@@ -839,8 +842,8 @@ fn pack_b_ndbuffer[
     c_shape: DimList,
     output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
-    output_buffer: NDBuffer[b_type, 2, output_origin],
+    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
+    output_buffer: NDBuffer[rank=2, b_type, output_origin],
 ) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
@@ -865,8 +868,8 @@ fn pack_transposed_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
-    output_buffer: NDBuffer[mut=True, b_type, 2, _],
+    b_input: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
+    output_buffer: NDBuffer[mut=True, rank=2, b_type, _],
 ) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
@@ -900,7 +903,7 @@ struct BTileGenerator[
     scratch buffer and return a view of that."""
 
     var b: NDBuffer[
-        Self.b_type, 2, Self.origin, Self.shape
+        rank=2, Self.b_type, Self.origin, Self.shape
     ]  # packed layout if b_packed is True
     var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutAnyOrigin]
     var tile_n_k: IndexList[2]
@@ -909,7 +912,7 @@ struct BTileGenerator[
     @always_inline
     @staticmethod
     fn get(
-        b: NDBuffer[Self.b_type, 2, Self.origin, Self.shape],
+        b: NDBuffer[rank=2, Self.b_type, Self.origin, Self.shape],
         tile_n_k: IndexList[2],
     ) -> BTileGenerator[
         Self.config,
@@ -953,7 +956,9 @@ struct BTileGenerator[
         global_offset: GemmShape,
         tile_dim_nk: IndexList[2],
         valid_data_dim_nk: IndexList[2],
-    ) -> NDBuffer[Self.b_type, 3, ImmutAnyOrigin, Self.config.packed_shape]:
+    ) -> NDBuffer[
+        rank=3, Self.b_type, ImmutAnyOrigin, Self.config.packed_shape
+    ]:
         """Get a packed matrix (B) tile.
 
         Args:
@@ -981,9 +986,9 @@ struct BTileGenerator[
             factor * inner_size2,
         )
 
-        var packed_b = NDBuffer[Self.b_type, 3, _, Self.config.packed_shape](
-            self.b_tile_stack_ptr, tile_shape_nopack
-        )
+        var packed_b = NDBuffer[
+            rank=3, Self.b_type, _, Self.config.packed_shape
+        ](self.b_tile_stack_ptr, tile_shape_nopack)
 
         comptime if Self.transpose_b and not Self.b_packed:
             PackMatrixRows[
@@ -1047,7 +1052,7 @@ struct BTileGenerator[
             var b_flat = self.b.flatten()
             var n_padded = self.b.dim[1]()
             var b_tile_view = NDBuffer[
-                Self.b_type, 3, _, Self.config.packed_shape
+                rank=3, Self.b_type, _, Self.config.packed_shape
             ](
                 # tiles are ordered in row-major order
                 # a bit of trickieness going on here, this works because:

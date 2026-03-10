@@ -123,8 +123,8 @@ fn _get_batch_dims[
 fn _reshape_nd_buffer_with_batch_to_3d(
     buffer: NDBuffer[...],
 ) -> NDBuffer[
+    rank=3,
     buffer.type,
-    3,
     buffer.origin,
     DimList(
         Dim(),
@@ -152,8 +152,8 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     )
 
     return NDBuffer[
+        rank=3,
         buffer.type,
-        3,
         buffer.origin,
         static_shape,
         address_space=buffer.address_space,
@@ -307,7 +307,7 @@ fn _reshape_tile_tensor_with_batch_to_3d(
 fn _reshape_nd_buffer_with_batch_to_2d(
     buffer: NDBuffer,
 ) -> NDBuffer[
-    buffer.type, 2, buffer.origin, address_space=buffer.address_space
+    rank=2, buffer.type, buffer.origin, address_space=buffer.address_space
 ]:
     comptime rank = buffer.rank
     comptime assert rank >= 2, "expecting at least rank-2 NDBuffer"
@@ -319,7 +319,7 @@ fn _reshape_nd_buffer_with_batch_to_2d(
 
     var matrix_shape = IndexList[2](batch_size, buffer.dim[rank - 1]())
 
-    return NDBuffer[buffer.type, 2, address_space=buffer.address_space](
+    return NDBuffer[rank=2, buffer.type, address_space=buffer.address_space](
         buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
     )
 
@@ -332,9 +332,9 @@ fn _small_batched_matmul[
     c_type: DType,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, ...],
-    a_buf: NDBuffer[a_type, rank, ...],
-    b_buf: NDBuffer[b_type, rank, ...],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, ...],
+    a_buf: NDBuffer[rank=rank, a_type, ...],
+    b_buf: NDBuffer[rank=rank, b_type, ...],
 ) raises:
     comptime simd_width = simd_width_of[c_type]()
 
@@ -354,8 +354,12 @@ fn _small_batched_matmul[
             # each trailing batch dimension.
             var indices = _get_batch_dims[rank](batch, c_buf.get_shape())
 
-            var a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, Index(K))
-            var b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, Index(K))
+            var a_view = NDBuffer[rank=1, a_type](
+                a_buf.data + batch * K, Index(K)
+            )
+            var b_view = NDBuffer[rank=1, b_type](
+                b_buf.data + batch * K, Index(K)
+            )
 
             @always_inline
             @__copy_capture(a_view, b_view)
@@ -466,9 +470,9 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
-    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
+    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
+    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -530,9 +534,9 @@ fn _batched_matmul_cpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, ...],
-    a_buf: NDBuffer[a_type, rank, ...],
-    b_buf: NDBuffer[b_type, rank, ...],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, ...],
+    a_buf: NDBuffer[rank=rank, a_type, ...],
+    b_buf: NDBuffer[rank=rank, b_type, ...],
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
@@ -605,8 +609,7 @@ fn _batched_matmul_cpu[
         var b_stride_between_batches = b.size() // b.dim[0]()
         var c_stride_between_batches = c.size() // c.dim[0]()
 
-        var batch_task_id = task_id // num_tasks_matmul
-        var matmul_task_id = task_id % num_tasks_matmul
+        var batch_task_id, matmul_task_id = divmod(task_id, num_tasks_matmul)
 
         var num_batches = c.dim[0]()
         # Set the granularity to 1 to divide the batches among tasks
@@ -621,11 +624,11 @@ fn _batched_matmul_cpu[
 
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
-            var c_view = NDBuffer[c_type, 2](
+            var c_view = NDBuffer[rank=2, c_type](
                 c.data + batch * c_stride_between_batches,
                 IndexList[2](c.dim[1](), c.dim[2]()),
             )
-            var a_view = NDBuffer[a_type, 2, a.origin, ...](
+            var a_view = NDBuffer[rank=2, a_type, a.origin, ...](
                 a.data + batch * a_stride_between_batches,
                 IndexList[2](a.dim[1](), a.dim[2]()),
             )
@@ -637,7 +640,7 @@ fn _batched_matmul_cpu[
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
 
-            var b_view = NDBuffer[b_type, 2](
+            var b_view = NDBuffer[rank=2, b_type](
                 b.data + batch * b_stride_between_batches,
                 IndexList[2](b.dim[1](), b.dim[2]()),
             )
@@ -673,7 +676,7 @@ fn _batched_matmul_cpu[
                 a_packed_ptr = alloc[Scalar[a_type]](
                     mh * kh, alignment=alignment
                 )
-                var a_packed = NDBuffer[a_type, 2](
+                var a_packed = NDBuffer[rank=2, a_type](
                     a_packed_ptr,
                     IndexList[2](mh, kh),
                 )
@@ -1134,9 +1137,9 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
-    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
+    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
+    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1174,8 +1177,8 @@ fn batched_matmul_shape[
     b_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    a_buff: NDBuffer[a_type, rank, ...],
-    b_buff: NDBuffer[b_type, rank, ...],
+    a_buff: NDBuffer[rank=rank, a_type, ...],
+    b_buff: NDBuffer[rank=rank, b_type, ...],
 ) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the

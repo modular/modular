@@ -41,7 +41,7 @@ from ....structuring import (
     RegTile,
 )
 from layout.swizzle import Swizzle
-from std.gpu import thread_idx, lane_id
+from std.gpu import lane_id
 from std.sys import simd_width_of
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
@@ -61,6 +61,7 @@ import std.itertools
 from std.memory.pointer import _GPUAddressSpace
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from std.bit import log2_floor
+from std.math.uutils import ufloordiv
 
 
 # Import ThreadInfo from matmul_output
@@ -86,7 +87,7 @@ struct ThreadInfo(TrivialRegisterPassable):
 
     @always_inline
     @staticmethod
-    fn from_warp_group_idx(warp_group_thread_idx: UInt) -> ThreadInfo:
+    fn from_warp_group_idx(warp_group_thread_idx: Int) -> ThreadInfo:
         """Create ThreadInfo from a warp group thread index.
 
         Args:
@@ -95,7 +96,7 @@ struct ThreadInfo(TrivialRegisterPassable):
         Returns:
             ThreadInfo struct with computed warp_id, lane_id, lane_row, and lane_col.
         """
-        var warp_id = warp_group_thread_idx // UInt(WARP_SIZE)
+        var warp_id = UInt(ufloordiv(warp_group_thread_idx, WARP_SIZE))
         var lid = lane_id()
         var lane_row, lane_col = divmod(UInt32(lid), 4)
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
@@ -151,7 +152,7 @@ trait SMemTileWriter(TrivialRegisterPassable):
     fn write_tile(
         self,
         src: SMemTile[Self._dtype, _, alignment=128, ...],
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """Write a tile from shared memory to global memory.
 
@@ -209,7 +210,7 @@ struct TileWriterTMA[
     fn write_tile(
         self,
         src: SMemTile[Self._dtype, _, alignment=128, ...],
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """Write a tile using TMA hardware acceleration.
 
@@ -227,7 +228,7 @@ struct TileWriterTMA[
         fence_async_view_proxy()
 
         # Perform the async store
-        self.tma_op[].async_store(src, (Int(coords[0]), Int(coords[1])))
+        self.tma_op[].async_store(src, (coords[0], coords[1]))
 
         # Commit and wait for completion
         self.tma_op[].commit_group()
@@ -263,13 +264,13 @@ struct TileWriterThreadwise[
         alignment=Self.dst_alignment,
     ]
     var dst: Self.DstType
-    var thread_idx: UInt
+    var thread_idx: Int
 
     @always_inline
     fn __init__(
         out self,
         dst: Self.DstType,
-        thread_idx: UInt,
+        thread_idx: Int,
     ):
         """Initialize the threadwise tile writer.
 
@@ -284,7 +285,7 @@ struct TileWriterThreadwise[
     fn write_tile(
         self,
         src: SMemTile[Self._dtype, _, alignment=128, ...],
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """Write a tile using thread-distributed stores.
 
@@ -324,7 +325,7 @@ struct TileWriterThreadwise[
                     Slice(0, dst_width),
                 ]()
 
-                var casted_thread_idx = Int(self.thread_idx)
+                var casted_thread_idx = self.thread_idx
 
                 var rows = self.dst.dim(0)
                 var cols = self.dst.dim(1) // Self.simd_size
@@ -371,7 +372,7 @@ struct TileWriterThreadwise[
 
                 # Only first half of threads participate
                 comptime num_threads = Self.thread_layout.size()
-                if self.thread_idx < UInt(num_threads // 2):
+                if self.thread_idx < (num_threads // 2):
                     copy_sram_to_dram[
                         thread_layout=half_thread_layout,
                         swizzle=swizzle,
@@ -401,7 +402,7 @@ trait RegTileWriter(TrivialRegisterPassable):
     fn write_tile(
         self,
         c_reg_tile: RegTile,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ) capturing -> None:
         """Write a register tile to memory.
 
@@ -468,16 +469,16 @@ struct FragmentToSMemWriter[
     ) if not Self.swapAB else Layout.row_major(Self.tile_n_size, Self.WG_BN)
 
     var c_tile: SMemTile[Self.c_type, Self.c_tile_layout, alignment=128]
-    var warp_group_thread_idx: UInt
-    var local_warp_group_idx: UInt
+    var warp_group_thread_idx: Int
+    var local_warp_group_idx: Int
     var st_matrix_rt_layout: Self.st_matrix_rt_layout_type
 
     @always_inline
     fn __init__(
         out self,
         c_tile: SMemTile[Self.c_type, Self.c_tile_layout, alignment=128],
-        warp_group_thread_idx: UInt,
-        local_warp_group_idx: UInt,
+        warp_group_thread_idx: Int,
+        local_warp_group_idx: Int,
     ):
         """Initialize the fragment writer.
 
@@ -508,10 +509,10 @@ struct FragmentToSMemWriter[
                 IntTuple(n_frag, m_frag, UNKNOWN_VALUE),
             )
         ](
-            Int(self.warp_group_thread_idx),
+            self.warp_group_thread_idx,
             n_frag,
             m_frag,
-            Int(self.local_warp_group_idx),
+            self.local_warp_group_idx,
         )
         var linear_idx = self.st_matrix_rt_layout(layout_coords)
         return self.st_matrix_swizzle(linear_idx)
@@ -554,7 +555,7 @@ struct FragmentToSMemWriter[
     fn write_tile(
         self,
         c_reg_tile: RegTile,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ) capturing -> None:
         """Write accumulator tile from registers to shared memory.
 
@@ -563,7 +564,7 @@ struct FragmentToSMemWriter[
             coords: Tile position (row_idx, col_idx) in output.
         """
         # Locate destination tile in shared memory
-        var tile_linear_idx = Int(coords[0]) + Int(coords[1])
+        var tile_linear_idx = coords[0] + coords[1]
 
         # Elements per tile: rows * cols
         # For normal: WG_BM rows, tile_n_size cols
@@ -598,11 +599,11 @@ struct FragmentToSMemWriter[
         comptime sub_wg_offset = sub_wg_offset_reg if not Self.swapAB else sub_wg_offset_swapAB
 
         var n_fragment_base = (
-            Int(coords[1]) * Self.tile_n_size + Self.sub_wg_id * sub_wg_offset
+            coords[1] * Self.tile_n_size + Self.sub_wg_id * sub_wg_offset
         ) // ST_MATRIX_WIDTH_BYTES
 
         # Store all fragments using st.matrix
-        comptime for m_frag, n_frag in itertools.product(
+        comptime for m_frag, n_frag in std.itertools.product(
             range(Self.num_m_mmas),
             range(Self.tile_n_size // ST_MATRIX_WIDTH_BYTES),
         ):
@@ -694,7 +695,7 @@ struct RegisterToGMemWriter[
     fn __init__(
         out self,
         dst: Self.DstType,
-        warp_group_thread_idx: UInt,
+        warp_group_thread_idx: Int,
         num_m_mmas: Int,
         tile_coords: OptionalReg[TileCoordinates] = None,
         max_row: OptionalReg[UInt32] = None,
@@ -738,7 +739,7 @@ struct RegisterToGMemWriter[
     fn write_tile(
         self,
         c_reg_tile: RegTile,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ) capturing -> None:
         """Write a single MMA tile from registers to global memory.
 
@@ -746,8 +747,8 @@ struct RegisterToGMemWriter[
             c_reg_tile: Register tile containing accumulator values.
             coords: Tile coordinates (row, column) in the destination matrix.
         """
-        var m_mma = Int(coords[0])
-        var n_mma = Int(coords[1])
+        var m_mma = coords[0]
+        var n_mma = coords[1]
         var mma_id = self._get_mma_id(m_mma, n_mma)
 
         comptime if Self.check_runtime_bounds or Self.swapAB:
@@ -810,7 +811,7 @@ struct RegisterToGMemWriter[
         var gmem_frag, gmem_offset_coords_raw, gmem_offset = (
             warp_tile.vectorize[1, 2]().distribute_with_offset[
                 Layout.row_major(8, 4)
-            ](self.thread_info.lane_id)
+            ](Int(self.thread_info.lane_id))
         )
 
         var gmem_offset_coords = IndexList[2](
@@ -824,8 +825,7 @@ struct RegisterToGMemWriter[
         # Process all vectors
         comptime for frag_idx in range(num_vecs):
             comptime dst_idx = gmem_frag.layout(frag_idx)
-            comptime dst_m_offset = dst_idx // Self.N
-            comptime dst_n_offset = dst_idx % Self.N
+            comptime dst_m_offset, dst_n_offset = divmod(dst_idx, Self.N)
             var m = coords[0] + dst_m_offset
             var n = coords[1] + dst_n_offset
 
@@ -906,7 +906,7 @@ struct RegisterToGMemWriter[
             warp_tile_coords = self.tile_coords.value().adjust(warp_tile_coords)
 
         # Process fragment matrices
-        comptime for m_frag, n_frag in itertools.product(
+        comptime for m_frag, n_frag in std.itertools.product(
             range(Self.num_m_frag_mat), range(Self.num_n_frag_mat)
         ):
             comptime frag_mat_id = n_frag * Self.num_m_frag_mat + m_frag

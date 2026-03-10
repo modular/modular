@@ -303,9 +303,9 @@ fn allreduce[
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, input_origin], 1 if use_multimem else ngpus
+        NDBuffer[rank=rank, dtype, input_origin], 1 if use_multimem else ngpus
     ],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[
         UnsafePointer[comm.Signal, rank_sigs_origin], MAX_GPUS
     ],
@@ -379,8 +379,10 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    inputs: InlineArray[NDBuffer[dtype, rank, inputs_origin], ngpus],
-    outputs: InlineArray[NDBuffer[dtype, rank, outputs_origin], ngpus * ngpus],
+    inputs: InlineArray[NDBuffer[rank=rank, dtype, inputs_origin], ngpus],
+    outputs: InlineArray[
+        NDBuffer[rank=rank, dtype, outputs_origin], ngpus * ngpus
+    ],
     list_of_ctx: List[DeviceContext],
 ) raises:
     if ngpus < 1:
@@ -444,8 +446,8 @@ fn broadcast[
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_buffer: NDBuffer[dtype, rank, input_origin],
-    output_buffer: NDBuffer[dtype, rank, output_origin],
+    input_buffer: NDBuffer[rank=rank, dtype, input_origin],
+    output_buffer: NDBuffer[rank=rank, dtype, output_origin],
     rank_sigs: InlineArray[UnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,

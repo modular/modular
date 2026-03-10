@@ -396,7 +396,7 @@ fn _concat_inner[
 ) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
-        var buffer_len = inputs[i].numel()
+        var buffer_len = inputs[i].num_elements()
         memcpy_or_fuse[output.rank, dtype, epilogue_fn](
             output.ptr.bitcast[Int8](),
             num_elems_copied * size_of[dtype](),
@@ -567,7 +567,7 @@ fn _concat_cpu[
     comptime KB = 1024
     comptime min_work_for_parallel = 128 * KB  # TODO: autotune
 
-    var output_bytes = output.numel() * size_of[dtype]()
+    var output_bytes = output.num_elements() * size_of[dtype]()
 
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
@@ -714,7 +714,7 @@ fn _concat_inner_most_single_dim[
     ],
 ):
     var idx = block_idx.x * UInt(block_size) + thread_idx.x
-    if idx >= UInt(output.numel()):
+    if idx >= UInt(output.num_elements()):
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
@@ -861,18 +861,18 @@ fn _concat_gpu[
 
         comptime for i in range(num_inputs):
             # Skip empty inputs.
-            if inputs[i].numel() > 0:
+            if inputs[i].num_elements() > 0:
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
                     output.ptr + input_size,
-                    inputs[i].numel(),
+                    inputs[i].num_elements(),
                     owning=False,
                 )
                 var inp = DeviceBuffer(
                     ctx,
                     inputs[i].ptr,
-                    inputs[i].numel(),
+                    inputs[i].num_elements(),
                     owning=False,
                 )
                 ctx.enqueue_copy(
@@ -880,7 +880,7 @@ fn _concat_gpu[
                     inp,
                 )
 
-                input_size += inputs[i].numel()
+                input_size += inputs[i].num_elements()
 
     # If outer_dims are ones and it is not a fused kernel, use device-to-device
     # copies.
@@ -911,7 +911,7 @@ fn _concat_gpu[
             return ctx.enqueue_function[kernel, kernel](
                 output,
                 inputs,
-                grid_dim=(inputs[0].numel() // block_size),
+                grid_dim=(inputs[0].num_elements() // block_size),
                 block_dim=(block_size),
             )
 

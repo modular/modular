@@ -25,11 +25,11 @@ from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
     Boolable,
-    Comparable,
-    Copyable,
-    Hashable,
+    Comparable where conforms_to(T, Equatable),
+    Copyable where conforms_to(T, Copyable),
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
     Iterable,
-    KeyElement,
     Sized,
     Writable where conforms_to(T, Writable),
 ):
@@ -115,7 +115,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return t in self._data
 
-    fn __eq__(self, other: Self) -> Bool:
+    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Set equality.
 
         Args:
@@ -201,7 +201,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self.difference_update(other)
 
-    fn __le__(self, other: Self) -> Bool:
+    fn __le__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the <= operator for sets. Works like as `issubset` method.
 
         Args:
@@ -212,7 +212,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issubset(other)
 
-    fn __ge__(self, other: Self) -> Bool:
+    fn __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the >= operator for sets. Works like as `issuperset` method.
 
         Args:
@@ -223,7 +223,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issuperset(other)
 
-    fn __gt__(self, other: Self) -> Bool:
+    fn __gt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the > operator for strict superset comparison of sets.
 
         Args:
@@ -234,7 +234,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self) > len(other) and other.issubset(self)
 
-    fn __lt__(self, other: Self) -> Bool:
+    fn __lt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the < operator for strict subset comparison of sets.
 
         Args:
@@ -286,13 +286,12 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self._data)
 
-    fn __hash__[_H: Hasher](self, mut hasher: _H):
+    fn __hash__(
+        self, mut hasher: Some[Hasher]
+    ) where conforms_to(Self.T, Hashable):
         """Updates hasher with the underlying values.
 
         The update is order independent, so s1 == s2 -> hash(s1) == hash(s2).
-
-        Parameters:
-            _H: The hasher type.
 
         Args:
             hasher: The hasher instance.

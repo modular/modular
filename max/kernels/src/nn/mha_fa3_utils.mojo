@@ -440,6 +440,7 @@ fn get_seq_info[
     //,
     BM: Int,
     num_heads: Int,
+    flip_prompt_idx: Bool,
 ](
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,
@@ -453,7 +454,9 @@ fn get_seq_info[
         valid_length,
         max_seq_len.as_uint32(),
     )
-    scheduler = TransientScheduler[UInt32(BM), UInt32(num_heads)]()
+    scheduler = TransientScheduler[
+        UInt32(BM), UInt32(num_heads), flip_prompt_idx=flip_prompt_idx
+    ]()
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
             UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED

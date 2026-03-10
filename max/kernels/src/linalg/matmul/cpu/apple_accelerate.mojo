@@ -248,9 +248,9 @@ fn apple_gemv[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
 ) raises:
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
@@ -258,7 +258,7 @@ fn apple_gemv[
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
+    var transposed_b = NDBuffer[rank=2, b.type, MutAnyOrigin]()
     var transposed_b_ptr = UnsafePointer[Scalar[b.type], MutExternalOrigin]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -266,7 +266,7 @@ fn apple_gemv[
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
         transposed_b_ptr = alloc[Scalar[b.type]](b.num_elements())
-        transposed_b = NDBuffer[b.type, 2, MutAnyOrigin](
+        transposed_b = NDBuffer[rank=2, b.type, MutAnyOrigin](
             transposed_b_ptr, transposed_b_shape
         )
 
@@ -456,13 +456,13 @@ fn apple_batched_matmul[
     var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
-        var c2 = NDBuffer[c.type, 2, address_space=c.address_space](
+        var c2 = NDBuffer[rank=2, c.type, address_space=c.address_space](
             c3.data + (c_shape[0] * c_shape[1]) * batch, c_shape
         )
-        var a2 = NDBuffer[a.type, 2, address_space=a.address_space](
+        var a2 = NDBuffer[rank=2, a.type, address_space=a.address_space](
             a3.data + (a_shape[0] * a_shape[1]) * batch, a_shape
         )
-        var b2 = NDBuffer[b.type, 2, address_space=b.address_space](
+        var b2 = NDBuffer[rank=2, b.type, address_space=b.address_space](
             b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
         )
 

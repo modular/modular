@@ -2610,8 +2610,7 @@ fn crd2idx(
                     return UNKNOWN_VALUE
 
                 # Extract coordinates
-                var c0 = c_val % s0_prod
-                var c1 = c_val // s0_prod
+                var c1, c0 = divmod(c_val, s0_prod)
 
                 # Handle direct stride values case
                 if _stride.is_value(0) and _stride.is_value(1):
@@ -2674,10 +2673,9 @@ fn crd2idx(
                 return 0
             var result: Int = 0
             for i in range(len(shape) - 1):
-                result += crd2idx(
-                    int_crd % product(shape[i]), shape[i], stride[i]
-                )
-                int_crd = int_crd // product(shape[i])
+                var remainder: Int
+                int_crd, remainder = divmod(int_crd, product(shape[i]))
+                result += crd2idx(remainder, shape[i], stride[i])
             return result + crd2idx(int_crd, shape[-1], stride[-1])
         else:  # "int" "int" "int"
             return int_crd * Int(stride)

@@ -219,7 +219,10 @@ fn mha_sm90_dispatch[
     # materialize scheduler, call max prompt len
     comptime if persistent == 0:
         comptime SchedulerType = TransientScheduler[
-            UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
+            UInt32(scheduler_tile_shape),
+            UInt32(num_scheduler_heads),
+            flip_prompt_idx=not decoding
+            and MaskType.get_type_name() == "CausalMask",
         ]
         var scheduler: SchedulerType = SchedulerType()
         _mha_sm90_sink_dispatch[

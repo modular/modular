@@ -18,7 +18,7 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx_int as block_idx,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx_int as thread_idx,
     grid_dim,
 )
@@ -498,7 +498,7 @@ fn load_lds_fragment[
 
     # =========================================================================
 
-    var lane = Int(lane_id())
+    var lane = lane_id()
     # RuntimeLayout wraps compile-time layout for efficient evaluation
     var lane_offset = Int(RuntimeLayout[mma_access_layout]()(lane))
     var frag_ptr = reg_frag.ptr.bitcast[FragElement]()
@@ -1435,7 +1435,7 @@ struct AMDPingPongMatmul[
 
         # Thread and warp identification
         var thread_id = thread_idx.x
-        var lane_id = Int(lane_id())
+        var lane_id = lane_id()
         var warp_id = readfirstlane(Int(warp_id()))
 
         # Block coordinates from block indices
@@ -2103,7 +2103,7 @@ struct AMDPingPongMatmul[
         # Create global memory fragment distributed across threads
         var c_gmem_fragment = c_warp_tile.vectorize[
             1, accum_width
-        ]().distribute[output_thread_layout](UInt(lane_id))
+        ]().distribute[output_thread_layout](lane_id)
 
         # Use shared write_output_fragments function
         write_output_fragments[

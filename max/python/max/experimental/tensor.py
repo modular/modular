@@ -1740,8 +1740,11 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The target data type for the tensor.
 
         Returns:
-            Tensor: A new tensor with the specified data type.
+            Tensor: A new tensor with the specified data type, or ``self``
+            if the tensor already has the target dtype.
         """
+        if self.real and self.dtype == dtype:
+            return self
         return F.cast(self, dtype)
 
     def permute(self, dims: list[int]) -> Tensor:

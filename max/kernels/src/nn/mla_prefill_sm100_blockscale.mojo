@@ -49,6 +49,7 @@ from layout.tma_async import (
     RaggedTMA3DTile,
 )
 from layout.layout import Layout
+from layout import TileTensor
 from layout.layout_tensor import LayoutTensor
 from layout.swizzle import make_swizzle
 
@@ -316,9 +317,11 @@ __extension SM100MLA:
         if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -346,9 +349,11 @@ __extension SM100MLA:
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
 
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
             if not seq_info.is_valid():
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
@@ -364,9 +369,11 @@ __extension SM100MLA:
             )
         elif role == WarpRole.Load:
             warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -393,9 +400,11 @@ __extension SM100MLA:
 
         elif role == WarpRole.MMA:
             warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 tcgen05_release_allocation_lock[Self.cta_group]()
@@ -418,9 +427,11 @@ __extension SM100MLA:
         elif role == WarpRole.CVTToBF16:
             warpgroup_reg_dealloc[num_reg_other]()
 
-            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                batch_size, max_seq_len, valid_length, partition
-            )
+            var seq_info: SeqInfo = get_seq_info[
+                Self.BM,
+                Self.num_q_heads,
+                Self.MaskType.get_type_name() == "CausalMask",
+            ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
                 return
@@ -922,13 +933,13 @@ fn mla_sm100_prefill_blockscale[
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    q: LayoutTensor[q_type, _, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
     k: KVType,
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
@@ -1069,7 +1080,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     kv_lut: KVType,
     k_rope_lut: KRopeType,
     mask_functor: MaskType,
-    valid_length: LayoutTensor[
+    valid_length: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     max_prompt_len: MaxPromptLenType,
@@ -1078,7 +1089,9 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime SchedulerType = TransientScheduler[
-        UInt32(fa4_config.BM), UInt32(fa4_config.num_q_heads)
+        UInt32(fa4_config.BM),
+        UInt32(fa4_config.num_q_heads),
+        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
     ]
     comptime ValidLengthType = NonNullPointer[DType.uint32]
     comptime SinkType = NullPointer[output_type]

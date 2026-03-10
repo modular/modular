@@ -100,36 +100,36 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_size = batch.value * m.value * n.value
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var a_host = NDBuffer[a_type, 3, _, static_a_shape](
+    var a_host = NDBuffer[rank=3, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var b_host = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_host = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 3, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=3, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -185,25 +185,25 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var a_scales_host = NDBuffer[scales_dtype, 6, _, static_a_scales_shape](
-        a_scales_host_ptr, dynamic_a_scales_shape
-    )
+    var a_scales_host = NDBuffer[
+        rank=6, scales_dtype, _, static_a_scales_shape
+    ](a_scales_host_ptr, dynamic_a_scales_shape)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
-    var b_scales_host = NDBuffer[scales_dtype, 6, _, static_b_scales_shape](
-        b_scales_host_ptr, dynamic_b_scales_shape
-    )
+    var b_scales_host = NDBuffer[
+        rank=6, scales_dtype, _, static_b_scales_shape
+    ](b_scales_host_ptr, dynamic_b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
     var a_scales_device_nd = NDBuffer[
-        scales_dtype, 6, _, static_a_scales_shape
+        rank=6, scales_dtype, _, static_a_scales_shape
     ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
     var b_scales_device_nd = NDBuffer[
-        scales_dtype, 6, _, static_b_scales_shape
+        rank=6, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     # LayoutTensors for reference matmul
@@ -221,10 +221,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Scale NDBuffers have complex DimList expressions that trigger a compiler
     # bug with TileTensor(NDBuffer). Create NDBuffers with all-dynamic dims instead.
     var a_scales_simple_nd = NDBuffer[
-        scales_dtype, 6, _, DimList.create_unknown[6]()
+        rank=6, scales_dtype, _, DimList.create_unknown[6]()
     ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_simple_nd = NDBuffer[
-        scales_dtype, 6, _, DimList.create_unknown[6]()
+        rank=6, scales_dtype, _, DimList.create_unknown[6]()
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
     var a_scales_tensor = TileTensor(a_scales_simple_nd)
     var b_scales_tensor = TileTensor(b_scales_simple_nd)

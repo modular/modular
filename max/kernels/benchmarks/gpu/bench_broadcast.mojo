@@ -181,20 +181,20 @@ fn bench_broadcast[
     list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
     # Create NDBuffer wrappers for outputs
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
     comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
-            out_bufs[i] = NDBuffer[dtype, rank](
+            out_bufs[i] = NDBuffer[rank=rank, dtype](
                 out_multicast_ptr, IndexList[rank](length)
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
-            out_bufs[i] = NDBuffer[dtype, rank](
+            out_bufs[i] = NDBuffer[rank=rank, dtype](
                 out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
             )
             # Ensure setup has propagated.
@@ -221,7 +221,7 @@ fn bench_broadcast[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
+            var in_buf_offset = NDBuffer[rank=rank, dtype, MutAnyOrigin](
                 cb_in.offset_ptr(cache_iter),
                 IndexList[rank](length),
             )
@@ -285,7 +285,7 @@ fn bench_broadcast[
         list_of_ctx[i].synchronize()
 
     # Create input buffer for verification (no cache offset)
-    var in_buf_verify = NDBuffer[dtype, rank, MutAnyOrigin](
+    var in_buf_verify = NDBuffer[rank=rank, dtype, MutAnyOrigin](
         cb_in.unsafe_ptr(),
         IndexList[rank](length),
     )

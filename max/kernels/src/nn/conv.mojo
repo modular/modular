@@ -70,6 +70,8 @@ from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
+from layout.tile_layout import row_major
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from std.runtime.asyncrt import parallelism_level
@@ -3648,9 +3650,9 @@ fn conv_gpu[
     if has_asymmetric_padding:
         # Pre-pad on GPU so downstream kernels (including cuDNN) can assume symmetric padding.
         comptime full_rank = input_layout.rank()
-        var paddings_tensor = LayoutTensor[
-            DType.int, Layout(2 * full_rank), MutAnyOrigin
-        ].stack_allocation()
+        var paddings_tensor = tt_stack_allocation[dtype=DType.int](
+            row_major[2 * full_rank]()
+        )
 
         comptime for axis in range(full_rank):
             paddings_tensor[2 * axis] = 0

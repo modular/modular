@@ -278,7 +278,7 @@ struct ImageData[
         self.data.ptr[self._get_index(n, c, h, w)] = value
 
     fn num_elements(self) -> Int:
-        return self.data.numel()
+        return self.data.num_elements()
 
 
 struct ImageShape(TrivialRegisterPassable):

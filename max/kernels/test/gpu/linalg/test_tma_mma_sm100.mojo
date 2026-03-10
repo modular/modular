@@ -17,11 +17,15 @@ from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import lane_id as get_lane_id
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
+from std.gpu import (
+    block_idx,
+    lane_id_int as lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
+)
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
@@ -336,7 +340,8 @@ fn tma_umma_kernel_ss[
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:
-        warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
+        var warp_id_q, warp_id_r = divmod(warp_id, UInt(4))
+        warp_id = UInt(2 * Int(warp_id_r) + Int(warp_id_q))
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
@@ -505,7 +510,8 @@ fn tma_umma_kernel_ts[
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:
-        warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
+        var warp_id_q, warp_id_r = divmod(warp_id, UInt(4))
+        warp_id = UInt(2 * Int(warp_id_r) + Int(warp_id_q))
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // Int(num_threads)
     var a_frag = InlineArray[Scalar[DType.uint32], a_frag_size](
@@ -523,7 +529,7 @@ fn tma_umma_kernel_ts[
         # of size 2x4B=4xBF16
         a_gmem_frag = a_gmem_warp_tile.vectorize[1, 4]().distribute[
             Layout.row_major(8, 4)
-        ](get_lane_id())
+        ](lane_id())
         comptime num_vecs_m = a_gmem_frag.layout.shape[0].value()
         comptime num_vecs_k = a_gmem_frag.layout.shape[1].value()
 

@@ -37,6 +37,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    lt_to_tt,
     row_major,
 )
 from layout.tile_layout import RowMajorLayout
@@ -2900,6 +2901,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    per_token_scale_rope_aware: Bool = False,
 ](
     q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2913,6 +2915,9 @@ fn generic_flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     @always_inline
     @parameter
@@ -2945,6 +2950,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](
             q,
             input_row_offsets,
@@ -2954,6 +2960,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
             output,
             scalar_args_buf,
             context,
+            q_scale_ptr,
         )
 
 
@@ -2965,6 +2972,7 @@ fn _flare_mla_decode_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    per_token_scale_rope_aware: Bool = False,
 ](
     q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2978,6 +2986,9 @@ fn _flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -2991,6 +3002,8 @@ fn _flare_mla_decode_kv_cache_ragged[
             (batch_size, num_heads, seq_len, head_size).
         scalar_args_buf: Buffer containing scalar arguments for device graph capture.
         context: Pointer containing the runtime context for the target device.
+        q_scale_ptr: Per-token Q scale pointer (float32 array, one per Q token).
+            Default is null (sigma_Q = 1.0).
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -3003,9 +3016,13 @@ fn _flare_mla_decode_kv_cache_ragged[
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_lt)
+    @__copy_capture(k, scalar_args_buf_lt, q_scale_ptr)
     fn _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
-        flare_mla_decoding[rank=q.rank, ragged=True](
+        flare_mla_decoding[
+            rank=q.rank,
+            ragged=True,
+            per_token_scale_rope_aware=per_token_scale_rope_aware,
+        ](
             output,
             q,
             k,
@@ -3014,6 +3031,7 @@ fn _flare_mla_decode_kv_cache_ragged[
             scale,
             context.get_device_context(),
             scalar_args_buf=scalar_args_buf_lt,
+            q_scale_ptr=q_scale_ptr,
         )
 
     dispatch_mask[
@@ -3243,10 +3261,10 @@ fn generic_flare_mla_prefill_ragged_paged_plan[
         task_id=Int(context.get_device_context().id()),
     ):
         mla_prefill_plan(
-            buffer_row_offsets,
-            cache_offsets,
-            buffer_lengths,
-            input_row_offsets,
+            lt_to_tt(buffer_row_offsets),
+            lt_to_tt(cache_offsets),
+            lt_to_tt(buffer_lengths),
+            lt_to_tt(input_row_offsets),
             k,
             buffer_token_size,
             cuda_ctx,
@@ -3288,8 +3306,8 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
         row_major((Idx(buffer_length_int), Idx[latent_dim]())),
     )
     _k_cache_to_buffer(
-        buffer_row_offsets_1d,
-        cache_offsets_1d,
+        lt_to_tt(buffer_row_offsets_1d),
+        lt_to_tt(cache_offsets_1d),
         k,
         Int32(buffer_length_int),
         k_latent_tile,

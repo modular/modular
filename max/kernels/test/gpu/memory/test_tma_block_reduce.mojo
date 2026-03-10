@@ -216,7 +216,7 @@ def test_tma_block_reduce[
             )
         else:
             var shape = Index(rows, cols)
-            var data_buf = NDBuffer[dtype, 2](d_data.unsafe_ptr(), shape)
+            var data_buf = NDBuffer[rank=2, dtype](d_data.unsafe_ptr(), shape)
 
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)

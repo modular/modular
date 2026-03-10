@@ -26,9 +26,9 @@ fn managed_tensor_slice_to_ndbuffer[
 ](
     tensor: ManagedTensorSlice[static_spec=spec, ...],
     out result: NDBuffer[
+        rank=spec.rank,
         spec.dtype,
-        spec.rank,
-        AnyOrigin[mut=not tensor.io_spec.input.value == IO.Input.value],
+        AnyOrigin[mut=tensor.io_spec.mut],
         spec.shape,
         spec.strides,
         # alignment2 = spec.alignment,

@@ -22,7 +22,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -125,6 +125,8 @@ class VLLMPipeline:
     trust_remote_code: bool = False
     encoding: pipelines.SupportedEncoding | None = None
     tensor_parallel_size: int = 1
+    extra_kwargs: dict[str, Any] = field(default_factory=dict)
+    mm_data_key: str = "image"
 
 
 class PipelineOracle(ABC):
@@ -700,6 +702,89 @@ class PixtralPipelineOracle(PipelineOracle):
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+
+class KimiK2_5PipelineOracle(PipelineOracle):
+    """Pipeline oracle for Kimi K2.5 multimodal architectures (vLLM only).
+
+    Kimi K2.5 is a 1T-parameter MoE model.
+    """
+
+    def __init__(self, model_path: str) -> None:
+        super().__init__()
+        self.model_path = model_path
+        self.trust_remote_code = True
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {"gpu": ["float4_e2m1fnx2"]}
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        text_only_requests = [
+            MockTextGenerationRequest.text_only(prompt)
+            for prompt in test_data.SHORT_TEXT_PROMPTS
+        ]
+        return test_data.KIMIK2_5_REQUESTS + text_only_requests
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        config = pipelines.PipelineConfig.model_validate(
+            {
+                "defer_resolve": True,
+                "device_specs": device_specs,
+                "quantization_encoding": encoding,
+                "model_path": self.model_path,
+                "huggingface_model_revision": revision,
+                "huggingface_weight_revision": revision,
+                "max_num_steps": 1,
+                "max_length": 1028,
+                "trust_remote_code": self.trust_remote_code,
+                "max_batch_input_tokens": 1024,
+                "ep_size": 8,
+                "data_parallel_degree": 8,
+            }
+        )
+        hf_repo_lock.apply_to_config(config)
+        config.resolve()
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+    def create_torch_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device | str,
+    ) -> TorchModelAndDataProcessor:
+        raise NotImplementedError(
+            "Kimi K2.5 is 1T params (MoE) — torch golden generation is not"
+            " practical. Use --framework vllm instead."
+        )
+
+    def create_vllm_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
+    ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        return VLLMPipeline(
+            model_path=self.model_path,
+            trust_remote_code=self.trust_remote_code,
+            encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
+        )
 
 
 class GenericOracle(PipelineOracle):
@@ -1634,6 +1719,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={

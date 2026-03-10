@@ -43,15 +43,15 @@ fn softplus(val: Float32) -> Float32:
     """Softplus activation: log(1 + exp(x)) with numerical stability."""
     if val > 20.0:
         return val
-    var exp_val = math.exp(val)
-    return math.log(1.0 + exp_val)
+    var exp_val = std.math.exp(val)
+    return std.math.log(1.0 + exp_val)
 
 
 fn sigmoid(val: Float32) -> Float32:
     """Optimized sigmoid using fast approximation for large negative values."""
     if val < -20.0:
         return 0.0
-    var exp_neg = math.exp(-val)
+    var exp_neg = std.math.exp(-val)
     return 1.0 / (1.0 + exp_neg)
 
 
@@ -2544,7 +2544,9 @@ fn mamba_split_conv1d_scan_combined_cpu[
                             conv_weight.ptr[weight_offset]
                         ).cast[DType.float32]()
                         B_conv_sum = B_conv_sum + input_val * weight_val
-                B_vals[n] = B_conv_sum / (1.0 + math.exp(-B_conv_sum))  # SiLU
+                B_vals[n] = B_conv_sum / (
+                    1.0 + std.math.exp(-B_conv_sum)
+                )  # SiLU
 
                 # Store B
                 var B_offset = (
@@ -2584,7 +2586,9 @@ fn mamba_split_conv1d_scan_combined_cpu[
                             conv_weight.ptr[weight_offset]
                         ).cast[DType.float32]()
                         C_conv_sum = C_conv_sum + input_val * weight_val
-                C_vals[n] = C_conv_sum / (1.0 + math.exp(-C_conv_sum))  # SiLU
+                C_vals[n] = C_conv_sum / (
+                    1.0 + std.math.exp(-C_conv_sum)
+                )  # SiLU
 
                 # Store C
                 var C_offset = (
@@ -2975,7 +2979,7 @@ fn mamba_split_conv1d_scan_combined_gpu[
                 conv_sum = conv_sum + input_val * weight_val
 
         # Apply SiLU activation
-        var x_val = conv_sum / (1.0 + math.exp(-conv_sum))
+        var x_val = conv_sum / (1.0 + std.math.exp(-conv_sum))
 
         # Step 3: Compute B and C for this group
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)

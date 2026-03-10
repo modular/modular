@@ -43,7 +43,7 @@ def execute_index_tensor_test[
     # execute the kernel
     var actual_output_device = ctx.enqueue_create_buffer[
         expected_output_device.dtype
-    ](expected_output_device.numel())
+    ](expected_output_device.num_elements())
     var actual_output_tensor = TileTensor(
         actual_output_device,
         row_major(

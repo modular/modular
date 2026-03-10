@@ -19,7 +19,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx,
-    lane_id,
+    lane_id_int as lane_id,
     warp_id,
 )
 from std.gpu.sync import (
@@ -560,8 +560,9 @@ fn gemm_kernel_amd[
 
         # Distribute the remaining MMA operations across the smem stores and global
         # memory loads.
-        comptime mmas_per_smem_store = num_remaining_mma_ops // num_smem_store_ops
-        comptime mmas_per_smem_store_extra = num_remaining_mma_ops % num_smem_store_ops
+        comptime mmas_per_smem_store, mmas_per_smem_store_extra = divmod(
+            num_remaining_mma_ops, num_smem_store_ops
+        )
 
         comptime for i in range(num_mn_mmas * (num_k_tiles - 1)):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
@@ -774,7 +775,7 @@ fn write_output_fragments[
         N: Total N dimension of the output matrix.
     """
     # Warp lane coordinates
-    var lane_crd = idx2crd[output_thread_layout](Int(lane_id()))
+    var lane_crd = idx2crd[output_thread_layout](lane_id())
 
     # c_gmem_fragment tile coordinates for this thread (vectorized)
     var thread_tile_m: Int = warp_tile_m + lane_crd[0]

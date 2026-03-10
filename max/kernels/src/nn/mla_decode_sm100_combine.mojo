@@ -44,7 +44,7 @@ from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
-from layout.layout_tensor import LayoutTensor
+from layout import TileTensor
 from std.memory import bitcast
 from std.utils.numerics import min_or_neg_inf, get_accum_type
 from std.builtin.device_passable import DevicePassable
@@ -213,8 +213,8 @@ fn mla_combine_kernel[
         if seq_idx >= batch_seq_len:
             return
 
-    var sub_warp_idx = warp_idx % warps_per_head
-    var head_idx = head_block_idx * heads_per_block + warp_idx // warps_per_head
+    var warp_idx_q, sub_warp_idx = divmod(warp_idx, warps_per_head)
+    var head_idx = head_block_idx * heads_per_block + warp_idx_q
 
     if head_idx >= params.num_heads:
         return
@@ -342,8 +342,7 @@ fn mla_combine_kernel[
 
     comptime for split_idx in range(num_splits):
         # Broadcast scale from the owning lane via register shuffle (no smem).
-        comptime k = split_idx // WARP_SIZE
-        comptime src_lane = split_idx % WARP_SIZE
+        comptime k, src_lane = divmod(split_idx, WARP_SIZE)
         var lse_scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
         var is_valid = SIMD[DType.bool, vec_size](fill=lse_scale != Float32(0))
 
@@ -406,13 +405,13 @@ fn launch_mla_combine_kernel[
     ragged: Bool = False,
     warps_per_head: Int = 2,
 ](
-    out_accum_split: LayoutTensor[
+    out_accum_split: TileTensor[
         output_type, address_space=AddressSpace.GENERIC, ...
     ],
-    lse_accum_split: LayoutTensor[
+    lse_accum_split: TileTensor[
         accum_type, address_space=AddressSpace.GENERIC, ...
     ],
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],
@@ -489,13 +488,13 @@ fn mla_decode_combine_partial_outputs[
     ragged: Bool = False,
     warps_per_head: Int = 2,
 ](
-    out_accum_split: LayoutTensor[
+    out_accum_split: TileTensor[
         output_type, address_space=AddressSpace.GENERIC, ...
     ],
-    lse_accum_split: LayoutTensor[
+    lse_accum_split: TileTensor[
         accum_type, address_space=AddressSpace.GENERIC, ...
     ],
-    output: LayoutTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],

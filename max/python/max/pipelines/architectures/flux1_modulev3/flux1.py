@@ -32,7 +32,7 @@ from .layers.normalizations import (
     AdaLayerNormZero,
     AdaLayerNormZeroSingle,
 )
-from .model_config import FluxConfigBase
+from .model_config import FluxConfig
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +298,7 @@ class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
 class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
     def __init__(
         self,
-        config: FluxConfigBase,
+        config: FluxConfig,
     ):
         """Initialize Flux Transformer 2D model.
 

@@ -124,6 +124,22 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
+        DType.bfloat16,
+        IndexList[3](BN, 1, BK),
+        swizzle_mode,
+    ]:
+        """Creates a BF16 TMA tile for the rope portion of the per-tensor rope-aware KV cache.
+        """
+        ...
+
+    @always_inline
     fn scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
@@ -270,6 +286,28 @@ struct KVCacheMHAOperand[
         )
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Delegates to the underlying KVCache to create a BF16 rope TMA tile.
+        """
+        tma = self.cache.create_rope_tma_tile[
+            swizzle_mode, BN=BN, BK=BK, padded_depth=padded_depth
+        ](ctx)
+
+    @always_inline
     fn scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
@@ -396,6 +434,27 @@ struct KVCacheScalesMHAOperand[
     ) raises:
         """TMA not supported for KVCacheScalesMHAOperand."""
         comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
+
+    @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Not supported for KVCacheScalesMHAOperand."""
+        comptime assert (
+            False
+        ), "create_rope_tma_tile is not supported for KVCacheScalesMHAOperand"
 
     @always_inline
     fn scales_raw_ptr(
@@ -586,6 +645,27 @@ struct LayoutTensorMHAOperand[
         )
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Not supported for LayoutTensorMHAOperand."""
+        comptime assert (
+            False
+        ), "create_rope_tma_tile is not supported for LayoutTensorMHAOperand"
+
+    @always_inline
     fn scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
@@ -758,6 +838,27 @@ struct RaggedMHAOperand[
         tma = type_of(tma).create[depth=depth](
             ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
+
+    @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Not supported for RaggedMHAOperand."""
+        comptime assert (
+            False
+        ), "create_rope_tma_tile is not supported for RaggedMHAOperand"
 
     @always_inline
     fn scales_raw_ptr(

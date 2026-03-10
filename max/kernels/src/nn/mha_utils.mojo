@@ -28,7 +28,7 @@ from std.sys import (
 from std.sys.info import _accelerator_arch
 
 from std.bit import prev_power_of_two
-from std.gpu import WARP_SIZE, lane_id
+from std.gpu import WARP_SIZE, lane_id_int as lane_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
 from layout.int_tuple import UNKNOWN_VALUE

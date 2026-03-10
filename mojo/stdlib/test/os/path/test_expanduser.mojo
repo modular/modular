@@ -28,7 +28,7 @@ fn get_current_home() -> String:
 
 
 def set_home(path: String) raises:
-    _ = os.env.setenv("HOME", path)
+    _ = std.os.env.setenv("HOME", path)
 
 
 def test_expanduser() raises:

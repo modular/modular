@@ -36,15 +36,15 @@ fn run_func[
     _ = out
 
 
-fn hypot_fn(val: SIMD) -> type_of(val):
+fn hypot_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return hypot(val, val)
 
 
-fn remainder_fn(val: SIMD) -> type_of(val):
+fn remainder_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return remainder(val, val)
 
 
-fn scalb_fn(val: SIMD) -> type_of(val):
+fn scalb_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return scalb(val, val)
 
 
@@ -60,11 +60,11 @@ fn sqrt_fn(val: SIMD) -> type_of(val):
     return sqrt(val)
 
 
-fn ldexp_fn(val: SIMD) -> type_of(val):
+fn ldexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return ldexp(val, 1)
 
 
-fn frexp_fn(val: SIMD) -> type_of(val):
+fn frexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return frexp(val)[0]
 
 

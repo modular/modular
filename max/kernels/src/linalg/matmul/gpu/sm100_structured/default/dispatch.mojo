@@ -77,9 +77,9 @@ fn matmul_dispatch_sm100[
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert a_type == b_type, "a_type and b_type must be the same"
@@ -256,9 +256,9 @@ fn matmul_dispatch_sm100_fp8[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     comptime static_N = c.shape.get[1]()
@@ -1349,9 +1349,9 @@ fn heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()
@@ -1449,9 +1449,9 @@ fn matmul_dispatch_sm100_bf16[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()
@@ -1576,9 +1576,9 @@ fn _vendor_blas_matmul_sm100[
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime K = a.shape.get[1]()
@@ -1612,9 +1612,9 @@ fn _vendor_blas_matmul_sm100[
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 config,
                 ctx,
             )
@@ -1664,9 +1664,9 @@ fn _matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -1744,7 +1744,7 @@ fn _matmul_dispatch_sm100[
         )
 
         # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[c.type, 2, MutExternalOrigin](
+        var c_tmp = NDBuffer[rank=2, c.type, MutExternalOrigin](
             rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
                 tmp_device_buffer.unsafe_ptr()
             ),
@@ -1811,9 +1811,9 @@ fn sm100_heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     var m = c.dim[0]()

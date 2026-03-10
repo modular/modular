@@ -24,6 +24,7 @@ from std.collections import Deque
 
 from std.bit import next_power_of_two
 import std.format._utils as fmt
+from std.hashlib import Hasher
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -34,6 +35,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
     Iterable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
@@ -294,27 +296,25 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 return False
         return True
 
-    fn __ne__(
-        self, other: Self
-    ) -> Bool where conforms_to(Self.ElementType, Equatable):
-        """Checks if two deques are not equal.
-
-        Args:
-            other: The deque to compare with.
-
-        Returns:
-            `True` if the deques are not equal, `False` otherwise.
-        """
-        return not (self == other)
-
-    fn __contains__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], value: T) -> Bool:
-        """Verify if a given value is present in the deque.
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Updates hasher with the hash of each element in the deque.
 
         Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        for i in range(len(self)):
+            var offset = self._physical_index(self._head + i)
+            trait_downcast[Hashable]((self._data + offset)[]).__hash__(hasher)
+
+    fn __contains__(
+        self, value: Self.ElementType
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
+        """Verify if a given value is present in the deque.
 
         Args:
             value: The value to find.
@@ -322,9 +322,11 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             True if the value is contained in the deque, False otherwise.
         """
+        ref rhs = trait_downcast[Equatable](value)
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 return True
         return False
 
@@ -514,12 +516,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = 0
 
-    fn count[T: Equatable & Copyable, //](self: Deque[T], value: T) -> Int:
+    fn count(
+        self, value: Self.ElementType
+    ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Counts the number of occurrences of a `value` in the deque.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             value: The value to count.
@@ -527,10 +527,12 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             The number of occurrences of the value in the deque.
         """
+        ref rhs = trait_downcast[Equatable](value)
         count = 0
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 count += 1
         return count
 
@@ -605,20 +607,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         values_data.free()
 
-    fn index[
-        T: Equatable & Copyable, //
-    ](
-        self: Deque[T],
-        value: T,
+    fn index(
+        self,
+        value: Self.ElementType,
         start: Int = 0,
         stop: Optional[Int] = None,
-    ) raises -> Int:
+    ) raises -> Int where conforms_to(Self.ElementType, Equatable):
         """Returns the index of the first occurrence of a `value` in a deque
         restricted by the range given the `start` and `stop` bounds.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the `Equatable` trait.
 
         Args:
             value: The value to search for.
@@ -648,9 +644,11 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         start_normalized = max(min(start_normalized, len(self)), 0)
         stop_normalized = max(min(stop_normalized, len(self)), 0)
 
+        ref rhs = trait_downcast[Equatable](value)
         for idx in range(start_normalized, stop_normalized):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 return idx
         raise "ValueError: Given element is not in deque"
 
@@ -699,12 +697,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn remove[T: Equatable & Copyable, //](mut self: Deque[T], value: T) raises:
+    fn remove(
+        mut self, value: Self.ElementType
+    ) raises where conforms_to(Self.ElementType, Equatable):
         """Removes the first occurrence of the `value`.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the `Equatable` trait.
 
         Args:
             value: The value to remove.
@@ -712,10 +708,12 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Raises:
             ValueError: If the value is not found in the deque.
         """
+        ref rhs = trait_downcast[Equatable](value)
         deque_len = len(self)
         for idx in range(deque_len):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 (self._data + offset).destroy_pointee()
 
                 if idx < deque_len // 2:

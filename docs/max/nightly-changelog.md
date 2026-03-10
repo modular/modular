@@ -47,6 +47,9 @@ This version is still a work in progress.
 - Fixed Mojo and MAX compatibility with NVIDIA unified memory systems, like
   the Jetson series or the DGX Spark.
 
+- `Device.stats` now includes `graph_mem_reserved` and `graph_mem_used` fields
+  for device graph memory observability.
+
 ### Inference server {#26-2-max-serve}
 
 - Enabled overlap scheduling for select model architectures like

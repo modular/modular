@@ -17,7 +17,7 @@ fn register_internal(name: StaticString):
     """
     This decorator registers a given mojo function as being an implementation
     of a mo op or a `mo.custom` op. This decorator is used for built-in
-    [MAX Graph operations](/max/api/python/graph/ops).
+    [MAX Graph operations](/max/api/python/graph.ops).
 
     For registering [custom operations](/max/develop/custom-ops/), use the
     [@compiler.register](/mojo/manual/decorators/compiler-register) decorator,

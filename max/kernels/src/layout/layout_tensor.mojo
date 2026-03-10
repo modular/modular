@@ -15,6 +15,7 @@
 from std.builtin.variadics import Variadic
 from std.math import align_up, ceildiv, exp
 from std.math.math import _Expable
+from std.math.uutils import umod, ufloordiv
 from std.sys import (
     align_of,
     is_amd_gpu,
@@ -32,7 +33,12 @@ from std.builtin.device_passable import DevicePassable
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_dim, block_idx, lane_id, thread_idx
+from std.gpu import (
+    block_dim_int as block_dim,
+    block_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
+)
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
@@ -2371,7 +2377,12 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn store[
         width: Int, store_alignment: Int = Self.alignment
-    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
+    ](
+        self: LayoutTensor[mut=True, Self.dtype, ...],
+        m: Int,
+        n: Int,
+        val: SIMD[Self.dtype, width],
+    ):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -2444,8 +2455,10 @@ struct LayoutTensor[
     fn store[
         width: Int, store_alignment: Int = Self.alignment
     ](
-        self, coords: IndexList[...], val: SIMD[Self.dtype, width]
-    ) where Self.mut:
+        self: LayoutTensor[mut=True, Self.dtype, ...],
+        coords: IndexList[...],
+        val: SIMD[Self.dtype, width],
+    ):
         """Store a SIMD vector to the tensor at the specified ND coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -3805,7 +3818,7 @@ struct LayoutTensor[
     @always_inline
     fn _clamp_distribute_shape[
         thread_layout: Layout,
-    ](self, thread_id: UInt) -> IndexList[
+    ](self, thread_id: Int) -> IndexList[
         Self.rank, element_type=Self.layout_int_type
     ]:
         comptime assert (
@@ -3825,11 +3838,12 @@ struct LayoutTensor[
         comptime for i in range(Self.rank):
             comptime thread_stride_i = Int(thread_stride[i])
             comptime thread_shape_i = Int(thread_shape[i])
-            var tile_idx = (thread_id // UInt(thread_stride_i)) % UInt(
-                thread_shape_i
+            var tile_idx = umod(
+                ufloordiv(thread_id, thread_stride_i),
+                thread_shape_i,
             )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
-            var bound_i = (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
+            var bound_i = (tile_shape_i - 1) * thread_shape_i + tile_idx
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
 
         return tile_shape
@@ -3871,7 +3885,7 @@ struct LayoutTensor[
         axis: Optional[Int] = None,
         swizzle: Optional[Swizzle] = None,
         submode_axis: Optional[Int] = None,
-    ](self, thread_id: UInt) -> Self.DistributeType[threads_layout, axis]:
+    ](self, thread_id: Int) -> Self.DistributeType[threads_layout, axis]:
         """Distribute tensor workload across multiple threads in a structured
         pattern.
 
@@ -3992,11 +4006,11 @@ struct LayoutTensor[
                 comptime fragments_stride_i = Int(fragments_layout_stride[i])
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -4053,11 +4067,11 @@ struct LayoutTensor[
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -4090,7 +4104,7 @@ struct LayoutTensor[
         submode_axis: Optional[Int] = None,
     ](
         self,
-        thread_id: UInt,
+        thread_id: Int,
     ) -> Tuple[
         Self.DistributeType[threads_layout, axis],
         IndexList[threads_layout.rank(), element_type=Self.layout_int_type],
@@ -4159,12 +4173,12 @@ struct LayoutTensor[
                 comptime fragments_stride_i = Int(fragments_layout_stride[i])
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
-                offset_coords[i] = Int(thread_coord_i)
+                offset_coords[i] = thread_coord_i
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -4229,12 +4243,12 @@ struct LayoutTensor[
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
-                offset_coords[i] = Int(thread_coord_i)
+                offset_coords[i] = thread_coord_i
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -6042,7 +6056,7 @@ struct ThreadScope(TrivialRegisterPassable):
 @always_inline("nodebug")
 fn _get_worker_idx[
     thread_scope: ThreadScope, block_dim_count: Int = 1
-]() -> UInt:
+]() -> Int:
     """
     Returns the worker index for the current thread scope.
 
@@ -6056,7 +6070,7 @@ fn _get_worker_idx[
         block_dim_count: The number of dimensions in the thread block.
 
     Returns:
-        UInt: The worker index within the specified scope.
+        Int: The worker index within the specified scope.
 
     """
 
@@ -6202,7 +6216,7 @@ fn copy_dram_to_sram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -6327,7 +6341,7 @@ fn copy_dram_to_sram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
@@ -6703,7 +6717,7 @@ fn copy_dram_to_sram_async[
     # We know at compile time that only partial threads copy based on the size
     # of input tensors. Return if current thread doesn't have work.
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     comptime row_size = dst.stride[0]()
@@ -6920,7 +6934,7 @@ fn copy_sram_to_dram[
     var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[thread_layout](worker_idx)
@@ -7159,7 +7173,7 @@ fn copy_local_to_dram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -7257,7 +7271,7 @@ fn _copy_local_to_dram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -7392,7 +7406,7 @@ fn _copy_dram_to_local[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -7637,7 +7651,7 @@ fn copy_dram_to_local[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -7768,7 +7782,7 @@ fn copy_local_to_shared[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     comptime assert src.dtype == dst.dtype or (

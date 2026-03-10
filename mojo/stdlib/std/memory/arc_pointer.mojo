@@ -25,9 +25,7 @@ from std.format._utils import (
     Repr,
     FormatStruct,
     TypeNames,
-    constrained_conforms_to_writable,
 )
-from std.builtin.constrained import _constrained_conforms_to
 
 
 struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
@@ -71,7 +69,10 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
 
 
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
-    Identifiable, ImplicitlyCopyable, RegisterPassable, Writable
+    Identifiable,
+    ImplicitlyCopyable,
+    RegisterPassable,
+    Writable where conforms_to(T, Writable),
 ):
     """Atomic reference-counted pointer.
 
@@ -264,7 +265,9 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         """
         return self._inner == rhs._inner
 
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Formats this pointer's value to the provided Writer.
 
         Args:
@@ -273,15 +276,11 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Constraints:
             T must conform to Writable.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Writable),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="Writable",
-        ]()
         trait_downcast[Writable](self[]).write_to(writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write the string representation of the `ArcPointer`.
 
         Args:
@@ -290,7 +289,6 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Constraints:
             T must conform to Writable.
         """
-        constrained_conforms_to_writable[Self.T, Parent=Self]()
         FormatStruct(writer, "ArcPointer").params(
             TypeNames[Self.T](),
         ).fields(Repr(trait_downcast[Writable](self[])))
