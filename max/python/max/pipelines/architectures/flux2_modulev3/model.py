@@ -114,7 +114,31 @@ class Flux2TransformerModel(ComponentModel):
         img_ids: Tensor,
         txt_ids: Tensor,
         guidance: Tensor,
+        prev_residual: Tensor | None = None,
+        prev_output: Tensor | None = None,
+        step_cache_flag: Tensor | None = None,
+        rdt: Tensor | None = None,
     ) -> Any:
+        if (
+            prev_residual is not None
+            and prev_output is not None
+            and step_cache_flag is not None
+            and rdt is not None
+        ):
+            model = self._ensure_step_cache_model()
+            return model(
+                hidden_states,
+                encoder_hidden_states,
+                timestep,
+                img_ids,
+                txt_ids,
+                guidance,
+                prev_residual,
+                prev_output,
+                step_cache_flag,
+                rdt,
+            )
+
         model = (
             self._ensure_standard_model()
             if self.model is self._model_not_loaded
@@ -130,5 +154,4 @@ class Flux2TransformerModel(ComponentModel):
         )
 
     def call_with_step_cache(self, *args: Any, **kwargs: Any) -> Any:
-        model = self._ensure_step_cache_model()
-        return model(*args, **kwargs)
+        return self(*args, **kwargs)

@@ -796,19 +796,17 @@ class Flux2Pipeline(DiffusionPipeline):
                         if step_cache_enabled:
                             assert prev_residual is not None
                             assert prev_output is not None
-                            noise_pred, new_residual = (
-                                self.transformer.call_with_step_cache(
-                                    latents_concat,
-                                    prompt_embeds,
-                                    timestep,
-                                    latent_image_ids_concat,
-                                    text_ids,
-                                    guidance,
-                                    prev_residual,
-                                    prev_output,
-                                    step_cache_flag,
-                                    rdt_tensor,
-                                )
+                            noise_pred, new_residual = self.transformer(
+                                latents_concat,
+                                prompt_embeds,
+                                timestep,
+                                latent_image_ids_concat,
+                                text_ids,
+                                guidance,
+                                prev_residual,
+                                prev_output,
+                                step_cache_flag,
+                                rdt_tensor,
                             )
                             prev_residual = new_residual
                             prev_output = noise_pred
