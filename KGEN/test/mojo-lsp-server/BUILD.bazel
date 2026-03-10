@@ -77,16 +77,27 @@ _EXTRA_ENABLED_DIRS = {}
 #   ("subdir", "suffix", "regex")   — only files whose stem matches regex;
 #                                     suffix disambiguates the Bazel target name
 #
-# Use tuples to split large subdirs (>300 s) into medium-sized pieces.
+# Use tuples to split large subdirs into smaller pieces for CI.
 # The regex is anchored at the start (re.match) against the file stem.
 _ENABLED_SUBDIRS = [
-    "algorithm",
+    # algorithm has ~18 files (including subdirs); split into 6 pieces.
+    ("algorithm", "algorithm-init", "^_"),  # 4 files
+    ("algorithm", "algorithm-e-f", "^[e-fE-F]"),  # 3 files
+    ("algorithm", "algorithm-m", "^[mM]"),  # 2 files
+    ("algorithm", "algorithm-p-r", "^[p-rP-R]"),  # 4 files
+    ("algorithm", "algorithm-s-t", "^[s-tS-T]"),  # 3 files
+    ("algorithm", "algorithm-u-z", "^[u-zU-Z]"),  # 2 files
     "base64",
     "bit",
-    # builtin has ~38 files; CI is ~3x slower than local, so split into 3 pieces.
-    ("builtin", "builtin-a-e", "^[_a-eA-E]"),  # ~16 files
-    ("builtin", "builtin-f-m", "^[f-mF-M]"),  # ~8 files
-    ("builtin", "builtin-n-z", "^[n-zN-Z]"),  # ~14 files
+    # builtin has ~38 files; split into 8 pieces.
+    ("builtin", "builtin-underscore", "^_"),  # 5 files
+    ("builtin", "builtin-a-b", "^[a-bA-B]"),  # 4 files
+    ("builtin", "builtin-c-d", "^[c-dC-D]"),  # 6 files
+    ("builtin", "builtin-e-f", "^[e-fE-F]"),  # 4 files
+    ("builtin", "builtin-g-l", "^[g-lG-L]"),  # 5 files
+    ("builtin", "builtin-n-r", "^[n-rN-R]"),  # 5 files
+    ("builtin", "builtin-s", "^[sS]"),  # 5 files
+    ("builtin", "builtin-t-z", "^[t-zT-Z]"),  # 4 files
     # collections has ~25 files; same CI ratio, split into 3 pieces.
     ("collections", "collections-a-d", "^[_a-dA-D]"),  # ~14 files
     ("collections", "collections-e-l", "^[e-lE-L]"),  # ~5 files
