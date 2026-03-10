@@ -369,7 +369,10 @@ class TextContext:
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
-        self.tokens.reset_as_new_prompt()
+        delete_last_generated_token = self.tokens.all[-1] == FUTURE_TOKEN
+        self.tokens.reset_as_new_prompt(
+            delete_last_generated_token=delete_last_generated_token
+        )
         self._is_initial_prompt = True
         self._spec_decoding_state = None
 
