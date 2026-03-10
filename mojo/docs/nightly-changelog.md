@@ -246,6 +246,13 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- Added `comb(n, k)` and `perm(n, k)` to `std.math`, matching Python's
+  `math.comb()` and `math.perm()`. `comb(n, k)` computes the binomial
+  coefficient C(n, k) without computing full factorials, returning 0 when
+  `k > n`. `perm(n, k)` computes permutations P(n, k); omitting `k` (default
+  `-1`) returns `n!`. Both functions also accept `Scalar[dtype]` arguments for
+  any integer dtype (e.g. `Int32`, `Int64`, `UInt32`).
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
