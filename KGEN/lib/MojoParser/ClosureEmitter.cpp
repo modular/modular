@@ -644,10 +644,14 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
   // parameters. Since the name of the parameters have not changed from the
   // trait definition, we can avoid another remap of the indexed types in
   // parameters and instead reuse the trait function's input parameters.
+  size_t traitParamCount = traitFnOp.getInputParams().size();
+  size_t implicitOrigins = wrapperSignature.getNumImplicitOriginDecls();
+  assert(implicitOrigins <= traitParamCount &&
+         "implicit origins cannot exceed total param count");
+  size_t explicitParamCount = traitParamCount - implicitOrigins;
   ArrayRef<ParamDeclAttr> parameters =
       ArrayRef<ParamDeclAttr>(traitFnOp.getInputParams())
-          .take_front(traitFnOp.getInputParams().size() -
-                      wrapperSignature.getNumImplicitOriginDecls());
+          .take_front(explicitParamCount);
   ParamRefRemapper replacer(parameters);
   SmallVector<Type> argumentTypes;
   llvm::append_range(
@@ -824,7 +828,12 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   StringAttr traitName =
       b.getStringAttr(getFlattenedSymbolName(getFullyResolvedSymbolRef(
           cast<mlir::SymbolOpInterface>(trait.getOperation()))));
+  // Only collect closure-specific aliases. Inherited AliasDeclOps (e.g.
+  // `__del__is_trivial`) are cloned into the trait's fields by lazy body
+  // resolution and are marked with `inheritedFrom`; skip them.
   for (auto alias : trait.getFields().getOps<AliasDeclOp>()) {
+    if (alias.getInheritedFrom())
+      continue;
     StringAttr aliasName = alias.getParamDecl().getName();
     Type aliasType = alias.getType();
     TypedAttr aliasValue = GetWitnessAttr::get(ParamDeclRefAttr::get(implType),
@@ -3425,10 +3434,17 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   if (callDecls.empty())
     return failure();
 
-  auto traitAliasRange = traitDeclOp.getFields().getOps<AliasDeclOp>();
   size_t originCount = traitSignature.getNumImplicitOriginDecls();
-  size_t traitAliasCount =
-      std::distance(traitAliasRange.begin(), traitAliasRange.end());
+  // Collect closure-specific alias names. Inherited AliasDeclOps (e.g.
+  // `__del__is_trivial`) are cloned into the trait's fields by lazy body
+  // resolution and are marked with `inheritedFrom`; skip them.
+  SmallVector<StringAttr> traitAliasOps;
+  for (AliasDeclOp aliasOp : traitDeclOp.getFields().getOps<AliasDeclOp>()) {
+    if (aliasOp.getInheritedFrom())
+      continue;
+    traitAliasOps.push_back(aliasOp.getParamDecl().getName());
+  }
+  size_t traitAliasCount = traitAliasOps.size();
   SmallVector<ParamDeclAttr> auxiliaryParams;
   for (ParamDeclAttr auxiliaryParam :
        callFunction.getInputParams()
@@ -3445,9 +3461,6 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
     if (isa<GetWitnessAttr>(value))
       uniqueGetWitnessAttrs.insert(value);
   }
-  SmallVector<StringAttr> traitAliasOps;
-  for (AliasDeclOp aliasOp : traitAliasRange)
-    traitAliasOps.push_back(aliasOp.getParamDecl().getName());
 
   AuxiliaryParameters auxCtx{
       startingIndex, uniqueGetWitnessAttrs.size(), std::move(auxiliaryParams),
