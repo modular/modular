@@ -17,7 +17,6 @@
 import os
 import string
 import subprocess
-import tempfile
 from io import StringIO
 from pathlib import Path
 
@@ -247,101 +246,98 @@ def test_kprofile() -> None:
 # --- Scheduler tests ---
 
 
-def test_scheduler_init_validates_num_gpu() -> None:
+def test_scheduler_init_validates_num_gpu(tmp_path: Path) -> None:
     """num_gpu must be > 0 and <= num_cpu"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        cache = KbenchCache()
+    cache = KbenchCache()
 
-        # num_gpu = 0 should fail
-        with pytest.raises(ValueError, match="num_gpu"):
-            Scheduler(
-                num_cpu=4,
-                num_gpu=0,
-                obj_cache=cache,
-                run_only=False,
-                spec_list=[],
-                output_dir=Path(tmpdir),
-                build_opts=[],
-                dryrun=True,
-            )
-
-        # num_gpu > num_cpu should fail
-        with pytest.raises(ValueError, match="num_gpu"):
-            Scheduler(
-                num_cpu=2,
-                num_gpu=4,
-                obj_cache=cache,
-                run_only=False,
-                spec_list=[],
-                output_dir=Path(tmpdir),
-                build_opts=[],
-                dryrun=True,
-            )
-
-
-def test_scheduler_get_chunksize() -> None:
-    """Test chunksize calculation"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        cache = KbenchCache()
-        scheduler = Scheduler(
+    # num_gpu = 0 should fail
+    with pytest.raises(ValueError, match="num_gpu"):
+        Scheduler(
             num_cpu=4,
-            num_gpu=2,
+            num_gpu=0,
             obj_cache=cache,
             run_only=False,
             spec_list=[],
-            output_dir=Path(tmpdir),
+            output_dir=tmp_path,
             build_opts=[],
             dryrun=True,
         )
 
-        # With few elements, chunksize should be small
-        assert scheduler.get_chunksize(2) == 1
-        assert scheduler.get_chunksize(4) == 1
-        # Chunksize is capped at CHUNK_SIZE (1)
-        assert scheduler.get_chunksize(100) == 1
+    # num_gpu > num_cpu should fail
+    with pytest.raises(ValueError, match="num_gpu"):
+        Scheduler(
+            num_cpu=2,
+            num_gpu=4,
+            obj_cache=cache,
+            run_only=False,
+            spec_list=[],
+            output_dir=tmp_path,
+            build_opts=[],
+            dryrun=True,
+        )
 
 
-def test_scheduler_kbench_mkdir_creates_directory() -> None:
+def test_scheduler_get_chunksize(tmp_path: Path) -> None:
+    """Test chunksize calculation"""
+    cache = KbenchCache()
+    scheduler = Scheduler(
+        num_cpu=4,
+        num_gpu=2,
+        obj_cache=cache,
+        run_only=False,
+        spec_list=[],
+        output_dir=tmp_path,
+        build_opts=[],
+        dryrun=True,
+    )
+
+    # With few elements, chunksize should be small
+    assert scheduler.get_chunksize(2) == 1
+    assert scheduler.get_chunksize(4) == 1
+    # Chunksize is capped at CHUNK_SIZE (1)
+    assert scheduler.get_chunksize(100) == 1
+
+
+def test_scheduler_kbench_mkdir_creates_directory(tmp_path: Path) -> None:
     """Test that kbench_mkdir creates directories"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_dir = Path(tmpdir) / "new_dir"
-        assert not output_dir.exists()
+    output_dir = tmp_path / "new_dir"
+    assert not output_dir.exists()
 
-        result = Scheduler.kbench_mkdir((output_dir, "output.csv", False))
+    result = Scheduler.kbench_mkdir((output_dir, "output.csv", False))
 
-        assert result == output_dir
-        assert output_dir.exists()
+    assert result == output_dir
+    assert output_dir.exists()
 
 
-def test_scheduler_kbench_mkdir_run_only_requires_existing() -> None:
+def test_scheduler_kbench_mkdir_run_only_requires_existing(
+    tmp_path: Path,
+) -> None:
     """run_only=True should fail if directory doesn't exist"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_dir = Path(tmpdir) / "nonexistent"
+    output_dir = tmp_path / "nonexistent"
 
-        with pytest.raises(ValueError, match="does not exist"):
-            Scheduler.kbench_mkdir((output_dir, "output.csv", True))
+    with pytest.raises(ValueError, match="does not exist"):
+        Scheduler.kbench_mkdir((output_dir, "output.csv", True))
 
 
-def test_kbench_cache_basic_operations() -> None:
+def test_kbench_cache_basic_operations(tmp_path: Path) -> None:
     """Test KbenchCache store and query"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        cache_path = Path(tmpdir) / "test_cache.pkl"
-        cache = KbenchCache(path=cache_path)
+    cache_path = tmp_path / "test_cache.pkl"
+    cache = KbenchCache(path=cache_path)
 
-        # Cache not active, query returns None
-        assert cache.query("key1") is None
+    # Cache not active, query returns None
+    assert cache.query("key1") is None
 
-        cache.load()  # activates cache
+    cache.load()  # activates cache
 
-        # Store and retrieve
-        bin_path = Path(tmpdir) / "binary"
-        bin_path.touch()  # create the file
+    # Store and retrieve
+    bin_path = tmp_path / "binary"
+    bin_path.touch()  # create the file
 
-        cache.store("key1", bin_path)
-        assert cache.query("key1") == str(bin_path)
+    cache.store("key1", bin_path)
+    assert cache.query("key1") == str(bin_path)
 
-        # Non-existent key
-        assert cache.query("nonexistent") is None
+    # Non-existent key
+    assert cache.query("nonexistent") is None
 
 
 def test_process_output_log() -> None:
@@ -591,25 +587,23 @@ def _make_spec_instance(
     )
 
 
-def test_build_shared_lib() -> None:
+def test_build_shared_lib(tmp_path: Path) -> None:
     """build_shared_lib() compiles sample.mojo to a .so."""
     spec = _make_spec_instance({"dtype": "DType.float16"}, {"x": 0})
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_dir = Path(tmpdir)
-        result = spec.build_shared_lib(
-            output_dir=output_dir,
-            build_opts=[],
-        )
-        assert result.return_code == os.EX_OK, result.stderr
-        assert result.path is not None
-        assert result.path.exists()
-        assert result.path.suffix == ".so"
-        # Verify wrapper file was generated
-        wrapper = output_dir / "sample_wrapper.mojo"
-        assert wrapper.exists()
-        content = wrapper.read_text()
-        assert "from sample import main as _bench_main" in content
-        assert "benchmark_entry" in content
+    result = spec.build_shared_lib(
+        output_dir=tmp_path,
+        build_opts=[],
+    )
+    assert result.return_code == os.EX_OK, result.stderr
+    assert result.path is not None
+    assert result.path.exists()
+    assert result.path.suffix == ".so"
+    # Verify wrapper file was generated
+    wrapper = tmp_path / "sample_wrapper.mojo"
+    assert wrapper.exists()
+    content = wrapper.read_text()
+    assert "from sample import main as _bench_main" in content
+    assert "benchmark_entry" in content
 
 
 def test_group_by_binary_hash() -> None:
