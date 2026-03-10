@@ -95,7 +95,9 @@ fn _bucket_num_partitions(num_partitions: Int) -> Int:
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     QOTMATile,
+    ScalesTMATile,
     tma_tile_qo,
+    tma_tile_scales,
     MLA_Decode_Pack,
     num_matrix_view_rows_decode,
 )
@@ -1000,6 +1002,15 @@ fn mla_decode_sm100_sink_split_k[
             swizzle_mode=mla_config.rope_swizzle_mode,  # SWIZZLE_128B
         ](ctx)
 
+        # Scales TMA: per-token float32 scales loaded via TMA.
+        # The scales tensor is [total_blocks, page_size, 1, 1] in row-major,
+        # indexed by row_idx (same paging as KV cache blocks).
+        # We treat it as a flat [1, total_elements] 2D tensor for TMA.
+        var _total_scale_elements = k.num_kv_rows()
+        scale_tma = tma_tile_scales[BN=mla_config.BN](
+            ctx, scales_ptr, _total_scale_elements
+        )
+
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
             var valid_len: ValidLengthType = {
@@ -1021,6 +1032,7 @@ fn mla_decode_sm100_sink_split_k[
                 q_rope_tma,
                 k_content_tma,
                 k_rope_tma,
+                scale_tma,
                 o_tma_op,
                 k,
                 lse_accum_split_ptr,
@@ -1031,7 +1043,6 @@ fn mla_decode_sm100_sink_split_k[
                 q_max_seq_len,
                 valid_len,
                 mask,
-                scales_ptr,
                 q_scale_ptr,
                 scalar_args_buf,
                 ctx,
@@ -1055,6 +1066,7 @@ fn mla_decode_sm100_sink_split_k[
                 q_rope_tma,
                 k_content_tma,
                 k_rope_tma,
+                scale_tma,
                 o_tma_op,
                 k,
                 lse_accum_split_ptr,
@@ -1065,7 +1077,6 @@ fn mla_decode_sm100_sink_split_k[
                 q_max_seq_len,
                 valid_len,
                 mask,
-                scales_ptr,
                 q_scale_ptr,
                 scalar_args_buf,
                 ctx,
@@ -1516,6 +1527,7 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         BN=config.BK1,  # 64
         BK=config.rope_depth,  # 64
     ],
+    scale_tma: ScalesTMATile[BN=config.BN],
     o_tma: QOTMATile[
         dtype=output_type,
         BM=config.out_rows,
@@ -1531,7 +1543,6 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     scalar_args_buf: LayoutTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
@@ -1542,7 +1553,8 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
 
     This is a dedicated launch function for the SnapMLA FP8 per-token-scale rope-aware path.
     Q and K are split into FP8 content (512 dims, SWIZZLE_64B) and BF16 rope
-    (64 dims, SWIZZLE_128B), requiring 4 TMA descriptors instead of 2.
+    (64 dims, SWIZZLE_128B), requiring 5 TMA descriptors (content, rope, scales, Q_nope, Q_rope).
+    Per-token scales are loaded via TMA alongside content and rope.
     """
     var mla_decode_pack = MLA_Decode_Pack[
         ValidLengthType=ValidLengthType,
@@ -1575,11 +1587,11 @@ fn launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         q_rope_tma,
         k_content_tma,
         k_rope_tma,
+        scale_tma,
         o_tma,
         kv_lut,
         scale,
         mla_decode_pack,
-        scales_ptr,
         q_scale_ptr,
         scalar_args_buf,
         grid_dim=grid_dim,

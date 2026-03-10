@@ -281,6 +281,15 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in this KV cache view.
+
+        For paged caches this accounts for the paging stride:
+        ``(total_blocks - 1) * stride + page_size``.
+        """
+        ...
+
+    @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         ...
@@ -594,6 +603,15 @@ struct ContinuousBatchingKVCache[
     fn _stride(self) -> UInt32:
         return UInt32(self.blocks.layout.stride[0]().value()) // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
+        )
+
+    @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in this KV cache view."""
+        var total_blocks = self.blocks.dim[0]()
+        return Int(
+            UInt32(total_blocks - 1) * self._stride()
+            + UInt32(self.blocks.dim[1]())
         )
 
     @always_inline
@@ -933,6 +951,14 @@ struct PagedKVCache[
     fn _stride(self) -> UInt32:
         return UInt32(self.blocks.layout.stride[0]().value()) // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
+        )
+
+    @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in this KV cache view."""
+        var total_blocks = self.blocks.dim[0]()
+        return Int(
+            UInt32(total_blocks - 1) * self._stride() + UInt32(Self.page_size)
         )
 
     @always_inline

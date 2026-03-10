@@ -83,6 +83,15 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in the KV memory view.
+
+        For paged caches this accounts for the paging stride so that TMA
+        descriptors can be sized to cover the entire address space.
+        """
+        ...
+
+    @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         ...
@@ -225,6 +234,11 @@ struct KVCacheMHAOperand[
     @always_inline
     fn max_context_length(self) -> UInt32:
         return self.cache.max_context_length()
+
+    @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in the KV memory view."""
+        return self.cache.num_kv_rows()
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
@@ -390,6 +404,11 @@ struct KVCacheScalesMHAOperand[
     @always_inline
     fn max_context_length(self) -> UInt32:
         return self.cache.max_context_length()
+
+    @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows in the KV memory view."""
+        return self.cache.num_kv_rows()
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
@@ -581,6 +600,11 @@ struct LayoutTensorMHAOperand[
     @always_inline
     fn max_context_length(self) -> UInt32:
         return UInt32(self.buffer.dim[1]())
+
+    @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of virtual rows (batch * seq_len)."""
+        return self.buffer.dim[0]() * self.buffer.dim[1]()
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
@@ -776,6 +800,11 @@ struct RaggedMHAOperand[
         comptime assert (
             False
         ), "For RaggedMHAOperand, max_context_length is not implemented."
+
+    @always_inline
+    fn num_kv_rows(self) -> Int:
+        """Returns the total number of tokens in the ragged buffer."""
+        return self.buffer.dim[0]()
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:

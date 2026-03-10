@@ -131,6 +131,57 @@ fn tma_tile_qo[
     )
 
 
+# Per-token scales TMA tile: loads BN contiguous float32 values via TMA.
+# Scales are treated as a flat 1D array indexed by row_idx (same paging
+# as the KV cache blocks).  The TMA uses a [1, total_elements] 2D layout
+# so the inner dimension (total_elements * 4 bytes) exceeds the TMA minimum
+# of 32 bytes, with tile shape [1, BN] and SWIZZLE_NONE.
+#
+# We set desc_shape = tile_shape (no sub-tiling) so that desc_bytes ==
+# tile_bytes and the 128-byte alignment constraint for multi-copy TMA is
+# not triggered.  With BN=64, tile_bytes = 256 which is already 128-aligned.
+comptime ScalesTMATile[BN: Int] = TMATensorTile[
+    DType.float32,
+    2,
+    IndexList[2](1, BN),
+    IndexList[2](1, BN),
+    is_k_major=True,
+]
+
+
+@always_inline
+fn tma_tile_scales[
+    BN: Int,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    total_elements: Int,
+    out res: ScalesTMATile[BN],
+) raises:
+    """Create a TMA descriptor for per-token float32 scales.
+
+    The scales are a flat array of float32 values indexed by the same
+    row_idx as the KV cache blocks.  We create a 2D TMA with shape
+    [1, total_elements] and tile [1, BN] so that each async_copy loads
+    BN contiguous float32 values (BN * 4 bytes) starting at the
+    specified column offset.
+    """
+    comptime layout = Layout.row_major(1, UNKNOWN_VALUE)
+    var rt_layout = RuntimeLayout[layout].row_major(
+        IndexList[2](1, total_elements)
+    )
+    var tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
+        ptr, rt_layout
+    )
+    res = rebind[ScalesTMATile[BN]](
+        create_tensor_tile[
+            IndexList[2](1, BN),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+            __desc_shape=IndexList[2](1, BN),
+        ](ctx, tensor)
+    )
+
+
 # ------------------------------------------------------------------------------
 # Helper functions for MLA decoding pack
 # ------------------------------------------------------------------------------
