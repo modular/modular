@@ -109,6 +109,27 @@ def test_factorial() raises:
     assert_equal(factorial(20), 2432902008176640000)
 
 
+def test_factorial_scalar() raises:
+    # Int32 (max n = 12)
+    assert_equal(factorial(Int32(0)), Int32(1))
+    assert_equal(factorial(Int32(5)), Int32(120))
+    assert_equal(factorial(Int32(12)), Int32(479001600))
+
+    # Int64 (max n = 20)
+    assert_equal(factorial(Int64(15)), Int64(1307674368000))
+    assert_equal(factorial(Int64(20)), Int64(2432902008176640000))
+
+    # Unsigned
+    assert_equal(factorial(UInt32(12)), UInt32(479001600))
+    assert_equal(factorial(UInt64(20)), UInt64(2432902008176640000))
+
+    # Int16 (max n = 7)
+    assert_equal(factorial(Int16(7)), Int16(5040))
+
+    # UInt16 (max n = 8)
+    assert_equal(factorial(UInt16(8)), UInt16(40320))
+
+
 def test_comb() raises:
     assert_equal(comb(0, 0), 1)
     assert_equal(comb(5, 0), 1)
