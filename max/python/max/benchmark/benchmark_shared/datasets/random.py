@@ -490,7 +490,16 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
             # Remove special tokens from the prompt.
             special_ids = set(tokenizer.all_special_ids)
-            replacement = tokenizer.encode(" ", add_special_tokens=False)[0]
+            # Use common space prefix for replacement, pick the first valid one.
+            # - " "      : plain space (some tokenizers use explicit space token)
+            # - U+0120   : GPT-2/BPE style prefix (e.g. Llama 3, DeepSeek)
+            # - U+2581   : SentencePiece style prefix (e.g. Llama 1/2, Mistral)
+            replacement = next(
+                tid
+                for candidate in [" ", chr(0x0120), chr(0x2581)]
+                if (tid := tokenizer.convert_tokens_to_ids(candidate))
+                not in (None, tokenizer.unk_token_id)
+            )
             prompt_ids = [
                 (replacement if (id in special_ids) else id)
                 for id in prompt_ids
