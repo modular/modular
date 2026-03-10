@@ -83,6 +83,12 @@ class Flux2ModelInputs:
     num_images_per_prompt: int
     """Number of images to generate per prompt."""
 
+    step_cache: bool = False
+    """Enable step-cache runtime behavior."""
+
+    rdt: float = 0.08
+    """Relative difference threshold for cache reuse decisions."""
+
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
@@ -148,6 +154,10 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
+        # Store derived config/device references before unwrapping.
+        self._transformer_config = self.transformer.config
+        self._transformer_devices = self.transformer.devices
+
         self.vae_scale_factor = (
             2 ** (len(self.vae.config.block_out_channels) - 1)
             if getattr(self, "vae", None)
@@ -165,6 +175,9 @@ class Flux2Pipeline(DiffusionPipeline):
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
         self._cached_shape_carriers: dict[int, Tensor] = {}
+        self._cached_step_cache_placeholders: dict[
+            tuple[int, int, int, int, str, DType], dict[str, Tensor]
+        ] = {}
 
     @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
@@ -246,6 +259,8 @@ class Flux2Pipeline(DiffusionPipeline):
             width=context.width,
             num_inference_steps=context.num_inference_steps,
             num_images_per_prompt=context.num_images_per_prompt,
+            step_cache=getattr(context, "step_cache", False),
+            rdt=getattr(context, "rdt", 0.08),
             input_image=context.input_image,
         )
 
@@ -717,6 +732,71 @@ class Flux2Pipeline(DiffusionPipeline):
 
         # 4) Denoising loop.
         is_img2img = image_latents is not None
+        dtype = prompt_embeds.dtype
+        device = self._transformer_devices[0]
+        prev_residual = None
+        prev_output = None
+        cfg = self._transformer_config
+        inner_dim = cfg.num_attention_heads * cfg.attention_head_dim
+        out_dim = (
+            cfg.patch_size
+            * cfg.patch_size
+            * (cfg.out_channels or cfg.in_channels)
+        )
+        step_cache_flag = Tensor.full(
+            [1],
+            model_inputs.step_cache,
+            device=device,
+            dtype=DType.bool,
+        )
+        rdt_tensor = Tensor.full(
+            [1],
+            model_inputs.rdt,
+            device=device,
+            dtype=DType.float32,
+        )
+        step_cache_enabled = bool(model_inputs.step_cache)
+        seq_len_for_cache = model_inputs.image_seq_len
+        if image_latents is not None:
+            seq_len_for_cache += int(image_latents.shape[1])
+        if step_cache_enabled:
+            prev_residual = Tensor.zeros(
+                (batch_size, seq_len_for_cache, inner_dim),
+                dtype=dtype,
+                device=device,
+            )
+            prev_output = Tensor.zeros(
+                (batch_size, seq_len_for_cache, out_dim),
+                dtype=dtype,
+                device=device,
+            )
+        else:
+            placeholder_key = (
+                batch_size,
+                seq_len_for_cache,
+                inner_dim,
+                out_dim,
+                str(device),
+                dtype,
+            )
+            if placeholder_key not in self._cached_step_cache_placeholders:
+                self._cached_step_cache_placeholders[placeholder_key] = {
+                    "prev_residual": Tensor.zeros(
+                        (batch_size, seq_len_for_cache, inner_dim),
+                        dtype=dtype,
+                        device=device,
+                    ),
+                    "prev_output": Tensor.zeros(
+                        (batch_size, seq_len_for_cache, out_dim),
+                        dtype=dtype,
+                        device=device,
+                    ),
+                }
+            cache_placeholders = self._cached_step_cache_placeholders[
+                placeholder_key
+            ]
+            prev_residual = cache_placeholders["prev_residual"]
+            prev_output = cache_placeholders["prev_output"]
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
                 with Tracer(f"denoising_step_{i}"):
@@ -739,14 +819,23 @@ class Flux2Pipeline(DiffusionPipeline):
                         latent_image_ids_concat = latent_image_ids
 
                     with Tracer("transformer"):
-                        noise_pred = self.transformer(
+                        assert prev_residual is not None
+                        assert prev_output is not None
+                        noise_pred, new_residual = self.transformer(
                             latents_concat,
                             prompt_embeds,
                             timestep,
                             latent_image_ids_concat,
                             text_ids,
                             guidance,
-                        )[0]
+                            prev_residual,
+                            prev_output,
+                            step_cache_flag,
+                            rdt_tensor,
+                        )
+                        if step_cache_enabled:
+                            prev_residual = new_residual
+                            prev_output = noise_pred
 
                     with Tracer("scheduler_step"):
                         latents = self.scheduler_step(latents, noise_pred, dt)

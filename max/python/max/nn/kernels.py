@@ -1485,23 +1485,17 @@ def rope_ragged_with_position_ids(
 
     # Fast path: invoke kernel directly when mrope_section is not used.
     if mrope_section is None:
-        total_tokens = input.shape[0]
-        row_offsets = ops.range(
-            0,
-            total_tokens + 1,
-            total_tokens,
-            out_dim=2,
-            dtype=DType.uint32,
-            device=input.device,
+        total_tokens = ops.cast(
+            ops.shape_to_tensor(input.shape)[0], DType.uint32
+        ).to(input.device)
+        row_offsets = ops.stack(
+            [
+                ops.constant(0, dtype=DType.uint32, device=input.device),
+                total_tokens,
+            ],
+            axis=0,
         )
-        start_pos = ops.range(
-            0,
-            1,
-            1,
-            out_dim=1,
-            dtype=DType.uint32,
-            device=input.device,
-        )
+        start_pos = ops.constant([0], dtype=DType.uint32, device=input.device)
         return ops.custom(
             "mo.rope.ragged.with_position_id",
             device=input.device,
