@@ -516,20 +516,18 @@ class FluxPipeline(DiffusionPipeline):
             dt = dts_seq[i : i + 1]
 
             if step_cache_enabled:
-                noise_pred, new_residual = (
-                    self.transformer.call_with_step_cache(
-                        latents,
-                        prompt_embeds,
-                        pooled_prompt_embeds,
-                        timestep,
-                        latent_image_ids,
-                        text_ids,
-                        guidance,
-                        prev_residual,
-                        prev_output,
-                        step_cache_flag,
-                        rdt_tensor,
-                    )
+                noise_pred, new_residual = self.transformer(
+                    latents,
+                    prompt_embeds,
+                    pooled_prompt_embeds,
+                    timestep,
+                    latent_image_ids,
+                    text_ids,
+                    guidance,
+                    prev_residual,
+                    prev_output,
+                    step_cache_flag,
+                    rdt_tensor,
                 )
             else:
                 noise_pred = self.transformer(
@@ -550,20 +548,18 @@ class FluxPipeline(DiffusionPipeline):
                 assert negative_pooled_prompt_embeds is not None
                 assert negative_text_ids is not None
                 if step_cache_enabled:
-                    neg_noise_pred, new_neg_residual = (
-                        self.transformer.call_with_step_cache(
-                            latents,
-                            negative_prompt_embeds,
-                            negative_pooled_prompt_embeds,
-                            timestep,
-                            latent_image_ids,
-                            negative_text_ids,
-                            guidance,
-                            prev_neg_residual,
-                            prev_neg_output,
-                            step_cache_flag,
-                            rdt_tensor,
-                        )
+                    neg_noise_pred, new_neg_residual = self.transformer(
+                        latents,
+                        negative_prompt_embeds,
+                        negative_pooled_prompt_embeds,
+                        timestep,
+                        latent_image_ids,
+                        negative_text_ids,
+                        guidance,
+                        prev_neg_residual,
+                        prev_neg_output,
+                        step_cache_flag,
+                        rdt_tensor,
                     )
                 else:
                     neg_noise_pred = self.transformer(
