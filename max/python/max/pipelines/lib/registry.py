@@ -305,27 +305,6 @@ class SupportedArchitecture:
         return TextTokenizer
 
 
-def _apply_context_validators(
-    tokenizer: PipelineTokenizer[Any, Any, Any],
-    validators: list[Callable[..., None]],
-) -> None:
-    """Wraps a tokenizer's new_context to apply architecture-level validators.
-
-    This keeps validation logic out of individual tokenizer classes while
-    ensuring validators run automatically after context creation.
-    """
-    original_new_context = tokenizer.new_context
-
-    @functools.wraps(original_new_context)
-    async def validated_new_context(request: Any) -> Any:
-        context = await original_new_context(request)
-        for validator in validators:
-            validator(context)
-        return context
-
-    tokenizer.new_context = validated_new_context  # type: ignore[method-assign]
-
-
 class PipelineRegistry:
     """Registry for managing supported model architectures and their pipelines.
 
@@ -856,6 +835,7 @@ class PipelineRegistry:
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
                 chat_template=pipeline_config.model.retrieve_chat_template(),
+                context_validators=arch.context_validators,
             )
         else:
             tokenizer = arch.tokenizer(
@@ -865,11 +845,8 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=pipeline_config.model.retrieve_chat_template(),
+                context_validators=arch.context_validators,
             )
-
-        if arch.context_validators:
-            _apply_context_validators(tokenizer, arch.context_validators)
-
         # Cast tokenizer to the proper type for text generation pipeline compatibility
         typed_tokenizer = cast(
             PipelineTokenizer[

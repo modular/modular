@@ -256,6 +256,7 @@ class TextTokenizer(
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
         chat_template: str | None = None,
+        context_validators: list[Callable[[TextContext], None]] | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -301,6 +302,10 @@ class TextTokenizer(
 
         # cache tokenizer eos token ids
         self._default_eos_token_ids = set([self.eos])
+
+        self._context_validators = (
+            context_validators if context_validators else []
+        )
 
         if pipeline_config:
             huggingface_config = pipeline_config.model.huggingface_config
@@ -507,6 +512,9 @@ class TextTokenizer(
             target_endpoint=request.target_endpoint,
         )
 
+        for validator in self._context_validators:
+            validator(context)
+
         return context
 
     @property
@@ -569,6 +577,8 @@ class TextAndVisionTokenizer(
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
+        context_validators: list[Callable[[TextAndVisionContext], None]]
+        | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -600,6 +610,10 @@ class TextAndVisionTokenizer(
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
+        )
+
+        self._context_validators = (
+            context_validators if context_validators else []
         )
 
         # Qwen2.5VL uses image_token_id
@@ -827,6 +841,9 @@ class TextAndVisionTokenizer(
             ],
             vision_token_ids=self.vision_token_ids,
         )
+
+        for validator in self._context_validators:
+            validator(context)
 
         return context
 
