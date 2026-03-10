@@ -3207,10 +3207,17 @@ def factorial[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
     comptime max_n = 5 if bits <= 8 else (
         (7 if dtype.is_signed() else 8) if bits <= 16 else max_n_hi
     )
+    # Compare in the scalar domain to avoid narrowing n through Int on
+    # 32-bit platforms, which would incorrectly reject valid 64-bit inputs.
     assert (
-        Int(n) <= max_n
+        n <= Scalar[dtype](max_n)
     ), "factorial() input causes overflow for the given dtype"
-    return Scalar[dtype](factorial(Int(n)))
+    var result = Scalar[dtype](1)
+    var i = Scalar[dtype](2)
+    while i <= n:
+        result *= i
+        i += 1
+    return result
 
 
 def comb(n: Int, k: Int) -> Int:
