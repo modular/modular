@@ -3231,6 +3231,64 @@ def comb(n: Int, k: Int) -> Int:
     return result
 
 
+def comb[dtype: DType, //](n: Scalar[dtype], k: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes the number of ways to choose `k` items from `n` items without
+    repetition and without order (binomial coefficient).
+
+    Equivalent to Python's `math.comb(n, k)`.
+
+    Parameters:
+        dtype: The integer data type of the arguments and result.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to choose. Must be non-negative.
+
+    Returns:
+        The binomial coefficient C(n, k). Returns 0 if `k > n`. Asserts if
+        either argument is negative (for signed dtypes).
+
+    Examples:
+
+    ```mojo
+    from std.math import comb
+    print(comb(Int32(5), Int32(2)))  # 10
+    print(comb(Int64(10), Int64(3))) # 120
+    print(comb(Int32(3), Int32(5)))  # 0
+    ```
+    """
+    comptime assert dtype.is_integral(), "comb() requires an integer dtype"
+    comptime if not dtype.is_unsigned():
+        assert n >= 0, "n must be non-negative"
+        assert k >= 0, "k must be non-negative"
+    if k > n:
+        return 0
+    # Use the smaller of k and n-k to minimise the number of iterations.
+    var k2 = k if k <= n - k else n - k
+    var result = Scalar[dtype](1)
+    var i = Scalar[dtype](0)
+    while i < k2:
+        # Reduce (n-i) and (i+1) by their gcd before multiplying to avoid
+        # intermediate overflow when the final result fits in the dtype.
+        var num = n - i
+        var den = i + 1
+        # Inline Euclidean gcd for Scalar[dtype].
+        var a = num
+        var b = den
+        while b != 0:
+            var tmp = b
+            b = a % b
+            a = tmp
+        var g = a
+        num //= g
+        den //= g
+        # After removing gcd(num, den), the remaining den divides result
+        # exactly (since C(n, i+1) is always an integer).
+        result = (result // den) * num
+        i += 1
+    return result
+
+
 def perm(n: Int, k: Int = -1) -> Int:
     """Computes the number of ways to arrange `k` items from `n` items without
     repetition (permutations).
@@ -3262,6 +3320,71 @@ def perm(n: Int, k: Int = -1) -> Int:
     var result = 1
     for i in range(k):
         result *= n - i
+    return result
+
+
+def perm[dtype: DType, //](n: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes `n!` (all permutations of `n` items).
+
+    Equivalent to Python's `math.perm(n)` with no `k` argument.
+
+    Parameters:
+        dtype: The integer data type of the argument and result.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+
+    Returns:
+        The factorial `n!`. Asserts if `n` is negative (for signed dtypes) or
+        if the result would overflow the dtype.
+
+    Examples:
+
+    ```mojo
+    from std.math import perm
+    print(perm(Int32(5)))  # 120
+    print(perm(Int64(0)))  # 1
+    ```
+    """
+    comptime assert dtype.is_integral(), "perm() requires an integer dtype"
+    return Scalar[dtype](factorial(Int(n)))
+
+
+def perm[dtype: DType, //](n: Scalar[dtype], k: Scalar[dtype]) -> Scalar[dtype]:
+    """Computes the number of ways to arrange `k` items from `n` items without
+    repetition (permutations).
+
+    Equivalent to Python's `math.perm(n, k)`.
+
+    Parameters:
+        dtype: The integer data type of the arguments and result.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to arrange. Must be non-negative and at most `n`.
+
+    Returns:
+        The number of permutations P(n, k) = n! / (n-k)!. Asserts if `n` is
+        negative, `k` is negative, or `k > n` (for signed dtypes).
+
+    Examples:
+
+    ```mojo
+    from std.math import perm
+    print(perm(Int32(5), Int32(2)))  # 20
+    print(perm(Int64(5), Int64(0)))  # 1
+    ```
+    """
+    comptime assert dtype.is_integral(), "perm() requires an integer dtype"
+    comptime if not dtype.is_unsigned():
+        assert n >= 0, "n must be non-negative"
+        assert k >= 0, "k must be non-negative"
+    assert k <= n, "k must be between 0 and n"
+    var result = Scalar[dtype](1)
+    var i = Scalar[dtype](0)
+    while i < k:
+        result *= n - i
+        i += 1
     return result
 
 
