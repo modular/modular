@@ -819,6 +819,290 @@ fn layer_norm_shape[
     )
 
 
+fn mean_abs_pair_lastdim_gpu_block[
+    dtype: DType,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_0_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
+    input_1_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: fn[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_1_fn: fn[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+](num_cols: Int,):
+    comptime accum_type = get_accum_type[dtype]()
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var thread_sum_abs_diff = Scalar[accum_type](0)
+    var thread_sum_abs_prev = Scalar[accum_type](0)
+
+    with PDL():
+        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
+            var offset = x * Int(block_dim.x) * simd_width + Int(
+                tid * UInt(simd_width)
+            )
+            if offset < num_cols:
+                var val_0 = input_0_fn[simd_width](Int(row), offset).cast[
+                    accum_type
+                ]()
+                var val_1 = input_1_fn[simd_width](Int(row), offset).cast[
+                    accum_type
+                ]()
+
+                thread_sum_abs_diff += abs(val_0 - val_1).reduce_add()
+                thread_sum_abs_prev += abs(val_1).reduce_add()
+
+        var row_sum_abs_diff = block_reduce[
+            max_warps_per_block=max_warps_per_block
+        ](thread_sum_abs_diff)
+        var row_sum_abs_prev = block_reduce[
+            max_warps_per_block=max_warps_per_block
+        ](thread_sum_abs_prev)
+
+        if tid == 0:
+            var denom = Scalar[accum_type](num_cols)
+            var mean_abs_diff = (row_sum_abs_diff / denom).cast[dtype]()
+            var mean_abs_prev = (row_sum_abs_prev / denom).cast[dtype]()
+
+            output_0_fn[1, align_of[dtype]()](
+                Int(row), 0, SIMD[dtype, 1](mean_abs_diff)
+            )
+            output_1_fn[1, align_of[dtype]()](
+                Int(row), 0, SIMD[dtype, 1](mean_abs_prev)
+            )
+
+
+fn mean_abs_pair_lastdim_gpu[
+    dtype: DType,
+    rank: Int,
+    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    input_1_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: fn[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_1_fn: fn[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+](shape: IndexList[rank, ...], *, ctx: DeviceContext,) raises:
+    if rank == 0:
+        return
+
+    var last_dim = shape[rank - 1]
+    if last_dim == 0:
+        return
+
+    comptime rank_rs = 2
+    var flattened_shape = layer_norm_reshape[rank_rs](shape)
+    var num_rows = flattened_shape[0]
+    var num_cols = flattened_shape[1]
+
+    if num_rows == 0:
+        return
+
+    @parameter
+    @always_inline
+    fn input_0_fn_2d[
+        _simd_width: Int
+    ](row: Int, col: Int) -> SIMD[dtype, _simd_width]:
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        return input_0_fn[_simd_width](indices.canonicalize())
+
+    @parameter
+    @always_inline
+    fn input_1_fn_2d[
+        _simd_width: Int
+    ](row: Int, col: Int) -> SIMD[dtype, _simd_width]:
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        return input_1_fn[_simd_width](indices.canonicalize())
+
+    @parameter
+    @always_inline
+    fn output_0_fn_2d[
+        _simd_width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, _simd_width]):
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        output_0_fn[_simd_width, rank, alignment](indices.canonicalize(), val)
+
+    @parameter
+    @always_inline
+    fn output_1_fn_2d[
+        _simd_width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, _simd_width]):
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        output_1_fn[_simd_width, rank, alignment](indices.canonicalize(), val)
+
+    comptime native_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    )
+
+    var grid_dim = num_rows
+
+    if num_cols % native_simd_width == 0:
+        var block_dim = min(
+            ceildiv(ceildiv(num_cols, native_simd_width), WARP_SIZE)
+            * WARP_SIZE,
+            WARP_SIZE * max_warps_per_block,
+        )
+        comptime kernel = mean_abs_pair_lastdim_gpu_block[
+            dtype,
+            native_simd_width,
+            max_warps_per_block,
+            input_0_fn_2d,
+            input_1_fn_2d,
+            output_0_fn_2d,
+            output_1_fn_2d,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            num_cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(),
+        )
+    else:
+        var block_dim = min(
+            ceildiv(ceildiv(num_cols, 1), WARP_SIZE) * WARP_SIZE,
+            WARP_SIZE * max_warps_per_block,
+        )
+        comptime kernel = mean_abs_pair_lastdim_gpu_block[
+            dtype,
+            1,
+            max_warps_per_block,
+            input_0_fn_2d,
+            input_1_fn_2d,
+            output_0_fn_2d,
+            output_1_fn_2d,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            num_cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(),
+        )
+
+
+fn mean_abs_pair_lastdim_cpu[
+    dtype: DType,
+    rank: Int,
+    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    input_1_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: fn[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_1_fn: fn[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+](shape: IndexList[rank, ...],):
+    if rank == 0:
+        return
+
+    var num_cols = shape[rank - 1]
+    if num_cols == 0:
+        return
+
+    comptime accum_type = get_accum_type[dtype]()
+    var num_rows = shape.flattened_length() // num_cols
+    for row in range(num_rows):
+        var idx = _get_start_indices_of_nth_subvolume(row, shape)
+
+        var sum_abs_diff = Scalar[accum_type](0)
+        var sum_abs_prev = Scalar[accum_type](0)
+        for col in range(num_cols):
+            idx[rank - 1] = col
+            var val_0 = input_0_fn[1](idx.canonicalize())[0].cast[accum_type]()
+            var val_1 = input_1_fn[1](idx.canonicalize())[0].cast[accum_type]()
+            sum_abs_diff += abs(val_0 - val_1)
+            sum_abs_prev += abs(val_1)
+
+        idx[rank - 1] = 0
+        var denom = Scalar[accum_type](num_cols)
+        output_0_fn[1, rank, align_of[dtype]()](
+            idx.canonicalize(),
+            SIMD[dtype, 1]((sum_abs_diff / denom).cast[dtype]()),
+        )
+        output_1_fn[1, rank, align_of[dtype]()](
+            idx.canonicalize(),
+            SIMD[dtype, 1]((sum_abs_prev / denom).cast[dtype]()),
+        )
+
+
+@register_internal("mean_abs_pair_lastdim")
+@always_inline
+fn mean_abs_pair_lastdim[
+    dtype: DType,
+    rank: Int,
+    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    input_1_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: fn[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    output_1_fn: fn[width: Int, rank: Int, alignment: Int](
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+    /,
+    target: StaticString = "cpu",
+](shape: IndexList[rank], ctx: DeviceContextPtr,) raises:
+    if rank == 0 or shape.flattened_length() == 0:
+        return
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return trace_arg("input", shape, dtype)
+
+    with Trace[TraceLevel.OP, target=target](
+        "mean_abs_pair_lastdim",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
+    ):
+        comptime if is_gpu[target]():
+            mean_abs_pair_lastdim_gpu[
+                dtype=dtype,
+                rank=rank,
+                input_0_fn=input_0_fn,
+                input_1_fn=input_1_fn,
+                output_0_fn=output_0_fn,
+                output_1_fn=output_1_fn,
+            ](
+                shape,
+                ctx=ctx.get_device_context(),
+            )
+        elif is_cpu[target]():
+            mean_abs_pair_lastdim_cpu[
+                dtype=dtype,
+                rank=rank,
+                input_0_fn=input_0_fn,
+                input_1_fn=input_1_fn,
+                output_0_fn=output_0_fn,
+                output_1_fn=output_1_fn,
+            ](shape)
+        else:
+            comptime assert False, "unsupported target " + target
+
+
 @always_inline
 fn _rms_norm_warp_tiling_subkernel[
     dtype: DType,

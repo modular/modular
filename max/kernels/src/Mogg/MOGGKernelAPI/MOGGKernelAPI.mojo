@@ -231,6 +231,7 @@ from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
     group_norm,
     layer_norm,
+    mean_abs_pair_lastdim,
     rms_norm,
     rms_norm_fused_fp8,
     rms_norm_fused_residual_add,
@@ -2848,6 +2849,118 @@ struct ReduceMinMax:
         new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
 
         return new_shape
+
+
+@compiler.register("mo.step_cache.mean_abs_pair_lastdim")
+struct StepCacheMeanAbsPairLastDim:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output_abs_diff: FusedOutputTensor[
+            dtype=dtype, rank=rank, static_spec=...
+        ],
+        output_abs_prev: FusedOutputTensor[
+            dtype=dtype, rank=rank, static_spec=...
+        ],
+        current_residual: FusedInputTensor[
+            dtype=dtype, rank=rank, static_spec=...
+        ],
+        previous_residual: FusedInputTensor[
+            dtype=dtype, rank=rank, static_spec=...
+        ],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if current_residual.shape() != previous_residual.shape():
+            raise Error(
+                "current_residual and previous_residual shapes must match."
+            )
+
+        var expected_output_shape = current_residual.shape()
+        expected_output_shape[rank - 1] = 1
+
+        if output_abs_diff.shape() != expected_output_shape:
+            raise Error(
+                "output_abs_diff shape must match input shape with last"
+                " dimension reduced to 1."
+            )
+
+        if output_abs_prev.shape() != expected_output_shape:
+            raise Error(
+                "output_abs_prev shape must match input shape with last"
+                " dimension reduced to 1."
+            )
+
+        @parameter
+        @always_inline
+        fn current_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return current_residual._lambda_load[width=width](
+                rebind[IndexList[current_residual.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn previous_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return previous_residual._lambda_load[width=width](
+                rebind[IndexList[previous_residual.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn output_abs_diff_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output_abs_diff._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[output_abs_diff.rank]](coords),
+                rebind[SIMD[output_abs_diff.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        fn output_abs_prev_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output_abs_prev._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[output_abs_prev.rank]](coords),
+                rebind[SIMD[output_abs_prev.dtype, width]](val),
+            )
+
+        mean_abs_pair_lastdim[
+            dtype,
+            rank,
+            current_fn,
+            previous_fn,
+            output_abs_diff_fn,
+            output_abs_prev_fn,
+            target=target,
+        ](current_residual.shape(), ctx)
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        current_residual: InputTensor[dtype=dtype, rank=rank, static_spec=...],
+        previous_residual: InputTensor[dtype=dtype, rank=rank, static_spec=...],
+    ) raises -> IndexList[rank]:
+        if current_residual.shape() != previous_residual.shape():
+            raise Error(
+                "current_residual and previous_residual shapes must match."
+            )
+
+        var output_shape = current_residual.shape()
+        output_shape[rank - 1] = 1
+        return output_shape
 
 
 # ===-----------------------------------------------------------------------===#
