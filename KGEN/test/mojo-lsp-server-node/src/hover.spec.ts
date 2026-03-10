@@ -658,7 +658,7 @@ def function[
       {
         kind: "markdown",
         value:
-          "```mojo\n(function) def function[func: fn(Int) capturing -> Int]() raises -> fn(Int) capturing -> Int\n```",
+          "```mojo\n(function) def function[func: fn(Int) capturing -> Int]() -> fn(Int) capturing -> Int\n```",
       }
     );
   });

@@ -13,8 +13,7 @@ struct HasIntParam[x: Int]:
 # Functions
 ##===----------------------------------------------------------------------===##
 
-# expected-error @+1 {{'def' functions will soon stop implying 'raises', add an explicit 'raises'}}
-def missing_raises():
+def missing_raises_is_ok():
   pass
 
 struct NotBoolConvertible: pass
