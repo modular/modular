@@ -25,7 +25,6 @@ counted sets, also called bags or multisets, and extend that model by
 supporting negative counts.
 
 """
-from std.builtin.constrained import _constrained_conforms_to
 from std.collections.dict import (
     Dict,
     _DictEntryIter,
@@ -46,7 +45,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Equatable,
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(V, Writable),
 ):
     """A container for counting hashable items.
 
@@ -234,7 +233,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.V, Writable):
         """Returns a string representation of a `Counter`.
 
         Returns:
@@ -246,7 +245,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.V, Writable):
         """Returns a string representation of a `Counter`.
 
         Returns:
@@ -271,7 +270,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     fn _write_counter_body[
         f_key: fn(Self.V, mut Some[Writer]),
         f_val: fn(Int, mut Some[Writer]),
-    ](self, mut writer: Some[Writer]):
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.V, Writable):
         """Write the counter's key-value pairs to a writer.
 
         Parameters:
@@ -281,8 +280,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Args:
             writer: The object to write to.
         """
-        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
-
         writer.write_string("{")
 
         var items = self.most_common(UInt(len(self)))
@@ -297,7 +294,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         writer.write_string("}")
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
         """Write this `Counter` to a writer.
 
         Constraints:
@@ -312,7 +311,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         ](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
         """Write the repr of this `Counter` to a writer.
 
         Constraints:
