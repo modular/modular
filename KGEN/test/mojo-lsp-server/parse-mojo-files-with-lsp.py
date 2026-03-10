@@ -22,6 +22,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -100,11 +101,14 @@ def main() -> int:
 
     failed: list[Path] = []
 
-    for f in mojo_files:
-        print(f"mojo-lsp-simple-client {f}")
+    for i, f in enumerate(mojo_files, 1):
+        print(f"[{i}/{len(mojo_files)}] mojo-lsp-simple-client {f}", flush=True)
+        t0 = time.monotonic()
         result = subprocess.run(
             ["mojo-lsp-simple-client", f], capture_output=True, text=True
         )
+        elapsed = time.monotonic() - t0
+        print(f"  -> {elapsed:.1f}s", flush=True)
         if result.returncode != 0:
             print(
                 f"FAILED: {f}\n"
