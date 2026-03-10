@@ -152,15 +152,18 @@ fn mutateMem(mut a: MemExample):
 fn mutateMemTC(mut a: MemExampleTriviallyCopyable):
     pass
 
+
 fn mutateInt(mut a: Int):
     pass
 
 
 fn initialize_in_addrspace(
     memptr: UnsafePointer[
-        MemExample, AnyOrigin[mut=True], address_space = AddressSpace(1)
+        MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)
     ],
-    regptr: UnsafePointer[Int, AnyOrigin[mut=True], address_space = AddressSpace(1)],
+    regptr: UnsafePointer[
+        Int, AnyOrigin[mut=True], address_space=AddressSpace(1)
+    ],
 ):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
     memptr[] = MemExample()
@@ -170,12 +173,16 @@ fn initialize_in_addrspace(
 
 fn mutate_in_addrspace(
     memptr: UnsafePointer[
-        MemExample, AnyOrigin[mut=True], address_space = AddressSpace(1)
+        MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)
     ],
     memtcptr: UnsafePointer[
-        MemExampleTriviallyCopyable, AnyOrigin[mut=True], address_space = AddressSpace(1)
+        MemExampleTriviallyCopyable,
+        AnyOrigin[mut=True],
+        address_space=AddressSpace(1),
     ],
-    regptr: UnsafePointer[Int, AnyOrigin[mut=True], address_space = AddressSpace(1)],
+    regptr: UnsafePointer[
+        Int, AnyOrigin[mut=True], address_space=AddressSpace(1)
+    ],
 ):
     # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     mutateMem(memptr[])
@@ -187,9 +194,11 @@ fn mutate_in_addrspace(
 
 fn variadic_addr_space(
     memptr: UnsafePointer[
-        MemExample, AnyOrigin[mut=True], address_space = AddressSpace(1)
+        MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)
     ],
-    regptr: UnsafePointer[Int, AnyOrigin[mut=True], address_space = AddressSpace(1)],
+    regptr: UnsafePointer[
+        Int, AnyOrigin[mut=True], address_space=AddressSpace(1)
+    ],
 ):
     # expected-error @below {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     pack_func(memptr[])
@@ -207,7 +216,7 @@ struct ParametricMutability:
         self.take_inout()
 
 
-fn test_ref[mut: Bool, //, origin: Origin[mut=mut]](ref [origin]arg: String):
+fn test_ref[mut: Bool, //, origin: Origin[mut=mut]](ref[origin] arg: String):
     pass
 
 
@@ -215,8 +224,8 @@ fn call_test_ref(mut s: String):
     # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, _, +, origin: Origin[mut=mut]](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, _, +, origin: Origin[mut=mut]](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
-    var f2 = test_ref[True, ...]
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[_, +, origin: MutOrigin](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
+    var f2 = test_ref[mut=True, ...]
     # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)
 
@@ -237,7 +246,9 @@ struct MyStruct(ImplicitlyCopyable):
     var b: Int
 
 
-fn exclusivity[spanlife: Origin[mut=True]](mut x: MyStruct, span: MyMutSpan[spanlife]):
+fn exclusivity[
+    spanlife: Origin[mut=True]
+](mut x: MyStruct, span: MyMutSpan[spanlife]):
     # Compiler injects a temporary to make this ok.
     x = x
 
@@ -261,7 +272,9 @@ fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
     pass
 
 
-fn mutate_two_AnyLifetime(ref [AnyOrigin[mut=True]]a: Int, ref [AnyOrigin[mut=True]]b: Int):
+fn mutate_two_AnyLifetime(
+    ref[AnyOrigin[mut=True]] a: Int, ref[AnyOrigin[mut=True]] b: Int
+):
     pass
 
 
