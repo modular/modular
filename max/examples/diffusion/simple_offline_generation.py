@@ -440,6 +440,9 @@ async def generate_image(args: argparse.Namespace) -> None:
         context_warmup = await tokenizer.new_context(
             request_warmup, input_image=input_image
         )
+        context_warmup.step_cache = args.step_cache
+        if args.rdt is not None:
+            context_warmup.rdt = args.rdt
         inputs_warmup = PixelGenerationInputs[PixelContext](
             batch={context_warmup.request_id: context_warmup}
         )

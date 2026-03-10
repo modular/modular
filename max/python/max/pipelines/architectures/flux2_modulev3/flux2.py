@@ -553,7 +553,9 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
         self.in_channels = in_channels
         self.joint_attention_dim = joint_attention_dim
 
-    def input_types(self) -> tuple[TensorType, ...]:
+    def input_types(
+        self, step_cache_enabled: bool = False
+    ) -> tuple[TensorType, ...]:
         """Define input tensor types for the model with symbolic shapes.
 
         Returns:
@@ -619,6 +621,9 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
             shape=[1],
             device=self.device,
         )
+
+        if not step_cache_enabled:
+            return base_types
 
         return base_types + (
             prev_residual_type,
