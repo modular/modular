@@ -154,6 +154,7 @@ _ASAN_INCOMPATIBLE = select({
         },
         data = ["//oss/modular/mojo/stdlib/std:std_srcs"],
         mojo_deps = ["@mojo//:std"],
+        tags = ["manual"],
         target_compatible_with = _ASAN_INCOMPATIBLE,
         tools = _PARSE_STDLIB_TOOLS,
         unique_suffix = e["suffix"],
@@ -175,6 +176,7 @@ _ASAN_INCOMPATIBLE = select({
         },
         data = [label],
         mojo_deps = ["@mojo//:std"],
+        tags = ["manual"],
         target_compatible_with = _ASAN_INCOMPATIBLE,
         tools = _PARSE_STDLIB_TOOLS,
         unique_suffix = name,
@@ -189,6 +191,7 @@ lit_tests(
     srcs = ["parse-stdlib/parse-stdlib-root.test"],
     data = ["//oss/modular/mojo/stdlib/std:std_srcs"],
     mojo_deps = ["@mojo//:std"],
+    tags = ["manual"],
     target_compatible_with = _ASAN_INCOMPATIBLE,
     tools = _PARSE_STDLIB_TOOLS,
 )
@@ -210,6 +213,7 @@ lit_tests(
     },
     data = ["//oss/modular/mojo/stdlib/std:std_srcs"],
     mojo_deps = ["@mojo//:std"],
+    tags = ["manual"],
     target_compatible_with = _ASAN_INCOMPATIBLE,
     tools = [":parse-mojo-files-with-lsp"],
 )
