@@ -3082,6 +3082,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
+    num_groups: Int,
 ):
     var N = input.dim[0]()
     var H = input.dim[1]()
@@ -3089,9 +3090,11 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var C_in = input.dim[3]()  # channel_in
     var R = filter.dim[0]()
     var S = filter.dim[1]()
+    var C_per_group = filter.dim[2]()  # C_in / num_groups
     var H_out = output.dim[1]()
     var W_out = output.dim[2]()
     var C_out = output.dim[3]()  # channel_out or #F
+    var F_per_group = C_out // num_groups
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3109,15 +3112,19 @@ fn conv2d_gpu_naive_nhwc_rscf[
     for co in range(C_out):
         comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
+        var g = co // F_per_group
+        var ci_base = g * C_per_group
         for r in range(R):
             for s in range(S):
                 var h_in = h * UInt(stride_h) - UInt(pad_h) + UInt(r * dil_h)
                 var w_in = w * UInt(stride_w) - UInt(pad_w) + UInt(s * dil_w)
                 if 0 <= Int(h_in) < H and 0 <= Int(w_in) < W:
-                    for ci in range(C_in):
+                    for ci in range(C_per_group):
                         value += (
                             input.load[width=1](
-                                IndexList[4](Int(n), Int(h_in), Int(w_in), ci)
+                                IndexList[4](
+                                    Int(n), Int(h_in), Int(w_in), ci_base + ci
+                                )
                             ).cast[accum_type]()
                             * filter.load[width=1](
                                 IndexList[4](r, s, ci, co)
@@ -3908,6 +3915,7 @@ fn conv_gpu[
                 stride,
                 dilation,
                 symmetric_padding,
+                num_groups,
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -3923,6 +3931,7 @@ fn conv_gpu[
             stride,
             dilation,
             symmetric_padding,
+            num_groups,
             grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
             block_dim=(block_size, block_size),
         )
@@ -3944,6 +3953,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],
+    num_groups: Int,
 ):
     var N = input.dim[0]()
     var D = input.dim[1]()  # depth
@@ -3954,11 +3964,13 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     var Q = filter.dim[0]()
     var R = filter.dim[1]()
     var S = filter.dim[2]()
+    var C_per_group = filter.dim[3]()  # C_in / num_groups
 
     var D_out = output.dim[1]()  # depth
     var H_out = output.dim[2]()
     var W_out = output.dim[3]()
     var C_out = output.dim[4]()  # channel_output
+    var F_per_group = C_out // num_groups
 
     var pad_d = padding[0]
     var pad_h = padding[1]
@@ -3996,6 +4008,8 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     for co in range(C_out):
         comptime accum_type = get_accum_type[output_type]()
         var value = Scalar[accum_type](0)
+        var g = co // F_per_group
+        var ci_base = g * C_per_group
 
         for q in range(Q):
             for r in range(R):
@@ -4016,12 +4030,13 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
                         - UInt(pad_w)
                     )
 
-                    # check all input bounds bro
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-                        for ci in range(C_in):
+                        for ci in range(C_per_group):
                             value += (
                                 input.load[width=1](
-                                    IndexList[5](Int(n), d_in, h_in, w_in, ci)
+                                    IndexList[5](
+                                        Int(n), d_in, h_in, w_in, ci_base + ci
+                                    )
                                 ).cast[accum_type]()
                                 * filter.load[width=1](
                                     IndexList[5](q, r, s, ci, co)
