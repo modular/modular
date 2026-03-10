@@ -82,7 +82,7 @@ fn sgemm_warp_tiling_kernel[
     mat_b: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
-):
+) where (a_type.is_numeric() and b_type.is_numeric()):
     var K = mat_a.dim[1]()
     var N = mat_c.dim[1]()
 

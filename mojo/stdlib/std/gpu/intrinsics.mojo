@@ -67,7 +67,9 @@ fn ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[dtype, width]:
+](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[
+    dtype, width
+] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -91,7 +93,6 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    comptime assert dtype.is_numeric(), "the dtype must be numeric"
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
