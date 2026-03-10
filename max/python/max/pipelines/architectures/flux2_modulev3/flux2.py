@@ -51,12 +51,12 @@ def get_can_use_cache(
         shape=reduced_last_dim_shape,
         device=dev,
     )
-    mean_diff_rows, mean_prev_rows = F.custom(
-        "mo.step_cache.mean_abs_pair_lastdim",
-        device=dev,
-        values=[intermediate_residual, prev_intermediate_residual],
-        out_types=[reduced_last_dim_type, reduced_last_dim_type],
+    # A single full-tensor reduction was slower here, so we first reduce over the
+    # last dimension and then take the global mean from the per-row results.
+    mean_diff_rows = F.mean(
+        F.abs(intermediate_residual - prev_intermediate_residual), axis=-1
     )
+    mean_prev_rows = F.mean(F.abs(prev_intermediate_residual), axis=-1)
     mean_diff = F.mean(mean_diff_rows, axis=None)
     mean_prev = F.mean(mean_prev_rows, axis=None)
     eps = 1e-9
@@ -792,15 +792,7 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
             )
             if index_block == 0:
                 first_block_residual = new_hidden_states - hidden_states
-                can_use_cache = get_can_use_cache(
-                    first_block_residual, prev_residual, rdt
-                )
                 cache_enabled_scalar = F.squeeze(cache_enabled, 0)
-                can_use_cache = F.cast(
-                    F.cast(cache_enabled_scalar, DType.int32)
-                    * F.cast(can_use_cache, DType.int32),
-                    DType.bool,
-                )
                 output_type = TensorType(
                     self.max_dtype,
                     shape=[
@@ -862,10 +854,31 @@ class Flux2Transformer2DModel(Module[..., Sequence[Tensor]]):
                         TensorValue(_first_block_residual),
                     )
 
+                def cache_enabled_then_fn(
+                    _first_block_residual: Tensor = first_block_residual,
+                    _output_type: TensorType = output_type,
+                    _residual_type: TensorType = residual_type,
+                ) -> tuple[TensorValue, TensorValue]:
+                    can_use_cache = get_can_use_cache(
+                        _first_block_residual, prev_residual, rdt
+                    )
+                    result = F.cond(
+                        can_use_cache,
+                        [_output_type, _residual_type],
+                        then_fn,
+                        else_fn,
+                    )
+                    return (
+                        TensorValue(result[0]),
+                        TensorValue(result[1]),
+                    )
+
+                # Skip the residual-difference reduction entirely when step-cache
+                # is disabled, since the full path is required anyway.
                 result = F.cond(
-                    can_use_cache,
+                    cache_enabled_scalar,
                     [output_type, residual_type],
-                    then_fn,
+                    cache_enabled_then_fn,
                     else_fn,
                 )
                 return (result[0], result[1])
