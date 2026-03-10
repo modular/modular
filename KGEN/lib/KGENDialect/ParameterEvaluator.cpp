@@ -181,6 +181,49 @@ Operation *SymTabEvaluationContext::resolveConformanceForStruct(
   return symtab.lookupSymbolIn<ConformanceOp>(resolved.decl, traitName);
 }
 
+FailureOr<TypedAttr>
+ParameterEvaluationContext::evaluateConformsToWithConstraints(
+    TypeConformsToTraitAttr conformsTo, bool returnUnevaluatedForSymbolic) {
+  auto resolvedOr =
+      resolveStructOp(conformsTo.getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr) || !resolvedOr->decl)
+    return failure();
+
+  ResolvedStructHandle resolved = *resolvedOr;
+  SymbolTable structSymTab(resolved.decl.getOperation());
+
+  for (auto toCheck : conformsTo.getTraitNames().getValues()) {
+    auto *op = structSymTab.lookup(cast<StringAttr>(toCheck).getValue());
+    if (!op)
+      return {BoolAttr::get(conformsTo.getContext(), false)};
+
+    auto conformance = dyn_cast<ConformanceOp>(op);
+    if (!conformance)
+      continue;
+
+    ConstraintAttr constraint = conformance.getConstraint();
+    if (isTriviallyTrueConstraint(constraint))
+      continue;
+
+    TypedAttr prop = constraint.getProposition();
+    TypedAttr evaluated;
+    withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                  [&](ParameterEvaluator &evaluator) {
+                    evaluated = evaluator.getReboundAttribute(prop);
+                  });
+
+    if (auto intResult = dyn_cast_if_present<IntegerAttr>(evaluated)) {
+      if (intResult.getValue().isZero())
+        return {BoolAttr::get(conformsTo.getContext(), false)};
+    } else if (returnUnevaluatedForSymbolic &&
+               isa_and_nonnull<TypeConformsToTraitAttr>(evaluated)) {
+      return {conformsTo};
+    }
+  }
+
+  return {BoolAttr::get(conformsTo.getContext(), true)};
+}
+
 FailureOr<TypedAttr> SymTabEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);

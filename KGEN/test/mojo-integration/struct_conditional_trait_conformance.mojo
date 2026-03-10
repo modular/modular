@@ -719,6 +719,263 @@ fn test_synth_copy_with_impl_copyable_type():
 # ===========================================================================
 
 
+# ===========================================================================
+# Test 20: conforms_to builtin evaluates where-clause constraints
+# ===========================================================================
+# The conforms_to builtin should return False when the conditional conformance's
+# where-clause is not satisfied, even though the ConformanceOp exists in the
+# struct's symbol table.
+
+
+fn test_conforms_to_evaluates_where_clause():
+    # SimpleWrapper[CopyableType] should conform to Copyable
+    # because CopyableType is Copyable.
+    # CHECK: conforms_to_satisfied: True
+    print(
+        "conforms_to_satisfied:",
+        conforms_to(SimpleWrapper[CopyableType], Copyable),
+    )
+
+    # SimpleWrapper[MovableOnlyType] should NOT conform to Copyable
+    # because MovableOnlyType is NOT Copyable.
+    # CHECK: conforms_to_unsatisfied: False
+    print(
+        "conforms_to_unsatisfied:",
+        conforms_to(SimpleWrapper[MovableOnlyType], Copyable),
+    )
+
+    # MultipleConditional[CopyableIntableType] should conform to both
+    # Copyable and Intable.
+    # CHECK: multi_conforms_copyable: True
+    print(
+        "multi_conforms_copyable:",
+        conforms_to(MultipleConditional[CopyableIntableType], Copyable),
+    )
+    # CHECK: multi_conforms_intable: True
+    print(
+        "multi_conforms_intable:",
+        conforms_to(MultipleConditional[CopyableIntableType], Intable),
+    )
+
+    # MultipleConditional[CopyableType] should conform to Copyable
+    # but NOT to Intable.
+    # CHECK: copyable_only_copyable: True
+    print(
+        "copyable_only_copyable:",
+        conforms_to(MultipleConditional[CopyableType], Copyable),
+    )
+    # CHECK: copyable_only_intable: False
+    print(
+        "copyable_only_intable:",
+        conforms_to(MultipleConditional[CopyableType], Intable),
+    )
+
+    # Unconditional conformance should always return True.
+    # CHECK: unconditional_movable: True
+    print(
+        "unconditional_movable:",
+        conforms_to(SimpleWrapper[MovableOnlyType], Movable),
+    )
+
+
+# ===========================================================================
+# Test 21: conforms_to with symbolic type parameter (elaborator path)
+# ===========================================================================
+# When conforms_to(Wrapper[T], Trait) is called with a symbolic T, the
+# expression remains unevaluated at parse time and is evaluated by the
+# elaborator when T is instantiated with a concrete type. This tests that
+# the elaborator's evaluateConformsToWithConstraints correctly returns
+# true/false based on the conditional conformance constraint.
+
+
+fn check_copyable_symbolic[T: ImplicitlyDestructible & Movable]() -> Bool:
+    return conforms_to(SimpleWrapper[T], Copyable)
+
+
+fn test_symbolic_conforms_to():
+    # CHECK: symbolic_copyable_int: True
+    print("symbolic_copyable_int:", check_copyable_symbolic[CopyableType]())
+    # CHECK: symbolic_copyable_movable: False
+    print(
+        "symbolic_copyable_movable:",
+        check_copyable_symbolic[MovableOnlyType](),
+    )
+
+
+# ===========================================================================
+# Test 22: Trait bound on T proves conditional conformance at call site
+# ===========================================================================
+# When T has a Copyable bound, SimpleWrapper[T] is provably Copyable,
+# and can be passed to functions requiring Copyable.
+
+
+fn guarded_copyable_call[
+    T: Copyable & ImplicitlyDestructible
+](x: SimpleWrapper[T]):
+    needs_copyable(x)
+
+
+fn test_guarded_conditional_call():
+    var w = SimpleWrapper(CopyableType(42))
+    # CHECK: guarded_call: ok
+    guarded_copyable_call(w)
+    print("guarded_call: ok")
+
+
+# ===========================================================================
+# Test 23: comptime if guard enables conditional conformance call
+# ===========================================================================
+# A comptime if conforms_to(T, Trait) guard proves the constraint within its
+# body, allowing calls that require the conditional conformance.
+
+
+fn conditional_copy_in_guard[
+    T: ImplicitlyDestructible & Movable
+](x: SimpleWrapper[T]):
+    comptime if conforms_to(T, Copyable):
+        # CHECK: comptime_guard_copy: ok
+        needs_copyable(x)
+        print("comptime_guard_copy: ok")
+
+
+fn test_comptime_if_guard():
+    var w = SimpleWrapper(CopyableType(42))
+    conditional_copy_in_guard(w)
+
+
+# ===========================================================================
+# Test 24: where clause proves variadic conditional conformance
+# ===========================================================================
+# A where clause asserting AllWritable[*types] enables calling repr() on
+# Tuple[*types], because the assumption is wired into doesNominalTypeConformTo
+# via constraintImplies.
+
+from std.reflection.traits import AllWritable
+
+
+fn repr_with_where[
+    *types: Movable & Writable
+](t: Tuple[*types]) -> String where AllWritable[*types]:
+    return repr(t)
+
+
+fn test_where_clause_proves_variadic():
+    var t = (1, "hello")
+    # CHECK: where_variadic: Tuple[Int, String](Int(1), 'hello')
+    print("where_variadic:", repr_with_where(t))
+
+
+# ===========================================================================
+# Test 25: conforms_to with concrete types (VerifyParameters/LIT path)
+# ===========================================================================
+# conforms_to used as a value expression with fully concrete types is
+# evaluated by the VerifyParameters pass through LITSymTabEvaluationContext.
+# Without the fix, the evaluateWithContext/simplify() fallback would return
+# true by only checking ConformanceOp existence, ignoring the constraint.
+
+
+fn test_conforms_to_value_expression():
+    # Positive: nested wrapper where inner satisfies the constraint.
+    # CHECK: value_nested_pos: True
+    print(
+        "value_nested_pos:",
+        conforms_to(SimpleWrapper[SimpleWrapper[CopyableType]], Copyable),
+    )
+
+    # Negative: wrapper around a non-Copyable type must return False.
+    # CHECK: value_neg: False
+    print(
+        "value_neg:",
+        conforms_to(SimpleWrapper[MovableOnlyType], Copyable),
+    )
+
+    # Negative: nested wrapper where inner does NOT satisfy the constraint.
+    # CHECK: value_nested_neg: False
+    print(
+        "value_nested_neg:",
+        conforms_to(SimpleWrapper[SimpleWrapper[MovableOnlyType]], Copyable),
+    )
+
+
+# ===========================================================================
+# Test 26: Scope-dependent metatype upcast with conditional conformance
+# ===========================================================================
+# canMetaTypeUpCastTo (used by canImplicitlyConvertToType and ParamMatcher)
+# needs the caller scope to prove that a conditionally-conforming type can
+# be upcast to a trait metatype.
+
+
+fn accept_copyable_metatype[T: Copyable]():
+    pass
+
+
+fn upcast_with_scope[T: Copyable & ImplicitlyDestructible]():
+    # SimpleWrapper[T] is Copyable because T: Copyable is in scope.
+    # This exercises canMetaTypeUpCastTo receiving the scope.
+    accept_copyable_metatype[SimpleWrapper[T]]()
+
+
+fn test_metatype_upcast_with_scope():
+    upcast_with_scope[CopyableType]()
+    # CHECK: metatype_upcast_scope: ok
+    print("metatype_upcast_scope: ok")
+
+
+# ===========================================================================
+# Test 27: Function type conversion with where-clause scope
+# ===========================================================================
+# canConvertFunctionTypes checks argument conformance via checkConformance
+# with the caller's declScope. This tests that a higher-order function
+# accepting `fn(Copyable)` can receive a function taking a conditionally-
+# conforming type when the scope proves the conformance.
+
+
+fn apply_copyable_fn[
+    T: Copyable & ImplicitlyDestructible & Movable
+](f: fn(SimpleWrapper[T]) -> None, x: SimpleWrapper[T]):
+    f(x)
+
+
+fn print_wrapper_value[
+    T: Copyable & ImplicitlyDestructible & Movable
+](w: SimpleWrapper[T],):
+    # CHECK: fn_conversion_scope: ok
+    print("fn_conversion_scope: ok")
+
+
+fn test_fn_conversion_with_scope():
+    var w = SimpleWrapper(CopyableType(42))
+    apply_copyable_fn(print_wrapper_value[CopyableType], w)
+
+
+# ===========================================================================
+# Test 28: Trait-to-trait upcast with scope proving conditional conformance
+# ===========================================================================
+# emitImplicitConversionToType uses getDeclScope() to prove that a
+# conditionally-conforming type value can upcast to a base trait type.
+# Here we upcast from Copyable (which refines Movable) to Movable,
+# verifying the scope-aware path through checkConformance.
+
+
+fn accept_movable[T: Movable](x: T):
+    pass
+
+
+fn upcast_conditional_to_base[
+    T: Copyable & ImplicitlyDestructible & Movable
+](x: SimpleWrapper[T]):
+    # SimpleWrapper[T] is Copyable (proven by T: Copyable in scope).
+    # Copyable refines Movable, so this upcast should work.
+    accept_movable(x)
+
+
+fn test_upcast_conditional_to_base():
+    var w = SimpleWrapper(CopyableType(42))
+    upcast_conditional_to_base(w)
+    # CHECK: upcast_conditional_base: ok
+    print("upcast_conditional_base: ok")
+
+
 fn main():
     test_simple_conditional()
     test_nested_wrappers()
@@ -742,3 +999,12 @@ fn main():
     test_mixed_field_copy()
     test_copy_via_impl_copyable()
     test_synth_copy_with_impl_copyable_type()
+    test_conforms_to_evaluates_where_clause()
+    test_symbolic_conforms_to()
+    test_guarded_conditional_call()
+    test_comptime_if_guard()
+    test_where_clause_proves_variadic()
+    test_conforms_to_value_expression()
+    test_metatype_upcast_with_scope()
+    test_fn_conversion_with_scope()
+    test_upcast_conditional_to_base()

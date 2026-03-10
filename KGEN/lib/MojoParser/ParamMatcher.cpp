@@ -544,8 +544,11 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   }
 
   // Handle meta type upcasting.
+  // Scope needed: overload resolution for e.g. repr[T: Writable](Tuple[*Ts])
+  // inside a fn with `where AllWritable[*Ts]`.
   FailureOr<bool> typeUpCastable = IREmitter::canMetaTypeUpCastTo(
-      shared, state.getDeclScope().getLoc(), actualType, expectedType);
+      shared, state.getDeclScope().getLoc(), actualType, expectedType,
+      &state.getDeclScope());
   if (succeeded(typeUpCastable) && typeUpCastable.value())
     return success();
 
@@ -665,8 +668,10 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
             // `struct __MLIRType` is the corner case here :(.
             tightestBound = typeExpr.getType();
           }
+          // Scope needed: same as matchTypes upcast above.
           FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
-              shared, state.getDeclScope().getLoc(), tightestBound, targetMT);
+              shared, state.getDeclScope().getLoc(), tightestBound, targetMT,
+              &state.getDeclScope());
           return succeeded(upCastable) && upCastable.value();
         });
 

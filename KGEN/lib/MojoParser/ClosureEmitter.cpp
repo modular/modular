@@ -2877,7 +2877,7 @@ static bool canTypeConformToAliasConstraint(Type actualType,
   // If the constraint is a trait type, check conformance
   if (auto traitType = sugarDynCast<TraitType>(constraintType)) {
     ASTType astActualType(actualType);
-    if (astActualType.checkConformance(traitType, shared) !=
+    if (astActualType.checkConformance(traitType, shared, nullptr) !=
         ConformanceResult::Yes)
       return false;
     TypedAttr typeValue = TypeParamAttr::get(actualType, traitType);
@@ -2971,7 +2971,8 @@ tryRecordAliasFromActualIndexRef(ParamIndexRefAttr actualIndexRef,
   // Handle the case where the expected type is a superset of the actual type.
   if (auto actualTrait = sugarDynCast<TraitType>(actualConstraint)) {
     if (auto expectedTrait = sugarDynCast<TraitType>(constraintType)) {
-      if (ASTType(actualTrait).checkConformance(expectedTrait, shared) ==
+      if (ASTType(actualTrait)
+              .checkConformance(expectedTrait, shared, nullptr) ==
           ConformanceResult::No)
         return false;
       TypedAttr upcastValue = UpcastAttr::get(expectedTrait, aliasRef);

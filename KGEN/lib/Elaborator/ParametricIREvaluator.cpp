@@ -477,6 +477,9 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
   if (finder.escapingReference)
     return cast<TypedAttr>(attr);
 
+  if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(attr))
+    return evaluateConformsToWithConstraints(conformsTo);
+
   if (auto genref = dyn_cast<TypeGeneratorRefAttr>(attr)) {
     // Attempt to concretize the function first.
     ErrorTreeOr<TypeInstanceRefAttr> symOr =

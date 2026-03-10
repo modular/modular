@@ -164,9 +164,11 @@ public:
   ///   that cannot be evaluated statically (e.g., generic parameters)
   ///
   /// If concreteType is provided, its parameter bindings are used to evaluate
-  /// conditional trait conformances.
+  /// conditional trait conformances. If callerScope is provided, its
+  /// where-clause assumptions are used to prove unfoldable constraints.
   ConformanceResult doesNominalTypeConformTo(TraitType trait,
-                                             ASTType concreteType = {});
+                                             ASTType concreteType,
+                                             ASTDecl *callerScope);
 
   /// Find all extensions in this scope that target a specific struct.
   /// If filterTrait is provided, only returns extensions that implement that

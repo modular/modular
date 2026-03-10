@@ -101,6 +101,46 @@ fn use_printable_closure[
     result.print_value()
 
 
+# ===========================================================================
+# Test: Unsound call with symbolic type parameter is rejected
+# ===========================================================================
+# When T has no Copyable bound, ConditionalCopyableWrapper[T] is not provably
+# Copyable. Passing it to a function requiring Copyable must be rejected at
+# parse time, not deferred to elaboration.
+
+
+# CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
+fn unsound_generic_call[
+    T: ImplicitlyDestructible & Movable
+](x: ConditionalCopyableWrapper[T]):
+    needs_copyable(x)
+
+
+# ===========================================================================
+# Test: Unsound variadic pack call is rejected
+# ===========================================================================
+# Tuple[*types] with *types: Movable has no Copyable bound on its elements,
+# so its conditional Copyable conformance (AllCopyable) can't be proven.
+
+
+# CHECK: argument type 'Tuple[types]' does not conform to trait 'Copyable'
+fn unsound_variadic_call[*types: Movable](t: Tuple[*types]):
+    needs_copyable(t)
+
+
+# ===========================================================================
+# Test: where clause on wrong trait doesn't prove conformance
+# ===========================================================================
+# A where clause for Intable does not help prove Copyable conformance.
+
+
+# CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
+fn wrong_where_clause[
+    T: ImplicitlyDestructible & Movable
+](x: ConditionalCopyableWrapper[T]) where conforms_to(T, Intable):
+    needs_copyable(x)
+
+
 fn main():
     # ConditionalCopyableWrapper[MovableOnlyType] should NOT be Copyable because
     # MovableOnlyType is not Copyable.
