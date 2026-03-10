@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "lit_tests", "modular_py_binary")
+load(":lsp_test_helpers.bzl", "parse_entry")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -70,12 +71,26 @@ _DISABLED_SUBDIRS = [
 _EXTRA_ENABLED_DIRS = {}
 
 # Stdlib subdirs that parse cleanly through the LSP server.
+#
+# Each entry is either:
+#   "subdir"                        — all files in that subdir (no filter)
+#   ("subdir", "suffix", "regex")   — only files whose stem matches regex;
+#                                     suffix disambiguates the Bazel target name
+#
+# Use tuples to split large subdirs (>300 s) into medium-sized pieces.
+# The regex is anchored at the start (re.match) against the file stem.
 _ENABLED_SUBDIRS = [
     "algorithm",
     "base64",
     "bit",
-    "builtin",
-    "collections",
+    # builtin has ~38 files; CI is ~3x slower than local, so split into 3 pieces.
+    ("builtin", "builtin-a-e", "^[_a-eA-E]"),  # ~16 files
+    ("builtin", "builtin-f-m", "^[f-mF-M]"),  # ~8 files
+    ("builtin", "builtin-n-z", "^[n-zN-Z]"),  # ~14 files
+    # collections has ~25 files; same CI ratio, split into 3 pieces.
+    ("collections", "collections-a-d", "^[_a-dA-D]"),  # ~14 files
+    ("collections", "collections-e-l", "^[e-lE-L]"),  # ~5 files
+    ("collections", "collections-m-z", "^[m-zM-Z]"),  # ~7 files
     "complex",
     "documentation",
     "format",
@@ -107,16 +122,6 @@ _PARSE_STDLIB_TOOLS = [
     "//KGEN/tools/mojo-lsp-simple-client",
 ]
 
-# One test target per enabled stdlib subdir, all driven from a shared template.
-# {DIR} is substituted to the full absolute path at test time.
-# To re-enable a crashing subdir: move it to _ENABLED_SUBDIRS above.
-# builtin and collections exceed the 300 s "medium" limit in CI and need "large".
-# TODO: split the tests further or speed up the LSP server for these directories.
-_LARGE_SUBDIRS = [
-    "builtin",
-    "collections",
-]
-
 # LSP parse tests are excluded from ASAN because the instrumentation overhead
 # makes them too slow and they time out reliably under that configuration.
 _ASAN_INCOMPATIBLE = select({
@@ -124,19 +129,25 @@ _ASAN_INCOMPATIBLE = select({
     "//conditions:default": [],
 })
 
+# One test target per enabled stdlib subdir (or subdir slice), all driven from
+# a shared template. {DIR} and {FILE_REGEX} are substituted at test time.
+# To re-enable a crashing subdir: move it to _ENABLED_SUBDIRS above.
 [
     lit_tests(
-        name = "parse-stdlib-{}".format(s),
-        size = "large" if s in _LARGE_SUBDIRS else "medium",
+        name = "parse-stdlib-{}".format(e["suffix"]),
+        size = "medium",
         srcs = ["parse-stdlib/parse-dir.test.template"],
-        custom_substitutions = {"{DIR}": "$MODULAR_MOJO_MAX_IMPORT_PATH/{}".format(s)},
+        custom_substitutions = {
+            "{DIR}": "$MODULAR_MOJO_MAX_IMPORT_PATH/{}".format(e["subdir"]),
+            "{FILE_REGEX}": "--file-regex {}".format(e["regex"]) if e["regex"] else "",
+        },
         data = ["//oss/modular/mojo/stdlib/std:std_srcs"],
         mojo_deps = ["@mojo//:std"],
         target_compatible_with = _ASAN_INCOMPATIBLE,
         tools = _PARSE_STDLIB_TOOLS,
-        unique_suffix = s,
+        unique_suffix = e["suffix"],
     )
-    for s in _ENABLED_SUBDIRS
+    for e in [parse_entry(s) for s in _ENABLED_SUBDIRS]
 ]
 
 # One test target per enabled extra (non-stdlib) dir, same template.
@@ -147,7 +158,10 @@ _ASAN_INCOMPATIBLE = select({
         name = "parse-{}".format(name),
         size = "medium",
         srcs = ["parse-stdlib/parse-dir.test.template"],
-        custom_substitutions = {"{DIR}": "$TEST_SRCDIR/_main/{}".format(path)},
+        custom_substitutions = {
+            "{DIR}": "$TEST_SRCDIR/_main/{}".format(path),
+            "{FILE_REGEX}": "",
+        },
         data = [label],
         mojo_deps = ["@mojo//:std"],
         target_compatible_with = _ASAN_INCOMPATIBLE,
@@ -175,7 +189,13 @@ lit_tests(
     size = "medium",
     srcs = ["parse-stdlib/check-stdlib-coverage.test"],
     custom_substitutions = {
-        "{ALL_SUBDIRS}": ",".join(sorted(_ENABLED_SUBDIRS + _DISABLED_SUBDIRS)),
+        # Build a deduped, sorted list of all subdir names (enabled + disabled).
+        # Duplicates arise when one subdir has multiple tuple entries (e.g. builtin).
+        # Using a dict deduplicates without Python's set() which is not in Starlark.
+        "{ALL_SUBDIRS}": ",".join(sorted({
+            s: None
+            for s in [parse_entry(e)["subdir"] for e in _ENABLED_SUBDIRS] + _DISABLED_SUBDIRS
+        }.keys())),
     },
     data = ["//oss/modular/mojo/stdlib/std:std_srcs"],
     mojo_deps = ["@mojo//:std"],
@@ -187,9 +207,29 @@ lit_tests(
 # actionable Bazel targets, e.g. //KGEN/test/mojo-lsp-server:parse-stdlib-stat.
 test_suite(
     name = "mojo-lsp-server-parse-stdlib",
-    tests = ["parse-stdlib-{}".format(s) for s in _ENABLED_SUBDIRS] +
+    tests = ["parse-stdlib-{}".format(parse_entry(s)["suffix"]) for s in _ENABLED_SUBDIRS] +
             ["parse-{}".format(name) for name in _EXTRA_ENABLED_DIRS] + [
         ":check-stdlib-coverage",
         ":parse-stdlib-root",
     ],
+)
+
+# Profile tool: prints a table of LSP parse time per stdlib subdir.
+# Usage: bazel run //KGEN/test/mojo-lsp-server:profile-parse-stdlib
+modular_py_binary(
+    name = "profile-parse-stdlib",
+    srcs = ["profile-parse-stdlib.py"],
+    args = [
+        "--subdirs",
+        ",".join(sorted({
+            s: None
+            for s in [parse_entry(e)["subdir"] for e in _ENABLED_SUBDIRS]
+        }.keys())),
+    ],
+    data = [
+        ":parse-mojo-files-with-lsp",
+        "//KGEN/tools/mojo-lsp-server",
+        "//KGEN/tools/mojo-lsp-simple-client",
+    ],
+    mojo_deps = ["@mojo//:std"],
 )

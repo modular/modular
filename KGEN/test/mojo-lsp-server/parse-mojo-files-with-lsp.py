@@ -20,6 +20,7 @@ multiple per-subfolder test targets concurrently.
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -71,6 +72,14 @@ def main() -> int:
             "Exits 1 with an actionable message if any subfolder of DIR is missing."
         ),
     )
+    parser.add_argument(
+        "--file-regex",
+        metavar="REGEX",
+        help=(
+            "Only process files whose stem (filename without extension) matches "
+            "this regular expression. Anchored at the start (re.match)."
+        ),
+    )
     args = parser.parse_args()
 
     if args.dir:
@@ -95,11 +104,17 @@ def main() -> int:
         mojo_files = sorted(scan_dir.rglob("*.mojo"))
     else:
         mojo_files = sorted(scan_dir.glob("*.mojo"))
+
+    if args.file_regex:
+        pat = re.compile(args.file_regex)
+        mojo_files = [f for f in mojo_files if pat.match(f.stem)]
+
     if not mojo_files:
         print(f"error: no .mojo files found in {scan_dir}", file=sys.stderr)
         return 1
 
     failed: list[Path] = []
+    t_start = time.monotonic()
 
     for i, f in enumerate(mojo_files, 1):
         print(f"[{i}/{len(mojo_files)}] mojo-lsp-simple-client {f}", flush=True)
@@ -118,6 +133,12 @@ def main() -> int:
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
             failed.append(f)
+
+    total = time.monotonic() - t_start
+    print(
+        f"TIMING: total={total:.1f}s files={len(mojo_files)} dir={scan_dir}",
+        flush=True,
+    )
 
     if failed:
         print(f"\n{len(failed)} file(s) failed:", file=sys.stderr)
