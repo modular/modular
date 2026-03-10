@@ -1224,15 +1224,17 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
   // Handle TypeConformsToTraitAttr.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
-    // Try LIT-specific trait type folding first, then fall back to the attr
-    // folder for struct resolution.
+    // Try LIT-specific trait type folding first, then fall back to
+    // constraint-aware struct resolution.
     FailureOr<TypedAttr> result = simplifyConformsToAgainstTypeValue(
         conformsTo, [&](SymbolRefAttr symbol) -> TraitDeclOp {
           return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
         });
     if (succeeded(result))
       return result;
-    return conformsTo.evaluateWithContext(*this);
+    return evaluateConformsToWithConstraints(
+        conformsTo,
+        /*returnUnevaluatedForSymbolic=*/true);
   }
 
   // Handle DowncastAttr.

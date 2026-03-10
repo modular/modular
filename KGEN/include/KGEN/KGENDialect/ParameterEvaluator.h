@@ -144,6 +144,22 @@ public:
   virtual FailureOr<TypedAttr>
   evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr);
 
+  /// Evaluate a TypeConformsToTraitAttr with constraint checking for
+  /// conditional conformances. Resolves the struct, checks each
+  /// ConformanceOp's constraint, and returns false when the constraint
+  /// evaluates to zero. When returnUnevaluatedForSymbolic is true and a
+  /// constraint evaluates to a symbolic TypeConformsToTraitAttr (i.e. the
+  /// type parameter is unresolved), returns the original attr unevaluated
+  /// instead of optimistically returning true.
+  ///
+  /// TODO(MOCO-3454): Fold this into
+  /// TypeConformsToTraitAttr::evaluateWithContext (KGENAttrsFolders.cpp) so
+  /// constraint checking happens automatically instead of requiring each
+  /// evaluation context to call this helper.
+  FailureOr<TypedAttr>
+  evaluateConformsToWithConstraints(TypeConformsToTraitAttr conformsTo,
+                                    bool returnUnevaluatedForSymbolic = false);
+
   /// Returns true if this is a materialization context where evaluated
   /// expressions will persist as constants. In such contexts, ill-formed
   /// expressions should emit errors. In non-materialization contexts
