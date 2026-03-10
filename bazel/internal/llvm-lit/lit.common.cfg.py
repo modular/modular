@@ -171,3 +171,6 @@ mpirun_gpu_per_process = (
 
 config.substitutions.append(("%mpirun-gpu-per-process", mpirun_gpu_per_process))
 config.substitutions.append(("%bare-mojo", mojo_exe))
+config.substitutions.append(("%{mojo_version_major}", str(config.mojo_version_major)))
+config.substitutions.append(("%{mojo_version_minor}", str(config.mojo_version_minor)))
+config.substitutions.append(("%{mojo_version_patch}", str(config.mojo_version_patch)))
