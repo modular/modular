@@ -32,6 +32,7 @@ def main() raises:
 """
 
 from std.math import isclose
+from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
 from std.memory import memcmp
@@ -220,7 +221,7 @@ fn assert_equal[
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
-) raises:
+) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
     """Asserts that two tuples are equal. If not, an Error is raised.
 
     Parameters:
@@ -293,7 +294,7 @@ fn assert_not_equal[
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
-) raises:
+) raises where (AllWritable[*lhs_types] and AllWritable[*rhs_types]):
     """Asserts that two tuples are not equal. If they are, an Error is raised.
 
     Parameters:

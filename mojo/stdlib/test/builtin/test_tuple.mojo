@@ -320,11 +320,10 @@ def test_tuple_conditional_conformances() raises:
     assert_true(conforms_to(Tuple[Int, String], Writable))
     assert_true(conforms_to(Tuple[], Writable))
 
-    # TODO(MOCO-3413): Enable negative test cases when conforms_to evaluates
-    # where clauses correctly.
-    # assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
-    # assert_false(conforms_to(Tuple[MoveOnly[Int]], ImplicitlyCopyable))
-    # assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
+    # conforms_to correctly returns False for non-conforming element types.
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], ImplicitlyCopyable))
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
 
 
 def test_tuple_assert_equal_failure_message() raises:
