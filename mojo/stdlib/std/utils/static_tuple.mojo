@@ -69,13 +69,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         Returns:
             A string representation of the type, e.g. "StaticTuple[Int, 3]".
         """
-        return String(
-            "StaticTuple[",
-            get_type_name[Self.element_type](),
-            ", ",
-            Self.size,
-            "]",
-        )
+        return t"StaticTuple[{get_type_name[Self.element_type]()}, {Self.size}]"
 
     @always_inline
     fn __init__(out self):
