@@ -978,7 +978,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var p = UnsafePointer[Int32].alloc(8)
+        var p = alloc[Int32](8)
         p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
         var v = p.load[width=4]()
         print(v)  # => [1, 2, 3, 4]
@@ -1469,7 +1469,7 @@ struct UnsafePointer[
     fn bitcast[
         T: AnyType
     ](self) -> UnsafePointer[T, Self.origin, address_space=Self.address_space,]:
-        """Bitcasts a UnsafePointer to a different type.
+        """Bitcasts an UnsafePointer to a different type.
 
         Parameters:
             T: The target type.
@@ -1609,7 +1609,6 @@ struct UnsafePointer[
         `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
-        # TODO: compiler error if using self.unsafe_origin_cast
         return __mlir_op.`pop.pointer.bitcast`[
             _type=UnsafePointer[
                 Self.type,

@@ -1342,7 +1342,6 @@ struct LegacyUnsafePointer[
         `AnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the pointer.
         """
-        # TODO: compiler error if using self.unsafe_origin_cast
         return __mlir_op.`pop.pointer.bitcast`[
             _type=LegacyUnsafePointer[
                 Self.type,
