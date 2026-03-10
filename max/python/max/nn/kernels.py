@@ -2478,6 +2478,7 @@ def compute_mla_dispatch_args_scalar(
     q_max_seq_len: TensorValue,
     num_heads: int,
     device: DeviceRef,
+    is_fp8_kv: bool = False,
 ) -> TensorValue:
     """Computes scalar dispatch arguments for the MLA decode kernel.
 
@@ -2505,7 +2506,7 @@ def compute_mla_dispatch_args_scalar(
         out_types=[
             TensorType(shape=[4], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
-        parameters={"num_heads": num_heads},
+        parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
     )
     return results[0].tensor
 

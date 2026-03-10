@@ -55,6 +55,7 @@ modular_py_test(
     tags = [
         "gpu",
     ],
+    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",

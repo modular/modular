@@ -40,6 +40,7 @@ class AttentionDispatchResolver:
         is_mla: bool,
         n_kv_heads_per_device: int,
         num_q_heads: int | None = None,
+        is_fp8_kv: bool = False,
     ) -> None:
         self._model: Model | None = None
         self._is_mla = is_mla
@@ -50,7 +51,9 @@ class AttentionDispatchResolver:
 
         if self._is_mla:
             assert num_q_heads is not None
-            self._model = self._build_mla_model(session, device, num_q_heads)
+            self._model = self._build_mla_model(
+                session, device, num_q_heads, is_fp8_kv
+            )
         else:
             self._model = self._build_mha_model(
                 session, device, n_kv_heads_per_device
@@ -81,7 +84,10 @@ class AttentionDispatchResolver:
 
     @staticmethod
     def _build_mla_model(
-        session: InferenceSession, device: DeviceRef, num_heads: int
+        session: InferenceSession,
+        device: DeviceRef,
+        num_heads: int,
+        is_fp8_kv: bool = False,
     ) -> Model:
         with Graph(
             "mla_dispatch_args",
@@ -103,7 +109,10 @@ class AttentionDispatchResolver:
                         shape=[4], dtype=DType.int64, device=DeviceRef.CPU()
                     ),
                 ],
-                parameters={"num_heads": num_heads},
+                parameters={
+                    "num_heads": num_heads,
+                    "is_fp8_kv": is_fp8_kv,
+                },
             )
             graph.output(scalars.tensor)
         return session.load(graph)
