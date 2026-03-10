@@ -1167,17 +1167,10 @@ struct NonEquatable(Copyable):
 
 def test_deque_conditional_conformances() raises:
     assert_true(conforms_to(Deque[Int], Equatable))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that `Deque` has a
-    # conformance for `Equatable` and returns True without checking whether
-    # the condition holds for the concrete `ElementType`. The type checker at
-    # call sites *does* enforce the condition correctly (e.g., passing
-    # `Deque[NonEquatable]` to `fn foo[T: Equatable](x: T)` is an error).
-    # assert_false(conforms_to(Deque[NonEquatable], Equatable))
+    assert_false(conforms_to(Deque[NonEquatable], Equatable))
 
     assert_true(conforms_to(Deque[Int], Hashable))
-    # TODO(MOCO-3413): `conforms_to` doesn't evaluate `where` clauses.
-    # assert_false(conforms_to(Deque[NonEquatable], Hashable))
+    assert_false(conforms_to(Deque[NonEquatable], Hashable))
 
     # Verify equal deques produce equal hashes.
     var d1 = Deque[Int](1, 2, 3)
@@ -1185,8 +1178,7 @@ def test_deque_conditional_conformances() raises:
     assert_equal(hash(d1), hash(d2))
 
     assert_true(conforms_to(Deque[Int], Writable))
-    # TODO(MOCO-3413): `conforms_to` doesn't evaluate `where` clauses.
-    # assert_false(conforms_to(Deque[NonEquatable], Writable))
+    assert_false(conforms_to(Deque[NonEquatable], Writable))
 
 
 # ===-------------------------------------------------------------------===#

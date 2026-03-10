@@ -505,13 +505,7 @@ def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(InlineArray[Int, 3], Copyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDestructible))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that
-    # `InlineArray` has a conformance for `Writable` and returns True
-    # without checking whether the condition holds for the concrete
-    # `ElementType`. The type checker at call sites *does* enforce the
-    # condition correctly.
-    # assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
+    assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
 
 
 def test_inline_array_iter_bounds() raises:

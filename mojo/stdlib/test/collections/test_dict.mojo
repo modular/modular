@@ -1179,16 +1179,15 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
+struct NonWritable(Copyable, ImplicitlyDestructible):
+    pass
+
+
 def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Writable))
     assert_true(conforms_to(Dict[Int, Int], Equatable))
     assert_true(conforms_to(Dict[Int, Int], Hashable))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that `Dict` has a
-    # conformance for `Writable` and returns True without checking whether
-    # the condition holds for the concrete types. The type checker at call
-    # sites *does* enforce the condition correctly.
-    # assert_false(conforms_to(Dict[Int, NoneType], Writable))
+    assert_false(conforms_to(Dict[Int, NonWritable], Writable))
 
 
 def main() raises:

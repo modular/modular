@@ -154,8 +154,7 @@ def test_optional_conformance() raises:
 def test_optional_conditional_conformances() raises:
     assert_true(conforms_to(Optional[Int], Writable))
     assert_true(conforms_to(Optional[String], Writable))
-    # TODO(MOCO-3413): Enable negative test cases
-    # assert_false(conforms_to(Optional[MoveOnly[Int]], Writable))
+    assert_false(conforms_to(Optional[MoveOnly[Int]], Writable))
 
 
 def test_optional_write_to() raises:

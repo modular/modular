@@ -398,11 +398,9 @@ def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Writable))
     assert_true(conforms_to(Variant[Int], Writable))
 
-    # TODO(MOCO-3413): Enable negative test cases when conforms_to evaluates
-    # where clauses correctly.
-    # assert_false(conforms_to(Variant[MoveOnly[Int]], Equatable))
-    # assert_false(conforms_to(Variant[MoveOnly[Int]], Hashable))
-    # assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
+    assert_false(conforms_to(Variant[MoveOnly[Int]], Equatable))
+    assert_false(conforms_to(Variant[MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
 
 
 def main() raises:

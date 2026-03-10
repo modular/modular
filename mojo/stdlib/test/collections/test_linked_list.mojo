@@ -655,15 +655,10 @@ struct NonEquatable(Copyable):
 
 def test_linked_list_conditional_conformances() raises:
     assert_true(conforms_to(LinkedList[Int], Equatable))
-    # TODO(MOCO-3413): The `conforms_to` builtin does not evaluate the
-    # `where` clause on conditional conformances — it sees that `LinkedList`
-    # has a conformance for `Equatable` and returns True without checking
-    # whether the condition holds for the concrete `ElementType`. The type
-    # checker at call sites *does* enforce the condition correctly.
-    # assert_false(conforms_to(LinkedList[NonEquatable], Equatable))
+    assert_false(conforms_to(LinkedList[NonEquatable], Equatable))
 
     assert_true(conforms_to(LinkedList[Int], Writable))
-    # assert_false(conforms_to(LinkedList[NonEquatable], Writable))
+    assert_false(conforms_to(LinkedList[NonEquatable], Writable))
 
     assert_true(conforms_to(LinkedList[Int], Copyable))
     assert_true(conforms_to(LinkedList[Int], Hashable))
