@@ -238,7 +238,7 @@ fn dispatch_sm100_conv2d[
         ].default_bf16_1sm()
 
         comptime if has_residual:
-            var src_nd = NDBuffer[output_type, 4, _, static_shape](
+            var src_nd = NDBuffer[rank=4, output_type, _, static_shape](
                 source_ptr, IndexList[4](batch, out_h, out_w, out_c)
             )
             conv2d_fprop_with_residual[
