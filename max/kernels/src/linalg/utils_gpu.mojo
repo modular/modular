@@ -507,7 +507,7 @@ fn _vendor_blas_fallback_disabled() -> Bool:
     comptime globally_disabled = get_defined_bool[
         "MODULAR_DISABLE_VENDOR_FALLBACK", False
     ]()
-    comptime bench_disabled = not get_defined_bool["use_vendor_blas", False]()
+    comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
     return globally_disabled or bench_disabled
 
 
