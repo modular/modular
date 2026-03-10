@@ -8,6 +8,7 @@ modular_sphinx_docs(
     builder = "markdown",
     config_file = ":python-conf-py",
     data = [
+        ":python-api-templates",
         "@numpy-objects-inv",
         "@python-objects-inv",
     ],
@@ -45,8 +46,16 @@ filegroup(
     name = "python-api-rst",
     srcs = glob(
         ["**/*.rst"],
-        exclude = ["cli/**"],
+        exclude = [
+            "cli/**",
+            "_templates/**",
+        ],
     ),
+)
+
+filegroup(
+    name = "python-api-templates",
+    srcs = glob(["_templates/**"]),
 )
 
 filegroup(

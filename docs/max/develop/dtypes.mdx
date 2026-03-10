@@ -11,7 +11,7 @@ tensor has exactly one dtype that applies to all its elements. Choosing the
 right dtype affects your model's memory usage, numerical precision, and
 compatibility with different hardware.
 
-The [`DType`](/max/api/python/dtype#max.dtype.DType) enum in MAX provides all supported data types:
+The [`DType`](/max/api/python/generated/max.dtype.DType) enum in MAX provides all supported data types:
 
 {/* @sync: _examples/dtypes/dtype_intro.py */}
 ```python
@@ -46,7 +46,7 @@ MAX supports all standard NumPy and PyTorch dtypes:
 | `DType.int8`     | 1 byte  | 8-bit signed integer                   | Quantized models, extreme compression |
 
 For the complete list including float8 variants and all integer types, see the
-[DType API reference](/max/api/python/dtype#max.dtype.DType).
+[DType API reference](/max/api/python/generated/max.dtype.DType).
 
 ## Specify dtype when creating tensors
 
@@ -74,8 +74,8 @@ Float tensor dtype: DType.float32
 Int tensor dtype: DType.int32
 ```
 
-In this example, the [`ones()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.ones) function creates a tensor filled with ones, and
-the [`Tensor()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) constructor creates a tensor from the given values. The
+In this example, the [`ones()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.ones) function creates a tensor filled with ones, and
+the [`Tensor()`](/max/api/python/generated/max.experimental.tensor.Tensor) constructor creates a tensor from the given values. The
 `dtype` parameter is used to specify the dtype of the tensor.
 
 If you don't specify a dtype, MAX uses:
@@ -85,7 +85,7 @@ If you don't specify a dtype, MAX uses:
 
 ## Check tensor dtype
 
-Every tensor has a [`dtype`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.dtype) property that returns its data type:
+Every tensor has a [`dtype`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.dtype) property that returns its data type:
 
 {/* @sync: _examples/dtypes/check_dtype.py */}
 ```python
@@ -119,7 +119,7 @@ is a `int64` tensor.
 
 ## Convert between dtypes
 
-The [`cast()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.cast) method is used to convert a tensor from one dtype to another. This
+The [`cast()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.cast) method is used to convert a tensor from one dtype to another. This
 is useful when you need to convert a tensor from a floating-point type to an
 integer type, or from a higher precision type to a lower precision type. For
 example:
@@ -179,7 +179,7 @@ int32.is_integral(): True
 float8_e4m3fn.is_float8(): True
 ```
 
-For more information, see the [DType API reference](/max/api/python/dtype#max.dtype.DType).
+For more information, see the [DType API reference](/max/api/python/generated/max.dtype.DType).
 
 ## Interoperability with NumPy and PyTorch tensors
 
@@ -219,7 +219,7 @@ MAX tensor dtype: DType.float32
 MAX tensor shape: [Dim(2), Dim(2)]
 ```
 
-In this example, the [`from_dlpack()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.from_dlpack) method converts the NumPy array to a MAX tensor.
+In this example, the [`from_dlpack()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.from_dlpack) method converts the NumPy array to a MAX tensor.
 You can use this method when converting data from other libraries to MAX.
 
 :::note NumPy compatibility
@@ -232,7 +232,7 @@ may need to cast to a compatible type first.
 
 
 MAX also provides dtype conversion for PyTorch and NumPy integration.
-The [`from_torch()`](/max/api/python/dtype#max.dtype.DType.from_torch) method converts a PyTorch dtype to a MAX dtype. For example:
+The [`from_torch()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.from_torch) method converts a PyTorch dtype to a MAX dtype. For example:
 
 {/* @sync: _examples/dtypes/pytorch_to_max.py */}
 ```python
@@ -260,13 +260,13 @@ PyTorch torch.float16 → MAX DType.float16
 
 Other conversion functions you can use are:
 
-- [`to_numpy()`](/max/api/python/dtype#max.dtype.DType.to_numpy): Convert a MAX dtype to a NumPy dtype.
-- [`to_torch()`](/max/api/python/dtype#max.dtype.DType.to_torch): Convert a MAX dtype to a PyTorch dtype.
+- [`to_numpy()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.to_numpy): Convert a MAX dtype to a NumPy dtype.
+- [`to_torch()`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.to_torch): Convert a MAX dtype to a PyTorch dtype.
 
 ## Memory optimization
 
 Understanding dtype memory usage is critical for deploying large models. The
-[`size_in_bytes`](/max/api/python/dtype#max.dtype.DType.size_in_bytes) property lets you calculate exact memory requirements.
+[`size_in_bytes`](/max/api/python/generated/max.dtype.DType#max.dtype.DType.size_in_bytes) property lets you calculate exact memory requirements.
 
 {/* @sync: _examples/dtypes/calculate_memory.py */}
 ```python

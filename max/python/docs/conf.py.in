@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # -- Project information -----------------------------------------------------
 
-project = "MAX Engine Python APIs"
+project = "MAX Python API"
 copyright = "2023, Modular Inc"
 author = "Modular"
 
@@ -25,11 +25,20 @@ exclude_patterns = []
 # The suffix of source filenames.
 source_suffix = ".rst"
 
-extensions = ["sphinx.ext.autodoc",
-              "sphinx.ext.napoleon",
-              "sphinx.ext.intersphinx",
-              "sphinx.ext.linkcode",
-              "sphinx_markdown_builder",]
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.linkcode",
+    "sphinx_markdown_builder",
+]
+
+# -- Autosummary settings ----------------------------------------------------
+# Enable automatic stub generation for autosummary
+autosummary_generate = True
+autosummary_generate_overwrite = True
+autosummary_imported_members = True
 
 markdown_anchor_signatures_docusaurus = True
 markdown_first_heading_level = 2
@@ -50,11 +59,30 @@ autodoc_type_aliases = {
 
 # Show argument type hints in the parameters description only, because a lot
 # of type names can't be resolved and they make the signatures a mess.
+# NOTE: Overloaded functions still show type hints in the signatures,
+# because the types might be the only detail that distinguishes each function.
 autodoc_typehints = "description"
 
-# Suppress warnings for ambiguous cross-references
-# This allows multiple classes with the same name in different modules
-suppress_warnings = ['ref.python']
+# -- Autodoc default options -------------------------------------------------
+autodoc_default_options = {
+    'member-order': 'alphabetical',
+    'undoc-members': True,
+    'exclude-members': '__weakref__',
+    'show-inheritance': True,
+}
+
+# Suppress warnings for ambiguous cross-references, autodoc, and autosummary issues
+# This allows multiple classes with the same name in different modules,
+# suppresses warnings about missing attributes in :members: option,
+# and suppresses warnings about stub files not found during recursive generation
+suppress_warnings = [
+    'ref.python',
+    'autodoc',
+    'autodoc.import_object',
+    'autosummary',
+    'autosummary.import_cycle',
+    'toctree',
+]
 
 napoleon_custom_sections = [("Configuration", "params_style")]
 
@@ -64,8 +92,8 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", "../NUMPY_OBJECTS_INV")
 }
 
-# templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+templates_path = ["_templates", "sphinx_doc_inputs/_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "_templates"]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -386,14 +414,152 @@ def linkcode_resolve(domain, info):
 
     return fallback
 
+class SuppressionFilter:
+    """Filter that suppresses specific warning patterns that we can't fix."""
+    SUPPRESSED_PATTERNS = [
+        # Autodoc warnings about missing attributes (nanobind introspection issues)
+        'missing attribute mentioned in :members:',
+        # Duplicate object descriptions are expected when documenting both
+        # modules and their exported classes separately
+        'duplicate object description',
+        # Sphinx markdown builder issues with complex stdlib docstring signatures
+        # (e.g., collections.abc.Mapping.get has optional parameters that the
+        # markdown builder can't render)
+        'unknown node type',
+        # RST parse errors in third-party or internal docstrings containing
+        # *args/**kwargs patterns that look like emphasis to the parser
+        'Inline emphasis start-string without end-string',
+        'Inline strong start-string without end-string',
+        # Autosummary toctree references to generated stubs that may not have
+        # titles recognized by the markdown builder
+        "doesn't have a title",
+    ]
+
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:
+            message = str(getattr(record, 'msg', ''))
+
+        for pattern in self.SUPPRESSED_PATTERNS:
+            if pattern in message:
+                return False  # Suppress this log record entirely
+        return True
 
 
 def setup(app):
     from sphinx.util import inspect as sphinx_inspect
 
+    # Monkey-patch autosummary to respect __all__ when defined
+    # This allows packages to use autosummary_imported_members=True
+    # while modules with __all__ only document their explicit exports
+    from sphinx.ext.autosummary import generate
+    original_get_members = generate._get_members
+
+    def patched_get_members(*args, **kwargs):
+        # Call original to get (public_items, public_names)
+        items, public = original_get_members(*args, **kwargs)
+        # obj is the second positional argument
+        obj = args[1] if len(args) > 1 else None
+        # If the module has __all__, filter to only those names
+        if obj is not None and hasattr(obj, '__all__'):
+            all_names = set(obj.__all__)
+            items = [name for name in items if name in all_names]
+            public = [name for name in public if name in all_names]
+        return items, public
+
+    generate._get_members = patched_get_members
+
+    # Add our suppression filter to ALL handlers on ALL loggers
+    suppression_filter = SuppressionFilter()
+
+    # Add to root logger
+    for handler in logging.root.handlers:
+        handler.addFilter(suppression_filter)
+
+    # Add to all existing loggers
+    for name in logging.Logger.manager.loggerDict:
+        logger = logging.getLogger(name)
+        for handler in logger.handlers:
+            handler.addFilter(suppression_filter)
+        # Also add directly to the logger
+        logger.addFilter(suppression_filter)
+
+    # Add to sphinx logger specifically
+    sphinx_logger = logging.getLogger('sphinx')
+    sphinx_logger.addFilter(suppression_filter)
+    for handler in sphinx_logger.handlers:
+        handler.addFilter(suppression_filter)
+
+    def skip_imported_for_modules(app, what, name, obj, skip, options):
+        """Skip imported members for regular modules, but keep them for packages.
+
+        This allows __init__.py files to document their public API (imported members)
+        while regular .py files only document what they define.
+        """
+        if skip:
+            return skip
+
+        # finfo is monkey-patched onto DType (DType.finfo = finfo in
+        # dtype_extension.py) so autodoc discovers it as a DType member.
+        # We use autosummary, so this is how we exclude it from the DType doc.
+        if what == "class" and name == "finfo" and inspect.isclass(obj):
+            return True
+
+        # Get the module being documented
+        modname = getattr(options, 'module', None) or options.get('module', '')
+        if not modname:
+            return skip
+
+        # Check if this is a package (__init__.py) or a regular module
+        # Packages have __file__ ending in __init__.py
+        try:
+            import sys
+            mod = sys.modules.get(modname)
+            if mod is None:
+                return skip
+
+            mod_file = getattr(mod, '__file__', '') or ''
+            is_package = mod_file.endswith('__init__.py')
+
+            if is_package:
+                # For packages, include imported members from our codebase
+                # but skip stdlib/third-party imports
+                obj_module = getattr(obj, '__module__', '')
+                if obj_module and not obj_module.startswith('max.'):
+                    return True  # Skip non-max imports
+            else:
+                # For regular modules, only document members defined in this module
+                obj_module = getattr(obj, '__module__', '')
+                if obj_module and obj_module != modname:
+                    return True  # Skip imported members
+        except Exception:
+            pass
+
+        return skip
+
+    def resolve_type_alias_references(app, env, node, contnode):
+        """Fall back to :obj: when a :class: cross-reference fails to resolve.
+
+        Autodoc emits :class: references for all type annotations, but type
+        aliases documented with ``.. py:data::`` are only registered as
+        ``py:data`` targets.  Re-trying with :obj: (which matches any Python
+        domain object type) lets those references resolve without forcing us
+        to mis-label type aliases as classes in the RST source.
+        """
+        if node.get('refdomain') == 'py' and node.get('reftype') == 'class':
+            return app.env.get_domain('py').resolve_xref(
+                env, node.get('refdoc'), app.builder,
+                'obj', node.get('reftarget'), node, contnode,
+            )
+        return None
+
     app.connect("autodoc-process-docstring", process_links)
     app.connect("autodoc-process-signature", process_signature)
+    app.connect("autodoc-skip-member", skip_imported_for_modules)
+    app.connect("missing-reference", resolve_type_alias_references)
     app.add_role('code_link', code_link_role)
+
 
     # Sphinx inspects all objects in the module and tries to resolve their type
     # (attribute, function, class, module, etc.) by using its own functions in

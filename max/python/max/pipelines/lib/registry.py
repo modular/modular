@@ -1002,3 +1002,22 @@ class PipelineRegistry:
 
 
 PIPELINE_REGISTRY = PipelineRegistry([])
+"""Global registry of supported model architectures and their pipelines.
+
+This singleton is automatically populated with all built-in architectures
+when you import :mod:`max.pipelines`.
+
+Use ``PIPELINE_REGISTRY`` to:
+
+- **Register custom architectures**: Call :meth:`~PipelineRegistry.register()`
+  to add a new model architecture.
+- **Query supported models**: Call
+  :meth:`~PipelineRegistry.retrieve_architecture()` to check whether a
+  Hugging Face model repository is supported.
+- **Access cached configs**: Use
+  :meth:`~PipelineRegistry.get_active_huggingface_config()` and
+  :meth:`~PipelineRegistry.get_active_tokenizer()` for cached access to model
+  configurations and tokenizers.
+
+See :class:`PipelineRegistry` for the full API.
+"""

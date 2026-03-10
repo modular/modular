@@ -1,12 +1,40 @@
-:description: Performance profiling and tracing utilities for MAX.
-:title: profiler
+:title: max.profiler
 :type: module
 :lang: python
-:source: max/profiler/
+:wrapper_class: rst-module-autosummary
 
-Tools for timing and tracing MAX operations to identify performance
-bottlenecks.
+max.profiler
+============
 
 .. automodule:: max.profiler
-   :members:
-   :undoc-members:
+   :no-members:
+
+.. currentmodule:: max.profiler
+
+Tracing
+-------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   Tracer
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   traced
+
+Configuration
+-------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   is_profiling_enabled
+   set_gpu_profiling_state

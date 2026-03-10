@@ -114,10 +114,10 @@ class Qwen2Model(Llama3Model):
 By inheriting from `Llama3Model`, the Qwen2 implementation automatically gets:
 
 - The
-[`execute`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.execute),
-[`prepare_initial_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_initial_token_inputs),
+[`execute`](/max/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.execute),
+[`prepare_initial_token_inputs`](/max/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.prepare_initial_token_inputs),
 and
-[`prepare_next_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_next_token_inputs)
+[`prepare_next_token_inputs`](/max/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.prepare_next_token_inputs)
 methods required by MAX.
 - Graph building logic for transformer architectures.
 - Configuration handling from Hugging Face models.
@@ -206,7 +206,7 @@ qwen2_arch = SupportedArchitecture(
 
 This configuration demonstrates several key features of MAX's architecture
 system. The
-[`name`](/max/api/python/pipelines/registry/#max.pipelines.lib.registry.SupportedArchitecture)
+[`name`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture)
 parameter must match the model class name in Hugging Face configs, while `task`
 specifies the pipeline task type using `PipelineTask` from `max.interfaces`. The
 `rope_type` parameter specifies the type of rotary position embeddings used by
@@ -233,8 +233,7 @@ __all__ = ["qwen2_arch", "ARCHITECTURES"]
 
 MAX automatically loads any architectures listed in the `ARCHITECTURES` variable
 when you specify your module with the
-[`--custom-architectures`](/max/api/python/pipelines/config/#max.pipelines.lib.config.PipelineConfig.custom_architectures)
-flag.
+`--custom-architectures` flag.
 
 ## Test your custom architecture
 
@@ -277,7 +276,7 @@ Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
 
 Now you can test your custom architecture. If you implemented an architecture to
 do [text
-generation](/max/api/python/pipelines/core#max.pipelines.core.PipelineTask.TEXT_GENERATION),
+generation](/max/api/python/generated/max.interfaces.PipelineTask#max.interfaces.PipelineTask.TEXT_GENERATION),
 you can send a request to that endpoint. For example:
 
 <Tabs>
@@ -330,12 +329,12 @@ architecture, you may need to implement a model from scratch if your architectur
 differs significantly from MAX's built-in models. In that case, you would:
 
 1. Implement the full
-[`PipelineModel`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel)
+[`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel)
 interface including
-[`execute`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.execute),
-[`prepare_initial_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_initial_token_inputs),
+[`execute`](/max/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.execute),
+[`prepare_initial_token_inputs`](/max/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.prepare_initial_token_inputs),
 and
-[`prepare_next_token_inputs`](/max/api/python/pipelines/pipeline/#max.pipelines.lib.interfaces.pipeline_model.PipelineModel.prepare_next_token_inputs)
+[`prepare_next_token_inputs`](/max/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.prepare_next_token_inputs)
 methods.
 2. Create custom configuration classes to handle model parameters.
 3. Write custom weight adapters for converting between different formats.

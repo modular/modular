@@ -43,6 +43,14 @@ from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 InputShape = list[int | str | None] | None
 CustomExtensionType = str | Path
 CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
+"""Specifies one or more custom extension libraries to load with an
+:class:`InferenceSession`.
+
+It may be a single path or a sequence of paths, where each path is a ``str``
+or :class:`~pathlib.Path` pointing to a compiled ``.mojopkg`` custom ops
+library or a ``.mojo`` source file. When a ``.mojo`` source path is provided,
+it's automatically compiled into a package before loading.
+"""
 
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 

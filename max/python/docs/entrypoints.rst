@@ -1,13 +1,22 @@
-:description: High-level Python interface for running inference with large language models.
-:title: entrypoints
+:title: max.entrypoints
 :type: module
 :lang: python
-:source: max/entrypoints/llm.py
+:wrapper_class: rst-module-autosummary
 
-Provides a high-level Python interface for running inference with large language
-models. The :class:`~max.entrypoints.llm.LLM` class handles model loading,
-session management, and text generation with a simple API.
+max.entrypoints
+===============
 
-.. autoclass:: max.entrypoints.llm.LLM
-   :members:
-   :undoc-members:
+.. automodule:: max.entrypoints
+   :no-members:
+
+.. currentmodule:: max.entrypoints
+
+Offline inference
+-----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.entrypoints.llm.LLM

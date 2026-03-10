@@ -58,7 +58,7 @@ sudo apt-get install nsight-systems
 When profiling code built with MAX, you have to explicitly enable profiling by
 setting the `MODULAR_ENABLE_PROFILING` environment variable to `detailed` or by
 calling
-[`InferenceSession.gpu_profiling()`](/max/api/python/engine#max.engine.InferenceSession.gpu_profiling)
+[`InferenceSession.gpu_profiling()`](/max/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
 before you load your model.
 
 In most cases, you'll probably use `MODULAR_ENABLE_PROFILING` so you don't have
@@ -228,7 +228,7 @@ Guide](https://docs.nvidia.com/nsight-systems/AnalysisGuide/index.html).
 
 To enable MAX profiling markers, set the `MODULAR_ENABLE_PROFILING` environment
 variable to `detailed`, call the
-[`InferenceSession.gpu_profiling()`](/max/api/python/engine#max.engine.InferenceSession.gpu_profiling)
+[`InferenceSession.gpu_profiling()`](/max/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
 method, or add the `--gpu-profiling` option to [`max serve`](/max/cli/serve).
 
 ### Enable profiling with an environment variable
@@ -252,7 +252,7 @@ MODULAR_ENABLE_PROFILING=detailed \
 ### Enable profiling with Python
 
 You can enable MAX profiling markers from Python by calling the
-[`InferenceSession.gpu_profiling()`](/max/api/python/engine#max.engine.InferenceSession.gpu_profiling)
+[`InferenceSession.gpu_profiling()`](/max/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
 method before you load your model:
 
 ```python

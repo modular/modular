@@ -40,7 +40,7 @@ Face as a MAX model.
 ## MAX models {#max-graph}
 
 A MAX model is a high-performance inferencing model built with our [MAX Python
-API](/max/api/python/). It's a unique model format that allows the MAX graph
+API](/max/api/python). It's a unique model format that allows the MAX graph
 compiler to optimize the model for inference on a wide range of hardware and
 deliver state-of-the-art performance you normally see only from model-specific
 inference libraries written in C or C++.
@@ -125,16 +125,16 @@ build your own models with the MAX APIs today.
 To build your own inferencing model with the MAX, the process generally looks
 like this:
 
-1. Instantiate a [`Graph`](/max/api/python/graph/Graph) by specifying the input
+1. Instantiate a [`Graph`](/max/api/python/generated/max.graph.Graph) by specifying the input
 shape as a
-[`TensorType`](/max/api/python/graph/type#max.graph.type.TensorType).
+[`TensorType`](/max/api/python/generated/max.graph.TensorType).
 
-2. Build the graph by chaining [`ops`](/max/api/python/graph/ops/) functions.
-Each function takes and returns a [`Value`](/max/api/python/graph/Value)
+2. Build the graph by chaining [`ops`](/max/api/python/graph.ops) functions.
+Each function takes and returns a [`Value`](/max/api/python/generated/max.graph.Value)
 object.
 
 3. Add the final `Value` to the graph using the
-[`output()`](/max/api/python/graph/Graph#max.graph.Graph.output) method.
+[`output()`](/max/api/python/generated/max.graph.Graph#max.graph.Graph.output) method.
 
 For more information, see our tutorial to [get started with MAX Graph in
 Python](/max/develop/get-started-with-max-graph-in-python).

@@ -1,27 +1,80 @@
-:title: driver
+:title: max.driver
 :type: module
 :lang: python
-:source: max/driver/
+:wrapper_class: rst-module-autosummary
 
-Exposes APIs for interacting with hardware, such as allocating tensors on a GPU
-and moving tensors between the CPU and GPU. It provides interfaces for memory
-management, device properties, and hardware monitoring. Through these APIs, you
-can control data placement, track resource utilization, and configure device
-settings for optimal performance.
-
-For example, you can use the following code to use an accelerator if one is
-available, otherwise use the CPU:
-
-.. code-block:: python
-
-   from max import driver
-
-   device = driver.CPU() if driver.accelerator_count() == 0 else driver.Accelerator()
-   print(f"Using {device} device")
+max.driver
+==========
 
 .. automodule:: max.driver
-   :imported-members:
-   :members:
-   :undoc-members:
+   :no-members:
 
-.. autofunction:: max.driver.accelerator_count
+.. currentmodule:: max.driver
+
+Devices
+-------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   Accelerator
+   CPU
+   Device
+   DeviceEvent
+   DeviceSpec
+   DeviceStream
+
+Buffers
+-------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   Buffer
+   DevicePinnedBuffer
+   DLPackArray
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   load_max_buffer
+
+Device discovery
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   accelerator_api
+   accelerator_architecture_name
+   accelerator_count
+   devices_exist
+   enable_all_peer_access
+   load_devices
+   scan_available_devices
+
+Virtual devices
+---------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   calculate_virtual_device_count
+   calculate_virtual_device_count_from_cli
+   get_virtual_device_api
+   get_virtual_device_count
+   get_virtual_device_target_arch
+   is_virtual_device_mode
+   set_virtual_device_api
+   set_virtual_device_count
+   set_virtual_device_target_arch
