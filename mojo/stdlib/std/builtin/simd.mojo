@@ -103,56 +103,29 @@ from .dtype import (
 
 
 # Compute a scalar alias name for `SIMD[dtype, 1]`.
-# Maps the DType short name to the usual alias (e.g. "uint32" -> "UInt32",
-# "int64" -> "Int64", otherwise Capitalize(first)).  Runs at comptime.
+# Maps the DType string name to a more readable form (e.g. "uint32" -> "UInt32", "float32" -> "Float32")
 @always_inline("nodebug")
 fn _scalar_alias_from_dtype(dtype: DType) -> String:
     var name = String()
     dtype.write_to(name)
 
-    # Prefer explicit aliases for common integral dtypes for readability.
-    if dtype == DType.uint8:
-        return String("UInt8")
-    elif dtype == DType.int8:
-        return String("Int8")
-    elif dtype == DType.uint16:
-        return String("UInt16")
-    elif dtype == DType.int16:
-        return String("Int16")
-    elif dtype == DType.uint32:
-        return String("UInt32")
-    elif dtype == DType.int32:
-        return String("Int32")
-    elif dtype == DType.uint64:
-        return String("UInt64")
-    elif dtype == DType.int64:
-        return String("Int64")
-    elif dtype == DType.uint128:
-        return String("UInt128")
-    elif dtype == DType.int128:
-        return String("Int128")
-    elif dtype == DType.uint256:
-        return String("UInt256")
-    elif dtype == DType.int256:
-        return String("Int256")
-    elif dtype == DType.uint:
+    if len(name) == 0:
+        return name
+
+    if name == "uint":
         return String("UInt")
-    elif dtype == DType.int:
+    elif name == "int":
         return String("Int")
 
-    # Fallback: capitalize the printed dtype name, e.g. "float32" -> "Float32".
-    var s = StringSlice(name)
-    if len(s) > 0:
-        var iter = s.codepoint_slices()
-        var first_slice = iter.peek_next().value()
-        var first_upper = first_slice.upper()
-        var total = s.byte_length()
-        var first_len = first_slice.byte_length()
-        var rest = StringSlice(
-            ptr=s.unsafe_ptr() + first_len, length=total - first_len
-        )
+    var result = name.replace("uint", "UInt").replace("int", "Int")
+
+    if result == name:
+        var first_char = StringSlice(ptr=name.unsafe_ptr(), length=1)
+        var first_upper = first_char.upper()
+        var rest = StringSlice(ptr=name.unsafe_ptr() + 1, length=len(name) - 1)
         return String(first_upper, rest)
-    return String()
+
+    return result
 
 
 comptime Scalar = SIMD[_, size=1]

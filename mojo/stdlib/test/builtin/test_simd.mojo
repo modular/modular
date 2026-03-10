@@ -391,7 +391,7 @@ def test_simd_repr_and_write_repr_to() raises:
 
     # Collections should reflect alias naming
     assert_equal(
-        repr([UInt(1)]), 
+        repr([UInt(1)]),
         "List[SIMD[DType.uint, 1]]([UInt(1)])",
     )
 
