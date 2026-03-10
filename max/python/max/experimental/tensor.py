@@ -524,7 +524,7 @@ class Tensor(DLPackArray, HasTensorValue):
         ``storage`` or ``state`` for internal construction.
 
         For DLPack-compatible arrays (NumPy, PyTorch, etc.) the array's own
-        ``dtype`` is preserved by default — no silent precision conversion
+        ``dtype`` is preserved by default; no silent precision conversion
         happens.  For Python scalars and nested lists, ``dtype`` defaults to
         :obj:`DType.float32` on CPU and :obj:`DType.bfloat16` on accelerators.
 
@@ -550,7 +550,7 @@ class Tensor(DLPackArray, HasTensorValue):
                 must be supplied.
             dtype: The data type for the tensor elements.  For DLPack arrays
                 this defaults to the array's own dtype; passing a conflicting
-                value raises :obj:`ValueError`.  For Python scalars/lists this
+                value raises :exc:`ValueError`.  For Python scalars/lists this
                 defaults to :obj:`DType.float32` on CPU and
                 :obj:`DType.bfloat16` on accelerators.
             device: The device where the tensor will be allocated. If not
@@ -1818,7 +1818,7 @@ class Tensor(DLPackArray, HasTensorValue):
     def T(self) -> Tensor:
         """Returns a tensor with the last two dimensions transposed.
 
-        This is equivalent to calling :obj:`transpose(-1, -2)`, which swaps
+        This is equivalent to calling ``transpose(-1, -2)``, which swaps
         the last two dimensions of the tensor. For a 2D matrix, this produces
         the standard matrix transpose.
 

@@ -38,20 +38,49 @@ class SamplingParamsInput:
     """
 
     top_k: int | None = None
+    """The number of most probable tokens to keep when sampling. Defaults to ``None`` (use class default)."""
+
     top_p: float | None = None
+    """The cumulative probability threshold for nucleus sampling. Defaults to ``None`` (use class default)."""
+
     min_p: float | None = None
+    """The minimum probability threshold for a token relative to the most likely token. Defaults to ``None`` (use class default)."""
+
     temperature: float | None = None
+    """The temperature for controlling output randomness. Defaults to ``None`` (use class default)."""
+
     frequency_penalty: float | None = None
+    """The penalty applied proportionally to token frequency in the generated text. Defaults to ``None`` (use class default)."""
+
     presence_penalty: float | None = None
+    """The flat penalty applied to tokens that have appeared at least once. Defaults to ``None`` (use class default)."""
+
     repetition_penalty: float | None = None
+    """The factor by which logits of repeated tokens are divided. Defaults to ``None`` (use class default)."""
+
     max_new_tokens: int | None = None
+    """The maximum number of tokens to generate. Defaults to ``None`` (use class default)."""
+
     min_new_tokens: int | None = None
+    """The minimum number of tokens to generate before stopping. Defaults to ``None`` (use class default)."""
+
     ignore_eos: bool | None = None
+    """Whether to continue generating past end-of-sequence tokens. Defaults to ``None`` (use class default)."""
+
     stop: list[str] | None = None
+    """A list of strings that, when generated, will stop the generation. Defaults to ``None`` (use class default)."""
+
     stop_token_ids: list[int] | None = None
+    """A list of token IDs that, when generated, will stop the generation. Defaults to ``None`` (use class default)."""
+
     detokenize: bool | None = None
+    """Whether to convert output token IDs back to text. Defaults to ``None`` (use class default)."""
+
     seed: int | None = None
+    """The random seed for reproducible sampling. Defaults to ``None`` (use class default)."""
+
     logits_processors: Sequence[LogitsProcessor] | None = None
+    """Callables applied to model logits before sampling. Defaults to ``None`` (use class default)."""
 
 
 @dataclass(frozen=True)

@@ -1187,6 +1187,17 @@ def store_k_cache_ragged(
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the key tensor into the paged KV cache for ragged inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_k: The key tensor of rank 3 containing the new key projections.
+        input_row_offsets: Ragged tensor row offsets of shape ``[batch + 1]``
+            indicating where each sequence starts and ends. Must have dtype
+            ``uint32``.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_ragged(
         kv_collection,
         x_k,
@@ -1202,6 +1213,17 @@ def store_v_cache_ragged(
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the value tensor into the paged KV cache for ragged inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_v: The value tensor of rank 3 containing the new value projections.
+        input_row_offsets: Ragged tensor row offsets of shape ``[batch + 1]``
+            indicating where each sequence starts and ends. Must have dtype
+            ``uint32``.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_ragged(
         kv_collection,
         x_v,
@@ -1258,6 +1280,17 @@ def store_k_cache_padded(
     valid_lengths: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the key tensor into the paged KV cache for padded inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_k: The key tensor of rank 4 containing the new key projections.
+        valid_lengths: Buffer of shape ``[batch]`` (dtype ``uint32``)
+            indicating the actual (non-padded) sequence length for each
+            batch element.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_padded(
         kv_collection,
         x_k,
@@ -1273,6 +1306,17 @@ def store_v_cache_padded(
     valid_lengths: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
+    """Stores the value tensor into the paged KV cache for padded inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_v: The value tensor of rank 4 containing the new value projections.
+        valid_lengths: Buffer of shape ``[batch]`` (dtype ``uint32``)
+            indicating the actual (non-padded) sequence length for each
+            batch element.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
     kv_cache_store_paged_padded(
         kv_collection,
         x_v,
@@ -2356,7 +2400,7 @@ def mla_prefill_graph(
         kv_params: KVCacheParams
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
-        mask_variant: Mask variant.
+        mask_variant: The attention mask variant controlling masking behavior.
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
@@ -2435,6 +2479,25 @@ def compute_mla_dispatch_args_scalar(
     num_heads: int,
     device: DeviceRef,
 ) -> TensorValue:
+    """Computes scalar dispatch arguments for the MLA decode kernel.
+
+    Produces a CPU tensor of shape ``[4]`` containing pre-computed integer
+    arguments used by the capturable MLA decode kernel variant to enable CUDA
+    graph capture.
+
+    Args:
+        batch_size: Scalar tensor indicating the current batch size.
+        max_cache_valid_length: Scalar tensor with the maximum valid cache
+            sequence length across all requests in the batch.
+        q_max_seq_len: Scalar tensor with the maximum query sequence length
+            in the current batch.
+        num_heads: Number of query attention heads.
+        device: The :class:`~max.graph.DeviceRef` on which to run the op.
+
+    Returns:
+        A CPU :class:`~max.graph.TensorValue` of shape ``[4]`` and dtype
+        ``int64`` containing the dispatch scalar arguments.
+    """
     results = ops.custom(
         "mo.mla.compute_dispatch_args.scalar",
         device=device,
@@ -2496,7 +2559,7 @@ def mla_decode_graph(
         kv_params: KVCacheParams
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
-        mask_variant: Mask variant.
+        mask_variant: The attention mask variant controlling masking behavior.
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
@@ -3676,6 +3739,25 @@ def quantize_static_scaled_float8(
     scale_is_inverted: bool = True,
     out_type: DType = DType.float8_e4m3fn,
 ) -> TensorValue:
+    """Quantizes a rank-2 tensor to float8 using a static per-tensor scale.
+
+    Args:
+        x: Input tensor to quantize. Must be rank 2 with dtype ``float16``,
+            ``bfloat16``, or ``float32``.
+        scale: Scalar scale factor (shape ``[]`` or ``[1]``) residing on CPU.
+        scale_is_inverted: When ``True`` (default), ``scale`` is interpreted
+            as ``1 / max_val`` (inverted). When ``False``, it is the raw
+            absolute-max scale.
+        out_type: Output dtype. Defaults to ``DType.float8_e4m3fn``.
+
+    Returns:
+        A quantized :class:`~max.graph.TensorValue` with shape equal to ``x``
+        and dtype ``out_type``.
+
+    Raises:
+        ValueError: If ``scale`` is not a scalar, ``x`` is not rank 2, ``x``
+            dtype is unsupported, or ``scale`` is not on CPU.
+    """
     if scale.shape not in [[], [1]]:
         raise ValueError(
             f"expected scale to be a scalar, but got shape of {scale.shape}"
@@ -4253,6 +4335,30 @@ def matmul_static_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
 ) -> TensorValue:
+    """Performs a static-scaled float8 matrix multiplication.
+
+    Computes ``input @ weight.T`` where both tensors are float8, dequantized
+    using the provided per-tensor CPU scalar scales before accumulation.
+    The output is always ``bfloat16``.
+
+    Args:
+        input: Input tensor of rank 2 and dtype ``float8_e4m3fn`` or
+            ``float8_e4m3fnuz``.
+        weight: Weight tensor of rank 2 and matching float8 dtype, laid out
+            so that the K dimension matches ``input.shape[1]``.
+        input_scale: Scalar scale factor for ``input`` (shape ``[]`` or
+            ``[1]``), must reside on CPU.
+        weight_scale: Scalar scale factor for ``weight`` (shape ``[]`` or
+            ``[1]``), must reside on CPU.
+
+    Returns:
+        A :class:`~max.graph.TensorValue` of shape
+        ``[input.shape[0], weight.shape[0]]`` and dtype ``bfloat16``.
+
+    Raises:
+        ValueError: If scale shapes are not scalar, input or weight are not
+            rank 2, K dimensions do not match, or scales are not on CPU.
+    """
     if input_scale.shape not in [[], [1]]:
         raise ValueError(
             f"expected input_scale to be a scalar, but got shape of {input_scale.shape}"
@@ -4818,10 +4924,10 @@ def sgmv_kernel(  # noqa: ANN201
     we can perform LoRA A or B from this kernel call.
 
     Args:
-        input: The input tensor
-        lora: The LoRA tensor
+        input: The input tensor.
+        lora: The LoRA tensor.
         lora_ids: Ids of the LoRAs used for each sequence
-        lora_ranks: The ranks of the LoRAs ihn the batch
+        lora_ranks: The ranks of the LoRAs in the batch.
         input_row_offsets: The sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
@@ -4906,7 +5012,7 @@ def sgmv_lora_kernel(
         lora_a: The LoRA tensor for A
         lora_b: The LoRA tensor for B
         lora_ids: Ids of the LoRAs used for each sequence
-        lora_ranks: The ranks of the LoRAs ihn the batch
+        lora_ranks: The ranks of the LoRAs in the batch.
         grouped_row_offsets: The grouped sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
@@ -5078,7 +5184,7 @@ def sgmv_qkv_lora_kernel(
         lora_ids_kv: LoRA IDs for KV projections (with offset for V portion).
         lora_grouped_offsets_kv: Grouped offsets for KV LoRA sequences.
         kv_collection: The KV cache.
-        kv_params: The KV params.
+        kv_params: The key-value cache configuration parameters.
         layer_idx: The layer index to retrieve the KV cache.
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch.
         max_rank: The maximum rank for the LoRAs.

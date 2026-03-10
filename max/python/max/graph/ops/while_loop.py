@@ -36,7 +36,7 @@ def while_loop(
 
     Both the predicate and body functions must take in as arguments the same
     number and types of values as specified in the init_args. The predication
-    function must return only a boolean scalar tensor of type :class:`DType.bool`.
+    function must return only a boolean scalar tensor of type :attr:`~max.dtype.DType.bool`.
     The body function must return a list of values matching the types of init_args,
     (or may return a value directly if there is only one).
 
@@ -85,7 +85,7 @@ def while_loop(
 
         predicate:
             Callable that takes loop arguments and returns a boolean scalar tensor
-            of type :class:`DType.bool` determining loop continuation.
+            of type :attr:`~max.dtype.DType.bool` determining loop continuation.
 
         body:
             Callable that takes loop arguments and returns updated values matching
@@ -96,7 +96,7 @@ def while_loop(
 
     Raises:
         ValueError: If init_args is empty.
-        NotImplementedError: If any init_arg is a :class:`BufferValue`.
+        NotImplementedError: If any init_arg is a :class:`~max.graph.BufferValue`.
 
     Note:
         Buffer operations are currently not supported.

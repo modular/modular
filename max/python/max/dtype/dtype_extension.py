@@ -77,11 +77,11 @@ _HARDCODED_FINFO: dict[DType, _FInfoData] = {
 
 
 class finfo:
-    """Numerical properties of a floating point ``max.dtype.DType``.
+    """Numerical properties of a floating point :class:`~max.dtype.DType`.
 
     This is modeled after ``torch.finfo``, providing ``bits``, ``eps``,
     ``max``, ``min``, ``tiny``, ``smallest_normal``, and ``dtype``
-    attributes for every MAX float dtype—including bfloat16, float8, and
+    attributes for every MAX float dtype, including bfloat16, float8, and
     float4 types that numpy cannot represent.
 
     Args:

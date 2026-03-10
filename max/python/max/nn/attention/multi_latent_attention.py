@@ -217,6 +217,17 @@ class LatentAttentionWithRope(Module, Shardable):
     def create_mla_prefill_metadata(
         self, input_row_offsets: TensorValue, kv_collection: PagedCacheValues
     ) -> MLAPrefillMetadata:
+        """Creates the prefill planning metadata required by MLA prefill kernels.
+
+        Args:
+            input_row_offsets: Ragged row offsets tensor describing the token
+                boundaries for each sequence in the batch.
+            kv_collection: Paged KV cache values for the current device.
+
+        Returns:
+            An :class:`MLAPrefillMetadata` instance containing buffer row
+            offsets, cache offsets, and buffer lengths for the prefill step.
+        """
         (buffer_row_offsets, cache_offsets, buffer_lengths) = (
             flare_mla_prefill_plan(
                 self.kv_params,
@@ -617,6 +628,15 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Creates per-device MLA prefill metadata for tensor-parallel execution.
+
+        Args:
+            input_row_offsets_: Per-device ragged row offset tensors.
+            kv_collections: Per-device paged KV cache values.
+
+        Returns:
+            A list of :class:`MLAPrefillMetadata` instances, one per device.
+        """
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -718,6 +738,15 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Creates per-device MLA prefill metadata for data-parallel execution.
+
+        Args:
+            input_row_offsets_: Per-device ragged row offset tensors.
+            kv_collections: Per-device paged KV cache values.
+
+        Returns:
+            A list of :class:`MLAPrefillMetadata` instances, one per device.
+        """
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(

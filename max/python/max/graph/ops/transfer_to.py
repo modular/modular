@@ -27,7 +27,7 @@ def transfer_to(
     """Inserts a device transfer node into the compiled graph.
 
     Moves ``x`` to ``device`` at execution time. This is a **graph-level
-    operation**: it operates on symbolic :obj:`TensorValue` objects during
+    operation**: it operates on symbolic :class:`~max.graph.TensorValue` objects during
     graph tracing and is baked into the compiled graph as an
     ``mo.transfer`` MLIR op.
 
@@ -49,7 +49,7 @@ def transfer_to(
         device: The target device.
 
     Returns:
-        A new :obj:`TensorValue` on the specified device.
+        A new :class:`~max.graph.TensorValue` on the specified device.
     """
     x = TensorValue(x)
     device = DeviceRef.from_device(device)

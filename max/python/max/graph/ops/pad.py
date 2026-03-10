@@ -49,12 +49,20 @@ def pad(
 
     Args:
         input: The input tensor to pad.
-        paddings: Sequence of padding values. The padding values are applied
-            symmetrically to each dimension. For a tensor with rank N,
-            paddings should contain 2*N values: [pad_before_dim0, pad_after_dim0,
-            pad_before_dim1, pad_after_dim1, ...].
-        mode: The padding mode. Currently only "constant" is supported.
-        value: The constant value to use for padding.
+        paddings: Sequence of padding values. For a tensor with rank N,
+            paddings must contain 2*N non-negative integers in the order
+            ``[pad_before_dim0, pad_after_dim0, pad_before_dim1,
+            pad_after_dim1, ...]``.
+        mode: The padding mode. Currently only ``constant`` is supported.
+        value: The constant value to fill the padding with. Defaults to 0.
+
+    Returns:
+        A symbolic tensor with the same dtype as ``input``, padded along
+        each dimension according to ``paddings``.
+
+    Raises:
+        ValueError: If ``mode`` is not ``constant``, or if any padding
+            value is negative.
     """
     input = TensorValue(input)
     paddings = list(paddings)

@@ -146,7 +146,7 @@ def calculate_virtual_device_count_from_cli(
     enabled before device validation occurs.
 
     Args:
-        *device_inputs: One or more raw device inputs — either strings like ``"gpu:0,1,2"``
+        *device_inputs: One or more raw device inputs, either strings like ``gpu:0,1,2``
             or lists of integers like ``[0, 1, 2]``.
 
     Returns:

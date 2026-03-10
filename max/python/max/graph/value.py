@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Defines symbolic value types used within a :class:`Graph`, including tensors and buffers."""
+"""Defines symbolic value types used within a :class:`~max.graph.Graph`, including tensors and buffers."""
 
 from __future__ import annotations
 
@@ -56,11 +56,11 @@ _SliceIndices: TypeAlias = "Sequence[_SliceIndex | builtins.ellipsis]"
 
 
 class Value(Generic[MlirType]):
-    """Represents a symbolic value within a :class:`Graph`.
+    """Represents a symbolic value within a :class:`~max.graph.Graph`.
 
     A :class:`Value` can represent the output of a node, the arguments of a
-    :class:`Graph` (as seen from within its body), and more generally any symbolic
-    value available within the :class:`Graph`. Other nodes receive :class:`Value`
+    :class:`~max.graph.Graph` (as seen from within its body), and more generally any symbolic
+    value available within the :class:`~max.graph.Graph`. Other nodes receive :class:`Value`
     values as inputs to form a computation graph.
 
     A :class:`Value` may also refer to an existing input or output of a node,
@@ -101,7 +101,7 @@ class Value(Generic[MlirType]):
 
     @classmethod
     def from_mlir(cls, value: _Value[MlirType]) -> Value[Any]:
-        """Creates a :obj:`Value` from an MLIR value.
+        """Creates a :class:`Value` from an MLIR value.
 
         Args:
             value: The MLIR value to wrap.
@@ -117,16 +117,16 @@ class Value(Generic[MlirType]):
         raise TypeError(f"Invalid mlir value {value=}")
 
     def to_mlir(self) -> _Value[MlirType]:
-        """Converts the :obj:`Value` to an MLIR value."""
+        """Converts the :class:`Value` to an MLIR value."""
         return self._mlir_value
 
     def __repr__(self) -> str:
-        """Returns a string representation of the :obj:`Value`."""
+        """Returns a string representation of the :class:`Value`."""
         return str(self._mlir_value.type)
 
     @property
     def buffer(self) -> BufferValue:
-        """Returns the Value as a :obj:`BufferValue`.
+        """Returns the Value as a :class:`BufferValue`.
 
         Raises an exception if the Value is not a BufferValue.
         """
@@ -139,7 +139,7 @@ class Value(Generic[MlirType]):
 
     @property
     def tensor(self) -> TensorValue:
-        """Returns the Value as a :obj:`TensorValue`.
+        """Returns the Value as a :class:`TensorValue`.
 
         Raises an exception if the Value is not a TensorValue.
         """
@@ -152,7 +152,7 @@ class Value(Generic[MlirType]):
 
     @property
     def opaque(self) -> _OpaqueValue:
-        """Returns the Value as an :obj:`_OpaqueValue`.
+        """Returns the Value as an :class:`_OpaqueValue`.
 
         Raises an exception if the Value is not a _OpaqueValue.
         """
@@ -165,7 +165,7 @@ class Value(Generic[MlirType]):
 
     @property
     def type(self) -> Type[MlirType]:
-        """Returns the type of the :obj:`Value` as a :obj:`Type`."""
+        """Returns the type of the :class:`Value` as a :class:`~max.graph.Type`."""
         raise NotImplementedError
 
 
@@ -188,7 +188,7 @@ class _ChainValue(Value[mo.ChainType]):
 
     @property
     def type(self) -> _ChainType:
-        """Returns the type of the :obj:`_ChainValue` as a :obj:`_ChainType`."""
+        """Returns the type of the :class:`_ChainValue` as a :class:`~max.graph.type._ChainType`."""
         return _ChainType.from_mlir(self._mlir_value.type)
 
 
@@ -213,20 +213,20 @@ class _OpaqueValue(Value[mo.OpaqueType]):
 
     @property
     def type(self) -> _OpaqueType:
-        """Returns the type of the :obj:`_OpaqueValue` as a :obj:`_OpaqueType`."""
+        """Returns the type of the :class:`_OpaqueValue` as a :class:`~max.graph.type._OpaqueType`."""
         return _OpaqueType.from_mlir(self._mlir_value.type)
 
 
 class BufferValue(Value[mo.BufferType]):
-    """Represents a mutable semantic tensor within a :class:`Graph`."""
+    """Represents a mutable semantic tensor within a :class:`~max.graph.Graph`."""
 
     def __init__(
         self, value: Value[Any] | _Value[mo.BufferType] | HasBufferValue
     ) -> None:
-        """Initializes a :obj:`BufferValue` from another value.
+        """Initializes a :class:`BufferValue` from another value.
 
         Args:
-            value: The value to wrap, either an MLIR value of buffer type or another :obj:`BufferValue`.
+            value: The value to wrap, either an MLIR value of buffer type or another :class:`BufferValue`.
         """
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.BufferType)
@@ -243,7 +243,7 @@ class BufferValue(Value[mo.BufferType]):
 
     @classmethod
     def from_mlir(cls, value: _Value[mo.BufferType]) -> BufferValue:
-        """Creates a :obj:`BufferValue` from an MLIR buffer value.
+        """Creates a :class:`BufferValue` from an MLIR buffer value.
 
         Args:
             value: The MLIR buffer value to wrap.
@@ -252,7 +252,7 @@ class BufferValue(Value[mo.BufferType]):
 
     @property
     def type(self) -> BufferType:
-        """Returns the type of the :obj:`BufferValue` as a :obj:`BufferType`."""
+        """Returns the type of the :class:`BufferValue` as a :class:`~max.graph.BufferType`."""
         return BufferType.from_mlir(self._mlir_value.type)
 
     @property
@@ -276,7 +276,7 @@ class BufferValue(Value[mo.BufferType]):
         return self.type.rank
 
     def __repr__(self) -> str:
-        """Returns a string representation of the :obj:`BufferValue`."""
+        """Returns a string representation of the :class:`BufferValue`."""
         dtype = self.dtype
         shape = self.shape
         device = self.device
@@ -306,7 +306,7 @@ class BufferValue(Value[mo.BufferType]):
 
         Args:
             index: The index or slice to store at. Can be an integer, slice, or tuple of indices.
-            val: The :obj:`TensorValue` to store in the buffer.
+            val: The :class:`TensorValue` to store in the buffer.
         """
         if index is Ellipsis:
             return ops.buffer_store(self, val)
@@ -320,7 +320,7 @@ class BufferValue(Value[mo.BufferType]):
 
 
 class TensorValue(Value[mo.TensorType]):
-    """Represents a value semantic tensor within a :obj:`Graph`.
+    """Represents a value semantic tensor within a :class:`~max.graph.Graph`.
 
     It provides various methods and properties to manipulate and query tensor
     attributes such as :obj:`shape`, data type (:obj:`dtype`), device placement
@@ -359,11 +359,11 @@ class TensorValue(Value[mo.TensorType]):
     __iter__ = None
 
     def __init__(self, value: TensorValueLike) -> None:
-        """Initializes a :obj:`TensorValue` from a tensor-like value.
+        """Initializes a :class:`TensorValue` from a tensor-like value.
 
         Args:
-            value: The value to wrap. Can be an MLIR tensor value, another :obj:`TensorValue`,
-                a :obj:`Dim`, or a :obj:`Shape`.
+            value: The value to wrap. Can be an MLIR tensor value, another :class:`TensorValue`,
+                a :class:`~max.graph.Dim`, or a :class:`~max.graph.Shape`.
         """
         if isinstance(value, HasTensorValue):
             self._mlir_value = value.__tensorvalue__()._mlir_value
@@ -391,7 +391,7 @@ class TensorValue(Value[mo.TensorType]):
 
     @classmethod
     def from_mlir(cls, value: _Value[mo.TensorType]) -> TensorValue:
-        """Creates a :obj:`TensorValue` from an MLIR tensor value.
+        """Creates a :class:`TensorValue` from an MLIR tensor value.
 
         Args:
             value: The MLIR tensor value to wrap.
@@ -421,7 +421,7 @@ class TensorValue(Value[mo.TensorType]):
         return result
 
     def __repr__(self) -> str:
-        """Returns a string representation of the :obj:`TensorValue`."""
+        """Returns a string representation of the :class:`TensorValue`."""
         dtype = self.dtype
         shape = self.shape
         device = self.device
@@ -429,12 +429,12 @@ class TensorValue(Value[mo.TensorType]):
 
     @cached_property
     def type(self) -> TensorType:
-        """Returns the type of the :obj:`TensorValue` as a :obj:`TensorType`."""
+        """Returns the type of the :class:`TensorValue` as a :class:`~max.graph.TensorType`."""
         return TensorType.from_mlir(self._mlir_value.type)
 
     @property
     def shape(self) -> Shape:
-        """Returns the shape of the :obj:`TensorValue`.
+        """Returns the shape of the :class:`TensorValue`.
 
         The following example demonstrates how to access the shape of a tensor:
 
@@ -549,7 +549,7 @@ class TensorValue(Value[mo.TensorType]):
             shape: The new shape as an iterable of integers or symbolic dimensions.
 
         Returns:
-            A new :obj:`TensorValue` with the reshaped dimensions.
+            A new :class:`TensorValue` with the reshaped dimensions.
         """
         return ops.reshape(self, shape)
 
@@ -586,7 +586,7 @@ class TensorValue(Value[mo.TensorType]):
             end_dim: The ending dimension to flatten. Defaults to ``-1``.
 
         Returns:
-            A new :obj:`TensorValue` with the flattened dimensions.
+            A new :class:`TensorValue` with the flattened dimensions.
         """
         return ops.flatten(self, start_dim, end_dim)
 
@@ -619,7 +619,7 @@ class TensorValue(Value[mo.TensorType]):
             shape: An iterable of integers or symbolic dimensions.
 
         Returns:
-            A new :obj:`TensorValue` with the broadcasted shape.
+            A new :class:`TensorValue` with the broadcasted shape.
         """
         return ops.broadcast_to(self, shape)
 
@@ -652,7 +652,7 @@ class TensorValue(Value[mo.TensorType]):
             dtype: The target data type (for example, ``DType.int32``, ``DType.float64``).
 
         Returns:
-            A new :obj:`TensorValue` with the casted data type.
+            A new :class:`TensorValue` with the casted data type.
         """
         return ops.cast(self, dtype)
 
@@ -664,7 +664,7 @@ class TensorValue(Value[mo.TensorType]):
             message: (optional) A message for logging or debugging.
 
         Returns:
-            A new :obj:`TensorValue` with the updated shape.
+            A new :class:`TensorValue` with the updated shape.
         """
         return ops.rebind(self, shape, message)
 
@@ -675,7 +675,7 @@ class TensorValue(Value[mo.TensorType]):
             layout: The layout value.
 
         Returns:
-            A new :obj:`TensorValue` with the known layout.
+            A new :class:`TensorValue` with the known layout.
         """
         return ops.rebind(self, shape=self.shape, layout=layout)
 
@@ -686,7 +686,7 @@ class TensorValue(Value[mo.TensorType]):
             dims: A list of integers specifying the new order of dimensions.
 
         Returns:
-            A new :obj:`TensorValue` with permuted dimensions.
+            A new :class:`TensorValue` with permuted dimensions.
         """
         return ops.permute(self, dims)
 
@@ -718,7 +718,7 @@ class TensorValue(Value[mo.TensorType]):
             dim_2: The second dimension to swap.
 
         Returns:
-            A new :obj:`TensorValue` with swapped dimensions.
+            A new :class:`TensorValue` with swapped dimensions.
         """
         return ops.transpose(self, dim_1, dim_2)
 
@@ -759,10 +759,10 @@ class TensorValue(Value[mo.TensorType]):
                 print(f"New device: {gpu_tensor.device}")  # Output: gpu:0
 
         Args:
-            device: A :obj:`DeviceRef` object specifying the target device.
+            device: A :class:`~max.graph.DeviceRef` object specifying the target device.
 
         Returns:
-            A new :obj:`TensorValue` on the specified device.
+            A new :class:`TensorValue` on the specified device.
         """
         return ops.transfer_to(self, device)
 
@@ -793,7 +793,7 @@ class TensorValue(Value[mo.TensorType]):
                 indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
-            A :obj:`TensorValue` of dtype ``DType.int64`` with the same rank as the input,
+            A :class:`TensorValue` of dtype ``DType.int64`` with the same rank as the input,
             and the same shape except along ``axis``, which will have size 1.
         """
         return ops.argmax(self, axis=axis)
@@ -822,7 +822,7 @@ class TensorValue(Value[mo.TensorType]):
                 indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
-            A :obj:`TensorValue` with the same rank as the input and the same
+            A :class:`TensorValue` with the same rank as the input and the same
             shape except along ``axis``, which will have size 1.
         """
         return ops.max(self, axis=axis)
@@ -851,7 +851,7 @@ class TensorValue(Value[mo.TensorType]):
                 indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
-            A :obj:`TensorValue` with the same rank as the input and the same
+            A :class:`TensorValue` with the same rank as the input and the same
             shape except along ``axis``, which will have size 1.
         """
         return ops.mean(self, axis=axis)
@@ -881,7 +881,7 @@ class TensorValue(Value[mo.TensorType]):
                 indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
-            A :obj:`TensorValue` with the same rank as the input and the same
+            A :class:`TensorValue` with the same rank as the input and the same
             shape except along ``axis``, which will have size 1.
         """
         return ops.min(self, axis=axis)
@@ -913,7 +913,7 @@ class TensorValue(Value[mo.TensorType]):
                 indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
-            A :obj:`TensorValue` with the same rank as the input and the same
+            A :class:`TensorValue` with the same rank as the input and the same
             shape except along ``axis``, which will have size 1.
         """
         return ops.sqrt(self.var(axis=axis))
@@ -945,7 +945,7 @@ class TensorValue(Value[mo.TensorType]):
                 indexes from the last dimension (for example, ``-1`` is the last dimension).
 
         Returns:
-            A :obj:`TensorValue` with the same rank as the input and the same
+            A :class:`TensorValue` with the same rank as the input and the same
             shape except along ``axis``, which will have size 1.
         """
         if self.dtype is DType.bool:
@@ -956,11 +956,11 @@ class TensorValue(Value[mo.TensorType]):
     def T(self) -> TensorValue:
         """Returns the transposed tensor.
 
-        :obj:`T` is the shorthand notation for transposing.
-        For more information, see :obj:`transpose()`.
+        ``T`` is the shorthand notation for transposing.
+        For more information, see :meth:`transpose`.
 
         Returns:
-            A new :obj:`TensorValue` with swapped dimensions.
+            A new :class:`TensorValue` with swapped dimensions.
         """
         return self.transpose(-1, -2)
 

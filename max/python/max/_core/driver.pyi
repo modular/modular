@@ -29,6 +29,21 @@ import numpy
 from numpy.typing import NDArray
 
 class Device:
+    """
+    Represents a compute device available for tensor operations.
+
+    This is the base class for :class:`CPU` and :class:`Accelerator`.
+    Do not instantiate this class directly; use :class:`CPU` for host
+    devices or :class:`Accelerator` for GPU devices.
+
+    .. code-block:: python
+
+        from max import driver
+
+        cpu = driver.CPU()
+        gpu = driver.Accelerator()
+    """
+
     def can_access(self, other: Device) -> bool:
         """
         Checks if this device can directly access memory of another device.

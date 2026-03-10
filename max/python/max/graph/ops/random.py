@@ -89,7 +89,24 @@ def gaussian(
 ) -> TensorValue:
     """Samples from a Gaussian (normal) distribution with the given mean and standard deviation.
 
-    Output shape and dtype match the ``like`` tensor type.
+    Output shape and dtype match the ``like`` tensor type. A seed must be set
+    with :func:`set_seed` before calling this function.
+
+    Args:
+        like: A :class:`~max.graph.TensorType` whose shape, dtype, and device
+            determine the output tensor.
+        mean: The mean of the Gaussian distribution. Must be a scalar.
+            Defaults to 0.
+        std: The standard deviation of the Gaussian distribution. Must be a
+            scalar. Defaults to 1.
+
+    Returns:
+        A symbolic tensor with the same shape and dtype as ``like``, filled
+        with values sampled from the specified Gaussian distribution.
+
+    Raises:
+        RuntimeError: If no seed has been set with :func:`set_seed`.
+        ValueError: If ``mean`` or ``std`` are not scalar values.
     """
     assert_scalar(mean)
     assert_scalar(std)
@@ -124,8 +141,23 @@ def uniform(
 ) -> TensorValue:
     """Samples uniformly from the half-open interval ``[lower, upper)``.
 
-    That is, values satisfy ``lower ≤ x < upper``. Output shape and
-    dtype match the ``like`` tensor type.
+    Values satisfy ``lower ≤ x < upper``. Output shape and dtype match
+    the ``like`` tensor type. A seed must be set with :func:`set_seed`
+    before calling this function.
+
+    Args:
+        like: A :class:`~max.graph.TensorType` whose shape, dtype, and device
+            determine the output tensor.
+        range: A tuple ``(lower, upper)`` specifying the half-open interval to
+            sample from. Both bounds must be scalars. Defaults to ``(0, 1)``.
+
+    Returns:
+        A symbolic tensor with the same shape and dtype as ``like``, filled
+        with values sampled uniformly from ``[lower, upper)``.
+
+    Raises:
+        RuntimeError: If no seed has been set with :func:`set_seed`.
+        ValueError: If ``lower`` or ``upper`` are not scalar values.
     """
     lower, upper = range
 

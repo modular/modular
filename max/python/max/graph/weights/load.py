@@ -25,7 +25,7 @@ def load_weights(paths: list[Path]) -> Weights:
     """Loads neural network weights from checkpoint files.
 
     Automatically detects checkpoint formats based on file extensions and returns
-    the appropriate :class:`Weights` implementation. Supported formats:
+    the appropriate :class:`~max.graph.weights.Weights` implementation. Supported formats:
 
     - ``.safetensors`` (Safetensors)
     - ``.bin``, ``.pt``, ``.pth`` (PyTorch)

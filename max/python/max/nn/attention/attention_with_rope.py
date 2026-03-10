@@ -911,7 +911,23 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
 
 class GPTQAttentionWithRope(AttentionWithRope):
-    """Implementation of the GPTQ attention layer."""
+    """Implementation of the GPTQ attention layer.
+
+    Args:
+        quantization_config: The GPTQ quantization configuration, including
+            ``desc_act`` for activation-order permutation support.
+        rope: The rope layer to borrow the ``freqs_cis`` value from.
+        num_attention_heads: The number of attention heads.
+        num_key_value_heads: The number of key/value heads.
+        hidden_size: The dimension of the hidden states.
+        kv_params: The KV cache parameters, including number of KV heads,
+            head dim, and dtype.
+        devices: The device or devices on which to place the weights and run
+            the computation. If multiple are provided, the first device is used.
+        dtype: The DType for the output projection weights.
+        scale: Optional attention scale; defaults to ``sqrt(1/head_dim)``.
+        linear_cls: The linear class to use for the output projection.
+    """
 
     def __init__(
         self,
