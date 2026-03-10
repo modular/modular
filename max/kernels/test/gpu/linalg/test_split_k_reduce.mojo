@@ -61,7 +61,9 @@ fn _create_host_buffer[
 fn _get_test_name[
     dtype: DType, shape_a: DimList, shape_b: DimList
 ](shape_a_dim: IndexList[2], shape_b_dim: IndexList[2],) -> String:
-    return t"test-case({dtype}) : a -> {shape_a_dim} and b ->{shape_b_dim}"
+    return String(
+        t"test-case({dtype}) : a -> {shape_a_dim} and b ->{shape_b_dim}"
+    )
 
 
 fn _split_k_reduce_verify[

@@ -81,7 +81,7 @@ fn test_argsort[
         assert_equal(
             indices_host_ptr[i],
             expected_indices_ptr[i],
-            msg=(
+            msg=String(
                 t"indices[{i}] = {indices_host_ptr[i]} expected_indices[{i}] ="
                 t" {expected_indices_ptr[i]} N = {N} ascending = {ascending} at"
                 t" position {i}"

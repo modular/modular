@@ -38,7 +38,7 @@ fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
         A string representation of the N-dimensional index, e.g., "[2, 3, 4]".
     """
     if len(shape) == 0:
-        return t"i={flat_idx}"
+        return String(t"i={flat_idx}")
 
     # Compute N-dimensional indices from flat index (row-major order)
     var indices = List[Int](capacity=len(shape))
@@ -72,7 +72,7 @@ fn _format_index(i: Int, shape: List[Int]) -> String:
     if len(shape) > 0:
         return _flat_to_nd_index(i, shape)
     else:
-        return t"i={i}"
+        return String(t"i={i}")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -133,7 +133,7 @@ fn assert_almost_equal[
         std.testing.assert_almost_equal(
             x[i],
             y[i],
-            msg=t"{msg} at {_format_index(i, shape)}",
+            msg=String(t"{msg} at {_format_index(i, shape)}"),
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -190,7 +190,7 @@ fn assert_equal[
         std.testing.assert_equal(
             x[i],
             y[i],
-            msg=t"{msg} at {_format_index(i, shape)}",
+            msg=String(t"{msg} at {_format_index(i, shape)}"),
             location=location.or_else(call_location()),
         )
 

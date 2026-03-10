@@ -211,7 +211,7 @@ fn test[
         assert_almost_equal(
             actual,
             expect,
-            msg=(
+            msg=String(
                 t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
                 t" {actual}"
             ),

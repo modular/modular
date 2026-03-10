@@ -353,12 +353,10 @@ struct String(
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
-    @implicit
     fn __init__(out self, tstring: TString):
         """Construct a string from a TString (template string).
 
-        This constructor enables implicit conversion from TString to String,
-        allowing t-strings to be used seamlessly where strings are expected.
+        This constructor enables explicit conversion from TString to String.
 
         Args:
             tstring: The TString to convert to a String.
@@ -2214,9 +2212,9 @@ fn ascii(value: StringSlice) -> String:
         use_dquote = use_dquote or (char == ord_squote)
 
     if use_dquote:
-        return t'"{result}"'
+        return String(t'"{result}"')
     else:
-        return t"'{result}'"
+        return String(t"'{result}'")
 
 
 # ===----------------------------------------------------------------------=== #

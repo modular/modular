@@ -209,11 +209,13 @@ def test_identical_nonzero(ctx: DeviceContext) raises:
         ctx, out_buf, ref_buf, N, 1e-5, 1.6e-2
     )
 
-    assert_equal(m.abs_diff_sum, 0.0, msg=t"abs_diff_sum should be 0")
-    assert_equal(m.abs_ref_sum, Float32(N), msg=t"abs_ref_sum should be N")
-    assert_true(m.max_violation <= 0, t"max_violation should be <= 0")
-    assert_equal(m.out_nz, 1.0, msg=t"out_nz should be 1")
-    assert_equal(m.ref_nz, 1.0, msg=t"ref_nz should be 1")
+    assert_equal(m.abs_diff_sum, 0.0, msg="abs_diff_sum should be 0")
+    assert_equal(
+        m.abs_ref_sum, Float32(N), msg=String(t"abs_ref_sum should be {N}")
+    )
+    assert_true(m.max_violation <= 0, "max_violation should be <= 0")
+    assert_equal(m.out_nz, 1.0, msg="out_nz should be 1")
+    assert_equal(m.ref_nz, 1.0, msg="ref_nz should be 1")
     print("PASS: test_identical_nonzero")
 
 
@@ -232,10 +234,10 @@ def test_both_zeros(ctx: DeviceContext) raises:
         ctx, out_buf, ref_buf, N, 1e-5, 1.6e-2
     )
 
-    assert_equal(m.abs_diff_sum, 0.0, msg=t"abs_diff_sum should be 0")
-    assert_equal(m.abs_ref_sum, 0.0, msg=t"abs_ref_sum should be 0")
-    assert_equal(m.out_nz, 0.0, msg=t"out_nz should be 0")
-    assert_equal(m.ref_nz, 0.0, msg=t"ref_nz should be 0")
+    assert_equal(m.abs_diff_sum, 0.0, msg="abs_diff_sum should be 0")
+    assert_equal(m.abs_ref_sum, 0.0, msg="abs_ref_sum should be 0")
+    assert_equal(m.out_nz, 0.0, msg="out_nz should be 0")
+    assert_equal(m.ref_nz, 0.0, msg="ref_nz should be 0")
     print("PASS: test_both_zeros")
 
 
@@ -260,13 +262,15 @@ def test_known_constant_diff(ctx: DeviceContext) raises:
     assert_equal(
         m.abs_diff_sum,
         expected_abs_diff,
-        msg=t"abs_diff_sum should be N*0.5",
+        msg=String(t"abs_diff_sum should be N*0.5"),
     )
-    assert_equal(m.abs_ref_sum, Float32(N), msg=t"abs_ref_sum should be N")
+    assert_equal(
+        m.abs_ref_sum, Float32(N), msg=String(t"abs_ref_sum should be {N}")
+    )
     # violation = 0.5 - (1e-5 + 1.6e-2 * 1.0) > 0
-    assert_true(m.max_violation > 0, t"max_violation should be > 0")
-    assert_equal(m.out_nz, 1.0, msg=t"out_nz should be 1")
-    assert_equal(m.ref_nz, 1.0, msg=t"ref_nz should be 1")
+    assert_true(m.max_violation > 0, "max_violation should be > 0")
+    assert_equal(m.out_nz, 1.0, msg="out_nz should be 1")
+    assert_equal(m.ref_nz, 1.0, msg="ref_nz should be 1")
     print("PASS: test_known_constant_diff")
 
 
@@ -287,7 +291,7 @@ def test_within_tolerance(ctx: DeviceContext) raises:
     )
 
     # violation = |1.0-1.0| - (0.1 + 0.1*1.0) = -0.2
-    assert_true(m.max_violation <= 0, t"max_violation should be <= 0")
+    assert_true(m.max_violation <= 0, "max_violation should be <= 0")
     print("PASS: test_within_tolerance")
 
 
@@ -306,10 +310,12 @@ def test_output_zero_ref_nonzero(ctx: DeviceContext) raises:
         ctx, out_buf, ref_buf, N, 1e-5, 1.6e-2
     )
 
-    assert_equal(m.out_nz, 0.0, msg=t"out_nz should be 0")
-    assert_equal(m.ref_nz, 1.0, msg=t"ref_nz should be 1")
+    assert_equal(m.out_nz, 0.0, msg="out_nz should be 0")
+    assert_equal(m.ref_nz, 1.0, msg="ref_nz should be 1")
     # abs_diff = N * 1.0
-    assert_equal(m.abs_diff_sum, Float32(N), msg=t"abs_diff_sum should be N")
+    assert_equal(
+        m.abs_diff_sum, Float32(N), msg=String(t"abs_diff_sum should be {N}")
+    )
     print("PASS: test_output_zero_ref_nonzero")
 
 
@@ -335,20 +341,20 @@ def test_large_buffer_multi_block(ctx: DeviceContext) raises:
     assert_equal(
         m.abs_diff_sum,
         expected_abs_diff,
-        msg=t"abs_diff_sum should be N for large buffer",
+        msg=String(t"abs_diff_sum should be N for large buffer"),
     )
     assert_equal(
         m.abs_ref_sum,
         Float32(N),
-        msg=t"abs_ref_sum should be N for large buffer",
+        msg=String(t"abs_ref_sum should be N for large buffer"),
     )
     # violation = 1.0 - (1e-5 + 1.6e-2 * 1.0) ≈ 0.984 > 0
     assert_true(
         m.max_violation > 0,
-        t"max_violation should be > 0 for large buffer",
+        String(t"max_violation should be > 0 for large buffer"),
     )
-    assert_equal(m.out_nz, 1.0, msg=t"out_nz should be 1")
-    assert_equal(m.ref_nz, 1.0, msg=t"ref_nz should be 1")
+    assert_equal(m.out_nz, 1.0, msg="out_nz should be 1")
+    assert_equal(m.ref_nz, 1.0, msg="ref_nz should be 1")
     print("PASS: test_large_buffer_multi_block")
 
 

@@ -545,7 +545,6 @@ var template = t"Hello, {name}!" # template creation
 
 print(template)          # Hello, Nate! (no allocation)
 var s = String(template) # explicitly construct a string
-var r: String = template # implicitly construct a string
 ```
 
 `TStrings` can add arbitrary expressions within the replacement fields:

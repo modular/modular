@@ -733,7 +733,7 @@ struct OptionalReg[T: __TypeOfAllTypes](
         Returns:
             A string representation of the type, e.g. `OptionalReg[Int]`.
         """
-        return t"OptionalReg[{get_type_name[Self.T]()}]"
+        return String(t"OptionalReg[{get_type_name[Self.T]()}]")
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

@@ -688,7 +688,7 @@ struct Bench(Writable):
             # In case of running this binary with mpirun, all the outputs
             # will be written to -o output_file unless a distinct suffix is
             # added to each output.
-            self.append_output_suffix(suffix=t"_{pe_rank}")
+            self.append_output_suffix(suffix=String(t"_{pe_rank}"))
         return pe_rank
 
     fn append_output_suffix(mut self, suffix: String):

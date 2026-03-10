@@ -113,7 +113,7 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
         elif self is Self.MATMUL_NAIVE:
             return "MATMUL_NAIVE"
         else:
-            return t"UNKNOWN_GEMV_ALGORITHM({self._value})"
+            return String(t"UNKNOWN_GEMV_ALGORITHM({self._value})")
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(String(self))

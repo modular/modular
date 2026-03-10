@@ -155,7 +155,7 @@ fn bench_memcpy(
 
     b.bench_function[bench_func](
         BenchId(
-            t"memcpy_{config}",
+            String(t"memcpy_{config}"),
             input_id="length=" + human_readable_size(length_in_bytes),
         ),
         [ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes)],

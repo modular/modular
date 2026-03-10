@@ -220,7 +220,7 @@ struct cudnnBackendKnobType_t(Equatable, TrivialRegisterPassable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendKnobType_t({self})"
+        return String(t"cudnnBackendKnobType_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -399,7 +399,7 @@ struct cudnnPointwiseMode_t(Equatable, TrivialRegisterPassable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnPointwiseMode_t({self})"
+        return String(t"cudnnPointwiseMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -565,7 +565,7 @@ struct cudnnBackendDescriptorType_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendDescriptorType_t({self})"
+        return String(t"cudnnBackendDescriptorType_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -637,7 +637,7 @@ struct cudnnBackendBehaviorNote_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendBehaviorNote_t({self})"
+        return String(t"cudnnBackendBehaviorNote_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -683,7 +683,7 @@ struct cudnnBackendLayoutType_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendLayoutType_t({self})"
+        return String(t"cudnnBackendLayoutType_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -720,7 +720,7 @@ struct cudnnBackendNormFwdPhase_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendNormFwdPhase_t({self})"
+        return String(t"cudnnBackendNormFwdPhase_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -766,7 +766,7 @@ struct cudnnBackendHeurMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendHeurMode_t({self})"
+        return String(t"cudnnBackendHeurMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -834,7 +834,7 @@ struct cudnnBackendNumericalNote_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendNumericalNote_t({self})"
+        return String(t"cudnnBackendNumericalNote_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -965,7 +965,7 @@ struct cudnnBackendAttributeType_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendAttributeType_t({self})"
+        return String(t"cudnnBackendAttributeType_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1005,7 +1005,7 @@ struct cudnnRngDistribution_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnRngDistribution_t({self})"
+        return String(t"cudnnRngDistribution_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1051,7 +1051,7 @@ struct cudnnBackendTensorReordering_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendTensorReordering_t({self})"
+        return String(t"cudnnBackendTensorReordering_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1818,7 +1818,7 @@ struct cudnnBackendAttributeName_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendAttributeName_t({self})"
+        return String(t"cudnnBackendAttributeName_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1864,7 +1864,7 @@ struct cudnnBackendNormMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBackendNormMode_t({self})"
+        return String(t"cudnnBackendNormMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1901,7 +1901,7 @@ struct cudnnSignalMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnSignalMode_t({self})"
+        return String(t"cudnnSignalMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1941,7 +1941,7 @@ struct cudnnBnFinalizeStatsMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnBnFinalizeStatsMode_t({self})"
+        return String(t"cudnnBnFinalizeStatsMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1975,7 +1975,7 @@ struct cudnnGenStatsMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnGenStatsMode_t({self})"
+        return String(t"cudnnGenStatsMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2048,7 +2048,7 @@ struct cudnnResampleMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnResampleMode_t({self})"
+        return String(t"cudnnResampleMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -2119,7 +2119,7 @@ struct cudnnPaddingMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return t"cudnnPaddingMode_t({self})"
+        return String(t"cudnnPaddingMode_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)

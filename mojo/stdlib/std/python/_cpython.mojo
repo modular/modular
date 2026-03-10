@@ -1502,7 +1502,7 @@ struct CPython(Defaultable, Movable):
             if file_dir == "" and not python_path:
                 file_dir = ":"
             if python_path:
-                _ = setenv("PYTHONPATH", t"{file_dir}:{python_path}")
+                _ = setenv("PYTHONPATH", String(t"{file_dir}:{python_path}"))
             else:
                 _ = setenv("PYTHONPATH", file_dir)
 

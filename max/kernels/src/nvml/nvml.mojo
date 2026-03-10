@@ -99,7 +99,7 @@ struct DriverVersion(ImplicitlyCopyable, Writable):
     @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         var patch = self._value[2] if len(self._value) > 2 else ""
-        return t"{self._value[0]}.{self._value[1]}.{patch}"
+        return String(t"{self._value[0]}.{self._value[1]}.{patch}")
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the driver version string.

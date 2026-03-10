@@ -558,7 +558,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             This type's name.
         """
-        return t"SIMD[{repr(Self.dtype)}, {repr(Self.size)}]"
+        return String(t"SIMD[{repr(Self.dtype)}, {repr(Self.size)}]")
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

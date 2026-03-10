@@ -97,7 +97,7 @@ fn _to_sass[
             output_file=elf_file,
         )
         return std.subprocess.run(
-            t"{nvdisasm_path} -ndf -c {nvdisasm_opts} {elf_file}"
+            String(t"{nvdisasm_path} -ndf -c {nvdisasm_opts} {elf_file}")
         )
     return ""
 

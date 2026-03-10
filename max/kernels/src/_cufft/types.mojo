@@ -160,7 +160,7 @@ struct Type(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
-        return t"cufftType_t({self})"
+        return String(t"cufftType_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -193,7 +193,7 @@ struct Compatibility(
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
-        return t"cufftCompatibility_t({self})"
+        return String(t"cufftCompatibility_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -229,7 +229,7 @@ struct Property(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
-        return t"cufftProperty_t({self})"
+        return String(t"cufftProperty_t({self})")
 
     fn __int__(self) -> Int:
         return Int(self._value)
