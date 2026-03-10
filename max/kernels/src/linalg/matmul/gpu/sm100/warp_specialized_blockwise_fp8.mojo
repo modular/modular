@@ -80,6 +80,10 @@ from .config import MatmulConfig
 from .matmul import WarpRole, consumer_main_loop, stsm_helper, accum_arrive
 from .tile_scheduler import TileScheduler, WorkInfo
 from .pipeline import ProducerConsumerPipeline
+from structured_kernels.tile_types import (
+    SMemTileArray2D,
+    swizzle_mode_to_bytes,
+)
 
 
 @always_inline
@@ -904,6 +908,22 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_smem_size,
     )
 
+    # TileTensor views of the same SMEM for consumer_main_loop (MMA path).
+    var a_smem_tt = SMemTileArray2D[
+        a_type,
+        BM,
+        BK,
+        num_pipeline_stages,
+        swizzle_mode_to_bytes[config.a_swizzle],
+    ](a_smem_base)
+    var b_smem_tt = SMemTileArray2D[
+        b_type,
+        BN,
+        BK,
+        num_pipeline_stages,
+        swizzle_mode_to_bytes[config.b_swizzle],
+    ](b_smem_base)
+
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(
@@ -1184,8 +1204,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         cluster_shape=config.cluster_shape,
                     ](
                         tmem_offset,
-                        a_smem,
-                        b_smem,
+                        a_smem_tt,
+                        b_smem_tt,
                         load_mma_pipeline,
                         mma_op,
                         elect_one_warp,

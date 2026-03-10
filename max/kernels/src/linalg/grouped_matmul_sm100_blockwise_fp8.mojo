@@ -72,6 +72,10 @@ from .matmul.gpu.sm100.blockwise_fp8 import (
 )
 from .matmul.gpu.sm100.matmul import WarpRole, consumer_main_loop, stsm_helper
 from .matmul.gpu.sm100.pipeline import ProducerConsumerPipeline
+from structured_kernels.tile_types import (
+    SMemTileArray2D,
+    swizzle_mode_to_bytes,
+)
 from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
 from .utils import elementwise_epilogue_type
 
@@ -1587,6 +1591,21 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         Scalar[a_scales_type]
     ]()
 
+    # TileTensor views of the same SMEM for consumer_main_loop (MMA path).
+    var a_smem_tt = SMemTileArray2D[
+        a_type,
+        BM,
+        BK,
+        Int(num_pipeline_stages),
+        swizzle_mode_to_bytes[config.a_swizzle],
+    ](a_smem_base)
+    var b_smem_tt = SMemTileArray2D[
+        b_type,
+        BN,
+        BK,
+        Int(num_pipeline_stages),
+        swizzle_mode_to_bytes[config.b_swizzle],
+    ](b_smem_base)
     var load_mma_mbar_ptr = (a_scales_smem_base + a_scales_smem_size).bitcast[
         SharedMemBarrier
     ]()
@@ -1826,22 +1845,6 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         mma_output_mma_stage * UInt32(stage_stride_cols)
                     )
 
-                    # Construct LayoutTensorIter for cross-module
-                    # consumer_main_loop call (still uses LayoutTensorIter).
-                    var a_smem_iter = LayoutTensorIter[
-                        a_type,
-                        a_smem_layout,
-                        MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
-                        alignment=128,
-                    ](a_smem_base, a_smem_size)
-                    var b_smem_iter = LayoutTensorIter[
-                        b_type,
-                        b_smem_layout,
-                        MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
-                        alignment=128,
-                    ](b_smem_base, b_smem_size)
                     consumer_main_loop[
                         block_tile_shape=config.block_tile_shape,
                         mma_shape=config.mma_shape,
@@ -1849,8 +1852,8 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         cluster_shape=config.cluster_shape,
                     ](
                         tmem_offset,
-                        a_smem_iter,
-                        b_smem_iter,
+                        a_smem_tt,
+                        b_smem_tt,
                         load_mma_pipeline,
                         mma_op,
                         elect_one_warp,
