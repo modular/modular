@@ -18,7 +18,6 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue, ops
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
@@ -35,8 +34,6 @@ from .model import Flux2TransformerModel
 
 if TYPE_CHECKING:
     from ..autoencoders.vae import DiagonalGaussianDistribution
-
-TensorLike = Buffer | Tensor | TensorValue
 
 
 @dataclass(kw_only=True)
@@ -121,9 +118,8 @@ class Flux2PipelineOutput:
 
     Attributes:
         images:
-            Either a list of decoded PIL images, a NumPy array, or a MAX Tensor.
-            When a Tensor is returned, it may represent decoded image data or
-            intermediate latents depending on the selected output mode.
+            Either a NumPy array or a device-backed MAX value, depending on
+            the selected output mode.
     """
 
     images: np.ndarray | Buffer
@@ -404,7 +400,7 @@ class Flux2Pipeline(DiffusionPipeline):
         encoder_output: "DiagonalGaussianDistribution",
         generator: object | None = None,
         sample_mode: str = "mode",
-    ) -> TensorLike:
+    ) -> Buffer:
         if hasattr(encoder_output, "mode") and sample_mode == "mode":
             return encoder_output.mode()
         elif hasattr(encoder_output, "sample") and sample_mode == "sample":
@@ -523,17 +519,17 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced
     def prepare_image_latents(
         self,
-        images: list[TensorLike],
+        images: list[Buffer],
         batch_size: int,
         device: Device,
         dtype: DType,
         generator: object | None = None,
         sample_mode: str = "mode",
-    ) -> tuple[TensorLike, TensorLike]:
+    ) -> tuple[Buffer, Buffer]:
         bn_mean = self._bn_mean
         bn_var = self._bn_var
 
-        packed_latents = []
+        packed_latents: list[Buffer] = []
         latent_shapes = []
 
         for image in images:
@@ -575,14 +571,10 @@ class Flux2Pipeline(DiffusionPipeline):
         else:
             image_latents = packed_latents[0]
             for packed in packed_latents[1:]:
-                image_latents = self._concat_packed_latents(
-                    image_latents, packed
-                )
+                image_latents = self._concat_packed_latents(image_latents, packed)
 
         if batch_size > 1:
-            image_latents, image_latent_ids = self._repeat_image_conditioning(
-                batch_size
-            )(
+            image_latents, image_latent_ids = self._repeat_image_conditioning(batch_size)(
                 image_latents,
                 image_latent_ids,
             )
@@ -595,7 +587,7 @@ class Flux2Pipeline(DiffusionPipeline):
         self,
         tokens: Buffer,
         num_images_per_prompt: int = 1,
-    ) -> tuple[TensorLike, Buffer]:
+    ) -> tuple[Buffer, Buffer]:
         """Create prompt embeddings and text position IDs for the transformer.
 
         The text encoder returns fused prompt embeddings directly, with hidden
@@ -642,7 +634,7 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced
     def decode_latents(
         self,
-        latents: TensorLike,
+        latents: Buffer,
         h_carrier: Buffer,
         w_carrier: Buffer,
     ) -> npt.NDArray[np.uint8]:
@@ -697,7 +689,7 @@ class Flux2Pipeline(DiffusionPipeline):
         return Buffer.from_numpy(np.ascontiguousarray(text_ids)).to(device)
 
     @traced
-    def preprocess_latents(self, latents: Buffer) -> TensorLike:
+    def preprocess_latents(self, latents: Buffer) -> Buffer:
         return self._patchify_and_pack(latents)
 
     def _patchify_and_pack(self, latents: TensorValue) -> TensorValue:
