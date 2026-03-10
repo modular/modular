@@ -1676,15 +1676,16 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             while work_info.is_valid():
                 # CLC throttle prevents each CTA from going a few waves ahead.
-                if is_first_cta_in_cluster and required_clc_query:
-                    load_clc_pipeline.wait_consumer()
-                    var load_clc_producer_state = (
-                        load_clc_pipeline.producer_stage()
-                    )
-                    _ = load_clc_pipeline.producer_mbar(
-                        load_clc_producer_state
-                    )[0].arrive()
-                    load_clc_pipeline.producer_step()
+                comptime if config.num_clc_pipeline_stages > 0:
+                    if is_first_cta_in_cluster and required_clc_query:
+                        load_clc_pipeline.wait_consumer()
+                        var load_clc_producer_state = (
+                            load_clc_pipeline.producer_stage()
+                        )
+                        _ = load_clc_pipeline.producer_mbar(
+                            load_clc_producer_state
+                        )[0].arrive()
+                        load_clc_pipeline.producer_step()
 
                 # DO TMA LOAD
                 for i in range(num_iters // UInt32(config.k_group_size)):

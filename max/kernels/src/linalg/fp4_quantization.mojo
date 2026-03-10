@@ -71,6 +71,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.sys import get_defined_bool
 from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     heuristic_and_outliers_dispatch,
+    small_bn_dispatch,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
@@ -1317,6 +1318,22 @@ fn block_scaled_matmul[
     var c_tt = TileTensor(c_device)
     var a_tt = TileTensor(a_device)
     var b_tt = TileTensor(b_device)
+
+    comptime if get_defined_bool[
+        "ENABLE_EXPERIMENTAL_SM100_SMALL_N_BLOCK_SCALED_MATMUL", False
+    ]():
+        var status = small_bn_dispatch[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+        ](c_tt, a_tt, b_tt, a_scales, b_scales, tensor_sf, ctx)
+
+        if status == DISPATCH_HIT:
+            logger.info("Executing SM100 small-BN Block Scaled matmul kernel")
+            return
+        else:
+            raise Error("Small-BN dispatch failed")
 
     comptime if get_defined_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
