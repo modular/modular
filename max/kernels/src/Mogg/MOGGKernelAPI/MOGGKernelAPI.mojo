@@ -1772,21 +1772,6 @@ struct BroadcastShape:
         return IndexList[1](max(lhs_dim, rhs_dim))
 
 
-fn tuple_to_dimlist[size: Int](tuple: StaticTuple[Dim, size]) -> DimList:
-    comptime if size == 1:
-        return DimList(tuple[0])
-    elif size == 2:
-        return DimList(tuple[0], tuple[1])
-    elif size == 3:
-        return DimList(tuple[0], tuple[1], tuple[2])
-    elif size == 4:
-        return DimList(tuple[0], tuple[1], tuple[2], tuple[3])
-    elif size == 5:
-        return DimList(tuple[0], tuple[1], tuple[2], tuple[3], tuple[4])
-
-    return DimList.create_unknown[size]()
-
-
 @compiler.register("mo.static.broadcast_to")
 @compiler.view_kernel
 struct StaticBroadcastTo:
@@ -1810,11 +1795,13 @@ struct StaticBroadcastTo:
         return new_strides
 
     @staticmethod
-    fn get_view_strides[
+    fn get_view_strides_list[
         out_rank: Int,
         in_rank: Int,
-    ](input_shape: DimList, input_strides: DimList) -> DimList:
-        var new_strides = StaticTuple[Dim, out_rank]()
+        input_shape: DimList,
+        input_strides: DimList,
+    ]() -> IndexList[out_rank]:
+        var new_strides = IndexList[out_rank]()
         comptime delta = out_rank - in_rank
 
         comptime for i in range(out_rank):
@@ -1822,13 +1809,25 @@ struct StaticBroadcastTo:
                 new_strides[i] = 0
             else:
                 if input_shape.at[i - delta]().is_dynamic():
-                    new_strides[i] = Dim()
+                    new_strides[i] = -1
                 elif input_shape.get[i - delta]() <= 1:
                     new_strides[i] = 0
                 else:
-                    new_strides[i] = input_strides.at[i - delta]()
+                    new_strides[i] = input_strides.get[i - delta]()
+        return new_strides
 
-        return tuple_to_dimlist(new_strides)
+    @staticmethod
+    fn get_view_strides[
+        out_rank: Int,
+        in_rank: Int,
+        input_shape: DimList,
+        input_strides: DimList,
+    ]() -> DimList:
+        return DimList.from_index_list[
+            Self.get_view_strides_list[
+                out_rank, in_rank, input_shape, input_strides
+            ]()
+        ]()
 
     @staticmethod
     fn update_input_view[
@@ -1844,9 +1843,9 @@ struct StaticBroadcastTo:
             static_spec=x.static_spec.with_layout[
                 out_rank,
                 output_static_shape,
-                Self.get_view_strides[out_rank, x.rank](
-                    x._static_shape, x._static_strides
-                ),
+                Self.get_view_strides[
+                    out_rank, x.rank, x._static_shape, x._static_strides
+                ](),
             ]()
         ],
     ):
@@ -1883,21 +1882,8 @@ struct StaticBroadcastTo:
 @compiler.view_kernel
 struct StaticReshape:
     @staticmethod
-    fn get_view_strides[
-        out_rank: Int,
-    ](out_shape: DimList) -> DimList:
-        # reshape is a bit special as we assume the input is always contiguous.
-        # So it will be the same with the output.
-        var new_strides = StaticTuple[Dim, out_rank]()
-
-        var stride = Dim(1)
-
-        comptime for i in reversed(range(out_rank)):
-            # Start from the back so we can accumulate the strides.
-            new_strides[i] = stride
-            stride *= out_shape.at[i]()
-
-        return tuple_to_dimlist(new_strides)
+    fn get_view_strides[out_shape: DimList]() -> DimList:
+        return DimList.get_row_major_strides[out_shape]()
 
     @staticmethod
     fn update_input_view[
@@ -1912,7 +1898,7 @@ struct StaticReshape:
             static_spec=input.static_spec.with_layout[
                 output_rank,
                 output_static_shape,
-                Self.get_view_strides[output_rank](output_static_shape),
+                Self.get_view_strides[output_static_shape](),
             ]()
         ],
     ):
@@ -1977,6 +1963,13 @@ struct Reshape:
         )
 
 
+comptime _transpose_tabulate[
+    permutations: DimList, input_strides: DimList, idx: Int
+]: Dim = Dim() if permutations.at[idx]().is_dynamic() else input_strides.at[
+    permutations.get[idx]()
+]()
+
+
 @compiler.register("mo.transpose")
 @compiler.view_kernel
 struct Transpose:
@@ -1999,19 +1992,13 @@ struct Transpose:
 
     @staticmethod
     fn get_view_strides[
-        permutations: DimList, rank: Int
-    ](input_strides: DimList) -> DimList:
-        var new_strides = StaticTuple[Dim, rank]()
-
-        comptime for i in range(rank):
-            comptime perm = permutations.at[i]()
-
-            comptime if perm.is_dynamic():
-                new_strides[i] = Dim()
-            else:
-                new_strides[i] = input_strides.at[Int(perm)]()
-
-        return tuple_to_dimlist(new_strides)
+        permutations: DimList, rank: Int, input_strides: DimList
+    ]() -> DimList:
+        return DimList(
+            Variadic.tabulate[
+                rank, _transpose_tabulate[permutations, input_strides, _]
+            ]
+        )
 
     @staticmethod
     fn update_input_view[
@@ -2027,9 +2014,9 @@ struct Transpose:
             static_spec=input.static_spec.with_layout[
                 rank,
                 output_static_shape,
-                Self.get_view_strides[static_permutations, rank](
-                    input._static_strides
-                ),
+                Self.get_view_strides[
+                    static_permutations, rank, input._static_strides
+                ](),
             ]()
         ],
     ):
@@ -2092,19 +2079,21 @@ struct Transpose:
         return Self.shape_impl(input, permutations)
 
 
+comptime _slice_stride_at[
+    input_strides: DimList, steps: DimList, idx: Int
+]: Dim = input_strides.at[idx]() * steps.at[idx]()
+
+
 @compiler.register("mo.slice")
 @compiler.view_kernel
 struct Slice:
     @staticmethod
     fn get_view_strides[
-        rank: Int
-    ](input_strides: DimList, steps: DimList) -> DimList:
-        var new_strides = StaticTuple[Dim, rank]()
-
-        comptime for i in range(rank):
-            new_strides[i] = input_strides.at[i]() * steps.at[i]()
-
-        return tuple_to_dimlist(new_strides)
+        rank: Int, input_strides: DimList, steps: DimList
+    ]() -> DimList:
+        return DimList(
+            Variadic.tabulate[rank, _slice_stride_at[input_strides, steps, _]]
+        )
 
     @staticmethod
     fn update_input_view[
@@ -2122,9 +2111,9 @@ struct Slice:
             static_spec=input.static_spec.with_layout_and_alignment[
                 rank,
                 output_static_shape,
-                Self.get_view_strides[rank](
-                    input._static_strides, static_steps
-                ),
+                Self.get_view_strides[
+                    rank, input._static_strides, static_steps
+                ](),
             ](
                 1,
             )
@@ -2240,6 +2229,13 @@ struct MutableStoreSlice:
     # of the 'slice' operand of the MO op directly in the kernel.
 
 
+comptime _slice_dim_stride_at[
+    input_strides: DimList, axis: Int, step: Dim, idx: Int
+]: Dim = input_strides.at[idx]() * step if idx == axis else input_strides.at[
+    idx
+]()
+
+
 @compiler.register("mo.slice_dim")
 @compiler.view_kernel
 struct SliceDim:
@@ -2247,27 +2243,21 @@ struct SliceDim:
     fn get_view_strides[
         rank: Int,
         axis: Int,
-    ](input_strides: DimList, step: Dim) -> DimList:
-        var new_strides = StaticTuple[Dim, rank]()
-
-        comptime for i in range(rank):
-            if i == axis:
-                new_strides[i] = input_strides.at[i]() * step
-            else:
-                new_strides[i] = input_strides.at[i]()
-
-        return tuple_to_dimlist(new_strides)
+        input_strides: DimList,
+        step: Dim,
+    ]() -> DimList:
+        return DimList(
+            Variadic.tabulate[
+                rank, _slice_dim_stride_at[input_strides, axis, step, _]
+            ]
+        )
 
     @staticmethod
     fn get_view_alignment[
-        rank: Int, dtype: DType
-    ](
+        rank: Int,
+        dtype: DType,
         input_strides: DimList,
-        axis: Int,
-        input_alignment: Int,
-        start: Dim,
-        step: Dim,
-    ) -> Int:
+    ](axis: Int, input_alignment: Int, start: Dim, step: Dim,) -> Int:
         # Ignore the case where the step is unknown / negative.
         if not step.has_value() or step.get() < 0:
             return 1
@@ -2308,13 +2298,11 @@ struct SliceDim:
             static_spec=input.static_spec.with_layout_and_alignment[
                 rank,
                 output_static_shape,
-                Self.get_view_strides[rank, axis](
-                    input._static_strides,
-                    static_step.at[0](),
-                ),
+                Self.get_view_strides[
+                    rank, axis, input._static_strides, static_step.at[0]()
+                ](),
             ](
-                Self.get_view_alignment[rank, dtype](
-                    input._static_strides,
+                Self.get_view_alignment[rank, dtype, input._static_strides](
                     axis,
                     input.alignment,
                     static_start.at[0](),
