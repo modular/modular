@@ -87,6 +87,14 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 from structured_kernels.kernel_common import _to_batched_3d
+from structured_kernels.tile_types import (
+    SMemTileArray2D,
+    SMemTileArrayWithLayout,
+    internal_sf_k_major,
+    sf_tile_dim0,
+    sf_tile_dim1,
+    swizzle_mode_to_bytes,
+)
 
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
@@ -512,6 +520,116 @@ fn consumer_main_loop[
                     (iter_idx + j) == k_start
                 ),  # Initialize C on first iteration
                 work_tile_coord=work_tile_coord,
+            )
+        mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
+
+
+@always_inline
+fn consumer_main_loop[
+    accum_type: DType,
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    a_dim0: Int,
+    a_dim1: Int,
+    a_num_tiles: Int,
+    a_swizzle_bytes: Int,
+    b_dim0: Int,
+    b_dim1: Int,
+    b_num_tiles: Int,
+    b_swizzle_bytes: Int,
+    a_swizzle: TensorMapSwizzle,
+    b_swizzle: TensorMapSwizzle,
+    transpose_b: Bool,
+    pipeline_stages: Int,
+    scaling_kind: UMMAKind,
+    /,
+    *,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    SFA_NUM_COLS: Int,
+    SFB_NUM_COLS: Int,
+    cta_group: Int = 1,
+    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    k_group_size: UInt = 1,
+](
+    tmem_addr: UInt32,
+    sfa_tmem: UInt32,
+    sfb_tmem: UInt32,
+    a_smem_tiles: SMemTileArray2D[
+        a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
+    ],
+    b_smem_tiles: SMemTileArray2D[
+        b_type, b_dim0, b_dim1, b_num_tiles, b_swizzle_bytes
+    ],
+    sfa_smem_tiles: SMemTileArrayWithLayout[sfa_dtype, ...],
+    sfb_smem_tiles: SMemTileArrayWithLayout[sfb_dtype, ...],
+    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
+    mma_op: MmaOpSM100_BlockScaled_SS[
+        c_type,
+        a_type,
+        b_type,
+        sfa_dtype,
+        sfb_dtype,
+        scaling_kind,
+        block_tile_shape,
+        mma_shape,
+        accum_type=accum_type,
+        cta_group=cta_group,
+        cluster_shape=cluster_shape,
+        a_swizzle=a_swizzle,
+        b_swizzle=b_swizzle,
+        transpose_b=transpose_b,
+    ],
+    elect_one_warp: Bool,
+    iter_idx: UInt32,
+    k_start: UInt32,
+    work_tile_coord: Tuple[UInt, UInt],
+):
+    """TileTensor overload of consumer_main_loop for block-scaled MMA.
+
+    Accepts SMemTileArray2D for A/B tiles and SMemTileArrayWithLayout for
+    scale factor tiles, calling the TileTensor MMA overload.
+    """
+    comptime MMA_N = mma_shape[1]
+
+    # Compute sfb_tmem_adj from work_tile_coord (same logic as MMA LayoutTensor path).
+    var sfb_tmem_adj: UInt32
+    comptime if MMA_N in (64, 192):
+        sfb_tmem_adj = UInt32(work_tile_coord[1] % 2) * 2
+    else:
+        sfb_tmem_adj = UInt32(0)
+
+    var stage = load_mma_pipeline.consumer_stage()
+
+    load_mma_pipeline.wait_producer()
+
+    if elect_one_sync():
+        for jj in range(k_group_size):
+            var j = UInt32(jj)
+            var offset = stage * UInt32(k_group_size) + j
+            var a_smem_tile = a_smem_tiles[offset]
+            var b_smem_tile = b_smem_tiles[offset]
+            var sfa_smem_tile = sfa_smem_tiles[offset]
+            var sfb_smem_tile = sfb_smem_tiles[offset]
+
+            var sfa_tmem_offset = sfa_tmem + offset * UInt32(SFA_NUM_COLS)
+            var sfb_tmem_offset = sfb_tmem + offset * UInt32(SFB_NUM_COLS)
+
+            mma_op.mma(
+                a_smem_tile,
+                b_smem_tile,
+                sfa_smem_tile,
+                sfb_smem_tile,
+                tmem_addr,
+                sfa_tmem_offset,
+                sfb_tmem_offset,
+                init_c=(
+                    (iter_idx + j) == k_start
+                ),  # Initialize C on first iteration
+                sfb_tmem_adj=sfb_tmem_adj,
             )
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
@@ -1331,6 +1449,57 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         SmemType.sfb_smem_size,
     )
 
+    # TileTensor views of the same shared memory for MMA consumer path.
+    # LayoutTensorIter is kept for the TMA producer (load_AB_SFA_SFB).
+    # SMemTileArray2D uses internal_k_major which matches tile_layout_k_major.
+    # This requires transpose_b=True (enforced by block_scaled_dispatch).
+    comptime assert (
+        transpose_b
+    ), "SMemTileArray2D uses K-major layout; transpose_b must be True"
+    comptime num_ab_tiles = config.num_pipeline_stages
+    var a_smem_tt = SMemTileArray2D[
+        a_type,
+        BM,
+        BK,
+        num_ab_tiles,
+        swizzle_mode_to_bytes[config.a_swizzle],
+    ](a_smem_storage.unsafe_ptr())
+    var b_smem_tt = SMemTileArray2D[
+        b_type,
+        BN,
+        BK,
+        num_ab_tiles,
+        swizzle_mode_to_bytes[config.b_swizzle],
+    ](b_smem_storage.unsafe_ptr())
+
+    # SF tile dimensions from shared helpers (avoids duplicating atom math).
+    comptime sf_bk = SF_K_GROUP_SIZE[config.vec_sf_size] * config.num_sf_k_tiles
+    comptime sfa_d0 = sf_tile_dim0[BM]
+    comptime sfa_d1 = sf_tile_dim1[sf_bk, config.vec_sf_size]
+    comptime sfb_mn = align_up(MMA_N, SF_MN_GROUP_SIZE)
+    comptime sfb_d0 = sf_tile_dim0[sfb_mn]
+    comptime sfb_d1 = sfa_d1  # Same K-dim computation
+
+    # Verify TileTensor tile sizes match the LayoutTensorIter tile sizes.
+    comptime assert (
+        sfa_d0 * sfa_d1 == sfa_smem_layout.size()
+    ), "SFA TileTensor tile size must match LayoutTensorIter tile size"
+    comptime assert (
+        sfb_d0 * sfb_d1 == sfb_smem_layout.size()
+    ), "SFB TileTensor tile size must match LayoutTensorIter tile size"
+
+    comptime num_sf_tiles = config.num_pipeline_stages
+    var sfa_smem_tt = SMemTileArrayWithLayout[
+        sfa_dtype,
+        internal_sf_k_major[sfa_d0, sfa_d1],
+        num_sf_tiles,
+    ](sfa_smem_storage.unsafe_ptr())
+    var sfb_smem_tt = SMemTileArrayWithLayout[
+        sfb_dtype,
+        internal_sf_k_major[sfb_d0, sfb_d1],
+        num_sf_tiles,
+    ](sfb_smem_storage.unsafe_ptr())
+
     # Load warp as producer and mma warp as consumer
     # Dependence on MMA input in SMEM.
     # Conumer phase = 1 so that producer's wait on consumer passes trivially
@@ -1643,10 +1812,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             tmem_offset,
                             sfa_tmem,
                             sfb_tmem,
-                            a_smem,
-                            b_smem,
-                            sfa_smem,
-                            sfb_smem,
+                            a_smem_tt,
+                            b_smem_tt,
+                            sfa_smem_tt,
+                            sfb_smem_tt,
                             load_mma_pipeline,
                             mma_op,
                             elect_one_warp,
