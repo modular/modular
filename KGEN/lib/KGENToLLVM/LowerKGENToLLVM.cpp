@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CABICallHelpers.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -634,19 +635,7 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
     // Create the LLVM call operation.
     LLVM::CallOp llvmCall = createLLVMCall(rewriter, op.getLoc(), types,
                                            flatSymbol, filteredOperands);
-    switch (op.getTailKind()) {
-    case TailKind::MustTail:
-      llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::MustTail);
-      break;
-    case TailKind::NoTail:
-      llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::NoTail);
-      break;
-    case TailKind::Tail:
-      llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::Tail);
-      break;
-    case TailKind::None:
-      break;
-    }
+    applyTailKind(llvmCall, op.getTailKind());
 
     replaceCallWithLLVMCall(rewriter, op, llvmCall);
     return success();
