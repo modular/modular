@@ -86,6 +86,18 @@ class Flux2ModelInputs:
     residual_threshold: float = 0.08
     """Residual threshold for cache reuse decisions."""
 
+    taylorseer: bool = False
+    """Enable TaylorSeer cache optimization."""
+
+    taylorseer_cache_interval: int = 5
+    """Number of steps between full computations when TaylorSeer is active."""
+
+    taylorseer_warmup_steps: int = 3
+    """Number of initial steps with full computation for factor gathering."""
+
+    taylorseer_max_order: int = 1
+    """Taylor expansion order (1 = linear, 2 = quadratic)."""
+
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
 
@@ -177,6 +189,9 @@ class Flux2Pipeline(DiffusionPipeline):
         self.build_scheduler_step()
         self.build_concat_image_latents()
         self.build_decode_latents()
+        self.build_taylorseer(
+            self.transformer.config.dtype, self.transformer.devices[0]
+        )
 
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
@@ -334,6 +349,16 @@ class Flux2Pipeline(DiffusionPipeline):
             num_inference_steps=context.num_inference_steps,
             num_images_per_prompt=context.num_images_per_prompt,
             residual_threshold=context.residual_threshold,
+            taylorseer=getattr(context, "taylorseer", False),
+            taylorseer_cache_interval=getattr(
+                context, "taylorseer_cache_interval", 5
+            ),
+            taylorseer_warmup_steps=getattr(
+                context, "taylorseer_warmup_steps", 3
+            ),
+            taylorseer_max_order=getattr(
+                context, "taylorseer_max_order", 1
+            ),
             input_image=context.input_image,
             rdt_tensor=rdt_tensor,
             prev_residual=prev_residual,
@@ -832,6 +857,60 @@ class Flux2Pipeline(DiffusionPipeline):
         step_cache_enabled = self._enable_fbc
         prev_residual = model_inputs.prev_residual
         prev_output = model_inputs.prev_output
+        taylorseer_enabled = bool(model_inputs.taylorseer)
+        device = self._transformer_devices[0]
+        dtype = prompt_embeds.dtype
+        cfg = self._transformer_config
+        out_dim = (
+            cfg.patch_size
+            * cfg.patch_size
+            * (cfg.out_channels or cfg.in_channels)
+        )
+        seq_len_for_cache = model_inputs.image_seq_len
+        if image_latents is not None:
+            seq_len_for_cache += int(image_latents.shape[1])
+
+        # TaylorSeer state initialization.
+        ts_factor_0: Tensor | None = None
+        ts_factor_1: Tensor | None = None
+        ts_factor_2: Tensor | None = None
+        ts_last_compute_step: int | None = None
+        ts_max_order_tensor: Tensor | None = None
+        if taylorseer_enabled:
+            ts_factor_0 = Tensor.zeros(
+                (batch_size, seq_len_for_cache, out_dim),
+                dtype=dtype,
+                device=device,
+            )
+            ts_factor_1 = Tensor.zeros(
+                (batch_size, seq_len_for_cache, out_dim),
+                dtype=dtype,
+                device=device,
+            )
+            ts_factor_2 = Tensor.zeros(
+                (batch_size, seq_len_for_cache, out_dim),
+                dtype=dtype,
+                device=device,
+            )
+            ts_max_order_tensor = Tensor.full(
+                [1],
+                model_inputs.taylorseer_max_order,
+                dtype=DType.int32,
+                device=device,
+            )
+
+        if taylorseer_enabled:
+            _ts_scalar_cache: dict[float, Tensor] = {}
+
+            def _ts_gpu_scalar(value: float) -> Tensor:
+                t = _ts_scalar_cache.get(value)
+                if t is None:
+                    t = Tensor.full(
+                        [1], value, dtype=DType.float32, device=device
+                    )
+                    _ts_scalar_cache[value] = t
+                return t
+
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
                 with Tracer(f"denoising_step_{i}"):
@@ -853,32 +932,87 @@ class Flux2Pipeline(DiffusionPipeline):
                         latents_concat = latents
                         latent_image_ids_concat = latent_image_ids
 
-                    with Tracer("transformer"):
-                        if step_cache_enabled:
-                            assert prev_residual is not None
-                            assert prev_output is not None
-                            noise_pred, new_residual = self.transformer(
-                                latents_concat,
-                                prompt_embeds,
-                                timestep,
-                                latent_image_ids_concat,
-                                text_ids,
-                                guidance,
-                                prev_residual,
-                                prev_output,
-                                model_inputs.rdt_tensor,
+                    # Determine if TaylorSeer should predict or compute.
+                    ts_should_compute = True
+                    if taylorseer_enabled:
+                        ts_should_compute = self.taylorseer_should_compute(
+                            i,
+                            model_inputs.taylorseer_warmup_steps,
+                            model_inputs.taylorseer_cache_interval,
+                        )
+
+                    if taylorseer_enabled and not ts_should_compute:
+                        # TaylorSeer predict path: skip transformer.
+                        with Tracer("taylorseer_predict"):
+                            assert ts_factor_0 is not None
+                            assert ts_factor_1 is not None
+                            assert ts_factor_2 is not None
+                            assert ts_last_compute_step is not None
+                            assert ts_max_order_tensor is not None
+                            step_offset = _ts_gpu_scalar(
+                                float(i - ts_last_compute_step)
                             )
-                            prev_residual = new_residual
-                            prev_output = noise_pred
-                        else:
-                            noise_pred = self.transformer(
-                                latents_concat,
-                                prompt_embeds,
-                                timestep,
-                                latent_image_ids_concat,
-                                text_ids,
-                                guidance,
-                            )[0]
+                            noise_pred = self.taylor_predict(
+                                ts_factor_0,
+                                ts_factor_1,
+                                ts_factor_2,
+                                step_offset,
+                                ts_max_order_tensor,
+                            )
+                    else:
+                        # Full computation path.
+                        with Tracer("transformer"):
+                            if step_cache_enabled:
+                                assert prev_residual is not None
+                                assert prev_output is not None
+                                noise_pred, new_residual = self.transformer(
+                                    latents_concat,
+                                    prompt_embeds,
+                                    timestep,
+                                    latent_image_ids_concat,
+                                    text_ids,
+                                    guidance,
+                                    prev_residual,
+                                    prev_output,
+                                    model_inputs.rdt_tensor,
+                                )
+                                prev_residual = new_residual
+                                prev_output = noise_pred
+                            else:
+                                noise_pred = self.transformer(
+                                    latents_concat,
+                                    prompt_embeds,
+                                    timestep,
+                                    latent_image_ids_concat,
+                                    text_ids,
+                                    guidance,
+                                )[0]
+
+                        # TaylorSeer factor update after full computation.
+                        if taylorseer_enabled:
+                            with Tracer("taylorseer_update"):
+                                assert ts_factor_0 is not None
+                                assert ts_factor_1 is not None
+                                assert ts_max_order_tensor is not None
+                                if ts_last_compute_step is not None:
+                                    delta = float(
+                                        i - ts_last_compute_step
+                                    )
+                                else:
+                                    delta = 1.0
+                                delta_tensor = _ts_gpu_scalar(delta)
+                                (
+                                    ts_factor_0,
+                                    ts_factor_1,
+                                    ts_factor_2,
+                                ) = self.taylor_update(
+                                    noise_pred,
+                                    ts_factor_0,
+                                    ts_factor_1,
+                                    delta_tensor,
+                                    ts_max_order_tensor,
+                                )
+                                ts_last_compute_step = i
 
                     with Tracer("scheduler_step"):
                         latents = self.scheduler_step(latents, noise_pred, dt)

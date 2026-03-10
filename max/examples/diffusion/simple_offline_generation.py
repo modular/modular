@@ -177,6 +177,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Residual threshold for step cache early stopping.",
     )
+    parser.add_argument(
+        "--taylorseer",
+        action="store_true",
+        help="Enable TaylorSeer cache optimization.",
+    )
+    parser.add_argument(
+        "--taylorseer-cache-interval",
+        type=int,
+        default=5,
+        help="Steps between full computations for TaylorSeer (default: 5).",
+    )
+    parser.add_argument(
+        "--taylorseer-warmup-steps",
+        type=int,
+        default=3,
+        help="Warmup steps for TaylorSeer factor gathering (default: 3).",
+    )
+    parser.add_argument(
+        "--taylorseer-max-order",
+        type=int,
+        default=1,
+        choices=[1, 2],
+        help="Taylor expansion order: 1=linear, 2=quadratic (default: 1).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -190,6 +214,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "num-inference-steps must be a positive integer."
     )
     assert args.guidance_scale > 0.0, "guidance-scale must be positive."
+    assert args.taylorseer_cache_interval >= 1, (
+        "taylorseer-cache-interval must be >= 1."
+    )
+    assert args.taylorseer_warmup_steps >= 1, (
+        "taylorseer-warmup-steps must be >= 1."
+    )
 
     return args
 
@@ -408,6 +438,10 @@ async def generate_image(args: argparse.Namespace) -> None:
     # latent initialization, and all other preprocessing
     # Image is now extracted from the message content automatically
     context = await tokenizer.new_context(request)
+    context.taylorseer = args.taylorseer
+    context.taylorseer_cache_interval = args.taylorseer_cache_interval
+    context.taylorseer_warmup_steps = args.taylorseer_warmup_steps
+    context.taylorseer_max_order = args.taylorseer_max_order
 
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
@@ -415,6 +449,12 @@ async def generate_image(args: argparse.Namespace) -> None:
     if args.step_cache:
         print(
             f"Step cache enabled, residual_threshold={context.residual_threshold}."
+        )
+    if args.taylorseer:
+        print(
+            f"TaylorSeer enabled: order={args.taylorseer_max_order}, "
+            f"interval={args.taylorseer_cache_interval}, "
+            f"warmup={args.taylorseer_warmup_steps}."
         )
 
     # Step 6: Prepare inputs for the pipeline

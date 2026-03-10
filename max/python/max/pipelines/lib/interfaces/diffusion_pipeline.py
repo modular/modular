@@ -25,7 +25,9 @@ import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
 from max.driver import CPU, Accelerator
+from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
@@ -180,6 +182,94 @@ class DiffusionPipeline(ABC):
                 "No component weights found. Expected format: <component>/<file>"
             )
         return result
+
+    def build_taylorseer(self, dtype: DType, device: Device) -> None:
+        """Build compiled graphs for TaylorSeer predict and update."""
+        tensor_type = TensorType(
+            dtype, shape=["batch", "seq", "channels"], device=device
+        )
+        scalar_type = TensorType(DType.float32, shape=[1], device=device)
+        order_type = TensorType(DType.int32, shape=[1], device=device)
+
+        self.__dict__["taylor_predict"] = max_compile(
+            self._taylor_predict,
+            input_types=[
+                tensor_type,  # factor_0
+                tensor_type,  # factor_1
+                tensor_type,  # factor_2
+                scalar_type,  # step_offset
+                order_type,  # max_order
+            ],
+        )
+        self.__dict__["taylor_update"] = max_compile(
+            self._taylor_update,
+            input_types=[
+                tensor_type,  # new_output
+                tensor_type,  # old_factor_0
+                tensor_type,  # old_factor_1
+                scalar_type,  # delta_step
+                order_type,  # max_order
+            ],
+        )
+
+    @staticmethod
+    def _taylor_predict(
+        factor_0: Tensor,
+        factor_1: Tensor,
+        factor_2: Tensor,
+        step_offset: Tensor,
+        max_order: Tensor,
+    ) -> Tensor:
+        """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
+        offset = F.cast(step_offset, factor_0.dtype)
+        result = factor_0 + factor_1 * offset
+        offset_sq_half = offset * offset * F.constant(
+            0.5, factor_0.dtype, device=factor_0.device
+        )
+        order2_term = factor_2 * offset_sq_half
+        use_order2 = max_order >= F.constant(
+            2, DType.int32, device=max_order.device
+        )
+        use_order2_cast = F.cast(
+            F.broadcast_to(use_order2, order2_term.shape), order2_term.dtype
+        )
+        result = result + order2_term * use_order2_cast
+        return result
+
+    @staticmethod
+    def _taylor_update(
+        new_output: Tensor,
+        old_factor_0: Tensor,
+        old_factor_1: Tensor,
+        delta_step: Tensor,
+        max_order: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Compute Taylor factors via divided differences."""
+        delta = F.cast(delta_step, new_output.dtype)
+        eps = F.constant(1e-9, new_output.dtype, device=new_output.device)
+        safe_delta = delta + eps
+
+        new_factor_0 = new_output
+        new_factor_1 = (new_output - old_factor_0) / safe_delta
+        new_factor_2 = (new_factor_1 - old_factor_1) / safe_delta
+        use_order2 = max_order >= F.constant(
+            2, DType.int32, device=max_order.device
+        )
+        use_order2_cast = F.cast(
+            F.broadcast_to(use_order2, new_factor_2.shape), new_factor_2.dtype
+        )
+        new_factor_2 = new_factor_2 * use_order2_cast
+
+        return new_factor_0, new_factor_1, new_factor_2
+
+    @staticmethod
+    def taylorseer_should_compute(
+        step: int, warmup_steps: int, cache_interval: int
+    ) -> bool:
+        """Return True when a full transformer pass is needed at *step*."""
+        if step < warmup_steps:
+            return True
+        return (step - warmup_steps - 1) % cache_interval == 0
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]
@@ -356,6 +446,18 @@ class PixelModelInputs:
     """
     Optional input image for image-to-image generation (PIL.Image.Image).
     """
+
+    taylorseer: bool = False
+    """Enable TaylorSeer cache optimization."""
+
+    taylorseer_cache_interval: int = 5
+    """Number of steps between full computations when TaylorSeer is active."""
+
+    taylorseer_warmup_steps: int = 3
+    """Number of initial steps with full computation for factor gathering."""
+
+    taylorseer_max_order: int = 1
+    """Taylor expansion order (1 = linear, 2 = quadratic)."""
 
     def __post_init__(self) -> None:
         """Basic invariant checks for core scalar fields.
