@@ -257,24 +257,24 @@ def ScalarType : ConfinedType<POP_SIMDType,
 class ScalarOfDType<DTypeConstraint constraint, string desc> :
   AllOfType<[SIMDOfDType<constraint, desc>, ScalarType], desc>;
 
-def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!pop.simd<1, bool>">,
+def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!pop.scalar<bool>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
                                   "$_builder.getContext(), KGENDType::bool))">;
 def UnboundOrArithmeticScalar : ScalarOfDType<UnboundOr<ArithmeticDType>,
     "whose type is an arithmetic dtype">;
 
-def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.simd<1, ui8>">,
+def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!pop.scalar<1, ui8>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
                                    "$_builder.getContext(), KGENDType::ui8))">;
-def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!pop.simd<1, si8>">,
+def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!pop.scalar<si8>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
                                    "$_builder.getContext(), KGENDType::si8))">;
 
-def UIndexScalar : ScalarOfDType<BoundAnd<UIndexDType>, "!pop.simd<1, uindex>">,
+def UIndexScalar : ScalarOfDType<BoundAnd<UIndexDType>, "!pop.scalar<uindex>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
                                    "$_builder.getContext(), KGENDType::uindex))">;
 
-def IndexScalar : ScalarOfDType<BoundAnd<IndexDType>, "!pop.simd<1, index>">,
+def IndexScalar : ScalarOfDType<BoundAnd<IndexDType>, "!pop.scalar<index>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
                                    "$_builder.getContext(), KGENDType::index))">;
 
