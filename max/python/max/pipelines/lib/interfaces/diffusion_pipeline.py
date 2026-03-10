@@ -27,7 +27,6 @@ import numpy.typing as npt
 from max._core.driver import Device
 from max.driver import CPU, Accelerator
 from max.engine import InferenceSession, Model
-from max.engine.api import InputType
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext

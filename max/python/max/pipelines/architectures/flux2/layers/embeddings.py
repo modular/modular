@@ -115,9 +115,7 @@ def apply_rotary_emb(
         # This creates [..., D//2, 2]
         x_rotated_real = -x_imag
         x_rotated_imag = x_real
-        x_rotated_stacked = ops.stack(
-            [x_rotated_real, x_rotated_imag], axis=-1
-        )
+        x_rotated_stacked = ops.stack([x_rotated_real, x_rotated_imag], axis=-1)
 
         # Flatten back to [..., D]
         x_rotated = ops.reshape(x_rotated_stacked, x_shape)
