@@ -1,2 +1,2 @@
 // Parse every .mojo file in {DIR}/ through the LSP server.
-// RUN: parse-mojo-files-with-lsp {DIR}
+// RUN: parse-mojo-files-with-lsp {DIR} {FILE_REGEX}
