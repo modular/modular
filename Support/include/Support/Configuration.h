@@ -78,8 +78,8 @@ public:
   StringRef getValueOr(StringRef key, StringRef defaultValue);
 
   /// Get a boolean value with possible override from the environment.  Default
-  /// is returned if not set.  Error is returned if set, but to a value that
-  /// cannot be interpreted as a boolean.
+  /// is returned if not set or if the value is not "0/1/true/false/yes/no",
+  /// ignoring case.
   bool getValueAsBool(StringRef key, bool defaultValue);
 
   /// Get a vector of strings with possible override from the environment.
