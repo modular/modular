@@ -597,6 +597,124 @@ fn test_both_conditional_move_copy():
 
 
 # ===========================================================================
+# Test 15: Synthesized copy ctor with conditional Copyable conformance
+# ===========================================================================
+# The compiler should synthesize a copy constructor that uses trait-downcast
+# refinement for the T-typed field when the where-clause provides
+# conforms_to(T, Copyable).  No manual copy init is written.
+
+
+struct SynthCopyWrapper[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, Copyable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+fn test_synthesized_copy():
+    var original = SynthCopyWrapper(CopyableType(42))
+    var copied = original.copy()
+    # CHECK: synth_copy: 42
+    print("synth_copy:", copied.value.x)
+
+
+# ===========================================================================
+# Test 16: Synthesized move ctor with T-typed field
+# ===========================================================================
+# The move init is synthesized for a struct with a T-typed field.  Because
+# T: ImplicitlyDestructible & Movable, the field IS unconditionally movable,
+# so the unconditional synthesis path handles it.  This verifies that the
+# synthesized move init works correctly alongside conditional copy.
+
+
+fn test_synthesized_move():
+    var original = SynthCopyWrapper(CopyableType(99))
+    var moved = original^
+    # CHECK: synth_move: 99
+    print("synth_move:", moved.value.x)
+
+
+# ===========================================================================
+# Test 17: Mixed fields — conditional + unconditional for copy
+# ===========================================================================
+# A struct with both an unconditionally copyable field (Int) and a
+# conditionally copyable field (T).  The synthesized copy ctor handles
+# each field via the appropriate path.
+
+
+struct MixedFieldWrapper[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, Copyable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    var count: Int
+    var value: Self.T
+
+    fn __init__(out self, count: Int, var value: Self.T):
+        self.count = count
+        self.value = value^
+
+
+fn test_mixed_field_copy():
+    var original = MixedFieldWrapper(7, CopyableType(55))
+    var copied = original.copy()
+    # CHECK: mixed_copy: 7 55
+    print("mixed_copy:", copied.count, copied.value.x)
+
+
+# ===========================================================================
+# Test 18: Copy synthesis via conforms_to(T, ImplicitlyCopyable) subsumption
+# ===========================================================================
+# The struct is conditionally Copyable gated by conforms_to(T,
+# ImplicitlyCopyable).  Because ImplicitlyCopyable subsumes Copyable, the
+# compiler should synthesize a copy constructor that uses the conditional
+# ImplicitlyCopyable constraint.  The move constructor is unconditional.
+
+
+struct CopyableViaImplCopyable[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, ImplicitlyCopyable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+fn test_copy_via_impl_copyable():
+    var original = CopyableViaImplCopyable(ImplCopyableType(500))
+    var copied = original.copy()
+    # CHECK: copy_via_impl_copyable: 500
+    print("copy_via_impl_copyable:", copied.value.x)
+    var moved = original^
+    # CHECK: move_with_impl_copyable: 500
+    print("move_with_impl_copyable:", moved.value.x)
+
+
+# ===========================================================================
+# Test 19: Copy + move with ImplicitlyCopyable type on Copyable constraint
+# ===========================================================================
+# SynthCopyWrapper requires conforms_to(T, Copyable).  ImplCopyableType
+# conforms to ImplicitlyCopyable ⊃ Copyable, so the condition is met.
+# Both the synthesized copy and unconditional move should work.
+
+
+fn test_synth_copy_with_impl_copyable_type():
+    var original = SynthCopyWrapper(ImplCopyableType(600))
+    var copied = original.copy()
+    # CHECK: synth_copy_ic: 600
+    print("synth_copy_ic:", copied.value.x)
+    var moved = original^
+    # CHECK: synth_move_ic: 600
+    print("synth_move_ic:", moved.value.x)
+
+
+# ===========================================================================
 # Main
 # ===========================================================================
 
@@ -619,3 +737,8 @@ fn main():
     test_move_via_copyable()
     test_move_via_impl_copyable()
     test_both_conditional_move_copy()
+    test_synthesized_copy()
+    test_synthesized_move()
+    test_mixed_field_copy()
+    test_copy_via_impl_copyable()
+    test_synth_copy_with_impl_copyable_type()

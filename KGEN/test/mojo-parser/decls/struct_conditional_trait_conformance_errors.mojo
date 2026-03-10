@@ -423,3 +423,50 @@ fn call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
     # expected-error @below {{lacking evidence to prove correctness}}
     # expected-note @below {{provide evidence for the constraint}}
     var a = x.zero_field_method()
+
+
+# ===========================================================================
+# OR-gated constraint does not provide definite conformance for copy synthesis
+# ===========================================================================
+# When the conditional Copyable conformance uses an OR constraint, the
+# compiler cannot determine which branch holds, so it cannot synthesize a
+# copy constructor via trait downcast.  This tests that
+# constraintImpliesConformance correctly rejects OR disjuncts.
+
+
+struct CopySynthFailsWithOR[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, Copyable) or conforms_to(T, Intable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    # expected-error @below {{cannot synthesize copy constructor because field 'value' has non-copyable type}}
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+
+# ===========================================================================
+# Multi-field struct where constraint only covers one parameter
+# ===========================================================================
+# The Copyable conformance constraint mentions T but not U.  The synthesized
+# copy constructor can trait-downcast T (covered by the constraint) but has
+# no evidence for U, so copy synthesis must fail on the second field.
+
+
+struct CopySynthFailsMultiField[
+    T: ImplicitlyDestructible & Movable,
+    U: ImplicitlyDestructible & Movable,
+](
+    Copyable where conforms_to(T, Copyable),
+    ImplicitlyDestructible,
+    Movable,
+):
+    var first: Self.T
+    # expected-error @below {{cannot synthesize copy constructor because field 'second' has non-copyable type}}
+    var second: Self.U
+
+    fn __init__(out self, var first: Self.T, var second: Self.U):
+        self.first = first^
+        self.second = second^

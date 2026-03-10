@@ -338,6 +338,37 @@ struct MyOptional[T: Movable](
 ):
     pass
 
+# ===========================================================================
+# Split conforms_to constraints imply composite ancestor constraint
+# ===========================================================================
+# conforms_to(T, A) AND conforms_to(T, B) should imply conforms_to(T, A & B)
+# when checking that a derived trait's constraint implies its ancestor's.
+# This should parse without error (no "does not imply" diagnostic).
+
+trait SplitAncestor:
+    pass
+
+trait SplitDerived(SplitAncestor):
+    pass
+
+# CHECK-LABEL: lit.struct.decl @SplitImpliesComposite
+struct SplitImpliesComposite[T: Movable](
+    SplitAncestor where conforms_to(T, Copyable & Intable),
+    SplitDerived where conforms_to(T, Copyable) and conforms_to(T, Intable),
+    Movable,
+):
+    pass
+
+# Other direction: composite implies split (subsumption).
+# CHECK-LABEL: lit.struct.decl @CompositeImpliesSplit
+struct CompositeImpliesSplit[T: Movable](
+    SplitAncestor where conforms_to(T, Copyable) and conforms_to(T, Intable),
+    SplitDerived where conforms_to(T, Copyable & Intable),
+    Movable,
+):
+    pass
+
+
 #CHECK-LABEL: lit.struct.decl @Node
 struct Node[ElementType: ImplicitlyCopyable](Movable):
     var value: MyOptional[Self.ElementType]
