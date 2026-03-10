@@ -32,7 +32,6 @@
 
 namespace M {
 class Error;
-struct DebugTensorPrintOptions;
 } // namespace M
 
 namespace M::AsyncRT {
@@ -375,14 +374,6 @@ public:
     return *runtime;
   }
 
-  void setDebugPrintOptionsForExecution(M::DebugTensorPrintOptions *opts) {
-    debugPrintOptionsForExecution_ = opts;
-  }
-
-  M::DebugTensorPrintOptions *getDebugPrintOptionsForExecution() const {
-    return debugPrintOptionsForExecution_;
-  }
-
   //===--------------------------------------------------------------------===//
   // Profiling
   //===--------------------------------------------------------------------===//
@@ -448,14 +439,6 @@ private:
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
-
-  /// Set by engine before execution for use by debug_tensor_print on worker
-  /// threads. Cleared after execution.
-
-  /// Optional debug print options for the current execution. Set by the engine
-  /// before running a model so that MGP primitives can use them on whichever
-  /// thread runs, and then cleared after execution.
-  M::DebugTensorPrintOptions *debugPrintOptionsForExecution_ = nullptr;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
 };
