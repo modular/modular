@@ -324,7 +324,7 @@ struct MLADispatchScalarArgs[
 
     Holds a GPU buffer containing
     ``[batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]``
-    and stores the scalar values as plain Int fields for host-side dispatch.
+    and stores the host-side scalar values needed for dispatch.
 
     Usage::
 
@@ -334,7 +334,7 @@ struct MLADispatchScalarArgs[
         var gpu_lt = args.gpu_layout_tensor()
         mla_decode_sm100_dispatch[...](
             ..., gpu_lt,
-            args.batch_size, args.q_max_seq_len, args.max_cache_valid_length,
+            args.batch_size, args.q_max_seq_len, max_cache_len,
             ctx,
         )
         _ = args  # keepalive
@@ -347,7 +347,6 @@ struct MLADispatchScalarArgs[
     var gpu_buf: DeviceBuffer[DType.int64]
     var batch_size: Int
     var q_max_seq_len: Int
-    var max_cache_valid_length: Int
 
     fn __init__(
         out self,
@@ -359,7 +358,6 @@ struct MLADispatchScalarArgs[
         self.gpu_buf = ctx.enqueue_create_buffer[DType.int64](4)
         self.batch_size = batch_size
         self.q_max_seq_len = q_max_seq_len
-        self.max_cache_valid_length = max_cache_len
 
         comptime sm_count = ctx.default_device_info.sm_count
         var scalars = compute_mla_dispatch_scalars[
@@ -493,7 +491,6 @@ fn mla_decode_sm100_dispatch[
             batch_size,
             q_max_seq_len,
             num_partitions,
-            max_cache_valid_length,
             effective_max_cache_len,
             ctx,
             q_scale_ptr,
@@ -528,7 +525,6 @@ fn mla_decode_sm100_dispatch[
             batch_size,
             q_max_seq_len,
             num_partitions,
-            max_cache_valid_length,
             effective_max_cache_len,
             ctx,
             q_scale_ptr,
@@ -574,7 +570,6 @@ fn _mla_decode_sm100_dispatch_impl[
     batch_size: Int,
     q_max_seq_len: Int,
     num_partitions: Int,
-    max_cache_valid_length: Int,
     effective_max_cache_len: Int,
     ctx: DeviceContext,
     q_scale_ptr: UnsafePointer[

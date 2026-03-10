@@ -520,7 +520,7 @@ fn flare_mla_decoding_dispatch[
                 local_args.gpu_layout_tensor(),
                 local_args.batch_size,
                 local_args.q_max_seq_len,
-                local_args.max_cache_valid_length,
+                max_cache_valid_length,
                 ctx,
                 q_scale_ptr,
             )
