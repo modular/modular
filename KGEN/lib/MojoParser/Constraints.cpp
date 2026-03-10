@@ -50,10 +50,41 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
   });
 }
 
+/// If \p prop is a multi-trait TypeConformsToTraitAttr, decompose it into an
+/// AND of individual single-trait conforms_to attrs. Returns a null attr if
+/// \p prop is not a multi-trait conforms_to.
+static TypedAttr decomposeConformsTo(TypedAttr prop) {
+  auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(prop);
+  if (!conformsTo)
+    return {};
+
+  ArrayRef<TypedAttr> traitNames = conformsTo.getTraitNames().getValues();
+  if (traitNames.size() <= 1)
+    return {};
+
+  auto variadicType = conformsTo.getTraitNames().getType();
+  SmallVector<TypedAttr> operands;
+  operands.reserve(traitNames.size());
+  for (TypedAttr nameAttr : traitNames) {
+    SmallVector<TypedAttr, 1> single = {nameAttr};
+    auto singleNames =
+        VariadicAttr::get(prop.getContext(), single, variadicType);
+    operands.push_back(
+        TypeConformsToTraitAttr::get(conformsTo.getTypeValue(), singleNames));
+  }
+  return ParamOperatorAttr::get(POC::And, operands);
+}
+
 bool LIT::constraintImplies(TypedAttr propA, TypedAttr propB) {
   // Canonicalize both to remove sugar and get structural forms.
+  // Then decompose multi-trait conforms_to into AND of single-trait ones so
+  // that the general conjunction rules handle subsumption uniformly.
   propA = getCanonicalAttr(propA);
   propB = getCanonicalAttr(propB);
+  if (TypedAttr d = decomposeConformsTo(propA))
+    propA = d;
+  if (TypedAttr d = decomposeConformsTo(propB))
+    propB = d;
 
   // Trivially true is implied by anything.
   if (isTriviallyTrueProposition(propB))
@@ -64,12 +95,20 @@ bool LIT::constraintImplies(TypedAttr propA, TypedAttr propB) {
 
   // Weakening rule: A implies (A OR B) for any B.
   // If propB is an OR and propA matches or implies any operand, we're done.
+  // Conjunction introduction: A implies (B AND C) iff A implies B and
+  // A implies C.
   if (auto paramOpB = dyn_cast<ParamOperatorAttr>(propB)) {
     if (paramOpB.getOpcode() == POC::Or) {
       for (Attribute operand : paramOpB.getOperands()) {
         if (constraintImplies(propA, cast<TypedAttr>(operand)))
           return true;
       }
+    }
+    if (paramOpB.getOpcode() == POC::And) {
+      if (llvm::all_of(paramOpB.getOperands(), [&](Attribute operand) {
+            return constraintImplies(propA, cast<TypedAttr>(operand));
+          }))
+        return true;
     }
   }
 

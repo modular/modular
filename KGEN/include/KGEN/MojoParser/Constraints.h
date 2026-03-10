@@ -68,7 +68,9 @@ TypedAttr deShortCircuitCond(TypedAttr value);
 
 /// Check if propA logically implies propB.
 /// Uses canonicalization, weakening rules (A implies A OR B),
-/// and conjunction elimination ((A AND B) implies A).
+/// conjunction elimination ((A AND B) implies A), and set-containment
+/// subsumption for TypeConformsToTraitAttr (relies on conforms_to attrs
+/// being canonicalized at construction to include ancestor traits).
 /// Returns true if propA implies propB.
 bool constraintImplies(TypedAttr propA, TypedAttr propB);
 

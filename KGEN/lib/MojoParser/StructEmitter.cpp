@@ -22,6 +22,7 @@
 #include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -632,7 +633,6 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
     assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
     ASTDecl &fieldASTDecl = *fieldEntries[0];
 
-    // Verify that this will work so we get a tailored error message.
     if (!fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared) &&
         !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
       auto diag = emitError(fieldASTDecl.getLoc())
@@ -771,6 +771,60 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
   return resultFn;
 }
 
+/// Check if a parameterized field type conditionally conforms to a builtin
+/// trait based on the function's where-clause constraints.  Constructs a
+/// conforms_to proposition and delegates to constraintImplies.
+///
+/// Returns the resolved TraitDeclOp on success (for reuse in code-gen),
+/// or a null TraitDeclOp if no conditional conformance was found.
+static TraitDeclOp
+fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
+                                    SharedState &shared, ASTDecl &structDecl,
+                                    ArrayRef<ConstraintAttr> fnConstraints) {
+  auto paramType = dyn_cast<ParamType>(fieldMLIRType);
+  if (!paramType)
+    return {};
+
+  ASTDecl *requiredTraitDecl =
+      shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
+  if (!requiredTraitDecl)
+    return {};
+
+  auto traitOp = dyn_cast<TraitDeclOp>(requiredTraitDecl->getIfOperation());
+  if (!traitOp)
+    return {};
+
+  TypedAttr fieldParam = getCanonicalAttr(paramType.getParam());
+  auto *ctx = fieldParam.getContext();
+  auto stringType = KGEN::StringType::get(ctx);
+  std::string flatName =
+      getFlattenedSymbolName(requiredTraitDecl->getSymbolRef());
+  SmallVector<TypedAttr> traitNameAttrs = {
+      StringAttr::get(flatName, stringType)};
+  auto traitNames =
+      VariadicAttr::get(ctx, traitNameAttrs, VariadicType::get(stringType));
+  auto conformsTo = TypeConformsToTraitAttr::get(fieldParam, traitNames);
+
+  for (ConstraintAttr constraint : fnConstraints)
+    if (constraintImplies(constraint.getProposition(), conformsTo))
+      return traitOp;
+  return {};
+}
+
+/// Rebind a field reference to access it through a trait downcast.
+static Value rebindRefForTrait(Value fieldRef, Type fieldMLIRType,
+                               TraitDeclOp traitOp, ImplicitLocOpBuilder &b) {
+  assert(isa<ParamType>(fieldMLIRType) &&
+         "rebindRefForTrait requires a parameterized field type");
+  auto paramType = cast<ParamType>(fieldMLIRType);
+  TypedAttr downcast =
+      DowncastAttr::get(traitOp.bindReference(), paramType.getParam());
+  Type reboundElementType = ParamType::get(downcast);
+  RefType fieldRefType = cast<RefType>(fieldRef.getType());
+  return RebindOp::create(b, fieldRefType.getWithElement(reboundElementType),
+                          fieldRef);
+}
+
 /// Given a function of the form
 ///    fn __init__(out self: MyStruct, *, copy: MyStruct)
 /// populate the method with the following:
@@ -823,6 +877,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   bool isImplicitlyCopyableStruct =
       structDecl.getTypeDeclSelf().isImplicitlyCopyable(structDecl.getLoc(),
                                                         shared);
+  ArrayRef<ConstraintAttr> fnConstraints =
+      fn.getFuncTypeGenerator().getBody().getMetadata().getConstraints();
+
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
 
@@ -836,19 +893,24 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
 
     auto targetFieldOp = RefStructGEROp::create(b, selfArg, fieldOp);
     Value srcFieldOp = RefStructGEROp::create(b, existingArg, fieldOp);
-    CValue src =
-        isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
 
-    // Verify that this will work so we get a tailored error message.
+    // Set to the resolved trait when the field requires a conditional
+    // conformance (i.e. a where-clause constraint proves the field's type
+    // parameter conforms to the required trait).  Null otherwise.
+    TraitDeclOp conditionalTraitOp;
+
     if (isMove) {
       // The move constructor can work with movable (preferably) or implicitly
       // copyable (as a fallback) types.
       if (!fieldType.isMovable(fieldASTDecl.getLoc(), shared) &&
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared)) {
-        return emitError(fieldASTDecl.getLoc())
-               << "cannot synthesize move constructor because field '"
-               << fieldOp.getName()
-               << "' has non-copyable and non-movable type " << fieldType;
+        conditionalTraitOp = fieldConditionallyConformsToBuiltin(
+            fieldType.mlirType, "Movable", shared, structDecl, fnConstraints);
+        if (!conditionalTraitOp)
+          return emitError(fieldASTDecl.getLoc())
+                 << "cannot synthesize move constructor because field '"
+                 << fieldOp.getName()
+                 << "' has non-copyable and non-movable type " << fieldType;
       }
     } else {
       // We only synthesize copy ctor for `ImplicitlyCopyable` object iff all
@@ -860,11 +922,45 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       // ```
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
                                 isImplicitlyCopyableStruct)) {
-        return emitError(fieldASTDecl.getLoc())
-               << "cannot synthesize copy constructor because field '"
-               << fieldOp.getName() << "' has non-copyable type " << fieldType;
+        conditionalTraitOp = fieldConditionallyConformsToBuiltin(
+            fieldType.mlirType, "Copyable", shared, structDecl, fnConstraints);
+        if (!conditionalTraitOp)
+          return emitError(fieldASTDecl.getLoc())
+                 << "cannot synthesize copy constructor because field '"
+                 << fieldOp.getName() << "' has non-copyable type "
+                 << fieldType;
       }
+    }
 
+    if (conditionalTraitOp) {
+      Value reboundTarget = rebindRefForTrait(targetFieldOp, fieldType.mlirType,
+                                              conditionalTraitOp, b);
+      Value reboundSrc = rebindRefForTrait(srcFieldOp, fieldType.mlirType,
+                                           conditionalTraitOp, b);
+
+      if (isMove) {
+        CValue reboundMoveSrc = CValue(MRValue(reboundSrc));
+        emitter.emitStoreToLValue({reboundMoveSrc, SyntheticNode(location)},
+                                  MLValue(reboundTarget), EC_SynthesizedMethod);
+      } else {
+        CValue reboundCopySrc = CValue(MBValue(reboundSrc));
+        ValueDest dest(MLValue(reboundTarget), EC_SynthesizedMethod);
+        SyntheticNode expr(location);
+        ASTType refinedFieldType(
+            cast<RefType>(reboundTarget.getType()).getElementType());
+        CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr);
+        operands.add(StringAttr::get(shared.getContext(), "copy"),
+                     {reboundCopySrc, &expr});
+        emitter.emitConstructorCall(refinedFieldType, std::move(operands),
+                                    dest);
+      }
+      continue;
+    }
+
+    CValue src =
+        isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
+
+    if (!isMove) {
       // If this a copy constructor and the field is only `Copyable` but not
       // implicitly copyable, generate the explicit call to copy ctor so
       // the rest of the compiler doesn't have to know about explicit copying.
