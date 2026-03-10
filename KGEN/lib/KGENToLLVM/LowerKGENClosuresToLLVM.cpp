@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CABICallHelpers.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -367,19 +368,7 @@ struct CallIndirectOpConversion
       llvmCall = createLLVMCall(rewriter, op.getLoc(), wrapperFnType,
                                 adaptor.getOperands());
     }
-    switch (op.getTailKind()) {
-    case TailKind::MustTail:
-      llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::MustTail);
-      break;
-    case TailKind::NoTail:
-      llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::NoTail);
-      break;
-    case TailKind::Tail:
-      llvmCall.setTailCallKind(LLVM::tailcallkind::TailCallKind::Tail);
-      break;
-    case TailKind::None:
-      break;
-    }
+    applyTailKind(llvmCall, op.getTailKind());
 
     if (op.getNumResults() <= 1) {
       rewriter.replaceOp(op, llvmCall.getResults());

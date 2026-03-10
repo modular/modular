@@ -14,6 +14,7 @@
 #define KGEN_LIB_KGENTOLLVM_CABICALLHELPERS_H
 
 #include "CABILowering.h"
+#include "KGEN/KGENDialect/KGENEnums.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -21,6 +22,25 @@
 #include <memory>
 
 namespace M::KGEN {
+
+/// Apply the tail-call kind from a kgen.call / kgen.call_indirect to the
+/// already-created llvm.call.  Extracted here so both ConvertKGENCall and
+/// CallIndirectOpConversion share a single copy.
+inline void applyTailKind(mlir::LLVM::CallOp call, TailKind kind) {
+  switch (kind) {
+  case TailKind::MustTail:
+    call.setTailCallKind(mlir::LLVM::tailcallkind::TailCallKind::MustTail);
+    break;
+  case TailKind::NoTail:
+    call.setTailCallKind(mlir::LLVM::tailcallkind::TailCallKind::NoTail);
+    break;
+  case TailKind::Tail:
+    call.setTailCallKind(mlir::LLVM::tailcallkind::TailCallKind::Tail);
+    break;
+  case TailKind::None:
+    break;
+  }
+}
 
 //===----------------------------------------------------------------------===//
 // CABICallHelper
