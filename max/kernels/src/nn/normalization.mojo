@@ -2152,13 +2152,13 @@ fn rms_norm_fused_fp8[
     compile_only: Bool = False,
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, out_dtype, rank, ...],
+    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     ctx: DeviceContextPtr,
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, scales_dtype, rank, ...],
+    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
 ) raises:
     """Fused RMSNorm + FP8 quantization kernel.
 
@@ -2249,12 +2249,12 @@ fn _rms_norm_fused_fp8_gpu[
     compile_only: Bool = False,
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, out_dtype, rank, ...],
+    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, scales_dtype, rank, ...],
+    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """GPU dispatcher for fused RMSNorm + FP8 quantization."""
@@ -2280,14 +2280,14 @@ fn _rms_norm_fused_fp8_gpu[
         return input_fn[simd_width, rank](indices.canonicalize())
 
     # Create 2D output buffer view
-    var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
+    var output_2d = NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin](
         output.data, IndexList[2](rows, cols)
     )
 
     # Create 1D view of scale_output for internal kernel use
-    var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, IndexList[1](rows)
-    )
+    var scale_output_1d = NDBuffer[
+        mut=True, rank=1, scales_dtype, MutAnyOrigin
+    ](scale_output.data, IndexList[1](rows))
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -2447,12 +2447,12 @@ fn _rms_norm_fused_fp8_gpu_launch[
 ](
     rows: Int,
     cols: Int,
-    output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, ...],
+    output: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin, ...],
+    scale_output: NDBuffer[mut=True, rank=1, scales_dtype, MutAnyOrigin, ...],
     ctx: DeviceContext,
 ) raises:
     """Unified kernel launcher for fused RMSNorm + FP8 quantization.

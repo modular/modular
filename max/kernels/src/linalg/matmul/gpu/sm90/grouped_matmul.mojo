@@ -90,12 +90,12 @@ fn grouped_matmul_sm90[
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

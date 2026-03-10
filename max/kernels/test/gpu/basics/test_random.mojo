@@ -32,11 +32,13 @@ def run_elementwise[
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var out_host = NDBuffer[
-        dtype, 1, MutAnyOrigin, DimList(length)
+        rank=1, dtype, MutAnyOrigin, DimList(length)
     ].stack_allocation()
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
-    var out_buffer = NDBuffer[dtype, 1](out_device.unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[rank=1, dtype](
+        out_device.unsafe_ptr(), Index(length)
+    )
 
     @always_inline
     @__copy_capture(out_buffer)

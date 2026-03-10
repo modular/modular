@@ -92,7 +92,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape,
-        TileTensor(NDBuffer[type, rank](out_ref.ptr, shape)),
+        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
         rank - 1,
     )
 
@@ -287,7 +287,7 @@ fn test_gpu_online_softmax[
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_host](
         shape,
-        TileTensor(NDBuffer[type, rank](out_ref.ptr, shape)),
+        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
         rank - 1,
     )
 
@@ -373,7 +373,7 @@ fn test_gpu_logsoftmax(ctx: DeviceContext) raises:
             logsoftmax=True,
         ](
             shape,
-            TileTensor(NDBuffer[type, rank](out_ref.ptr, shape)),
+            TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
             rank - 1,
         )
 
@@ -498,7 +498,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
 
     _softmax_cpu[type, 1, rank, origin_of()._mlir_origin, input_fn_cpu](
         shape,
-        TileTensor(NDBuffer[type, rank](out_ref.ptr, shape)),
+        TileTensor(NDBuffer[rank=rank, type](out_ref.ptr, shape)),
         rank - 1,
     )
 

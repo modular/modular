@@ -48,8 +48,8 @@ struct _Accumulator[
 
     # The output buffer, should have num_rows x num_cols x simd_width.
     var _storage: NDBuffer[
+        rank=1,
         Self.dtype,
-        1,
         MutAnyOrigin,
         Self.num_rows * Self.num_cols * Self.simd_width,
     ]
@@ -63,8 +63,8 @@ struct _Accumulator[
         )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = NDBuffer[
+            rank=1,
             Self.dtype,
-            1,
             MutAnyOrigin,
             Self.num_rows * Self.num_cols * Self.simd_width,
         ].stack_allocation[alignment=alignment]()
@@ -73,8 +73,8 @@ struct _Accumulator[
     fn __init__(
         out self,
         other_storage: NDBuffer[
+            rank=1,
             Self.dtype,
-            1,
             MutAnyOrigin,
             Self.num_rows * Self.num_cols * Self.simd_width,
         ],
@@ -569,7 +569,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
+        a_base_offsets: NDBuffer[rank=1, DType.int32, _, Self.num_rows],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
@@ -823,7 +823,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
+        a_base_offsets: NDBuffer[rank=1, DType.int32, _, Self.num_rows],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
@@ -1039,7 +1039,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
+        a_base_offsets: NDBuffer[rank=1, DType.int32, _, Self.num_rows],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,

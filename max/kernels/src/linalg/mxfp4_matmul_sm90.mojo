@@ -93,19 +93,19 @@ fn mxfp4_matmul_sm90(
 
     # Step 3: FP8 GEMM via _matmul_gpu (handles dispatch + fallback)
     var c_ndbuf = NDBuffer[
-        DType.bfloat16, 2, MutAnyOrigin, DimList.create_unknown[2]()
+        rank=2, DType.bfloat16, MutAnyOrigin, DimList.create_unknown[2]()
     ](
         c.ptr.bitcast[Scalar[DType.bfloat16]]().as_any_origin(),
         Index(M, static_N),
     )
     var a_fp8_ndbuf = NDBuffer[
-        fp8_type, 2, MutAnyOrigin, DimList.create_unknown[2]()
+        rank=2, fp8_type, MutAnyOrigin, DimList.create_unknown[2]()
     ](
         a_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
         Index(M, static_K),
     )
     var b_fp8_ndbuf = NDBuffer[
-        fp8_type, 2, MutAnyOrigin, DimList(static_N, static_K)
+        rank=2, fp8_type, MutAnyOrigin, DimList(static_N, static_K)
     ](
         b_fp8_tt.ptr.bitcast[Scalar[fp8_type]]().as_any_origin(),
     )

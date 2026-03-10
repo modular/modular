@@ -73,9 +73,9 @@ from std.utils.index import IndexList
 fn _test_my_naive_matmul[
     shape: DimList, dtype: DType
 ](
-    c: NDBuffer[mut=True, dtype, 2, _, shape],
-    a: NDBuffer[dtype, 2, _, shape],
-    b: NDBuffer[dtype, 2, _, shape],
+    c: NDBuffer[mut=True, rank=2, dtype, _, shape],
+    a: NDBuffer[rank=2, dtype, _, shape],
+    b: NDBuffer[rank=2, dtype, _, shape],
 ):
     """Computes matrix multiplication with a naive algorithm.
 
@@ -94,7 +94,7 @@ fn _test_my_naive_matmul[
 
 fn fill_a[
     size: Int
-](buf: NDBuffer[mut=True, DType.float32, 2, _, DimList(size, size)]):
+](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList(size, size)]):
     """Fills the matrix with the values `row + 2*col`."""
 
     for i in range(size):
@@ -105,7 +105,7 @@ fn fill_a[
 
 fn fill_b[
     size: Int
-](buf: NDBuffer[mut=True, DType.float32, 2, _, DimList(size, size)]):
+](buf: NDBuffer[mut=True, rank=2, DType.float32, _, DimList(size, size)]):
     """Fills the matrix with the values `row/(col + 1) + col`."""
 
     for i in range(size):
@@ -116,7 +116,7 @@ fn fill_b[
 
 fn print_matrix[
     size: Int
-](buf: NDBuffer[DType.float32, 2, _, DimList(size, size)]):
+](buf: NDBuffer[rank=2, DType.float32, _, DimList(size, size)]):
     """Prints each element of the input matrix, element-wise."""
     for i in range(size):
         for j in range(size):
@@ -128,8 +128,8 @@ fn _test_naive_matmul[size: Int]():
     print("== _test_naive_matmul")
     var c_stack = InlineArray[Float32, size * size](uninitialized=True)
     var c = NDBuffer[
+        rank=2,
         DType.float32,
-        2,
         _,
         DimList(size, size),
     ](c_stack.unsafe_ptr())
@@ -137,8 +137,8 @@ fn _test_naive_matmul[size: Int]():
 
     var b_stack = InlineArray[Float32, size * size](uninitialized=True)
     var b = NDBuffer[
+        rank=2,
         DType.float32,
-        2,
         _,
         DimList(size, size),
     ](b_stack.unsafe_ptr())
@@ -146,8 +146,8 @@ fn _test_naive_matmul[size: Int]():
 
     var a_stack = InlineArray[Float32, size * size](uninitialized=True)
     var a = NDBuffer[
+        rank=2,
         DType.float32,
-        2,
         _,
         DimList(size, size),
     ](a_stack.unsafe_ptr())

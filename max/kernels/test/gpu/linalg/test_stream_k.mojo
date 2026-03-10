@@ -297,9 +297,9 @@ fn matmul_stream_k[
     *,
     total_programs_streamk: Int,
 ](
-    c: NDBuffer[c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    c: NDBuffer[rank=2, c_type, _, c_shape],
+    a: NDBuffer[rank=2, a_type, _, a_shape],
+    b: NDBuffer[rank=2, b_type, _, b_shape],
     M: Int,
     N: Int,
     K: Int,
@@ -463,13 +463,13 @@ fn run_matmul_stream_k[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -481,9 +481,9 @@ fn run_matmul_stream_k[
     comptime sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
-        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
+        rebind[NDBuffer[rank=2, dtype, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[rank=2, dtype, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[rank=2, dtype, b_buf.origin, b_shape]](b_buf),
         M,
         N,
         K,

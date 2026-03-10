@@ -100,9 +100,9 @@ fn _topp_minp_sampling[
             sorted probs are in descending order. If true, copies the sorted
             probs back into input_logits.
     Args:
-        p_thresholds: NDBuffer[dtype, 1] - Sampling thresholds, one per batch.
-        input_logits: NDBuffer[dtype, rank] - Input logits (modified in-place).
-        out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
+        p_thresholds: NDBuffer[rank=1, dtype] - Sampling thresholds, one per batch.
+        input_logits: NDBuffer[rank=rank, dtype] - Input logits (modified in-place).
+        out_token_ids: NDBuffer[rank=rank, out_idx_type] - Output sampled token IDs.
         temperature: Scalar[dtype] - Temperature for logits scaling.
     """
     comptime assert (

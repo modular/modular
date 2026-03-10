@@ -191,13 +191,13 @@ fn dispatch_sm100_conv2d[
         )
 
         comptime static_shape = DimList(-1, -1, -1, -1)
-        var act_nd = NDBuffer[input_type, 4, _, static_shape](
+        var act_nd = NDBuffer[rank=4, input_type, _, static_shape](
             input.ptr, IndexList[4](batch, in_h, in_w, in_c)
         )
-        var filter_nd = NDBuffer[filter_type, 4, _, static_shape](
+        var filter_nd = NDBuffer[rank=4, filter_type, _, static_shape](
             filter_krsc_ptr, IndexList[4](out_c, fh, fw, in_c)
         )
-        var out_nd = NDBuffer[output_type, 4, _, static_shape](
+        var out_nd = NDBuffer[rank=4, output_type, _, static_shape](
             output.ptr, IndexList[4](batch, out_h, out_w, out_c)
         )
 

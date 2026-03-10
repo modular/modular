@@ -135,24 +135,24 @@ fn test_conv2d_implicit_im2col[
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
-    var filter_host = NDBuffer[filter_type, 4, _, static_filter_shape](
+    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
         filter_host_ptr, dynamic_filter_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[filter_type, 4, _, static_filter_shape](
-        filter_device.unsafe_ptr(), dynamic_filter_shape
-    )
+    var filter_device_nd = NDBuffer[
+        rank=4, filter_type, _, static_filter_shape
+    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[out_type, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
 
@@ -184,7 +184,7 @@ fn test_conv2d_implicit_im2col[
     # Perform im2col on host - use DimList with actual values for proper shape inference
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[act_type, 2](
+    var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
     im2col(im2col_host, act_host, problem)
@@ -194,13 +194,13 @@ fn test_conv2d_implicit_im2col[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[act_type, 2](
+    var im2col_device_nd = NDBuffer[rank=2, act_type](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[filter_type, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[out_type, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 
@@ -336,24 +336,24 @@ fn test_conv2d_1sm[
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
-    var filter_host = NDBuffer[filter_type, 4, _, static_filter_shape](
+    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
         filter_host_ptr, dynamic_filter_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[filter_type, 4, _, static_filter_shape](
-        filter_device.unsafe_ptr(), dynamic_filter_shape
-    )
+    var filter_device_nd = NDBuffer[
+        rank=4, filter_type, _, static_filter_shape
+    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[out_type, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
 
@@ -383,7 +383,7 @@ fn test_conv2d_1sm[
 
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[act_type, 2](
+    var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
     im2col(im2col_host, act_host, problem)
@@ -393,13 +393,13 @@ fn test_conv2d_1sm[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[act_type, 2](
+    var im2col_device_nd = NDBuffer[rank=2, act_type](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[filter_type, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[out_type, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 
@@ -536,24 +536,24 @@ fn test_conv2d_epilogue_lambda[
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
-    var filter_host = NDBuffer[filter_type, 4, _, static_filter_shape](
+    var filter_host = NDBuffer[rank=4, filter_type, _, static_filter_shape](
         filter_host_ptr, dynamic_filter_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
-    var act_device_nd = NDBuffer[act_type, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, act_type, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_device_nd = NDBuffer[filter_type, 4, _, static_filter_shape](
-        filter_device.unsafe_ptr(), dynamic_filter_shape
-    )
+    var filter_device_nd = NDBuffer[
+        rank=4, filter_type, _, static_filter_shape
+    ](filter_device.unsafe_ptr(), dynamic_filter_shape)
     var out_device = ctx.enqueue_create_buffer[out_type](out_size)
-    var out_device_nd = NDBuffer[out_type, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, out_type, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
     var bias_device = ctx.enqueue_create_buffer[out_type](bias_size)
@@ -575,7 +575,7 @@ fn test_conv2d_epilogue_lambda[
     # Bias is 1D [out_c], needs to be broadcast over [M, N] output
     comptime bias_shape = DimList(-1)
     var dynamic_bias_shape = IndexList[1](out_c)
-    var bias_tensor = NDBuffer[out_type, 1, _, bias_shape](
+    var bias_tensor = NDBuffer[rank=1, out_type, _, bias_shape](
         bias_device.unsafe_ptr(), dynamic_bias_shape
     )
 
@@ -622,7 +622,7 @@ fn test_conv2d_epilogue_lambda[
 
     var im2col_host_ptr = alloc[Scalar[act_type]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[act_type, 2](
+    var im2col_host = NDBuffer[rank=2, act_type](
         im2col_host_ptr, dynamic_im2col_shape
     )
     im2col(im2col_host, act_host, problem)
@@ -632,13 +632,13 @@ fn test_conv2d_epilogue_lambda[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[act_type, 2](
+    var im2col_device_nd = NDBuffer[rank=2, act_type](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[filter_type, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, filter_type](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[out_type, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, out_type](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 
@@ -786,19 +786,19 @@ fn test_conv2d_bias_fusion[
 
     # Create NDBuffers
     comptime dyn_shape_4d = DimList(-1, -1, -1, -1)
-    var act_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    var act_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         act_dev.unsafe_ptr(), IndexList[4](batch, in_h, in_w, in_c)
     )
-    var filter_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    var filter_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         filter_dev.unsafe_ptr(), IndexList[4](out_c, filter_h, filter_w, in_c)
     )
-    var out_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    var out_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         out_dev.unsafe_ptr(), IndexList[4](batch, out_h, out_w, out_c)
     )
 
     # Create bias tensor for capture
     comptime dyn_shape_1d = DimList(-1)
-    var bias_tensor = NDBuffer[dtype, 1, _, dyn_shape_1d](
+    var bias_tensor = NDBuffer[rank=1, dtype, _, dyn_shape_1d](
         bias_dev.unsafe_ptr(), IndexList[1](out_c)
     )
 
@@ -843,21 +843,23 @@ fn test_conv2d_bias_fusion[
         )
 
     # Reference: im2col + GEMM + bias (CPU bias add)
-    var act_host_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
+    var act_host_nd = NDBuffer[rank=4, dtype, _, dyn_shape_4d](
         act_host, IndexList[4](batch, in_h, in_w, in_c)
     )
     var im2col_host = alloc[Scalar[dtype]](M * K)
-    var im2col_host_nd = NDBuffer[dtype, 2](im2col_host, IndexList[2](M, K))
+    var im2col_host_nd = NDBuffer[rank=2, dtype](
+        im2col_host, IndexList[2](M, K)
+    )
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
-    var im2col_nd = NDBuffer[dtype, 2](
+    var im2col_nd = NDBuffer[rank=2, dtype](
         im2col_dev.unsafe_ptr(), IndexList[2](M, K)
     )
-    var filter_2d_nd = NDBuffer[dtype, 2](
+    var filter_2d_nd = NDBuffer[rank=2, dtype](
         filter_dev.unsafe_ptr(), IndexList[2](N, K)
     )
-    var out_ref_nd = NDBuffer[dtype, 2](
+    var out_ref_nd = NDBuffer[rank=2, dtype](
         out_ref_dev.unsafe_ptr(), IndexList[2](M, N)
     )
 
@@ -990,25 +992,25 @@ fn test_conv2d_residual_api[
     var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
     var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
-    var act_host = NDBuffer[dtype, 4, _, static_act_shape](
+    var act_host = NDBuffer[rank=4, dtype, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
     )
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[dtype](act_size)
-    var act_device_nd = NDBuffer[dtype, 4, _, static_act_shape](
+    var act_device_nd = NDBuffer[rank=4, dtype, _, static_act_shape](
         act_device.unsafe_ptr(), dynamic_act_shape
     )
     var filter_device = ctx.enqueue_create_buffer[dtype](filter_size)
-    var filter_device_nd = NDBuffer[dtype, 4, _, static_filter_shape](
+    var filter_device_nd = NDBuffer[rank=4, dtype, _, static_filter_shape](
         filter_device.unsafe_ptr(), dynamic_filter_shape
     )
     var out_device = ctx.enqueue_create_buffer[dtype](out_size)
-    var out_device_nd = NDBuffer[dtype, 4, _, static_out_shape](
+    var out_device_nd = NDBuffer[rank=4, dtype, _, static_out_shape](
         out_device.unsafe_ptr(), dynamic_out_shape
     )
     var source_device = ctx.enqueue_create_buffer[dtype](out_size)
-    var source_device_nd = NDBuffer[dtype, 4, _, static_out_shape](
+    var source_device_nd = NDBuffer[rank=4, dtype, _, static_out_shape](
         source_device.unsafe_ptr(), dynamic_out_shape
     )
 
@@ -1069,7 +1071,9 @@ fn test_conv2d_residual_api[
 
     var im2col_host_ptr = alloc[Scalar[dtype]](im2col_size)
     var dynamic_im2col_shape = IndexList[2](M, K)
-    var im2col_host = NDBuffer[dtype, 2](im2col_host_ptr, dynamic_im2col_shape)
+    var im2col_host = NDBuffer[rank=2, dtype](
+        im2col_host_ptr, dynamic_im2col_shape
+    )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
@@ -1077,13 +1081,13 @@ fn test_conv2d_residual_api[
     var dynamic_a_ref_shape = IndexList[2](M, K)
     var dynamic_b_ref_shape = IndexList[2](N, K)
     var dynamic_c_ref_shape = IndexList[2](M, N)
-    var im2col_device_nd = NDBuffer[dtype, 2](
+    var im2col_device_nd = NDBuffer[rank=2, dtype](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
-    var filter_2d_device_nd = NDBuffer[dtype, 2](
+    var filter_2d_device_nd = NDBuffer[rank=2, dtype](
         filter_device.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var out_2d_ref_nd = NDBuffer[dtype, 2](
+    var out_2d_ref_nd = NDBuffer[rank=2, dtype](
         out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
     )
 

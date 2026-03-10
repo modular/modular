@@ -169,13 +169,25 @@ fn bench_bmm[
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
     var a_device = NDBuffer[
-        dtype, 3, MutAnyOrigin, batch_static_a_shape, batch_static_a_strides
+        rank=3,
+        dtype,
+        MutAnyOrigin,
+        batch_static_a_shape,
+        batch_static_a_strides,
     ](a_device_buffer.unsafe_ptr(), batch_dynamic_a_shape)
     var b_device = NDBuffer[
-        dtype, 3, MutAnyOrigin, batch_static_b_shape, batch_static_b_strides
+        rank=3,
+        dtype,
+        MutAnyOrigin,
+        batch_static_b_shape,
+        batch_static_b_strides,
     ](b_device_buffer.unsafe_ptr(), batch_dynamic_b_shape)
     var c_device = NDBuffer[
-        dtype, 3, MutAnyOrigin, batch_static_c_shape, batch_static_c_strides
+        rank=3,
+        dtype,
+        MutAnyOrigin,
+        batch_static_c_shape,
+        batch_static_c_strides,
     ](c_device_buffer.unsafe_ptr(), batch_dynamic_c_shape)
 
     # Initialize data on the device
@@ -225,13 +237,13 @@ fn bench_bmm[
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             comptime if use_vendor_blas:
                 comptime if has_amd_gpu_accelerator():
-                    var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
+                    var c_buffer = NDBuffer[rank=2, dtype, _, static_c_shape](
                         c_device.data, dynamic_c_shape
                     )
-                    var a_buffer = NDBuffer[dtype, 2, _, static_a_shape](
+                    var a_buffer = NDBuffer[rank=2, dtype, _, static_a_shape](
                         a_device.data, dynamic_a_shape
                     )
-                    var b_buffer = NDBuffer[dtype, 2, _, static_b_shape](
+                    var b_buffer = NDBuffer[rank=2, dtype, _, static_b_shape](
                         b_device.data, dynamic_b_shape
                     )
 
@@ -251,15 +263,15 @@ fn bench_bmm[
                         var a_ptr = a_device.data + (i * m * k)
                         var b_ptr = b_device.data + (i * k * n)
 
-                        var c_buffer = NDBuffer[dtype, 2, _, static_c_shape](
-                            c_ptr, dynamic_c_shape
-                        )
-                        var a_buffer = NDBuffer[dtype, 2, _, static_a_shape](
-                            a_ptr, dynamic_a_shape
-                        )
-                        var b_buffer = NDBuffer[dtype, 2, _, static_b_shape](
-                            b_ptr, dynamic_b_shape
-                        )
+                        var c_buffer = NDBuffer[
+                            rank=2, dtype, _, static_c_shape
+                        ](c_ptr, dynamic_c_shape)
+                        var a_buffer = NDBuffer[
+                            rank=2, dtype, _, static_a_shape
+                        ](a_ptr, dynamic_a_shape)
+                        var b_buffer = NDBuffer[
+                            rank=2, dtype, _, static_b_shape
+                        ](b_ptr, dynamic_b_shape)
 
                         vendor_blas.matmul(
                             ctx,

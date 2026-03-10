@@ -77,9 +77,9 @@ fn sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    mat_b: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    mat_c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    mat_a: NDBuffer[rank=2, a_type, MutAnyOrigin, a_shape],
+    mat_b: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ):
@@ -109,15 +109,15 @@ fn sgemm_warp_tiling_kernel[
     comptime sram_bank_padding_size = 4
     comptime BM_padded = BM + sram_bank_padding_size
     var a_sram = NDBuffer[
+        rank=1,
         a_type,
-        1,
         MutAnyOrigin,
         DimList(BK * BM_padded),
         address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
+        rank=1,
         b_type,
-        1,
         MutAnyOrigin,
         DimList(BK * BN),
         address_space=AddressSpace.SHARED,
@@ -141,8 +141,8 @@ fn sgemm_warp_tiling_kernel[
     # TODO: We want these to be register-allocated!
     # Allocate thread-local cache for results in register file.
     var thread_results = NDBuffer[
+        rank=4,
         c_type,
-        4,
         MutAnyOrigin,
         DimList(WMITER, WNITER, TM, TN),
     ]().stack_allocation()
@@ -150,12 +150,12 @@ fn sgemm_warp_tiling_kernel[
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, MutAnyOrigin, DimList(WMITER, TM)
+        rank=2, a_type, MutAnyOrigin, DimList(WMITER, TM)
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, MutAnyOrigin, DimList(WNITER, TN)
+        rank=2, b_type, MutAnyOrigin, DimList(WNITER, TN)
     ]().stack_allocation()
     reg_n.zero()
 
@@ -297,9 +297,9 @@ fn matmul_naive(
     if x >= m or y >= n:
         return
 
-    var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[DType.float32, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[DType.float32, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, DType.float32](a_ptr, Index(m, k))
+    var b = NDBuffer[rank=2, DType.float32](b_ptr, Index(k, n))
+    var c = NDBuffer[rank=2, DType.float32](c_ptr, Index(m, n))
 
     var accum = Float32(0)
     for i in range(k):
@@ -408,13 +408,13 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
+    var c_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, N)](
         c_device.unsafe_ptr()
     )
-    var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
+    var a_buffer = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](
         a_device.unsafe_ptr()
     )
-    var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
+    var b_buffer = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](
         b_device.unsafe_ptr()
     )
 

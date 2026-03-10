@@ -860,10 +860,10 @@ fn multistage_dual_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_k_partitions: Int = 1,
 ](
-    c: NDBuffer[c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b0: NDBuffer[b_type, 2, _, b_shape],
-    b1: NDBuffer[b_type, 2, _, b_shape],
+    c: NDBuffer[rank=2, c_type, _, c_shape],
+    a: NDBuffer[rank=2, a_type, _, a_shape],
+    b0: NDBuffer[rank=2, b_type, _, b_shape],
+    b1: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var tensor_c = TileTensor(c).to_layout_tensor()
@@ -947,10 +947,10 @@ fn dual_gemm[
     config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
@@ -992,10 +992,10 @@ fn dual_gemm[
                 config=kernels.tuning_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -1007,10 +1007,10 @@ fn dual_gemm[
                 config=config.value(),
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -1042,10 +1042,14 @@ fn dual_gemm[
                         config=M128_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1065,10 +1069,14 @@ fn dual_gemm[
                         config=M256_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1088,10 +1096,14 @@ fn dual_gemm[
                         config=M512_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1111,10 +1123,14 @@ fn dual_gemm[
                         config=M1606_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1134,10 +1150,14 @@ fn dual_gemm[
                         config=M2048_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1149,10 +1169,10 @@ fn dual_gemm[
             ),
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](
-            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-            rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-            rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+            rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+            rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+            rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+            rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
             ctx,
         )
         return
@@ -1190,10 +1210,10 @@ fn dual_gemv_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, MutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
 ):
     var m = UInt(c.dim(0))
     var n = UInt(b0.dim(0))
@@ -1315,10 +1335,10 @@ fn dual_gemv[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -1364,10 +1384,10 @@ fn dual_gemv[
 fn swishGLU[
     target: StaticString = "cpu",
 ](
-    a: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    b0: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    b1: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    c: NDBuffer[_, 2, MutAnyOrigin, _],
+    a: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    b0: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    b1: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    c: NDBuffer[rank=2, _, MutAnyOrigin, _],
     ctx: DeviceContextPtr,
 ) raises:
     """

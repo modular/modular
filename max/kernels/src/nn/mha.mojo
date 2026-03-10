@@ -5312,16 +5312,16 @@ fn _naive_attention_with_transpose[
     # O = Score * V. It's transposed and will be transposed back to output.
     var ot_ptr = alloc[Scalar[dtype]](output.size())
 
-    var qt = NDBuffer[dtype, 4](
+    var qt = NDBuffer[rank=4, dtype](
         qt_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
-    var kt = NDBuffer[dtype, 4](
+    var kt = NDBuffer[rank=4, dtype](
         kt_ptr, Index(batch_size, num_heads, depth, num_keys)
     )
-    var vt = NDBuffer[dtype, 4](
+    var vt = NDBuffer[rank=4, dtype](
         vt_ptr, Index(batch_size, num_heads, num_keys, depth)
     )
-    var ot = NDBuffer[dtype, 4](
+    var ot = NDBuffer[rank=4, dtype](
         ot_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
 
@@ -5377,7 +5377,7 @@ fn _naive_attention_with_transpose[
 
     transpose(
         qt,
-        NDBuffer[q.dtype, 4, q.origin](
+        NDBuffer[rank=4, q.dtype, q.origin](
             q.ptr,
             rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5385,7 +5385,7 @@ fn _naive_attention_with_transpose[
     )
     transpose(
         kt,
-        NDBuffer[k.dtype, 4, k.origin](
+        NDBuffer[rank=4, k.dtype, k.origin](
             k.ptr,
             rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5393,7 +5393,7 @@ fn _naive_attention_with_transpose[
     )
     transpose(
         vt,
-        NDBuffer[v.dtype, 4, v.origin](
+        NDBuffer[rank=4, v.dtype, v.origin](
             v.ptr,
             rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5405,7 +5405,7 @@ fn _naive_attention_with_transpose[
     )
 
     transpose(
-        NDBuffer[output.dtype, 4, output.origin](
+        NDBuffer[rank=4, output.dtype, output.origin](
             output.ptr,
             rebind[IndexList[4]](
                 output.runtime_layout.shape.value.canonicalize()
@@ -5450,16 +5450,16 @@ fn _naive_attention[
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
     var score_ptr = alloc[Scalar[dtype]](score_size)
-    var score = NDBuffer[dtype, 4](
+    var score = NDBuffer[rank=4, dtype](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
     batched_matmul[transpose_b=transpose_k](
         score,
-        NDBuffer[q.dtype, 4, q.origin](
+        NDBuffer[rank=4, q.dtype, q.origin](
             q.ptr,
             rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
         ),
-        NDBuffer[k.dtype, 4, k.origin](
+        NDBuffer[rank=4, k.dtype, k.origin](
             k.ptr,
             rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5490,14 +5490,14 @@ fn _naive_attention[
     )
 
     batched_matmul[transpose_b=False](
-        NDBuffer[output.dtype, 4, output.origin](
+        NDBuffer[rank=4, output.dtype, output.origin](
             output.ptr,
             rebind[IndexList[4]](
                 output.runtime_layout.shape.value.canonicalize()
             ),
         ),
         score.get_immutable(),
-        NDBuffer[v.dtype, 4, v.origin](
+        NDBuffer[rank=4, v.dtype, v.origin](
             v.ptr,
             rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
         ),

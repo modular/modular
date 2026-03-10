@@ -235,13 +235,13 @@ fn run_matmul[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -385,13 +385,13 @@ fn run_matmul_split_k[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -405,9 +405,9 @@ fn run_matmul_split_k[
     var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
     multistage_gemm[transpose_b=False, config=config](
-        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
+        rebind[NDBuffer[rank=2, dtype, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[rank=2, dtype, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[rank=2, dtype, b_buf.origin, b_shape]](b_buf),
         best_config,
         ctx,
     )
@@ -536,13 +536,13 @@ fn run_matmul_transpose[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](N * K)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(N, K)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -672,26 +672,26 @@ fn run_batched_matmul(
     var a_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * K)
     var b_device = ctx.enqueue_create_buffer[DType.bfloat16](B * K * N)
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * N)
-    var a_buf = NDBuffer[DType.bfloat16, 3](
+    var a_buf = NDBuffer[rank=3, DType.bfloat16](
         a_device.unsafe_ptr(), Index(B, M, K)
     )
-    var b_buf = NDBuffer[DType.bfloat16, 3](
+    var b_buf = NDBuffer[rank=3, DType.bfloat16](
         b_device.unsafe_ptr(), Index(B, K, N)
     )
-    var c_buf = NDBuffer[DType.bfloat16, 3](
+    var c_buf = NDBuffer[rank=3, DType.bfloat16](
         c_device.unsafe_ptr(), Index(B, M, N)
     )
 
     var a_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * K)
     var b_device_n = ctx.enqueue_create_buffer[DType.float32](B * K * N)
     var c_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * N)
-    var a_buf_n = NDBuffer[DType.float32, 3](
+    var a_buf_n = NDBuffer[rank=3, DType.float32](
         a_device_n.unsafe_ptr(), Index(B, M, K)
     )
-    var b_buf_n = NDBuffer[DType.float32, 3](
+    var b_buf_n = NDBuffer[rank=3, DType.float32](
         b_device_n.unsafe_ptr(), Index(B, K, N)
     )
-    var c_buf_n = NDBuffer[DType.float32, 3](
+    var c_buf_n = NDBuffer[rank=3, DType.float32](
         c_device_n.unsafe_ptr(), Index(B, M, N)
     )
 

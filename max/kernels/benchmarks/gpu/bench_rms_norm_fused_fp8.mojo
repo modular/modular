@@ -197,13 +197,13 @@ fn bench_rms_norm_fused_fp8[
                 var idx = row * cols + col
                 return rms_ptr_offset.load[width=width](idx)
 
-            var fp8_output_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
+            var fp8_output_ndbuf = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fp8_output.offset_ptr(iteration)
                 ),
                 Index(rows, cols),
             )
-            var scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
+            var scales_ndbuf = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr
                 ),
@@ -262,7 +262,9 @@ fn bench_rms_norm_fused_fp8[
                     idx
                 )
 
-            var fused_output_ndbuf = NDBuffer[out_dtype, rank, MutAnyOrigin](
+            var fused_output_ndbuf = NDBuffer[
+                rank=rank, out_dtype, MutAnyOrigin
+            ](
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fused_output.offset_ptr(iteration)
                 ),
@@ -271,7 +273,7 @@ fn bench_rms_norm_fused_fp8[
             var fused_scale_shape = shape
             fused_scale_shape[rank - 1] = 1
             var fused_scales_ndbuf = NDBuffer[
-                DType.float32, rank, MutAnyOrigin
+                rank=rank, DType.float32, MutAnyOrigin
             ](
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr_fused
@@ -373,11 +375,11 @@ fn bench_rms_norm_fused_fp8[
         var idx = row * cols + col
         return rms_ptr.load[width=width](idx)
 
-    var fp8_output_ndbuf_verify = NDBuffer[out_dtype, 2, MutAnyOrigin](
+    var fp8_output_ndbuf_verify = NDBuffer[rank=2, out_dtype, MutAnyOrigin](
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
         Index(rows, cols),
     )
-    var scales_ndbuf_verify = NDBuffer[DType.float32, 2, MutAnyOrigin](
+    var scales_ndbuf_verify = NDBuffer[rank=2, DType.float32, MutAnyOrigin](
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
         Index(1, rows),
     )
@@ -404,13 +406,17 @@ fn bench_rms_norm_fused_fp8[
         var idx = data_buf.layout(Coord(coords))
         return data_buf.ptr.load[width=width](idx)
 
-    var fused_output_ndbuf_verify = NDBuffer[out_dtype, rank, MutAnyOrigin](
+    var fused_output_ndbuf_verify = NDBuffer[
+        rank=rank, out_dtype, MutAnyOrigin
+    ](
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fused_verify_base_ptr),
         rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
     )
     var verify_scale_shape = shape
     verify_scale_shape[rank - 1] = 1
-    var fused_scales_ndbuf_verify = NDBuffer[DType.float32, rank, MutAnyOrigin](
+    var fused_scales_ndbuf_verify = NDBuffer[
+        rank=rank, DType.float32, MutAnyOrigin
+    ](
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
             scales_base_ptr_fused
         ),

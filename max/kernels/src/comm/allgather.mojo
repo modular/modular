@@ -48,9 +48,11 @@ fn _allgather_naive[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:
@@ -155,9 +157,11 @@ fn _allgather_p2p[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
@@ -227,9 +231,11 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -289,9 +295,11 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ],
     output_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:

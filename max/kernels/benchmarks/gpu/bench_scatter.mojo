@@ -154,20 +154,20 @@ fn bench_scatter[
         )
 
     # Build NDBuffer wrappers for scatter API.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
+    ](fill={})
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
     for dp_idx in range(dp_size):
-        in_bufs[dp_idx] = NDBuffer[dtype, rank](
+        in_bufs[dp_idx] = NDBuffer[rank=rank, dtype](
             cb_inputs[dp_idx].unsafe_ptr(), IndexList[rank](num_elems)
         )
 
     for gpu_idx in range(ngpus):
-        out_bufs[gpu_idx] = NDBuffer[dtype, rank](
+        out_bufs[gpu_idx] = NDBuffer[rank=rank, dtype](
             out_bufs_list[gpu_idx].unsafe_ptr(), IndexList[rank](num_elems)
         )
         list_of_ctx[gpu_idx].synchronize()
@@ -182,7 +182,7 @@ fn bench_scatter[
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.
             comptime for dp_idx in range(dp_size):
-                in_bufs[dp_idx] = NDBuffer[dtype, rank](
+                in_bufs[dp_idx] = NDBuffer[rank=rank, dtype](
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
                     IndexList[rank](num_elems),
                 )

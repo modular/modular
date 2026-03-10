@@ -212,14 +212,14 @@ fn test_dynamic[
         scales_device, RuntimeLayout[layout_1d].row_major(Index(rows))
     )
 
-    var out_buffer = NDBuffer[mut=True, out_dtype, rank, MutAnyOrigin](
+    var out_buffer = NDBuffer[mut=True, rank=rank, out_dtype, MutAnyOrigin](
         out_tensor.ptr, shape
     )
     var scale_shape = shape
     scale_shape[rank - 1] = 1
-    var scale_buffer = NDBuffer[mut=True, scales_dtype, rank, MutAnyOrigin](
-        scales_tensor.ptr, scale_shape
-    )
+    var scale_buffer = NDBuffer[
+        mut=True, rank=rank, scales_dtype, MutAnyOrigin
+    ](scales_tensor.ptr, scale_shape)
 
     @__copy_capture(in_tensor)
     @always_inline

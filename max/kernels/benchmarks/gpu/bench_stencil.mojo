@@ -33,8 +33,8 @@ from std.utils.numerics import min_or_neg_inf
 fn assert_allclose[
     dtype: DType, rank: Int, shape: DimList
 ](
-    h_output_ref: NDBuffer[dtype, rank, _, shape],
-    h_output_gpu: NDBuffer[dtype, rank, _, shape],
+    h_output_ref: NDBuffer[rank=rank, dtype, _, shape],
+    h_output_gpu: NDBuffer[rank=rank, dtype, _, shape],
 ) raises:
     var shape_ = h_output_ref.get_shape()
     for i in range(shape_.flattened_length()):
@@ -70,11 +70,13 @@ fn bench_stencil_avg_pool[
 
     # Create host buffers
     var h_input_ptr = alloc[Scalar[dtype]](Int(input_shape.product()))
-    var h_input = NDBuffer[dtype, rank, _, input_shape](h_input_ptr)
+    var h_input = NDBuffer[rank=rank, dtype, _, input_shape](h_input_ptr)
     var h_output_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output = NDBuffer[dtype, rank, _, output_shape](h_output_ptr)
+    var h_output = NDBuffer[rank=rank, dtype, _, output_shape](h_output_ptr)
     var h_output_ref_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output_ref = NDBuffer[dtype, rank, _, output_shape](h_output_ref_ptr)
+    var h_output_ref = NDBuffer[rank=rank, dtype, _, output_shape](
+        h_output_ref_ptr
+    )
 
     # Initialize input data
     for i in range(h_input.num_elements()):
@@ -86,13 +88,13 @@ fn bench_stencil_avg_pool[
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_buf.unsafe_ptr(), dynamic_input_shape
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_buf.unsafe_ptr(), dynamic_output_shape
     )
 
@@ -292,11 +294,13 @@ fn bench_stencil_max_pool[
 
     # Create host buffers
     var h_input_ptr = alloc[Scalar[dtype]](Int(input_shape.product()))
-    var h_input = NDBuffer[dtype, rank, _, input_shape](h_input_ptr)
+    var h_input = NDBuffer[rank=rank, dtype, _, input_shape](h_input_ptr)
     var h_output_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output = NDBuffer[dtype, rank, _, output_shape](h_output_ptr)
+    var h_output = NDBuffer[rank=rank, dtype, _, output_shape](h_output_ptr)
     var h_output_ref_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output_ref = NDBuffer[dtype, rank, _, output_shape](h_output_ref_ptr)
+    var h_output_ref = NDBuffer[rank=rank, dtype, _, output_shape](
+        h_output_ref_ptr
+    )
 
     # Initialize input data
     for i in range(h_input.num_elements()):
@@ -308,13 +312,13 @@ fn bench_stencil_max_pool[
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_buf.unsafe_ptr(), dynamic_input_shape
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_buf.unsafe_ptr(), dynamic_output_shape
     )
 
@@ -506,11 +510,13 @@ fn bench_stencil_avg_pool_padded[
 
     # Create host buffers
     var h_input_ptr = alloc[Scalar[dtype]](Int(input_shape.product()))
-    var h_input = NDBuffer[dtype, rank, _, input_shape](h_input_ptr)
+    var h_input = NDBuffer[rank=rank, dtype, _, input_shape](h_input_ptr)
     var h_output_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output = NDBuffer[dtype, rank, _, output_shape](h_output_ptr)
+    var h_output = NDBuffer[rank=rank, dtype, _, output_shape](h_output_ptr)
     var h_output_ref_ptr = alloc[Scalar[dtype]](Int(output_shape.product()))
-    var h_output_ref = NDBuffer[dtype, rank, _, output_shape](h_output_ref_ptr)
+    var h_output_ref = NDBuffer[rank=rank, dtype, _, output_shape](
+        h_output_ref_ptr
+    )
 
     # Initialize input data
     for i in range(h_input.num_elements()):
@@ -522,13 +528,13 @@ fn bench_stencil_avg_pool_padded[
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](
+    var d_input = NDBuffer[rank=rank, dtype](
         d_input_buf.unsafe_ptr(), dynamic_input_shape
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
-    var d_output = NDBuffer[dtype, rank](
+    var d_output = NDBuffer[rank=rank, dtype](
         d_output_buf.unsafe_ptr(), dynamic_output_shape
     )
 

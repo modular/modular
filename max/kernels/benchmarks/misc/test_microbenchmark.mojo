@@ -27,9 +27,9 @@ comptime alignment = 64
 fn gemm_naive[
     a_type: DType, b_type: DType, c_type: DType
 ](
-    a: NDBuffer[a_type, 2, _, DimList.create_unknown[2]()],
-    b: NDBuffer[b_type, 2, _, DimList.create_unknown[2]()],
-    c: NDBuffer[c_type, 2, _, DimList.create_unknown[2]()],
+    a: NDBuffer[rank=2, a_type, _, DimList.create_unknown[2]()],
+    b: NDBuffer[rank=2, b_type, _, DimList.create_unknown[2]()],
+    c: NDBuffer[rank=2, c_type, _, DimList.create_unknown[2]()],
     m: Int,
     n: Int,
     k: Int,
@@ -52,9 +52,9 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
     var a_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin]
     var b_ptr: UnsafePointer[Scalar[b_type], MutAnyOrigin]
     var c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin]
-    var am: NDBuffer[a_type, 2, MutAnyOrigin, DimList.create_unknown[2]()]
-    var bm: NDBuffer[b_type, 2, MutAnyOrigin, DimList.create_unknown[2]()]
-    var cm: NDBuffer[c_type, 2, MutAnyOrigin, DimList.create_unknown[2]()]
+    var am: NDBuffer[rank=2, a_type, MutAnyOrigin, DimList.create_unknown[2]()]
+    var bm: NDBuffer[rank=2, b_type, MutAnyOrigin, DimList.create_unknown[2]()]
+    var cm: NDBuffer[rank=2, c_type, MutAnyOrigin, DimList.create_unknown[2]()]
 
     fn __init__(out self, m: Int, n: Int, k: Int):
         self.m = m
@@ -63,13 +63,13 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         self.a_ptr = alloc[Scalar[a_type]](m * k, alignment=alignment)
         self.b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
         self.c_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
-        self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
+        self.am = NDBuffer[rank=2, a_type, DimList.create_unknown[2]()](
             self.a_ptr, Index(self.m, self.k)
         )
-        self.bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+        self.bm = NDBuffer[rank=2, b_type, DimList.create_unknown[2]()](
             self.b_ptr, Index(self.k, self.n)
         )
-        self.cm = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
+        self.cm = NDBuffer[rank=2, c_type, DimList.create_unknown[2]()](
             self.c_ptr, Index(self.m, self.n)
         )
 
@@ -125,9 +125,9 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
     var a_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin]
     var b_ptr: UnsafePointer[Scalar[b_type], MutAnyOrigin]
     var c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin]
-    var am: NDBuffer[a_type, 2, DimList.create_unknown[2]()]
-    var bm: NDBuffer[b_type, 2, DimList.create_unknown[2]()]
-    var cm: NDBuffer[c_type, 2, DimList.create_unknown[2]()]
+    var am: NDBuffer[rank=2, a_type, DimList.create_unknown[2]()]
+    var bm: NDBuffer[rank=2, b_type, DimList.create_unknown[2]()]
+    var cm: NDBuffer[rank=2, c_type, DimList.create_unknown[2]()]
 
     fn __init__(out self, m: Int, n: Int, k: Int):
         self.m = m
@@ -136,13 +136,13 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
         self.a_ptr = alloc[Scalar[a_type]](self.m * self.k, alignment=alignment)
         self.b_ptr = alloc[Scalar[b_type]](self.k * self.n, alignment=alignment)
         self.c_ptr = alloc[Scalar[c_type]](self.m * self.n, alignment=alignment)
-        self.am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
+        self.am = NDBuffer[rank=2, a_type, DimList.create_unknown[2]()](
             self.a_ptr, Index(self.m, self.k)
         )
-        self.bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+        self.bm = NDBuffer[rank=2, b_type, DimList.create_unknown[2]()](
             self.b_ptr, Index(self.k, self.n)
         )
-        self.cm = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
+        self.cm = NDBuffer[rank=2, c_type, DimList.create_unknown[2]()](
             self.c_ptr, Index(self.m, self.n)
         )
 

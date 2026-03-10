@@ -93,9 +93,9 @@ fn matmul_kernel[
     (N/tile_size, M/tile_size, 1). N is the first dimension for coalesced
     access.
     """
-    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, a_type](a_ptr, Index(m, k))
+    var b = NDBuffer[rank=2, b_type](b_ptr, Index(k, n))
+    var c = NDBuffer[rank=2, c_type](c_ptr, Index(m, n))
 
     # Allocate A, B tile in shared memory.
     var a_shared = stack_allocation[
@@ -393,9 +393,9 @@ fn _matmul_gpu[
     pdl_level: PDLLevel = PDLLevel(),
     register_based_epilogue: Bool = True,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[mut=False, rank=2, a_type, _, _],
+    b: NDBuffer[mut=False, rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime a_shape = a.shape
@@ -547,9 +547,9 @@ fn _matmul_gpu[
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b_shape]](b),
                     runtime_config,
                     ctx,
                 )
@@ -567,9 +567,9 @@ fn _matmul_gpu[
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b_shape]](b),
                     ctx,
                 )
 
@@ -883,9 +883,9 @@ fn multistage_gemm[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
+    c: NDBuffer[mut=True, rank=2, c_type, _, c_shape],
+    a: NDBuffer[rank=2, a_type, _, a_shape],
+    b: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -975,9 +975,9 @@ fn multistage_gemm[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[mut=False, a_type, 2, _, a_shape],
-    b: NDBuffer[mut=False, b_type, 2, _, b_shape],
+    c: NDBuffer[mut=True, rank=2, c_type, _, c_shape],
+    a: NDBuffer[mut=False, rank=2, a_type, _, a_shape],
+    b: NDBuffer[mut=False, rank=2, b_type, _, b_shape],
     runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
 ) raises:

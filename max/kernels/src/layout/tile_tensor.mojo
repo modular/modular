@@ -1765,8 +1765,8 @@ struct TileTensor[
     fn _to_ndbuffer(
         self,
         out result: NDBuffer[
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             Self.origin,
             _CoordToDimList[*Self.LayoutType._shape_types],
             _CoordToDimList[*Self.LayoutType._stride_types],

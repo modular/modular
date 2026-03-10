@@ -192,13 +192,13 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(M, K)](
+    var mat_a = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList(M, K)](
         a_device.unsafe_ptr(), dynamic_shape=Index(M, K)
     )
-    var mat_b = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(K, M)](
+    var mat_b = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList(K, M)](
         b_device.unsafe_ptr(), dynamic_shape=Index(K, M)
     )
-    var mat_c = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(M, N)](
+    var mat_c = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList(M, N)](
         c_device.unsafe_ptr(), dynamic_shape=Index(M, N)
     )
 

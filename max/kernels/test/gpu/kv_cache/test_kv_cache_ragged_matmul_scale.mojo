@@ -336,23 +336,23 @@ def execute_matmul_k_cache_ragged_scale[
 
     # Execute reference using naive blockwise scaled matmul.
     # Create NDBuffers for naive_blockwise_scaled_fp8_matmul
-    var ref_output_ndbuffer = NDBuffer[dtype, 2](
+    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
         ref_output.device_tensor[update=False]().ptr,
         ref_output_shape,
     )
-    var hidden_state_ragged_ndbuffer = NDBuffer[weight_dtype, 2](
+    var hidden_state_ragged_ndbuffer = NDBuffer[rank=2, weight_dtype](
         hidden_state_ragged_device.unsafe_ptr(),
         IndexList[2](ragged_total_length, hidden_size),
     )
-    var weight_ref_ndbuffer = NDBuffer[weight_dtype, 2](
+    var weight_ref_ndbuffer = NDBuffer[rank=2, weight_dtype](
         weight_device.unsafe_ptr(),
         weight_shape,
     )
-    var ref_input_scale_ndbuffer = NDBuffer[scale_dtype, 2](
+    var ref_input_scale_ndbuffer = NDBuffer[rank=2, scale_dtype](
         input_scale.device_tensor[update=False]().ptr,
         input_scale_shape,
     )
-    var ref_weight_scale_ndbuffer = NDBuffer[scale_dtype, 2](
+    var ref_weight_scale_ndbuffer = NDBuffer[rank=2, scale_dtype](
         weight_scale.device_tensor[update=False]().ptr,
         weight_scale_shape,
     )

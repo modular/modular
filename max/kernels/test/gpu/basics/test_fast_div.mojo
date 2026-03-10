@@ -52,19 +52,19 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
     comptime length = 256
 
     var divisors = NDBuffer[
-        type, 1, MutAnyOrigin, DimList(length)
+        rank=1, type, MutAnyOrigin, DimList(length)
     ].stack_allocation()
     var remainders = NDBuffer[
-        type, 1, MutAnyOrigin, DimList(length)
+        rank=1, type, MutAnyOrigin, DimList(length)
     ].stack_allocation()
 
     var out_divisors = ctx.enqueue_create_buffer[type](length)
     var out_remainders = ctx.enqueue_create_buffer[type](length)
 
-    var out_divisors_buffer = NDBuffer[type, 1](
+    var out_divisors_buffer = NDBuffer[rank=1, type](
         out_divisors.unsafe_ptr(), Index(length)
     )
-    var out_remainders_buffer = NDBuffer[type, 1](
+    var out_remainders_buffer = NDBuffer[rank=1, type](
         out_remainders.unsafe_ptr(), Index(length)
     )
 

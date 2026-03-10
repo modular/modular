@@ -95,7 +95,7 @@ fn broadcast_test[
         RuntimeLayout[layout_1d].row_major(IndexList[1](length)), root_ctx
     )
     var input_dev = input.device_data.value()
-    var in_buf = NDBuffer[dtype, rank, ImmutAnyOrigin](
+    var in_buf = NDBuffer[rank=rank, dtype, ImmutAnyOrigin](
         input_dev.unsafe_ptr(), IndexList[rank](length)
     )
 
@@ -107,7 +107,7 @@ fn broadcast_test[
 
     # Create output buffers for all GPUs
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var out_bufs = InlineArray[NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -121,7 +121,7 @@ fn broadcast_test[
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
+            out_bufs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
                 input_dev.unsafe_ptr(),
                 IndexList[rank](length),
             )
@@ -130,7 +130,7 @@ fn broadcast_test[
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
-        out_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
+        out_bufs[i] = NDBuffer[rank=rank, dtype, MutAnyOrigin](
             out_ptr.unsafe_ptr(), IndexList[rank](length)
         )
 

@@ -338,9 +338,9 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     BN: Int,
     BK: Int,
 ](
-    dst: NDBuffer[DType.float32, 2, MutAnyOrigin, dst_shape],
-    lhs: NDBuffer[DType.float32, 2, MutAnyOrigin, lhs_shape],
-    rhs: NDBuffer[DType.float32, 2, MutAnyOrigin, rhs_shape],
+    dst: NDBuffer[rank=2, DType.float32, MutAnyOrigin, dst_shape],
+    lhs: NDBuffer[rank=2, DType.float32, MutAnyOrigin, lhs_shape],
+    rhs: NDBuffer[rank=2, DType.float32, MutAnyOrigin, rhs_shape],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
@@ -457,13 +457,13 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     ctx.enqueue_copy(mat_a_dev, mat_a_ptr)
     ctx.enqueue_copy(mat_b_dev, mat_b_ptr)
 
-    var mat_c = NDBuffer[DType.float32, 2, _, DimList.create_unknown[2]()](
+    var mat_c = NDBuffer[rank=2, DType.float32, _, DimList.create_unknown[2]()](
         mat_c_dev.unsafe_ptr(), dynamic_shape=Index(M, N)
     )
-    var mat_a = NDBuffer[DType.float32, 2, _, DimList(M, K)](
+    var mat_a = NDBuffer[rank=2, DType.float32, _, DimList(M, K)](
         mat_a_dev.unsafe_ptr(), dynamic_shape=Index(M, K)
     )
-    var mat_b = NDBuffer[DType.float32, 2, _, DimList(K, N)](
+    var mat_b = NDBuffer[rank=2, DType.float32, _, DimList(K, N)](
         mat_b_dev.unsafe_ptr(), dynamic_shape=Index(K, N)
     )
 

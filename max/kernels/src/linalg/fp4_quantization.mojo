@@ -680,9 +680,9 @@ fn quantize_dynamic_block_scaled[
     SF_VECTOR_SIZE: Int,
     target: StaticString = "cpu",
 ](
-    output_device: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, _],
-    scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
-    input_device: NDBuffer[in_dtype, 2, ImmutAnyOrigin, _],
+    output_device: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin, _],
+    scales_device: NDBuffer[mut=True, rank=5, scales_dtype, MutAnyOrigin, _],
+    input_device: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin, _],
     tensor_sf: Float32,  # tensor-wise scale factor
     ctx: DeviceContext,
 ) raises:
@@ -770,8 +770,10 @@ fn block_scales_interleave[
     SF_VECTOR_SIZE: Int,
     target: StaticString = "cpu",
 ](
-    output_scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
-    input_scales_device: NDBuffer[scales_dtype, 2, ImmutAnyOrigin, _],
+    output_scales_device: NDBuffer[
+        mut=True, rank=5, scales_dtype, MutAnyOrigin, _
+    ],
+    input_scales_device: NDBuffer[rank=2, scales_dtype, ImmutAnyOrigin, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert (
@@ -1231,11 +1233,11 @@ fn block_scaled_matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
-    a_device: NDBuffer[a_type, 2, ImmutAnyOrigin, _],
-    b_device: NDBuffer[b_type, 2, ImmutAnyOrigin, _],
-    a_scales_device: NDBuffer[scales_dtype, 5, ImmutAnyOrigin, _],
-    b_scales_device: NDBuffer[scales_dtype, 5, ImmutAnyOrigin, _],
+    c_device: NDBuffer[mut=True, rank=2, c_type, MutAnyOrigin, _],
+    a_device: NDBuffer[rank=2, a_type, ImmutAnyOrigin, _],
+    b_device: NDBuffer[rank=2, b_type, ImmutAnyOrigin, _],
+    a_scales_device: NDBuffer[rank=5, scales_dtype, ImmutAnyOrigin, _],
+    b_scales_device: NDBuffer[rank=5, scales_dtype, ImmutAnyOrigin, _],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:

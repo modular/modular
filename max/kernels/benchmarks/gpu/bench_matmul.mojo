@@ -135,19 +135,19 @@ fn verify_matmul[
     var b_size = dynamic_b_shape[0] * dynamic_b_shape[1]
 
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
-    var a_device_nd = NDBuffer[dtype, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, dtype, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
-    var b_device_nd = NDBuffer[dtype, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, dtype, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -155,10 +155,10 @@ fn verify_matmul[
     comptime if not init_on_gpu:
         var a_host_ptr = alloc[Scalar[dtype]](a_size)
         var b_host_ptr = alloc[Scalar[dtype]](b_size)
-        var a_host = NDBuffer[dtype, 2, _, static_a_shape](
+        var a_host = NDBuffer[rank=2, dtype, _, static_a_shape](
             a_host_ptr, dynamic_a_shape
         )
-        var b_host = NDBuffer[dtype, 2, _, static_b_shape](
+        var b_host = NDBuffer[rank=2, dtype, _, static_b_shape](
             b_host_ptr, dynamic_b_shape
         )
 
@@ -381,8 +381,8 @@ fn bench_matmul[
     comptime if not init_on_gpu:
         var a_host_ptr = alloc[Scalar[dtype]](cb_a.alloc_size())
         var b_host_ptr = alloc[Scalar[dtype]](cb_b.alloc_size())
-        var a_host = NDBuffer[dtype, 1](a_host_ptr, cb_a.alloc_size())
-        var b_host = NDBuffer[dtype, 1](b_host_ptr, cb_b.alloc_size())
+        var a_host = NDBuffer[rank=1, dtype](a_host_ptr, cb_a.alloc_size())
+        var b_host = NDBuffer[rank=1, dtype](b_host_ptr, cb_b.alloc_size())
 
         comptime if dtype.is_float8():
             rand(a_host.data, a_host.num_elements())
@@ -415,9 +415,9 @@ fn bench_matmul[
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     fn run_vendor_blas(
         ctx: DeviceContext,
-        tensor_a: NDBuffer[dtype, 2, MutAnyOrigin, shape_a],
-        tensor_b: NDBuffer[dtype, 2, MutAnyOrigin, shape_b],
-        tensor_c: NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c],
+        tensor_a: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a],
+        tensor_b: NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b],
+        tensor_c: NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c],
     ) raises:
         vendor_blas.matmul[use_tf32=True](
             ctx,
@@ -436,13 +436,13 @@ fn bench_matmul[
     @parameter
     @always_inline
     fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-        var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+        var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
             cb_a.offset_ptr(iteration), shape_a_dim
         )
-        var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+        var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
             cb_b.offset_ptr(iteration), shape_b_dim
         )
-        var tensor_c = NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c](
+        var tensor_c = NDBuffer[rank=2, DType.bfloat16, MutAnyOrigin, shape_c](
             cb_c.offset_ptr(iteration), shape_c_dim
         )
 

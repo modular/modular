@@ -109,15 +109,15 @@ fn test[
     ctx.enqueue_copy(c_ref_dev, c_host_ref)
 
     # NDBuffers for _matmul_gpu
-    var a_device = NDBuffer[in_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, in_type, _, static_a_shape](
         a_dev.unsafe_ptr(),
         IndexList[2](m, k),
     )
-    var b_device = NDBuffer[in_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[rank=2, in_type, _, static_b_shape](
         b_dev.unsafe_ptr(),
         IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
-    var c_device = NDBuffer[out_type, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, out_type, _, static_c_shape](
         c_dev.unsafe_ptr(),
         IndexList[2](m, n),
     )

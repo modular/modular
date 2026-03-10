@@ -461,16 +461,16 @@ fn test_repack_Q4_0_for_sm8x(
     var gguf_dequan_ref_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
     var repacked_dequan_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
 
-    var gguf_b_host = NDBuffer[DType.uint8, 2](
+    var gguf_b_host = NDBuffer[rank=2, DType.uint8](
         gguf_b_host_ptr, dynamic_gguf_b_shape
     )
-    var repacked_b_host = NDBuffer[DType.uint8, 2, _, static_repacked_b_shape](
-        repacked_b_host_ptr, dynamic_repacked_b_shape
-    )
-    var gguf_dequan_ref_host = NDBuffer[DType.bfloat16, 2](
+    var repacked_b_host = NDBuffer[
+        rank=2, DType.uint8, _, static_repacked_b_shape
+    ](repacked_b_host_ptr, dynamic_repacked_b_shape)
+    var gguf_dequan_ref_host = NDBuffer[rank=2, DType.bfloat16](
         gguf_dequan_ref_host_ptr, dynamic_dequan_shape
     )
-    var repacked_dequan_host = NDBuffer[DType.bfloat16, 2](
+    var repacked_dequan_host = NDBuffer[rank=2, DType.bfloat16](
         repacked_dequan_host_ptr, dynamic_dequan_shape
     )
 
@@ -496,14 +496,14 @@ fn test_repack_Q4_0_for_sm8x(
         dequan_size
     )
 
-    var gguf_b_device_nd = NDBuffer[DType.uint8, 2, _, static_gguf_b_shape](
-        gguf_b_device.unsafe_ptr(), dynamic_gguf_b_shape
-    )
+    var gguf_b_device_nd = NDBuffer[
+        rank=2, DType.uint8, _, static_gguf_b_shape
+    ](gguf_b_device.unsafe_ptr(), dynamic_gguf_b_shape)
     var repacked_b_device_nd = NDBuffer[
-        DType.uint8, 2, _, static_repacked_b_shape
+        rank=2, DType.uint8, _, static_repacked_b_shape
     ](repacked_b_device.unsafe_ptr(), dynamic_repacked_b_shape)
     var repacked_dequan_device_nd = NDBuffer[
-        DType.bfloat16, 2, _, static_dequan_shape
+        rank=2, DType.bfloat16, _, static_dequan_shape
     ](repacked_dequan_device.unsafe_ptr(), dynamic_dequan_shape)
 
     ctx.enqueue_copy(gguf_b_device, gguf_b_host_ptr)
@@ -665,16 +665,16 @@ fn test_quantized[
     var c_host_ptr = alloc[Scalar[a_type]](c_size)
     var c_host_ref_ptr = alloc[Scalar[a_type]](c_size)
 
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host = NDBuffer[dtype, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, dtype, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host = NDBuffer[a_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, a_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref = NDBuffer[a_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, a_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
@@ -683,7 +683,7 @@ fn test_quantized[
 
     var b_scales_ptr = (b_host_ptr + N * K // 2).bitcast[Scalar[a_type]]()
     var b_scales_view = NDBuffer[
-        a_type, 2, _, DimList(k.dim // group_size, n.dim)
+        rank=2, a_type, _, DimList(k.dim // group_size, n.dim)
     ](b_scales_ptr)
     # elements of b matrix is between [-1, 1]
     rand(b_scales_view.data, b_scales_view.num_elements(), min=0, max=0.125)
@@ -699,16 +699,16 @@ fn test_quantized[
     var b_device_ref = ctx.enqueue_create_buffer[a_type](b_ref_size)
     var c_device = ctx.enqueue_create_buffer[a_type](c_size)
 
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device_nd = NDBuffer[dtype, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, dtype, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
-    var b_device_ref_nd = NDBuffer[a_type, 2, _, static_b_ref_shape](
+    var b_device_ref_nd = NDBuffer[rank=2, a_type, _, static_b_ref_shape](
         b_device_ref.unsafe_ptr(), dynamic_b_ref_shape
     )
-    var c_device_nd = NDBuffer[a_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, a_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -744,7 +744,7 @@ fn test_quantized[
     )
 
     var c_device_ref = ctx.enqueue_create_buffer[a_type](c_size)
-    var c_device_ref_nd = NDBuffer[a_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, a_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 

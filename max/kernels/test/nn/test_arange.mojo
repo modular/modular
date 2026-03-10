@@ -21,7 +21,7 @@ from std.utils.index import IndexList
 
 def print_elements[
     dtype: DType, in_rank: Int
-](tensor: NDBuffer[dtype, in_rank, ...]) raises:
+](tensor: NDBuffer[rank=in_rank, dtype, ...]) raises:
     print("New shape:", tensor.get_shape())
     print("New strides:", tensor.get_strides())
 
@@ -58,7 +58,7 @@ def test_arange[
     var memory4 = InlineArray[Scalar[dtype], max_output_size](
         uninitialized=True
     )
-    var out_tensor = NDBuffer[dtype, 1](memory4.unsafe_ptr(), outshape)
+    var out_tensor = NDBuffer[rank=1, dtype](memory4.unsafe_ptr(), outshape)
 
     @always_inline
     @__copy_capture(out_tensor, step, start, stop)

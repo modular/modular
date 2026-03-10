@@ -199,20 +199,20 @@ fn bench_allgather[
         )
 
     # Build NDBuffer wrappers for allgather API.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ](fill={})
     var out_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ](fill={})
 
     for gpu_idx in range(ngpus):
-        in_bufs[gpu_idx] = NDBuffer[dtype, rank](
+        in_bufs[gpu_idx] = NDBuffer[rank=rank, dtype](
             cb_inputs[gpu_idx].unsafe_ptr(), IndexList[rank](lengths[gpu_idx])
         )
         for src_idx in range(ngpus):
             var flat_idx = gpu_idx * ngpus + src_idx
-            out_bufs[flat_idx] = NDBuffer[dtype, rank](
+            out_bufs[flat_idx] = NDBuffer[rank=rank, dtype](
                 out_bufs_list[flat_idx].unsafe_ptr(),
                 IndexList[rank](lengths[src_idx]),
             )
@@ -228,7 +228,7 @@ fn bench_allgather[
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
-                in_bufs[i] = NDBuffer[dtype, rank](
+                in_bufs[i] = NDBuffer[rank=rank, dtype](
                     cb_inputs[i].offset_ptr(cache_iter),
                     IndexList[rank](lengths[i]),
                 )

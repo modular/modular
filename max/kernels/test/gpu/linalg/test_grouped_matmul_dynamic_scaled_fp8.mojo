@@ -175,31 +175,35 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         b_scales_size
     )
 
-    var a_device = NDBuffer[in_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, in_type, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
         IndexList[2](total_tokens, K),
     )
-    var b_device = NDBuffer[in_type, 3, _, static_b_shape](
+    var b_device = NDBuffer[rank=3, in_type, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
         dynamic_b_shape,
     )
-    var c_device = NDBuffer[out_type, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, out_type, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
         IndexList[2](total_tokens, N),
     )
-    var a_offsets_device = NDBuffer[DType.uint32, 1](
+    var a_offsets_device = NDBuffer[rank=1, DType.uint32](
         a_offsets_device_buffer.unsafe_ptr(),
         IndexList[1](num_offsets),
     )
-    var expert_ids_device = NDBuffer[DType.int32, 1](
+    var expert_ids_device = NDBuffer[rank=1, DType.int32](
         expert_ids_device_buffer.unsafe_ptr(),
         IndexList[1](num_expert_ids),
     )
-    var a_scales_device = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
+    var a_scales_device = NDBuffer[
+        rank=2, DType.float32, _, static_a_scales_shape
+    ](
         a_scales_device_buffer.unsafe_ptr(),
         IndexList[2](K // BLOCK_SCALE_K, total_tokens),
     )
-    var b_scales_device = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
+    var b_scales_device = NDBuffer[
+        rank=3, DType.float32, _, static_b_scales_shape
+    ](
         b_scales_device_buffer.unsafe_ptr(),
         dynamic_b_scales_shape,
     )

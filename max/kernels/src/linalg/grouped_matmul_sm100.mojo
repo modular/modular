@@ -147,7 +147,7 @@ fn load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_smem_base: UnsafePointer[
@@ -786,9 +786,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 ](
     num_active_experts: Int,
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    b_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
     c_tma_op: TMATensorTile[
         c_type, c_tile_rank, c_tile_shape_param, c_desc_shape
     ],
@@ -1179,12 +1179,12 @@ fn grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1252,9 +1252,9 @@ fn _grouped_matmul_sm100_persistent[
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     b_device: LayoutTensor[b_type, b_layout, ...],
-    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    b_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

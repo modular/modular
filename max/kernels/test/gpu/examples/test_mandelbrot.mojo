@@ -64,7 +64,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     if row >= height:
         return
 
-    var out = NDBuffer[int_type, 2](out_ptr, Index(height, width))
+    var out = NDBuffer[rank=2, int_type](out_ptr, Index(height, width))
 
     comptime scale_x = (max_x - min_x) / width
     comptime scale_y = (max_y - min_y) / height

@@ -161,19 +161,19 @@ fn test[
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_device = NDBuffer[dtype, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, dtype, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
         IndexList[2](m, k),
     )
-    var b_device = NDBuffer[dtype, 2, _, static_b_shape](
+    var b_device = NDBuffer[rank=2, dtype, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
         IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
-    var c_device = NDBuffer[dtype, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, dtype, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
         IndexList[2](m, n),
     )
-    var c_device_ref = NDBuffer[dtype, 2, _, static_c_shape](
+    var c_device_ref = NDBuffer[rank=2, dtype, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
         IndexList[2](m, n),
     )

@@ -351,15 +351,15 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Execute reference.
-    var ref_output_ndbuffer = NDBuffer[dtype, 2](
+    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
         ref_output_device.unsafe_ptr(),
         ref_output_shape,
     )
-    var hidden_state_padded_ndbuffer = NDBuffer[dtype, 2](
+    var hidden_state_padded_ndbuffer = NDBuffer[rank=2, dtype](
         hidden_state_padded_device.unsafe_ptr(),
         IndexList[2](padded_batch_dim, hidden_size),
     )
-    var weight_ndbuffer = NDBuffer[dtype, 2](
+    var weight_ndbuffer = NDBuffer[rank=2, dtype](
         weight_device.unsafe_ptr(),
         weight_shape,
     )
@@ -572,15 +572,15 @@ def execute_matmul_k_cache_ragged[
     )
 
     # Execute reference.
-    var ref_output_ndbuffer = NDBuffer[dtype, 2](
+    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
         ref_output_device.unsafe_ptr(),
         ref_output_shape,
     )
-    var hidden_state_padded_ndbuffer = NDBuffer[dtype, 2](
+    var hidden_state_padded_ndbuffer = NDBuffer[rank=2, dtype](
         hidden_state_padded_device.unsafe_ptr(),
         IndexList[2](padded_batch_dim, hidden_size),
     )
-    var weight_ndbuffer = NDBuffer[dtype, 2](
+    var weight_ndbuffer = NDBuffer[rank=2, dtype](
         weight_device.unsafe_ptr(),
         weight_shape,
     )
@@ -858,15 +858,15 @@ def generic_execute_fused_qkv_cache_ragged[
     )
 
     # Execute reference
-    var ref_output_ndbuffer = NDBuffer[dtype, 2](
+    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
         ref_output_device.unsafe_ptr(),
         ref_output_shape,
     )
-    var hidden_state_padded_ndbuffer = NDBuffer[dtype, 2](
+    var hidden_state_padded_ndbuffer = NDBuffer[rank=2, dtype](
         hidden_state_padded_device.unsafe_ptr(),
         IndexList[2](padded_batch_dim, hidden_size),
     )
-    var weight_ndbuffer = NDBuffer[dtype, 2](
+    var weight_ndbuffer = NDBuffer[rank=2, dtype](
         weight_device.unsafe_ptr(),
         weight_shape,
     )

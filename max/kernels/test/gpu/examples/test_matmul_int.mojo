@@ -43,9 +43,9 @@ fn matmul(
     n: Int,
     k: Int,
 ):
-    var a = NDBuffer[DType.int, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[DType.int, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[DType.int, 2](c_ptr, Index(m, n))
+    var a = NDBuffer[rank=2, DType.int](a_ptr, Index(m, k))
+    var b = NDBuffer[rank=2, DType.int](b_ptr, Index(k, n))
+    var c = NDBuffer[rank=2, DType.int](c_ptr, Index(m, n))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -116,9 +116,9 @@ fn run_matmul(ctx: DeviceContext) raises:
     var b_host_ptr = alloc[Scalar[DType.int]](k * n)
     var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
-    var a_host = NDBuffer[DType.int, 2, _, DimList(m, k)](a_host_ptr)
-    var b_host = NDBuffer[DType.int, 2, _, DimList(k, n)](b_host_ptr)
-    var c_host = NDBuffer[DType.int, 2, _, DimList(m, n)](c_host_ptr)
+    var a_host = NDBuffer[rank=2, DType.int, _, DimList(m, k)](a_host_ptr)
+    var b_host = NDBuffer[rank=2, DType.int, _, DimList(k, n)](b_host_ptr)
+    var c_host = NDBuffer[rank=2, DType.int, _, DimList(m, n)](c_host_ptr)
 
     for i in range(m):
         for j in range(k):

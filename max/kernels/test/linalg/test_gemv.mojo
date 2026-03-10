@@ -52,16 +52,16 @@ def test_gemv() raises:
     comptime k = 11008
 
     var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
-    var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
+    var lhs = NDBuffer[rank=2, type](lhs_storage, Index(m, k))
 
     var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
-    var rhs = NDBuffer[type, 1, _, Dim(k)](rhs_storage)
+    var rhs = NDBuffer[rank=1, type, _, Dim(k)](rhs_storage)
 
     var out_storage = alloc[Scalar[type],](m, alignment=alignment)
-    var out = NDBuffer[type, 1, _, Dim(m)](out_storage)
+    var out = NDBuffer[rank=1, type, _, Dim(m)](out_storage)
 
     var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
-    var ref_out = NDBuffer[type, 1, _, Dim(m)](ref_out_storage)
+    var ref_out = NDBuffer[rank=1, type, _, Dim(m)](ref_out_storage)
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -135,8 +135,8 @@ def test_gemv() raises:
     var par_perf = bench_run[bench_fn_parallel]()
     std.benchmark.keep(out[10])
 
-    var rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
-    var out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
+    var rhs_mat = NDBuffer[rank=2, type](rhs_storage, Index(k, 1))
+    var out_mat = NDBuffer[rank=2, type](out_storage, Index(m, 1))
 
     # Compute speedup and bandwidth stats
     var par_bandwidth = (

@@ -147,9 +147,9 @@ fn run_bmm_and_check_result[
             var b_shape = IndexList[2](n, k) if transpose_b else IndexList[2](
                 k, n
             )
-            var c_buffer = NDBuffer[dtype, 2](c_ptr, {m, n})
-            var a_buffer = NDBuffer[dtype, 2](a_ptr, {m, k})
-            var b_buffer = NDBuffer[dtype, 2](b_ptr, b_shape)
+            var c_buffer = NDBuffer[rank=2, dtype](c_ptr, {m, n})
+            var a_buffer = NDBuffer[rank=2, dtype](a_ptr, {m, k})
+            var b_buffer = NDBuffer[rank=2, dtype](b_ptr, b_shape)
 
             vendor_blas.matmul(
                 ctx,

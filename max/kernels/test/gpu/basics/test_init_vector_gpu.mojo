@@ -46,7 +46,7 @@ fn test_vec_init[
         InitializationType.arange,
     ]:
         var verification_ptr = alloc[Scalar[dtype]](length)
-        var verification_data = NDBuffer[dtype, 1](
+        var verification_data = NDBuffer[rank=1, dtype](
             verification_ptr, IndexList[1](length)
         )
         seed(0)

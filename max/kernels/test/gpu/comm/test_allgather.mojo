@@ -67,7 +67,7 @@ def all_gather_test[
         host_buffers.append(host_buffer)
 
         # Initialize with unique values per device.
-        var host_nd_buf = NDBuffer[dtype, rank](
+        var host_nd_buf = NDBuffer[rank=rank, dtype](
             host_buffer, IndexList[rank](length)
         )
         for j in range(length):
@@ -98,24 +98,24 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+    ](fill={})
 
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[dtype, rank](
+        in_bufs[i] = NDBuffer[rank=rank, dtype](
             in_bufs_list[i].unsafe_ptr(), IndexList[rank](lengths[i])
         )
 
     # Create flat output buffer array (ngpus * ngpus).
     var out_bufs = InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+        NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
     ](fill={})
 
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var output_idx = device_idx * ngpus + input_idx
-            out_bufs[output_idx] = NDBuffer[dtype, rank](
+            out_bufs[output_idx] = NDBuffer[rank=rank, dtype](
                 out_bufs_list[device_idx][input_idx].unsafe_ptr(),
                 IndexList[rank](lengths[input_idx]),
             )
@@ -136,12 +136,12 @@ def all_gather_test[
                 )
 
         var flat_out = InlineArray[
-            NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus * ngpus
         ](fill={})
         for device_idx in range(ngpus):
             for input_idx in range(ngpus):
                 var idx = device_idx * ngpus + input_idx
-                flat_out[idx] = NDBuffer[dtype, rank](
+                flat_out[idx] = NDBuffer[rank=rank, dtype](
                     out_bufs_list[device_idx][input_idx].unsafe_ptr(),
                     IndexList[rank](lengths[input_idx]),
                 )

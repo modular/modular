@@ -10219,7 +10219,7 @@ struct DistributedAllReduceSum:
 
         # Marshal input tensors, output tensors, and signal buffers into the expected format.
         var out_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutAnyOrigin], num_devices
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], num_devices
         ](fill={})
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
@@ -10259,7 +10259,7 @@ struct DistributedAllReduceSum:
             )
 
             var stable_inputs = InlineArray[
-                NDBuffer[dtype, rank, ImmutAnyOrigin], num_devices
+                NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
             ](fill={})
 
             comptime for i in range(num_devices):
@@ -10450,7 +10450,7 @@ struct DistributedAllGather:
 
         # Marshal output variadic tensors into the expected format.
         var out_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutAnyOrigin], num_devices * num_devices
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], num_devices * num_devices
         ](fill={})
 
         comptime for i in range(num_devices * num_devices):
@@ -10491,7 +10491,7 @@ struct DistributedAllGather:
 
         # Build stable_inputs from signal buffer stable regions.
         var stable_inputs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], num_devices
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], num_devices
         ](fill={})
 
         comptime for i in range(num_devices):
@@ -10676,12 +10676,12 @@ struct DistributedScatter:
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
 
         # Marshal input tensors into the expected format.
-        var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
-            fill={}
-        )
-        var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
-            fill={}
-        )
+        var in_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], ngpus
+        ](fill={})
+        var out_bufs = InlineArray[
+            NDBuffer[rank=rank, dtype, MutAnyOrigin], ngpus
+        ](fill={})
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
@@ -10752,7 +10752,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         # Marshal input tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+            NDBuffer[rank=rank, dtype, ImmutAnyOrigin], inputs.size
         ](fill={})
 
         comptime for i in range(inputs.size):
@@ -11265,7 +11265,7 @@ struct MatmulStaticScaledFloat8:
         comptime N = weight.shape.get[0]()
         var M = input.dim[0]()
         var output_dummy = NDBuffer[
-            DType.float32, 2, MutAnyOrigin, DimList(Dim(), N)
+            rank=2, DType.float32, MutAnyOrigin, DimList(Dim(), N)
         ](
             {},
             IndexList[2](M, N),
