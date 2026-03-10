@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics --split-input-file %s
 
 ##===----------------------------------------------------------------------===##
 # Input parameters
@@ -165,6 +165,7 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 ##===----------------------------------------------------------------------===##
 
 
+
 # expected-error @+1 {{variadic keyword parameters not supported yet}}
 fn variadic_kw_result_binding[**a: Int]():
     pass
@@ -191,6 +192,7 @@ fn unbind_variadic(x: StructWithVariadic[_]):
 ##===----------------------------------------------------------------------===##
 # Alias resolution
 ##===----------------------------------------------------------------------===##
+
 
 
 fn testAliases(variable: Int):
@@ -256,6 +258,7 @@ fn testStructWithParams():
 ##===----------------------------------------------------------------------===##
 
 
+
 # expected-error @below {{required positional parameter follows optional positional parameter}}
 struct DefaultParams[a: Int, b: Int = 7, msg: Int]:
     pass
@@ -279,6 +282,7 @@ fn missing_bound_param():
 ##===----------------------------------------------------------------------===##
 # Function positional-only parameters
 ##===----------------------------------------------------------------------===##
+
 
 
 # expected-note @below {{declared here}}
@@ -308,6 +312,7 @@ fn indirect_callable_pos_only[
 ##===----------------------------------------------------------------------===##
 # Struct keyword parameters
 ##===----------------------------------------------------------------------===##
+
 
 
 # expected-note @+2 {{declared here}}
@@ -349,6 +354,7 @@ fn test_struct_kw_params3():
 ##===----------------------------------------------------------------------===##
 
 
+
 # expected-note @+2 {{declared here}}
 @fieldwise_init
 struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
@@ -367,6 +373,7 @@ fn test_pos_only_struct():
 ##===----------------------------------------------------------------------===##
 # CTAD related errors
 ##===----------------------------------------------------------------------===##
+
 
 
 # expected-note @+1 {{struct declared here}}
@@ -389,8 +396,10 @@ fn test_implicitly_parametric_static_methods_fails():
 # Auto parameterization errors
 ##===----------------------------------------------------------------------===##
 
+
 struct XOrigin[mut: Int, value: ParametricOnInt[mut]]:
     pass
+
 # expected-error @+1 {{inferred parameter of type 'ParametricOnInt[MUT]' cannot depend on non-inferred parameter 'MUT'}}
 struct TakesXOrigin[MUT: Int, O: XOrigin[MUT, _]]:
     pass
@@ -656,3 +665,21 @@ struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
 # TODO: we could potentially support this.
 # expected-error @+1 {{'NestedDeps' failed to infer parameter 'b', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
 comptime _ = NestedDeps[_]
+
+# // -----
+
+# It seems that we hit the limit of #error being reported without splitting the
+# input file here.
+
+@fieldwise_init
+struct AutoParamVA[*values: Int]:
+    pass
+
+# expected-note @+1 {{'TakeAutoParamVA' declared here}}
+struct TakeAutoParamVA[
+    shape: AutoParamVA = AutoParamVA[1, 2, 3](),
+]:
+    pass
+
+# expected-error @+1 {{value passed to 'shape' cannot be converted from 'IntLiteral[23456]' to 'AutoParamVA[$0]', it depends on an unresolved parameter '$0'}}
+comptime _ = TakeAutoParamVA[23456]

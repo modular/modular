@@ -683,9 +683,14 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // due to an uninferred parameter, and if that parameter had a default, then
   // we can bind it.
   if (savedFailureInfo.first.getIfDependentOnUnresolved()) {
-    // If we're in the parameter binding list for a call then we can re-evaluate
-    // this binding after the arguments of the call are resolved.
-    if (syntax == CallSyntax::kParamBindings) {
+    // If we're in the parameter binding list *for a call* then we can
+    // re-evaluate this binding after the arguments of the call are resolved.
+    //
+    // For struct binding, we enforce strict left-to-right order.
+    //
+    // FIXME(MOCO-3300): for call binding, we need to resolve deferred parameter
+    // binding before default as well (IT IS NOT THE CASE AT THE MOMENT).
+    if (syntax == CallSyntax::kParamBindings && !isInferForStruct) {
       hasDeferredGivenParam = true;
       return success();
     }
