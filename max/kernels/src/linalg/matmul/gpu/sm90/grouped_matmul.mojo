@@ -25,14 +25,6 @@ from std.gpu.primitives.cluster import (
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx,
-    grid_dim,
-    thread_idx,
-)
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import external_memory, fence_mbarrier_init
 from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout

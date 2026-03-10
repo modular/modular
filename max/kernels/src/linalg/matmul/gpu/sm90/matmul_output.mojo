@@ -103,8 +103,8 @@ struct MatmulTileWriter[
     # Instance fields
     var tensor: Self.CTensorType
     var smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128]
-    var warp_group_thread_idx: UInt
-    var local_warp_group_idx: UInt
+    var warp_group_thread_idx: Int
+    var local_warp_group_idx: Int
     var local_thread_idx: Int
     var block_y: Int
     var block_x: Int
@@ -114,8 +114,8 @@ struct MatmulTileWriter[
         out self,
         tensor: Self.CTensorType,
         smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128],
-        warp_group_thread_idx: UInt,
-        local_warp_group_idx: UInt,
+        warp_group_thread_idx: Int,
+        local_warp_group_idx: Int,
         local_thread_idx: Int,
         block_y: Int,
         block_x: Int,
@@ -222,8 +222,8 @@ struct MatmulTileWriter[
         comptime tile_slice_m = tile_slice_m_regular if not Self.swapAB else tile_slice_m_swapAB
         comptime tile_slice_n = tile_slice_n_regular if not Self.swapAB else tile_slice_n_swapAB
 
-        var coord_m = Int(self.local_warp_group_idx) if not Self.swapAB else 0
-        var coord_n = 0 if not Self.swapAB else Int(self.local_warp_group_idx)
+        var coord_m = self.local_warp_group_idx if not Self.swapAB else 0
+        var coord_n = 0 if not Self.swapAB else self.local_warp_group_idx
 
         var consumer_tile, consumer_coords, _ = output_tile.tile_with_offset[
             tile_slice_m, tile_slice_n
@@ -263,7 +263,7 @@ struct MatmulTileWriter[
         ):
             reg_writer.write_tile(
                 reg_tile,
-                (UInt(row_tile), UInt(col_tile)),
+                (row_tile, col_tile),
             )
 
     @always_inline
@@ -344,7 +344,7 @@ struct MatmulTileWriter[
             comptime for tma_chunk in range(
                 (Self.WG_BN if not Self.swapAB else Self.WG_BM) // TMA_BN
             ):
-                fragment_writer.write_tile(reg_tile, (UInt(0), UInt(tma_chunk)))
+                fragment_writer.write_tile(reg_tile, (0, tma_chunk))
 
             named_barrier[Int32(Self.num_consumer_threads)](10)
 
@@ -415,12 +415,10 @@ struct MatmulTileWriter[
                         ](smem_offset)
 
                         var tma_coords = (
-                            UInt(
-                                self.block_x * Self.BN
-                                + tile_idx * Self.WG_BN
-                                + self.local_thread_idx * TMA_BN
-                            ),
-                            UInt(self.block_y * Self.BM),
+                            self.block_x * Self.BN
+                            + tile_idx * Self.WG_BN
+                            + self.local_thread_idx * TMA_BN,
+                            self.block_y * Self.BM,
                         )
 
                         tma_writer.write_tile(tma_tile, tma_coords)
@@ -438,9 +436,7 @@ struct MatmulTileWriter[
                         swapAB=Self.swapAB,
                     ](workgroup_tile, self.local_thread_idx)
 
-                    threadwise_writer.write_tile(
-                        self.smem_tile, (UInt(0), UInt(0))
-                    )
+                    threadwise_writer.write_tile(self.smem_tile, (0, 0))
 
             named_barrier[Int32(Self.num_consumer_threads)](10)
 

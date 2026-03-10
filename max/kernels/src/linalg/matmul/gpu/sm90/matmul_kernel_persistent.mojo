@@ -15,7 +15,7 @@ from std.math import ceildiv
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu import thread_idx, block_idx
+from std.gpu import thread_idx_int as thread_idx
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile
@@ -113,8 +113,8 @@ __extension HopperMatmulSM90Kernel:
                     var n_coord = work_info.n
 
                     Self.producer_main_loop_pipeline[num_k_iters=num_k_iters](
-                        UInt(m_coord),
-                        UInt(n_coord),
+                        Int(m_coord),
+                        Int(n_coord),
                         0,
                         a_loader,
                         b_loader,
@@ -144,8 +144,8 @@ __extension HopperMatmulSM90Kernel:
                     warp_group_thread_idx,
                 )
 
-                var block_y = UInt(ceildiv(work_info.m, UInt32(Self.BM)))
-                var block_x = UInt(ceildiv(work_info.n, UInt32(Self.BN)))
+                var block_y = Int(ceildiv(work_info.m, UInt32(Self.BM)))
+                var block_x = Int(ceildiv(work_info.n, UInt32(Self.BN)))
                 var output_reg_tile = (
                     final_c_reg_tile if a_type
                     == DType.float8_e4m3fn else c_reg_tile
@@ -158,9 +158,9 @@ __extension HopperMatmulSM90Kernel:
                     output_reg_tile,
                     warp_group_thread_idx,
                     local_warp_group_idx,
-                    thread_idx.x - UInt(WARPGROUP_SIZE),
-                    Int(block_y),
-                    Int(block_x),
+                    thread_idx.x - WARPGROUP_SIZE,
+                    block_y,
+                    block_x,
                 )
                 work_info = scheduler.fetch_next_work()
 
@@ -227,8 +227,8 @@ __extension HopperMatmulSM90Kernel:
             warpgroup_reg_dealloc[32]()
 
             Self.producer_main_loop_pipeline[num_k_iters=num_k_iters](
-                UInt(block_idx_swizzle[1]),
-                UInt(block_idx_swizzle[0]),
+                block_idx_swizzle[1],
+                block_idx_swizzle[0],
                 0,
                 a_loader,
                 b_loader,
@@ -273,7 +273,7 @@ __extension HopperMatmulSM90Kernel:
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
-                thread_idx.x - UInt(WARPGROUP_SIZE),
+                thread_idx.x - WARPGROUP_SIZE,
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )

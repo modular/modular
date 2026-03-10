@@ -1802,7 +1802,7 @@ struct TMATensorTile[
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        cta_rank: UInt,
+        cta_rank: Int,
         coords: Tuple[Int, Int],
         multicast_mask: UInt16,
     ):
@@ -1836,12 +1836,12 @@ struct TMATensorTile[
             dst.layout,
             address_space=AddressSpace.SHARED,
             alignment=128,
-        ](dst.ptr + cta_rank * UInt(tma_load_size))
+        ](dst.ptr + cta_rank * tma_load_size)
 
         self.async_multicast_load(
             dst_slice,
             mem_barrier,
-            (coords[0], coords[1] + Int(cta_rank) * tma_rows),
+            (coords[0], coords[1] + cta_rank * tma_rows),
             multicast_mask,
         )
 
