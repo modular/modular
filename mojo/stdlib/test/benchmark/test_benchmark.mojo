@@ -14,8 +14,14 @@
 from std.time import sleep, time_function
 
 from std.benchmark import Report, clobber_memory, keep, run
-from std.benchmark.bencher import BenchMetric, Format, ThroughputMeasure
-from std.testing import TestSuite, assert_equal, assert_true
+from std.benchmark.bencher import (
+    BenchConfig,
+    BenchMetric,
+    Format,
+    Mode,
+    ThroughputMeasure,
+)
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 def test_stopping_criteria() raises:
@@ -180,6 +186,58 @@ def test_throughput_measure_write_repr_to() raises:
     assert_true(s.startswith("ThroughputMeasure("))
     assert_true("metric=" in s)
     assert_true("value=1024" in s)
+
+
+def test_bench_config_write_to() raises:
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
+    var s = String()
+    cfg.write_to(s)
+    assert_true("min_runtime_secs=0.5" in s)
+    assert_true("max_runtime_secs=2.0" in s)
+    assert_true("max_iters=1000" in s)
+
+
+def test_bench_config_write_repr_to() raises:
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
+    var s = String()
+    cfg.write_repr_to(s)
+    assert_true(s.startswith("BenchConfig("))
+    assert_true(s.endswith(")"))
+    assert_true("min_runtime_secs=0.5" in s)
+    assert_true("max_runtime_secs=2.0" in s)
+    assert_true("max_iters=1000" in s)
+
+
+def test_mode_equatable() raises:
+    assert_true(Mode.Benchmark == Mode.Benchmark)
+    assert_true(Mode.Test == Mode.Test)
+    assert_false(Mode.Benchmark == Mode.Test)
+    assert_true(Mode.Benchmark != Mode.Test)
+    assert_false(Mode.Benchmark != Mode.Benchmark)
+
+
+def test_mode_write_to() raises:
+    var s = String()
+    Mode.Benchmark.write_to(s)
+    assert_equal(s, "Benchmark")
+
+    s = String()
+    Mode.Test.write_to(s)
+    assert_equal(s, "Test")
+
+
+def test_mode_write_repr_to() raises:
+    var s = String()
+    Mode.Benchmark.write_repr_to(s)
+    assert_equal(s, "Mode.Benchmark")
+
+    s = String()
+    Mode.Test.write_repr_to(s)
+    assert_equal(s, "Mode.Test")
 
 
 def main() raises:
