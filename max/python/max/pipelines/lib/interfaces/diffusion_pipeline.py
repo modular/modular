@@ -25,8 +25,9 @@ from typing import TYPE_CHECKING, Any, TypeAlias, overload
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, Buffer
 from max.engine import InferenceSession, Model
+from max.engine.api import InputType
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
@@ -134,7 +135,7 @@ class DiffusionPipeline(ABC):
             )
 
             init_params = inspect.signature(component_cls.__init__).parameters
-            init_kwargs = {
+            init_kwargs: dict[str, Any] = {
                 "config": config_dict,
                 "encoding": self.pipeline_config.model.quantization_encoding,
                 "devices": self.devices,
@@ -441,6 +442,8 @@ class PixelModelInputs:
 
 
 class CompileWrapper:
+    """Wraps a compile target with optional input type annotations."""
+
     def __init__(
         self,
         compile_target: CompileTarget,
@@ -482,7 +485,9 @@ class CompileWrapper:
         session = InferenceSession([device])
         self._compiled_model = session.load(compiled_graph)
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(
+        self, *args: InputType, **kwargs: InputType
+    ) -> list[Buffer] | Buffer:
         """Execute the compiled session with the given arguments.
 
         Args:

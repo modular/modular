@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -22,10 +23,7 @@ from max.graph import TensorType, TensorValue, ops
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.interfaces.diffusion_pipeline import (
-    CompileWrapper,
-    max_compile,
-)
+from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLFlux2Model
@@ -166,8 +164,12 @@ class Flux2Pipeline(DiffusionPipeline):
         self._cached_text_ids: dict[str, Buffer] = {}
         self._cached_sigmas: dict[str, Buffer] = {}
         self._cached_shape_carriers: dict[int, Buffer] = {}
-        self._repeat_prompt_embeddings_cache: dict[int, CompileWrapper] = {}
-        self._repeat_image_conditioning_cache: dict[int, CompileWrapper] = {}
+        self._repeat_prompt_embeddings_cache: dict[
+            int, Callable[[Buffer], Buffer]
+        ] = {}
+        self._repeat_image_conditioning_cache: dict[
+            int, Callable[[Buffer, Buffer], tuple[Buffer, Buffer]]
+        ] = {}
 
     @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
@@ -258,9 +260,12 @@ class Flux2Pipeline(DiffusionPipeline):
                 device=device,
             ),
         ]
-        self.__dict__["_patchify_and_pack"] = max_compile(
-            self._patchify_and_pack,
-            input_types=input_types,
+        self._patchify_and_pack = cast(
+            Callable[[Buffer], Buffer],
+            max_compile(
+                self._patchify_and_pack_graph,
+                input_types=input_types,
+            ),
         )
 
     def build_prepare_image_latents(self) -> None:
@@ -269,17 +274,20 @@ class Flux2Pipeline(DiffusionPipeline):
         num_channels = int(self.vae.bn.running_mean.shape[0])
 
         c = num_channels // 4
-        self.__dict__["_normalize_and_pack_image_latent"] = max_compile(
-            self._normalize_and_pack_image_latent,
-            input_types=[
-                TensorType(
-                    dtype,
-                    shape=["batch", c, "height", "width"],
-                    device=device,
-                ),
-                TensorType(dtype, shape=[num_channels], device=device),
-                TensorType(dtype, shape=[num_channels], device=device),
-            ],
+        self._normalize_and_pack_image_latent = cast(
+            Callable[[Buffer, Buffer, Buffer], Buffer],
+            max_compile(
+                self._normalize_and_pack_image_latent_graph,
+                input_types=[
+                    TensorType(
+                        dtype,
+                        shape=["batch", c, "height", "width"],
+                        device=device,
+                    ),
+                    TensorType(dtype, shape=[num_channels], device=device),
+                    TensorType(dtype, shape=[num_channels], device=device),
+                ],
+            ),
         )
 
     def build_prepare_scheduler(self) -> None:
@@ -290,26 +298,32 @@ class Flux2Pipeline(DiffusionPipeline):
                 device=self.transformer.devices[0],
             ),
         ]
-        self.__dict__["prepare_scheduler"] = max_compile(
-            self.prepare_scheduler,
-            input_types=input_types,
+        self.prepare_scheduler = cast(
+            Callable[[Buffer], tuple[Buffer, Buffer]],
+            max_compile(
+                self._prepare_scheduler_graph,
+                input_types=input_types,
+            ),
         )
 
     def build_concat_packed_latents(self) -> None:
-        self.__dict__["_concat_packed_latents"] = max_compile(
-            self._concat_packed_latents,
-            input_types=[
-                TensorType(
-                    self.vae.config.dtype,
-                    shape=["batch", "seq", "channels"],
-                    device=self.vae.devices[0],
-                ),
-                TensorType(
-                    self.vae.config.dtype,
-                    shape=["batch", "img_seq", "channels"],
-                    device=self.vae.devices[0],
-                ),
-            ],
+        self._concat_packed_latents = cast(
+            Callable[[Buffer, Buffer], Buffer],
+            max_compile(
+                self._concat_packed_latents_graph,
+                input_types=[
+                    TensorType(
+                        self.vae.config.dtype,
+                        shape=["batch", "seq", "channels"],
+                        device=self.vae.devices[0],
+                    ),
+                    TensorType(
+                        self.vae.config.dtype,
+                        shape=["batch", "img_seq", "channels"],
+                        device=self.vae.devices[0],
+                    ),
+                ],
+            ),
         )
 
     def build_scheduler_step(self) -> None:
@@ -324,9 +338,12 @@ class Flux2Pipeline(DiffusionPipeline):
             ),
             TensorType(DType.float32, shape=[1], device=device),
         ]
-        self.__dict__["scheduler_step"] = max_compile(
-            self.scheduler_step,
-            input_types=input_types,
+        self._scheduler_step = cast(
+            Callable[[Buffer, Buffer, Buffer], Buffer],
+            max_compile(
+                self._scheduler_step_graph,
+                input_types=input_types,
+            ),
         )
 
     def build_concat_image_latents(self) -> None:
@@ -344,9 +361,12 @@ class Flux2Pipeline(DiffusionPipeline):
                 DType.int64, shape=["batch", "img_seq", 4], device=device
             ),
         ]
-        self.__dict__["concat_image_latents"] = max_compile(
-            self.concat_image_latents,
-            input_types=input_types,
+        self.concat_image_latents = cast(
+            Callable[[Buffer, Buffer, Buffer, Buffer], tuple[Buffer, Buffer]],
+            max_compile(
+                self._concat_image_latents_graph,
+                input_types=input_types,
+            ),
         )
 
     def build_decode_latents(self) -> None:
@@ -358,18 +378,17 @@ class Flux2Pipeline(DiffusionPipeline):
             device, num_channels
         )
 
-    def concat_image_latents(
+    def _concat_image_latents_graph(
         self,
         latents: TensorValue,
         image_latents: TensorValue,
         latent_image_ids: TensorValue,
         image_latent_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
-        latents_concat = ops.concat([latents, image_latents], axis=1)
-        latent_image_ids_concat = ops.concat(
-            [latent_image_ids, image_latent_ids], axis=1
+        return (
+            ops.concat([latents, image_latents], axis=1),
+            ops.concat([latent_image_ids, image_latent_ids], axis=1),
         )
-        return latents_concat, latent_image_ids_concat
 
     @staticmethod
     def _prepare_image_ids(
@@ -402,9 +421,9 @@ class Flux2Pipeline(DiffusionPipeline):
         sample_mode: str = "mode",
     ) -> Buffer:
         if hasattr(encoder_output, "mode") and sample_mode == "mode":
-            return encoder_output.mode()
+            return cast(Buffer, encoder_output.mode())
         elif hasattr(encoder_output, "sample") and sample_mode == "sample":
-            return encoder_output.sample(generator=generator)
+            return cast(Buffer, encoder_output.sample(generator=generator))
         else:
             raise AttributeError(
                 f"Could not access latents from encoder_output. "
@@ -412,7 +431,7 @@ class Flux2Pipeline(DiffusionPipeline):
                 f"'sample' method, got {type(encoder_output)}"
             )
 
-    def _normalize_and_pack_image_latent(
+    def _normalize_and_pack_image_latent_graph(
         self,
         image_latents: TensorValue,
         bn_mean: TensorValue,
@@ -455,7 +474,9 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return image_latents
 
-    def _repeat_prompt_embeddings(self, repeats: int) -> CompileWrapper:
+    def _get_repeat_prompt_embeddings(
+        self, repeats: int
+    ) -> Callable[[Buffer], Buffer]:
         if repeats not in self._repeat_prompt_embeddings_cache:
 
             def repeat_prompt_embeddings(
@@ -470,19 +491,24 @@ class Flux2Pipeline(DiffusionPipeline):
                     (batch * repeats, seq, hidden_dim),
                 )
 
-            self._repeat_prompt_embeddings_cache[repeats] = max_compile(
-                repeat_prompt_embeddings,
-                input_types=[
-                    TensorType(
-                        self.text_encoder.config.dtype,
-                        shape=["batch", "seq", "hidden_dim"],
-                        device=self.text_encoder.devices[0],
-                    ),
-                ],
+            self._repeat_prompt_embeddings_cache[repeats] = cast(
+                Callable[[Buffer], Buffer],
+                max_compile(
+                    repeat_prompt_embeddings,
+                    input_types=[
+                        TensorType(
+                            self.text_encoder.config.dtype,
+                            shape=["batch", "seq", "hidden_dim"],
+                            device=self.text_encoder.devices[0],
+                        ),
+                    ],
+                ),
             )
         return self._repeat_prompt_embeddings_cache[repeats]
 
-    def _repeat_image_conditioning(self, repeats: int) -> CompileWrapper:
+    def _repeat_image_conditioning(
+        self, repeats: int
+    ) -> Callable[[Buffer, Buffer], tuple[Buffer, Buffer]]:
         if repeats not in self._repeat_image_conditioning_cache:
 
             def repeat_image_conditioning(
@@ -494,24 +520,27 @@ class Flux2Pipeline(DiffusionPipeline):
                     ops.tile(image_latent_ids, [repeats, 1, 1]),
                 )
 
-            self._repeat_image_conditioning_cache[repeats] = max_compile(
-                repeat_image_conditioning,
-                input_types=[
-                    TensorType(
-                        self.vae.config.dtype,
-                        shape=["batch", "seq", "channels"],
-                        device=self.vae.devices[0],
-                    ),
-                    TensorType(
-                        DType.int64,
-                        shape=["batch", "seq", 4],
-                        device=self.vae.devices[0],
-                    ),
-                ],
+            self._repeat_image_conditioning_cache[repeats] = cast(
+                Callable[[Buffer, Buffer], tuple[Buffer, Buffer]],
+                max_compile(
+                    repeat_image_conditioning,
+                    input_types=[
+                        TensorType(
+                            self.vae.config.dtype,
+                            shape=["batch", "seq", "channels"],
+                            device=self.vae.devices[0],
+                        ),
+                        TensorType(
+                            DType.int64,
+                            shape=["batch", "seq", 4],
+                            device=self.vae.devices[0],
+                        ),
+                    ],
+                ),
             )
         return self._repeat_image_conditioning_cache[repeats]
 
-    def _concat_packed_latents(
+    def _concat_packed_latents_graph(
         self, left: TensorValue, right: TensorValue
     ) -> TensorValue:
         return ops.concat([left, right], axis=1)
@@ -528,7 +557,6 @@ class Flux2Pipeline(DiffusionPipeline):
     ) -> tuple[Buffer, Buffer]:
         bn_mean = self._bn_mean
         bn_var = self._bn_var
-
         packed_latents: list[Buffer] = []
         latent_shapes = []
 
@@ -545,7 +573,7 @@ class Flux2Pipeline(DiffusionPipeline):
                     device=device,
                 )
 
-            encoder_output = self.vae.encode(image, return_dict=True)
+            encoder_output = self.vae.encode(image, return_dict=True)  # type: ignore[arg-type]
             if isinstance(encoder_output, dict):
                 encoder_output = encoder_output["latent_dist"]
             raw_latents = self.retrieve_latents(
@@ -554,7 +582,7 @@ class Flux2Pipeline(DiffusionPipeline):
                 sample_mode=sample_mode,
             )
 
-            b, c, raw_h, raw_w = map(int, raw_latents.shape)
+            _b, _c, raw_h, raw_w = map(int, raw_latents.shape)
             latent_shapes.append((raw_h // 2, raw_w // 2))
 
             packed = self._normalize_and_pack_image_latent(
@@ -571,10 +599,14 @@ class Flux2Pipeline(DiffusionPipeline):
         else:
             image_latents = packed_latents[0]
             for packed in packed_latents[1:]:
-                image_latents = self._concat_packed_latents(image_latents, packed)
+                image_latents = self._concat_packed_latents(
+                    image_latents, packed
+                )
 
         if batch_size > 1:
-            image_latents, image_latent_ids = self._repeat_image_conditioning(batch_size)(
+            image_latents, image_latent_ids = self._repeat_image_conditioning(
+                batch_size
+            )(
                 image_latents,
                 image_latent_ids,
             )
@@ -608,14 +640,16 @@ class Flux2Pipeline(DiffusionPipeline):
         batch_size = 1  # text encoder always outputs a single batch
 
         with Tracer("text_encoder"):
-            prompt_embeds = self.text_encoder(tokens)
+            prompt_embeds = cast(
+                Buffer,
+                self.text_encoder(tokens),  # type: ignore[arg-type]
+            )
 
         with Tracer("post_process"):
             if num_images_per_prompt != 1:
-                repeat_prompt_embeddings = self._repeat_prompt_embeddings(
+                prompt_embeds = self._get_repeat_prompt_embeddings(
                     num_images_per_prompt
-                )
-                prompt_embeds = repeat_prompt_embeddings(prompt_embeds)
+                )(prompt_embeds)
 
             batch_size_final = batch_size * num_images_per_prompt
             text_ids_key = f"{batch_size_final}_{seq_len}"
@@ -659,7 +693,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         if decoded_np.dtype != np.uint8:
             decoded_np = decoded_np.astype(np.uint8, copy=False)
-        return decoded_np
+        return cast(npt.NDArray[np.uint8], decoded_np)
 
     @staticmethod
     def _prepare_text_ids(
@@ -692,7 +726,7 @@ class Flux2Pipeline(DiffusionPipeline):
     def preprocess_latents(self, latents: Buffer) -> Buffer:
         return self._patchify_and_pack(latents)
 
-    def _patchify_and_pack(self, latents: TensorValue) -> TensorValue:
+    def _patchify_and_pack_graph(self, latents: TensorValue) -> TensorValue:
         """Patchify (B,C,H,W)->(B,C*4,H//2,W//2) then pack to (B,H//2*W//2,C*4)."""
         latents = ops.cast(latents, self.transformer.config.dtype)
         batch = latents.shape[0]
@@ -728,7 +762,7 @@ class Flux2Pipeline(DiffusionPipeline):
             device=self.vae.devices[0],
         )
 
-    def scheduler_step(
+    def _scheduler_step_graph(
         self,
         latents: TensorValue,
         noise_pred: TensorValue,
@@ -754,7 +788,7 @@ class Flux2Pipeline(DiffusionPipeline):
         noise_pred_sliced = ops.rebind(noise_pred_sliced, latents_f32.shape)
         return ops.cast(latents_f32 + dt * noise_pred_sliced, latents_dtype)
 
-    def prepare_scheduler(
+    def _prepare_scheduler_graph(
         self, sigmas: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
         """Precompute timesteps and dt values from sigmas in a single fused graph.
@@ -851,7 +885,7 @@ class Flux2Pipeline(DiffusionPipeline):
                         )[0]
 
                     with Tracer("scheduler_step"):
-                        latents = self.scheduler_step(latents, noise_pred, dt)
+                        latents = self._scheduler_step(latents, noise_pred, dt)
 
         # 5) Decode final outputs for all batch elements in a single pass.
         with Tracer("decode_outputs"):

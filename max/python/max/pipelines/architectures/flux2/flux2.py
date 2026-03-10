@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.dtype import DType
-from max.graph import TensorType, TensorValue, ops
+from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 
@@ -36,7 +36,7 @@ class Flux2TimestepGuidanceEmbeddings(Module):
         bias: bool = False,
         guidance_embeds: bool = True,
         dtype: DType,
-        device,
+        device: DeviceRef,
     ) -> None:
         """Initialize Flux2TimestepGuidanceEmbeddings.
 
@@ -105,7 +105,7 @@ class Flux2Modulation(Module):
         dim: int,
         *,
         dtype: DType,
-        device,
+        device: DeviceRef,
         mod_param_sets: int = 2,
         bias: bool = False,
     ) -> None:
@@ -161,7 +161,7 @@ class Flux2TransformerBlock(Module):
         attention_head_dim: int,
         *,
         dtype: DType,
-        device,
+        device: DeviceRef,
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
@@ -282,10 +282,9 @@ class Flux2TransformerBlock(Module):
         )
 
         if encoder_hidden_states.dtype == DType.float16:
-            encoder_hidden_states = ops.clip(
-                encoder_hidden_states,
-                min=-65504,
-                max=65504,
+            encoder_hidden_states = ops.min(
+                ops.max(encoder_hidden_states, -65504),
+                65504,
             )
 
         return encoder_hidden_states, hidden_states
@@ -299,7 +298,7 @@ class Flux2SingleTransformerBlock(Module):
         attention_head_dim: int,
         *,
         dtype: DType,
-        device,
+        device: DeviceRef,
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
@@ -344,7 +343,7 @@ class Flux2SingleTransformerBlock(Module):
         | None = None,
         image_rotary_emb: tuple[TensorValue, TensorValue] | None = None,
         split_hidden_states: bool = False,
-        text_seq_len: int | None = None,
+        text_seq_len: int | Dim | None = None,
     ) -> TensorValue | tuple[TensorValue, TensorValue]:
         """Forward pass for single-stream transformer block.
 
@@ -379,7 +378,7 @@ class Flux2SingleTransformerBlock(Module):
         hidden_states = hidden_states + mod_gate * attn_output
 
         if hidden_states.dtype == DType.float16:
-            hidden_states = ops.clip(hidden_states, min=-65504, max=65504)
+            hidden_states = ops.min(ops.max(hidden_states, -65504), 65504)
 
         if split_hidden_states:
             if text_seq_len is None:

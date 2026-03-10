@@ -63,13 +63,15 @@ def float32_array_to_buffer(
     array = np.ascontiguousarray(array, dtype=np.float32)
 
     if dtype == DType.bfloat16:
-        return Buffer.from_numpy(float32_to_bfloat16_as_uint16(array)).view(
-            DType.bfloat16, array.shape
-        ).to(device)
+        return (
+            Buffer.from_numpy(float32_to_bfloat16_as_uint16(array))
+            .view(DType.bfloat16, array.shape)
+            .to(device)
+        )
 
     if dtype == DType.float32:
         return Buffer.from_numpy(array).to(device)
 
-    return Buffer.from_numpy(
-        array.astype(dtype.to_numpy(), copy=False)
-    ).to(device)
+    return Buffer.from_numpy(array.astype(dtype.to_numpy(), copy=False)).to(
+        device
+    )

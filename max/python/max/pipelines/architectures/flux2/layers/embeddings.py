@@ -272,7 +272,6 @@ class TimestepEmbedding(Module):
             else activation_function_from_name(post_act_fn)
         )
 
-
     def __call__(self, sample: TensorValue) -> TensorValue:
         """Process timestep embeddings through MLP.
 
