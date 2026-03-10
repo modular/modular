@@ -389,7 +389,9 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         self.joint_attention_dim = joint_attention_dim
         self.pooled_projection_dim = pooled_projection_dim
 
-    def input_types(self) -> tuple[TensorType, ...]:
+    def input_types(
+        self, step_cache_enabled: bool = False
+    ) -> tuple[TensorType, ...]:
         """Define input tensor types for the model.
 
         Returns:
@@ -432,6 +434,9 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             txt_ids_type,
             guidance_type,
         )
+
+        if not step_cache_enabled:
+            return base_types
 
         prev_residual_type = TensorType(
             self.max_dtype,
