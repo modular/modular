@@ -69,8 +69,8 @@ fn _argn[
     var parallel_size = 1
 
     comptime if rank == 1:
-        input_stride = input.numel()
-        output_stride = output.numel()
+        input_stride = input.num_elements()
+        output_stride = output.num_elements()
         chunk_size = 1
     else:
         input_stride = Int(input.dynamic_stride(canonical_axis - 1))
@@ -81,7 +81,7 @@ fn _argn[
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.numel()),
+            _get_num_workers(input.num_elements()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)

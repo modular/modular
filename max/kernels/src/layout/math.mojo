@@ -496,7 +496,9 @@ fn variance(
         var src_idx = src.layout(Idx(idx))
         return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
 
-    return reduction.variance[src.dtype, input_fn_1d](src.numel(), correction)
+    return reduction.variance[src.dtype, input_fn_1d](
+        src.num_elements(), correction
+    )
 
 
 fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
@@ -513,7 +515,7 @@ fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
     """
     comptime assert src.rank == 1, "src must be of rank 1"
 
-    assert src.numel() != 0, "input must not be empty"
+    assert src.num_elements() != 0, "input must not be empty"
 
     @parameter
     @always_inline
@@ -523,4 +525,4 @@ fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
         var src_idx = src.layout(Idx(idx))
         return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
 
-    return reduction.mean[src.dtype, input_fn_1d](src.numel())
+    return reduction.mean[src.dtype, input_fn_1d](src.num_elements())

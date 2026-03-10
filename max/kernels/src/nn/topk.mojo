@@ -473,7 +473,7 @@ fn _top_k_sampling[
 
     comptime if input.rank == 1:
         internal_bs = 1
-        internal_in_shape = IndexList[internal_rank](1, input.numel())
+        internal_in_shape = IndexList[internal_rank](1, input.num_elements())
     elif input.rank == internal_rank:
         internal_bs = orig_in_shape[0]
         internal_in_shape = rebind[IndexList[internal_rank]](orig_in_shape)
@@ -492,7 +492,7 @@ fn _top_k_sampling[
     var reshaped_out_vals = reshape(out_vals, internal_out_shape)
 
     var out_idxs_tmp = TileTensor(
-        alloc[Int64](out_vals.numel()),
+        alloc[Int64](out_vals.num_elements()),
         row_major(Coord(internal_out_shape)),  # topk returns K as last dim
     )
     var reshaped_input = reshape(input, internal_in_shape)
@@ -1326,7 +1326,7 @@ fn _topk_gpu[
     else:
         k_ptr = UnsafePointer[Int64, ImmutAnyOrigin]()  # null pointer
 
-    var k_size = k.value().numel() if k else 0
+    var k_size = k.value().num_elements() if k else 0
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
 
     # Enqueue the first kernel (stage 1)
@@ -1393,7 +1393,7 @@ fn _topk_gpu[
         )
     else:
         temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
-    var temp_size = temperature.value().numel() if temperature else 0
+    var temp_size = temperature.value().num_elements() if temperature else 0
 
     # Handle optional top_p parameter
     var top_p_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
@@ -1403,7 +1403,7 @@ fn _topk_gpu[
         )
     else:
         top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
-    var top_p_size = top_p.value().numel() if top_p else 0
+    var top_p_size = top_p.value().num_elements() if top_p else 0
 
     # Handle optional seed parameter
     var seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin]
@@ -1411,7 +1411,7 @@ fn _topk_gpu[
         seed_ptr = seed.value().ptr
     else:
         seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
-    var seed_size = seed.value().numel() if seed else 0
+    var seed_size = seed.value().num_elements() if seed else 0
 
     var temp_device = DeviceBuffer[DType.float32](
         ctx,
@@ -1537,9 +1537,9 @@ fn topk_gpu[
 
     # heuristic to set block size
     var block_size_: Int
-    if input.numel() <= 1024 * 64 * 3:
+    if input.num_elements() <= 1024 * 64 * 3:
         block_size_ = 256
-    elif input.numel() <= 32000 * 256:
+    elif input.num_elements() <= 32000 * 256:
         block_size_ = 512
     else:
         block_size_ = 1024
@@ -1579,7 +1579,9 @@ fn topk_gpu[
     comptime if input.rank == 1:
         # Handle 1D input: treat it as a single batch with one element
         internal_bs = 1
-        var internal_in_shape = IndexList[internal_rank](1, input.numel())
+        var internal_in_shape = IndexList[internal_rank](
+            1, input.num_elements()
+        )
         var internal_out_vals_shape = IndexList[internal_rank](1, bound_max_k)
         var internal_out_idxs_shape = IndexList[internal_rank](1, last_idx_dim)
         # Reshape 1D inputs to 2D
@@ -1987,7 +1989,9 @@ fn gumbel_sampling_gpu[
     """
 
     # create a buffer to hold the Gumbel noise applied input
-    var noised_input_buf = ctx.enqueue_create_buffer[dtype](input.numel())
+    var noised_input_buf = ctx.enqueue_create_buffer[dtype](
+        input.num_elements()
+    )
     var noised_input = TileTensor(noised_input_buf, input.layout)
 
     # Handle optional temperature parameter
@@ -1998,7 +2002,7 @@ fn gumbel_sampling_gpu[
         )
     else:
         temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
-    var temp_size = temperature.value().numel() if temperature else 0
+    var temp_size = temperature.value().num_elements() if temperature else 0
 
     # Handle optional seed parameter
     var seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin]
@@ -2008,7 +2012,7 @@ fn gumbel_sampling_gpu[
         )
     else:
         seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
-    var seed_size = seed.value().numel() if seed else 0
+    var seed_size = seed.value().num_elements() if seed else 0
 
     comptime hw_info = ctx.default_device_info
     comptime gumbel_kernel = apply_gumbel_noise_kernel[

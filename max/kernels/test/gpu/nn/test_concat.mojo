@@ -185,7 +185,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     print(
         "transfer rate = ",
-        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
+        Float64(output_dyn.num_elements() * size_of[UInt8]() * 2)
         * 1e9
         / Float64((1024**3))
         / Float64(nstime_kernel),
@@ -262,7 +262,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     print("concat_gpu time = ", Float64(nstime) * 1e-6, " ms")
     print(
         "transfer rate = ",
-        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
+        Float64(output_dyn.num_elements() * size_of[UInt8]() * 2)
         * 1e9
         / Float64((1024**3))
         / Float64(nstime),

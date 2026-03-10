@@ -1531,7 +1531,7 @@ fn conv_transposed_gpu[
         comptime epilogue = elementwise_epilogue.value()
 
         var output_tmp_data = ctx.enqueue_create_buffer[output_type](
-            output.numel()
+            output.num_elements()
         )
 
         var output_tmp = TileTensor(output_tmp_data, output.layout)

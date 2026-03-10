@@ -141,31 +141,31 @@ def test_tile_tensor_reshape_static() raises:
     # Verify original shape
     assert_equal(tensor.dim[0](), 3)
     assert_equal(tensor.dim[1](), 4)
-    assert_equal(tensor.numel(), 12)
+    assert_equal(tensor.num_elements(), 12)
 
     # Reshape to (2, 6)
     var reshaped_2x6 = tensor.reshape[2, 6]()
     assert_equal(reshaped_2x6.dim[0](), 2)
     assert_equal(reshaped_2x6.dim[1](), 6)
-    assert_equal(reshaped_2x6.numel(), 12)
+    assert_equal(reshaped_2x6.num_elements(), 12)
 
     # Reshape to (4, 3)
     var reshaped_4x3 = tensor.reshape[4, 3]()
     assert_equal(reshaped_4x3.dim[0](), 4)
     assert_equal(reshaped_4x3.dim[1](), 3)
-    assert_equal(reshaped_4x3.numel(), 12)
+    assert_equal(reshaped_4x3.num_elements(), 12)
 
     # Reshape to 1D (equivalent to coalesce)
     var reshaped_1d = tensor.reshape[12]()
     assert_equal(reshaped_1d.dim[0](), 12)
-    assert_equal(reshaped_1d.numel(), 12)
+    assert_equal(reshaped_1d.num_elements(), 12)
 
     # Reshape to 3D
     var reshaped_3d = tensor.reshape[2, 2, 3]()
     assert_equal(reshaped_3d.dim[0](), 2)
     assert_equal(reshaped_3d.dim[1](), 2)
     assert_equal(reshaped_3d.dim[2](), 3)
-    assert_equal(reshaped_3d.numel(), 12)
+    assert_equal(reshaped_3d.num_elements(), 12)
 
 
 def test_tile_tensor_reshape_preserves_data() raises:
@@ -211,7 +211,7 @@ def test_tile_tensor_reshape_with_coord() raises:
     var reshaped = tensor.reshape(Coord(Idx[2](), Idx[6]()))
     assert_equal(reshaped.dim[0](), 2)
     assert_equal(reshaped.dim[1](), 6)
-    assert_equal(reshaped.numel(), 12)
+    assert_equal(reshaped.num_elements(), 12)
 
     # Reshape using Coord with runtime dimensions
     var rows = 4
@@ -219,7 +219,7 @@ def test_tile_tensor_reshape_with_coord() raises:
     var reshaped_runtime = tensor.reshape(Coord(Idx(rows), Idx(cols)))
     assert_equal(reshaped_runtime.dim[0](), 4)
     assert_equal(reshaped_runtime.dim[1](), 3)
-    assert_equal(reshaped_runtime.numel(), 12)
+    assert_equal(reshaped_runtime.num_elements(), 12)
 
 
 def test_tile_tensor_reshape_strides() raises:

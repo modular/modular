@@ -70,7 +70,7 @@ fn time_kernel[
 fn fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e6
     comptime max_val = 1e6
-    var total_elements = buffer.numel()
+    var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
         buffer.ptr[i] = random_value.cast[dtype]()
@@ -78,14 +78,14 @@ fn fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
 
 @parameter
 fn fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
-    iota(buf.ptr, buf.numel())
+    iota(buf.ptr, buf.num_elements())
 
 
 fn test_is_sorted_descending[
     dtype: DType
 ](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
     comptime assert buf.rank == 2, "rank must be 2"
-    var batch_size = buf.numel() // vocab_size
+    var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = alloc[Bool](batch_size)
 
     # Initialize all flags to True

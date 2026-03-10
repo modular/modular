@@ -27,4 +27,4 @@ fn random_normal[
     Args:
         output: The output buffer.
     """
-    randn(output.ptr, output.numel(), mean, variance)
+    randn(output.ptr, output.num_elements(), mean, variance)

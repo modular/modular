@@ -221,7 +221,7 @@ fn sort_buf_descending[
     """Sort each batch separately in descending order using parallel merge sort.
     """
     comptime assert buf_keys.rank == 2, "rank must be 2"
-    var batch_size = buf_keys.numel() // vocab_size
+    var batch_size = buf_keys.num_elements() // vocab_size
 
     for batch_id in range(batch_size):
         var start = batch_id * vocab_size

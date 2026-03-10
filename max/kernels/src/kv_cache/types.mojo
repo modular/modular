@@ -946,7 +946,7 @@ struct PagedKVCache[
         ), "KVCache tok_idx out of range"
 
         assert batch_idx < UInt32(
-            self.cache_lengths.numel()
+            self.cache_lengths.num_elements()
         ), "batch_idx is oob"
         debug_assert(
             lut_block_index < Int(self.blocks.dim[0]()),
@@ -1109,7 +1109,7 @@ struct PagedKVCache[
             self.blocks.dim[1]()
         ), "KVCache tok_idx out of range"
 
-        assert bs < self.cache_lengths.numel(), "batch_idx is oob"
+        assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
             lut_block_index < Int(self.blocks.dim[0]()),
             "block_idx is OOB. Attempted to access block index ",
@@ -1143,7 +1143,7 @@ struct PagedKVCache[
             self.blocks.dim[1]()
         ), "KVCache tok_idx out of range"
 
-        assert bs < self.cache_lengths.numel(), "batch_idx is oob"
+        assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
             lut_block_index < Int(self.blocks.dim[0]()),
             "block_idx is OOB. Attempted to access block index ",

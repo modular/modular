@@ -58,9 +58,9 @@ fn run_bmm_and_check_result[
 ) raises:
     comptime assert c_host.flat_rank == 3, "c_device must have rank 3"
     comptime assert c_host_ref.flat_rank == 3, "c_device_ref must have rank 3"
-    var a_size = a_host.numel()
-    var b_size = b_host.numel()
-    var c_size = c_host.numel()
+    var a_size = a_host.num_elements()
+    var b_size = b_host.num_elements()
+    var c_size = c_host.num_elements()
 
     # allocate device buffers
     var a_device_buffer = ctx.enqueue_create_buffer[dtype](a_size)

@@ -104,7 +104,7 @@ def test_concat() raises:
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
@@ -175,7 +175,7 @@ def test_concat_parallel() raises:
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
@@ -241,7 +241,7 @@ def test_concat_inner() raises:
     # CHECK-COUNT-12: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))

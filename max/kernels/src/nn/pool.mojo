@@ -215,7 +215,7 @@ fn max_pool_cpu[
     comptime assert paddings.flat_rank == 1
 
     var empty_padding = True
-    for i in range(paddings.numel()):
+    for i in range(paddings.num_elements()):
         if paddings[i] != 0:
             empty_padding = False
             break
@@ -391,7 +391,7 @@ fn max_pool_gpu[
     comptime assert paddings.flat_rank == 1
 
     var empty_padding = True
-    for i in range(paddings.numel()):
+    for i in range(paddings.num_elements()):
         if paddings[i] != 0:
             empty_padding = False
             break
@@ -554,7 +554,7 @@ fn avg_pool_cpu[
     comptime assert paddings.flat_rank == 1
 
     var empty_padding = True
-    for i in range(paddings.numel()):
+    for i in range(paddings.num_elements()):
         if paddings[i] != 0:
             empty_padding = False
             break
@@ -830,7 +830,7 @@ fn avg_pool_gpu[
     comptime assert strides.flat_rank == 1
 
     var empty_padding = True
-    for i in range(paddings.numel()):
+    for i in range(paddings.num_elements()):
         if paddings[i] != 0:
             empty_padding = False
             break

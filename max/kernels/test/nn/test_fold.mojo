@@ -147,7 +147,7 @@ fn _copy_values_to_tile_tensor[
     tensor: TileTensor[mut=True, dtype, ...],
     values: List[Scalar[dtype]],
 ) raises:
-    var num_elements = tensor.numel()
+    var num_elements = tensor.num_elements()
 
     if num_elements != len(values):
         raise Error("Tensor size and values size mismatch")

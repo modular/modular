@@ -115,7 +115,7 @@ fn reshape_shape[
         else:
             non_negative_dim_product *= target_dim
 
-    var input_num_elems = input_buf.numel()
+    var input_num_elems = input_buf.num_elements()
     var output_num_elems = non_negative_dim_product
     # Infer a dimension as the remaining elements, if needed.
     if to_be_inferred_axis != -1:

@@ -688,7 +688,7 @@ struct TileTensor[
             self.ptr_at_offset(coords)
         )
 
-    fn numel(self) -> Int:
+    fn num_elements(self) -> Int:
         """Returns the total number of elements in the tensor.
 
         Computes the product of all shape dimensions.
@@ -1142,7 +1142,7 @@ struct TileTensor[
                 var idx = self.layout(Idx[i]())
                 self.ptr.mut_cast[True]()[idx] = val
         else:
-            var num_elements = self.numel()
+            var num_elements = self.num_elements()
 
             for i in range(num_elements):
                 var idx = self.layout(Idx(i))
@@ -1636,7 +1636,7 @@ struct TileTensor[
         """
         # Runtime validation for element count
         assert (
-            self.numel() == new_shape.product()
+            self.num_elements() == new_shape.product()
         ), "reshape: total number of elements must match"
 
         var new_layout = row_major(new_shape)
@@ -1886,7 +1886,7 @@ struct TileTensor[
         return DeviceBuffer[Self.dtype](
             ctx,
             self.ptr,
-            self.numel(),
+            self.num_elements(),
             owning=False,
         )
 

@@ -298,7 +298,9 @@ fn mha_cross_gpu_naive[
             (Idx(batch_size * num_heads), Idx(q_max_seq_len), Idx(num_keys))
         ),
     )
-    var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.numel(), owning=False)
+    var q_device = DeviceBuffer[q_type](
+        ctx, q.ptr, q.num_elements(), owning=False
+    )
 
     comptime kernel_0 = _bmm0_bs[
         QLayoutType=q.LayoutType,
@@ -347,7 +349,7 @@ fn mha_cross_gpu_naive[
         ctx,
     )
     var output_device = DeviceBuffer[output.dtype](
-        ctx, output.ptr, output.numel(), owning=False
+        ctx, output.ptr, output.num_elements(), owning=False
     )
 
     comptime kernel_1 = _bmm1_bs[

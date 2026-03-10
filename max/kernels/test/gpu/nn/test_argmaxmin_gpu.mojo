@@ -176,7 +176,7 @@ def main() raises:
     ](buffer: TileTensor[mut=True, dtype, ...]):
         comptime min_val = -1e9
         comptime max_val = 1e9
-        var total_elements = buffer.numel()
+        var total_elements = buffer.num_elements()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)
             buffer.ptr[i] = random_value.cast[dtype]()
