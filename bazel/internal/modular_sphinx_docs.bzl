@@ -49,10 +49,12 @@ def _sphinx_docs_impl(ctx):
 
     # Create outputs
     /bin/mkdir -p {output_dir}
+    DOCTREE_DIR=$(mktemp -d)
     {sphinx} \\
         -q \\
         -b {builder} \\
         -c . \\
+        -d "$DOCTREE_DIR" \\
         -W \\
         ./sphinx_doc_inputs \\
         {output_dir}
