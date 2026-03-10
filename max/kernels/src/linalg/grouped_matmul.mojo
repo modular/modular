@@ -1199,7 +1199,7 @@ fn grouped_matmul_vendor[
             # Create output slice and zero it out
             var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
                 c.data + token_start * UInt32(c.dim[1]()),
-                IndexList[2](num_tokens, Int(c.dim[1]())),
+                IndexList[2](num_tokens, c.dim[1]()),
             )
             var buff = DeviceBuffer(
                 ctx, c_slice.data, c_slice.num_elements(), owning=False
@@ -1210,15 +1210,15 @@ fn grouped_matmul_vendor[
         # Create views into the tensors for this expert
         var a_slice = NDBuffer[rank=2, a_type, ImmutAnyOrigin](
             a.data + token_start * UInt32(a.dim[1]()),
-            IndexList[2](num_tokens, Int(a.dim[1]())),
+            IndexList[2](num_tokens, a.dim[1]()),
         )
         var b_slice = NDBuffer[rank=2, b_type, ImmutAnyOrigin](
             b.data + expert_id * Int32(b.dim[1]()) * Int32(b.dim[2]()),
-            IndexList[2](Int(b.dim[1]()), Int(b.dim[2]())),
+            IndexList[2](b.dim[1](), b.dim[2]()),
         )
         var c_slice = NDBuffer[rank=2, c_type, MutAnyOrigin](
             c.data + token_start * UInt32(c.dim[1]()),
-            IndexList[2](num_tokens, Int(c.dim[1]())),
+            IndexList[2](num_tokens, c.dim[1]()),
         )
 
         vendor_matmul[use_tf32](

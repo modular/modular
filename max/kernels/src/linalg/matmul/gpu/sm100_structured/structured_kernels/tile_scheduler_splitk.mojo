@@ -712,7 +712,7 @@ struct TileScheduler[
         var warp_id_y = 0 if Self.BM == 128 else local_warp_id // 2
 
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
-            Coord(Idx(Int(warp_id_x)), Idx(Int(warp_id_y)))
+            Coord(Idx(warp_id_x), Idx(warp_id_y))
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](
             Coord(Idx(0), Idx(0))

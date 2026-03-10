@@ -2096,7 +2096,7 @@ fn _distribute_with_offset[
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
-        thread_coords[i] = Int(thread_coord_i)
+        thread_coords[i] = thread_coord_i
         offset += UInt(
             thread_coord_i * data_layout_tensor.layout.stride[i]().value()
         )
@@ -2278,7 +2278,7 @@ fn _tile_with_offset[
     var corner_coords = IndexList[Variadic.size(coord_types)]()
 
     comptime for i in range(Variadic.size(coord_types)):
-        corner_coords[i] = Int(tile_coords[i].value() * tile_shape[i].value())
+        corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
@@ -2406,7 +2406,7 @@ fn _tile_with_offset[
     var corner_coords = IndexList[Variadic.size(coord_types)]()
 
     comptime for i in range(Variadic.size(coord_types)):
-        corner_coords[i] = Int(tile_coords[i].value() * tile_shape[i].value())
+        corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
