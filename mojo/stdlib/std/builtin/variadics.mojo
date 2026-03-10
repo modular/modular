@@ -961,7 +961,7 @@ struct VariadicPack[
     time to generate the correct memory layout and access code.
 
     Therefore, indexing into `VariadicPack` requires compile-time indices using
-    `@parameter for` loops, whereas indexing into `VariadicParamList` uses runtime
+    `comptime for` loops, whereas indexing into `VariadicParamList` uses runtime
     indices.
 
     For example, in the following function signature, `*args: *ArgTypes` creates a
@@ -976,7 +976,7 @@ struct VariadicPack[
     fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
         var total = 0
 
-        # Must use @parameter for loop because args is a VariadicPack
+        # Must use comptime for loop because args is a VariadicPack
         comptime for i in range(args.__len__()):
             # Each args[i] has a different concrete type from *ArgTypes
             # The compiler generates specific code for each iteration

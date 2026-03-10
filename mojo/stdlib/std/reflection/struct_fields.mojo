@@ -53,7 +53,7 @@ For accessing struct field values by index (returns a reference, not a copy):
 The `__struct_field_ref` magic function enables reflection-based utilities to work
 with non-copyable types by returning references instead of copies. It works with
 both literal indices and parametric indices (such as loop variables in
-`@parameter for` loops):
+`comptime for` loops):
 
 ```mojo
 struct Container:
@@ -351,7 +351,7 @@ fn struct_field_names[
     comptime count = struct_field_count[T]()
     comptime raw = _struct_field_names_raw[T]()
 
-    # Safety: uninitialized=True is safe here because the @parameter for loop
+    # Safety: uninitialized=True is safe here because the comptime for loop
     # guarantees complete initialization of all elements at compile time.
     var result = InlineArray[StaticString, count](uninitialized=True)
 
@@ -375,7 +375,7 @@ fn is_struct_type[T: AnyType]() -> Bool:
     can only pass types to them. Attempting to pass a trait, function, or
     comptime value would result in a compiler error regardless of this check.
 
-    Note: When using this function as a guard, you must use `@parameter if`
+    Note: When using this function as a guard, you must use `comptime if`
     (not a runtime `if` statement) because the guarded reflection APIs are
     evaluated at compile time. A runtime `if` would still cause a compile
     error since the compiler evaluates both branches.

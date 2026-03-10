@@ -446,7 +446,7 @@ comptime assert StaticString(target_arch)
     "' is invalid or not currently supported")
 ```
 
-Then add the mapping in the `@parameter` block:
+Then add the mapping in the `comptime` block:
 
 ```mojo
 comptime if target_arch == "52":
@@ -526,7 +526,7 @@ Before submitting your GPU addition:
 - [ ] Target function created and documented.
 - [ ] GPUInfo alias defined with correct family.
 - [ ] Architecture added to constraint list in `_get_info_from_target`.
-- [ ] Mapping added to `@parameter` block in `_get_info_from_target`.
+- [ ] Mapping added to `comptime` block in `_get_info_from_target`.
 - [ ] Mapping added to `GPUInfo.target()` method.
 - [ ] Data layout string validated against LLVM documentation.
 - [ ] Compute capability matches architecture name.
