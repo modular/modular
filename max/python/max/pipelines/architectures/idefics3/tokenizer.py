@@ -116,36 +116,33 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             ValueError: If template application fails.
         """
 
-        # Convert to text-only messages first
-        text_messages: list[dict[str, Any]] = []
+        hf_messages: list[dict[str, Any]] = []
         for message in messages:
-            text_message: dict[str, Any] = {"role": message.role}
+            hf_message: dict[str, Any] = {"role": message.role}
             content = message.content
 
             if isinstance(content, str):
-                text_message["content"] = content
+                hf_message["content"] = [{"type": "text", "text": content}]
             elif isinstance(content, list):
-                text_parts: list[str] = []
+                hf_content: list[dict[str, Any]] = []
                 for item in content:
-                    if isinstance(item, TextContentPart):
-                        # Handle both "content" and "text" keys
-                        text_content = item.text
-                        if text_content:
-                            text_parts.append(text_content)
-                    elif isinstance(item, ImageContentPart):
-                        # Add image placeholder
-                        text_parts.append("<image>")
-                text_message["content"] = " ".join(text_parts)
+                    if isinstance(item, ImageContentPart):
+                        hf_content.append({"type": "image"})
+                    elif isinstance(item, TextContentPart) and item.text:
+                        hf_content.append({"type": "text", "text": item.text})
+                if not hf_content:
+                    raise ValueError(
+                        f"Message from '{message.role}' has no usable content"
+                    )
+                hf_message["content"] = hf_content
             else:
-                text_message["content"] = ""
+                raise ValueError(f"Unexpected content type: {type(content)}")
 
-            text_messages.append(text_message)
+            hf_messages.append(hf_message)
 
-        templated_prompt = self.delegate.apply_chat_template(
-            text_messages, tokenize=False, add_generation_prompt=True
+        return self.processor.apply_chat_template(
+            hf_messages, tokenize=False, add_generation_prompt=True
         )
-
-        return templated_prompt
 
     async def new_context(
         self, request: TextGenerationRequest
