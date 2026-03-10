@@ -132,6 +132,48 @@ def test_perm() raises:
     assert_equal(perm(10, 3), 720)
 
 
+fn test_comb_scalar() raises:
+    # Int32
+    assert_equal(comb(Int32(0), Int32(0)), Int32(1))
+    assert_equal(comb(Int32(5), Int32(0)), Int32(1))
+    assert_equal(comb(Int32(5), Int32(5)), Int32(1))
+    assert_equal(comb(Int32(5), Int32(2)), Int32(10))
+    assert_equal(comb(Int32(10), Int32(3)), Int32(120))
+    assert_equal(comb(Int32(3), Int32(5)), Int32(0))  # k > n returns 0
+    # Symmetry: C(n, k) == C(n, n-k)
+    assert_equal(comb(Int32(10), Int32(4)), comb(Int32(10), Int32(6)))
+
+    # Int64
+    assert_equal(comb(Int64(20), Int64(10)), Int64(184756))
+    assert_equal(comb(Int64(3), Int64(5)), Int64(0))  # k > n returns 0
+
+    # Unsigned
+    assert_equal(comb(UInt32(5), UInt32(2)), UInt32(10))
+    assert_equal(comb(UInt64(10), UInt64(3)), UInt64(120))
+
+
+fn test_perm_scalar() raises:
+    # Int32 — perm(n, k)
+    assert_equal(perm(Int32(5), Int32(0)), Int32(1))
+    assert_equal(perm(Int32(5), Int32(1)), Int32(5))
+    assert_equal(perm(Int32(5), Int32(2)), Int32(20))
+    assert_equal(perm(Int32(5), Int32(5)), Int32(120))
+    assert_equal(perm(Int32(10), Int32(3)), Int32(720))
+
+    # Int64 — perm(n, k)
+    assert_equal(perm(Int64(10), Int64(3)), Int64(720))
+
+    # Unsigned — perm(n, k)
+    assert_equal(perm(UInt32(5), UInt32(2)), UInt32(20))
+    assert_equal(perm(UInt64(10), UInt64(3)), UInt64(720))
+
+    # perm(n) — factorial shortcut
+    assert_equal(perm(Int32(5)), Int32(120))
+    assert_equal(perm(Int32(0)), Int32(1))
+    assert_equal(perm(Int64(10)), Int64(3628800))
+    assert_equal(perm(UInt32(5)), UInt32(120))
+
+
 def test_copysign() raises:
     var x = Int32(2)
     assert_equal(x, copysign(x, x))
