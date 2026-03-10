@@ -375,7 +375,7 @@ fn logsoftmax[
     input_fn_1d: fn[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
-](output: NDBuffer[mut=True, rank=1, dtype, _, buffer_size]) raises:
+](output: NDBuffer[mut=True, rank=1, dtype, _, DimList[buffer_size]()]) raises:
     pass
 
 
