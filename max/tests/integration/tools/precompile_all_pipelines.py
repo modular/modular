@@ -35,7 +35,7 @@ from max.tests.integration.accuracy.logit_verification.logit_verification_config
     LOGIT_VERIFICATION_CONFIG,
     DeviceKind,
 )
-from verify_pipelines import (
+from tag_filters import (
     TagFilter,
     TagFilterParamType,
 )

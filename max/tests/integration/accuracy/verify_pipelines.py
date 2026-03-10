@@ -22,8 +22,8 @@ import os
 import sys
 import time
 import traceback
-from collections.abc import Generator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Generator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -40,6 +40,7 @@ from max.tests.integration.accuracy.logit_verification.logit_verification_config
     PregeneratedTorchGoldens,
     SupportedEncoding,
 )
+from tag_filters import TagFilter, TagFilterParamType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
@@ -478,53 +479,6 @@ def dump_v2_v3_comparison(
                 f"| {emoji} | {display_name(name)}"
                 f" | {_fmt_v2_v3_diff(v2.avg_mae, v3.avg_mae)} |\n"
             )
-
-
-@dataclass
-class TagFilter:
-    """User-provided filters on a tag list."""
-
-    must_have: Sequence[str] = field(default_factory=list)
-    must_not_have: Sequence[str] = field(default_factory=list)
-
-    def satisfied_by(self, tags: Sequence[str]) -> bool:
-        """Determines if this filter is satisfied by a tag list."""
-        if not all(required_tag in tags for required_tag in self.must_have):
-            return False
-        return not any(
-            forbidden_tag in tags for forbidden_tag in self.must_not_have
-        )
-
-
-class TagFilterParamType(click.ParamType):
-    name = "tag filter"
-
-    def convert(
-        self,
-        value: str | TagFilter,
-        param: click.Parameter | None,
-        ctx: click.Context | None,
-    ) -> TagFilter:
-        # Unsure why click sometimes tries to re-convert an already-converted
-        # value, but it does.
-        if isinstance(value, TagFilter):
-            return value
-        assert isinstance(value, str), f"Value of unexpected type {type(value)}"
-        if not value:
-            return TagFilter()
-        parts = value.split(",")
-        required = []
-        forbidden = []
-        for part in parts:
-            if part.startswith("+"):
-                required.append(part[1:])
-            elif part.startswith("-"):
-                forbidden.append(part[1:])
-            else:
-                raise ValueError(
-                    f"Tag filter part {part!r} does not start with '+' or '-'"
-                )
-        return TagFilter(must_have=required, must_not_have=forbidden)
 
 
 class InfraError(Exception):

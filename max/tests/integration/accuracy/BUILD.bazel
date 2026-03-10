@@ -105,6 +105,7 @@ modular_py_binary(
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         "//max/tests/integration/tools:generate_llm_logits",
+        "//max/tests/integration/tools:tag_filters",
         requirement("click"),
         "//max/tests/integration/test_common:evaluate",
         "//max/tests/integration/test_common:numpy_encoder",

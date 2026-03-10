@@ -16,7 +16,7 @@ from precompile_all_pipelines import (
     collect_precompile_jobs,
     run_precompile_inprocess,
 )
-from verify_pipelines import TagFilter
+from tag_filters import TagFilter
 
 
 def test_precompile_mpnet() -> None:
