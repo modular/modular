@@ -935,3 +935,42 @@ fn repro_symbol_attr():
         return Dispatch[identity](x)
 
     symbol_callee[1, type_of(my_fn)](my_fn)
+
+
+# // -----
+
+# COM: Ensure non-ref closure call operands are transformed/rebound in wrapper
+# COM: __call__ before dispatching to impl witness call.
+
+
+struct Width(TrivialRegisterPassable):
+    var _mlir_value: __mlir_type.index
+
+    @always_inline("builtin")
+    fn __mlir_index__(self) -> __mlir_type.index:
+        return self._mlir_value
+
+    @implicit
+    @always_inline
+    fn __init__[T: AnyType](out self, value: T):
+        pass
+
+
+struct Vec[tag: Int, size: Width](TrivialRegisterPassable):
+    var _dummy: __mlir_type.i1
+
+
+fn repro_rebind_nonref_operand[
+    tag: Int,
+    F: fn[w: Width](v: Vec[tag, w]) unified -> Bool,
+](func: F):
+    # CHECK: lit.fn @"__call__[::Int,::Int]({{.*}}::fn[w: Int](val: Vec[tag, w]) -> Bool_Mova_Impl_Copy_Impl
+    # CHECK-SAME: %val: !lit.struct<#Vec <:!Int _tag
+    # CHECK: [[REBIND:%.*]] = kgen.rebind %val : !lit.struct<#Vec <:!Int _tag
+    # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "fn[w: Int](val: Vec[tag, w]) -> Bool", "tag">
+    # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "fn[w: Int](val: Vec[tag, w]) -> Bool", "tag">
+    # CHECK-SAME: ]{{.*}}(%{{.*}}, [[REBIND]])
+    fn body[w: Int](val: Vec[tag, w]) unified {read func} -> Bool:
+        return func[w=w](val)
+
+    _ = body

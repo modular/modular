@@ -502,7 +502,10 @@ static void getUnwrappedOperands(
     // replace wrapper type with impl type
     RefType refType = dyn_cast<RefType>(arg.getType());
     if (!refType) {
-      operands.push_back(arg);
+      if (transform.has_value())
+        operands.push_back((*transform)(arg));
+      else
+        operands.push_back(arg);
       continue;
     }
 
