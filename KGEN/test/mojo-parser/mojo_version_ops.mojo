@@ -1,0 +1,77 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated %s | FileCheck --check-prefix=COMPTIME %s -DMOJO_MAJOR=%{mojo_version_major} -DMOJO_MINOR=%{mojo_version_minor} -DMOJO_PATCH=%{mojo_version_patch}
+# RUN: %parse-mojo-isolated %s | kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit | FileCheck --check-prefix=LOWER-LIT %s -DMOJO_MAJOR=%{mojo_version_major} -DMOJO_MINOR=%{mojo_version_minor} -DMOJO_PATCH=%{mojo_version_patch}
+
+# Test that `lit.mojo.version.*` ops are lowered correctly by the parser
+# and can be used at compile time via comptime folding.
+
+
+# COMPTIME-LABEL: lit.fn @"get_mojo_version_major_builtin()"() -> !pop.scalar<index> always_inline_builtin
+# COMPTIME:         "lit.mojo.version.major"() : () -> !pop.scalar<index>
+
+# LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_major_builtin()"()
+# LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MAJOR]]>
+@always_inline("builtin")
+fn get_mojo_version_major_builtin() -> __mlir_type.`!pop.scalar<index>`:
+    return __mlir_op.`lit.mojo.version.major`()
+
+
+# COMPTIME-LABEL: lit.fn @"get_mojo_version_minor_builtin()"() -> !pop.scalar<index> always_inline_builtin
+# COMPTIME:         "lit.mojo.version.minor"() : () -> !pop.scalar<index>
+
+# LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_minor_builtin()"()
+# LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MINOR]]>
+@always_inline("builtin")
+fn get_mojo_version_minor_builtin() -> __mlir_type.`!pop.scalar<index>`:
+    return __mlir_op.`lit.mojo.version.minor`()
+
+
+# COMPTIME-LABEL: lit.fn @"get_mojo_version_patch_builtin()"() -> !pop.scalar<index> always_inline_builtin
+# COMPTIME:         "lit.mojo.version.patch"() : () -> !pop.scalar<index>
+
+# LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_patch_builtin()"()
+# LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_PATCH]]>
+@always_inline("builtin")
+fn get_mojo_version_patch_builtin() -> __mlir_type.`!pop.scalar<index>`:
+    return __mlir_op.`lit.mojo.version.patch`()
+
+
+# COMPTIME-LABEL: lit.fn @"get_mojo_version_major()"() -> !pop.scalar<index>
+# COMPTIME:         "lit.mojo.version.major"() : () -> !pop.scalar<index>
+
+# LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_major()"()
+# LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MAJOR]]>
+fn get_mojo_version_major() -> __mlir_type.`!pop.scalar<index>`:
+    return __mlir_op.`lit.mojo.version.major`()
+
+
+# COMPTIME-LABEL: lit.fn @"get_mojo_version_minor()"() -> !pop.scalar<index>
+# COMPTIME:         "lit.mojo.version.minor"() : () -> !pop.scalar<index>
+
+# LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_minor()"()
+# LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_MINOR]]>
+fn get_mojo_version_minor() -> __mlir_type.`!pop.scalar<index>`:
+    return __mlir_op.`lit.mojo.version.minor`()
+
+
+# COMPTIME-LABEL: lit.fn @"get_mojo_version_patch()"() -> !pop.scalar<index>
+# COMPTIME:         "lit.mojo.version.patch"() : () -> !pop.scalar<index>
+
+# LOWER-LIT-LABEL: kgen.generator @"mojo_version_ops::get_mojo_version_patch()"()
+# LOWER-LIT: kgen.param.constant: scalar<index> = <[[MOJO_PATCH]]>
+fn get_mojo_version_patch() -> __mlir_type.`!pop.scalar<index>`:
+    return __mlir_op.`lit.mojo.version.patch`()
+
+# COMPTIME: lit.alias.decl {{.*}}major{{.*}}[[MOJO_MAJOR]]
+comptime major = get_mojo_version_major_builtin()
+
+# COMPTIME: lit.alias.decl {{.*}}minor{{.*}}[[MOJO_MINOR]]
+comptime minor = get_mojo_version_minor_builtin()
+
+# COMPTIME: lit.alias.decl {{.*}}patch{{.*}}[[MOJO_PATCH]]
+comptime patch = get_mojo_version_patch_builtin()

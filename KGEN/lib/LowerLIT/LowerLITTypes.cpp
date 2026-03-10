@@ -30,6 +30,8 @@
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+#include "Config/Version.h"
+
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
@@ -897,6 +899,34 @@ static Value lowerOp(RefPackExtractOp op, RefPackExtractOpAdaptor adaptor,
   return value;
 }
 
+static Value lowerVersionOp(Operation *op, int64_t number, LITTypeLowerer &b) {
+  return ParamConstantOp::create(
+      b, op->getLoc(),
+      POP::SIMDAttr::get(
+          POP::DTypeValue(number, KGENDType::index),
+          POP::SIMDType::get(
+              /*size=*/1,
+              DTypeConstantAttr::get(op->getContext(), KGENDType::index))));
+}
+
+// lit.mojo.version.major => kgen.param.constant : scalar<index>
+static Value lowerOp(MojoVersionMajorOp op, MojoVersionMajorOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  return lowerVersionOp(op, M::getMojoVersion().major, b);
+}
+
+// lit.mojo.version.minor => kgen.param.constant : scalar<index>
+static Value lowerOp(MojoVersionMinorOp op, MojoVersionMinorOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  return lowerVersionOp(op, M::getMojoVersion().minor, b);
+}
+
+// lit.mojo.version.patch => kgen.param.constant : scalar<index>
+static Value lowerOp(MojoVersionPatchOp op, MojoVersionPatchOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  return lowerVersionOp(op, M::getMojoVersion().patch, b);
+}
+
 Value LITTypeLowerer::getCastedToType(Location loc, Value value, Type type) {
   // If already casted, done.
   if (value.getType() == type)
@@ -972,7 +1002,8 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
               RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
               RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp, RefPackExtractOp,
               VarDeclOp, InitializedVarDeclOp, VarLifetimeStartOp,
-              VarLifetimeEndOp>(
+              VarLifetimeEndOp, MojoVersionMajorOp, MojoVersionMinorOp,
+              MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });

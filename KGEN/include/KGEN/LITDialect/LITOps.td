@@ -2096,3 +2096,45 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
   }];
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// MojoVersionMajorOp
+//===----------------------------------------------------------------------===//
+
+def LIT_MojoVersionMajorOp : LITOp<"mojo.version.major", [Pure]> {
+  let summary = "The Mojo language version, major component";
+  let description = [{
+    returns current major version of the Mojo language
+  }];
+
+  let arguments = (ins);
+  let results = (outs IndexScalar:$version);
+}
+
+//===----------------------------------------------------------------------===//
+// MojoVersionMinorOp
+//===----------------------------------------------------------------------===//
+
+def LIT_MojoVersionMinorOp : LITOp<"mojo.version.minor", [Pure]> {
+  let summary = "The Mojo language version, minor component";
+  let description = [{
+    returns current minor version of the Mojo language
+  }];
+
+  let arguments = (ins);
+  let results = (outs IndexScalar:$version);
+}
+
+//===----------------------------------------------------------------------===//
+// MojoVersionPatchOp
+//===----------------------------------------------------------------------===//
+
+def LIT_MojoVersionPatchOp : LITOp<"mojo.version.patch", [Pure]> {
+  let summary = "The Mojo language version, patch component";
+  let description = [{
+    returns current patch version of the Mojo language
+  }];
+
+  let arguments = (ins);
+  let results = (outs IndexScalar:$version);
+}
