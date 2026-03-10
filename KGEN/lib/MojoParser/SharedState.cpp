@@ -3035,6 +3035,25 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (isa<KGEN::ParamAssertOp>(op))
     return TypedAttr();
 
+  if (isa<LIT::MojoVersionMajorOp, LIT::MojoVersionMinorOp,
+          LIT::MojoVersionPatchOp>(op)) {
+    const ProjectVersion version = M::getMojoVersion();
+    auto foldVersionOp = [&](int64_t number) -> TypedAttr {
+      return POP::SIMDAttr::get(
+          POP::DTypeValue(number, KGENDType::index),
+          POP::SIMDType::get(
+              /*size=*/1,
+              DTypeConstantAttr::get(op.getContext(), KGENDType::index)));
+    };
+
+    if (isa<LIT::MojoVersionMajorOp>(op))
+      return foldVersionOp(version.major);
+    if (isa<LIT::MojoVersionMinorOp>(op))
+      return foldVersionOp(version.minor);
+    if (isa<LIT::MojoVersionPatchOp>(op))
+      return foldVersionOp(version.patch);
+  }
+
   // Otherwise we don't know what this is, bail out.
   emitError(op.getLoc()) << "does not support MLIR operation "
                          << op.getName().getStringRef();

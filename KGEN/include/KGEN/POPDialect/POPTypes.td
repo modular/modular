@@ -270,6 +270,14 @@ def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!pop.simd<1, si8>">,
     BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
                                    "$_builder.getContext(), KGENDType::si8))">;
 
+def UIndexScalar : ScalarOfDType<BoundAnd<UIndexDType>, "!pop.simd<1, uindex>">,
+    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::uindex))">;
+
+def IndexScalar : ScalarOfDType<BoundAnd<IndexDType>, "!pop.simd<1, index>">,
+    BuildableType<"POP::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::index))">;
+
 def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<
     [PointerType, AddressSIMD, UnboundSIMD]>;
 
