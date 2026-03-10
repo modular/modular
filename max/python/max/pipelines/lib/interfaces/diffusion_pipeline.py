@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, overload
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator
 from max.engine import InferenceSession, Model
 from max.engine.api import InputType
 from max.graph import Graph, TensorType
@@ -485,9 +485,7 @@ class CompileWrapper:
         session = InferenceSession([device])
         self._compiled_model = session.load(compiled_graph)
 
-    def __call__(
-        self, *args: InputType, **kwargs: InputType
-    ) -> list[Buffer] | Buffer:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the compiled session with the given arguments.
 
         Args:
