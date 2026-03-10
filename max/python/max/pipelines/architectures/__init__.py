@@ -41,8 +41,8 @@ def register_all_models() -> None:
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
-    from .flux1 import flux1_arch
-    from .flux2 import flux2_arch, flux2_klein_arch
+    from .flux1_modulev3 import flux1_modulev3_arch
+    from .flux2_modulev3 import flux2_klein_modulev3_arch, flux2_modulev3_arch
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gpt_oss import gpt_oss_arch
@@ -51,7 +51,7 @@ def register_all_models() -> None:
     from .granite_modulev3 import granite_modulev3_arch
     from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
-    from .kimik2_5 import kimik2_5_arch
+    from .kimik2_5 import kimik2_5_arch, kimivl_arch
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
     from .llama4 import llama4_arch
@@ -60,11 +60,13 @@ def register_all_models() -> None:
     from .mpnet import mpnet_arch
     from .olmo import olmo_arch
     from .olmo2 import olmo2_arch
+    from .olmo2_modulev3 import olmo2_modulev3_arch
     from .olmo3 import olmo3_arch
     from .olmo_modulev3 import olmo_modulev3_arch
     from .phi3 import phi3_arch
     from .phi3_modulev3 import phi3_modulev3_arch
     from .pixtral import pixtral_arch
+    from .pixtral_modulev3 import pixtral_modulev3_arch
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch, qwen3_moe_arch
@@ -79,9 +81,9 @@ def register_all_models() -> None:
         deepseekV3_2_arch,
         deepseekV3_nextn_arch,
         eagle_llama_arch,
-        flux1_arch,
-        flux2_arch,
-        flux2_klein_arch,
+        flux1_modulev3_arch,
+        flux2_modulev3_arch,
+        flux2_klein_modulev3_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,
@@ -91,6 +93,7 @@ def register_all_models() -> None:
         internvl_arch,
         idefics3_arch,
         kimik2_5_arch,
+        kimivl_arch,
         llama_arch,
         llama_modulev3_arch,
         llama4_arch,
@@ -101,10 +104,12 @@ def register_all_models() -> None:
         olmo_arch,
         olmo_modulev3_arch,
         olmo2_arch,
+        olmo2_modulev3_arch,
         olmo3_arch,
         phi3_arch,
         phi3_modulev3_arch,
         pixtral_arch,
+        pixtral_modulev3_arch,
         qwen2_arch,
         qwen2_5_vl_arch,
         qwen3_arch,

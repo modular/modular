@@ -22,17 +22,19 @@ import socket
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from max.interfaces import (
+    AudioGenerationOutput,
     BaseContext,
     PipelineOutput,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
 )
+from max.pipelines.core import TTSContext
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
@@ -58,6 +60,7 @@ from max.serve.router import (
 )
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from uvicorn import Config
@@ -92,6 +95,7 @@ class ServingTokenGeneratorSettings:
     pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer[Any, Any, Any]
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
+    reasoning_parser_name: str | None = None
 
 
 @asynccontextmanager
@@ -165,30 +169,37 @@ async def lifespan(
 
         METRICS.pipeline_load(serving_settings.pipeline_config.model.model_name)
 
-        # For pixel generation, use GeneralPipelineHandler directly as the pipeline
-        # For other tasks, create modality-specific wrappers for legacy API routes
-        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+        pipeline = {
+            PipelineTask.TEXT_GENERATION: lambda: TokenGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                model_worker=model_worker,
+                reasoning_parser_name=serving_settings.reasoning_parser_name,
+            ),
+            PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                model_worker=model_worker,
+            ),
+            PipelineTask.AUDIO_GENERATION: lambda: AudioGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.model.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                model_worker=cast(
+                    ModelWorkerProxy[TTSContext, AudioGenerationOutput],
+                    model_worker,
+                ),
+            ),
             # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
-            pipeline = GeneralPipelineHandler(
+            PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(
                 model_name=serving_settings.pipeline_config.model.model_name,
                 tokenizer=serving_settings.tokenizer,
                 model_worker=model_worker,
                 lora_queue=lora_queue,
-            )
-        else:
-            # Create modality-specific pipeline wrapper for legacy API routes
-            pipeline_class = {
-                PipelineTask.TEXT_GENERATION: TokenGeneratorPipeline,
-                PipelineTask.EMBEDDINGS_GENERATION: TokenGeneratorPipeline,
-                PipelineTask.AUDIO_GENERATION: AudioGeneratorPipeline,
-            }[serving_settings.pipeline_task]
-
-            pipeline = pipeline_class(
-                model_name=serving_settings.pipeline_config.model.model_name,
-                tokenizer=serving_settings.tokenizer,
-                lora_queue=lora_queue,
-                model_worker=model_worker,
-            )
+            ),
+        }[serving_settings.pipeline_task]()
 
         # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
         # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers

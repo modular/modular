@@ -17,7 +17,7 @@ from std.sys import size_of, _RegisterPackType
 import std.gpu.primitives.warp as warp
 from std.gpu import (
     barrier,
-    thread_idx,
+    thread_idx_int as thread_idx,
     block_idx,
     warp_id,
 )
@@ -115,13 +115,13 @@ fn tma_tile_qo[
     depth: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     rows: Int,
     out res: QOTMATile[dtype, BM, BK, swizzle_mode],
 ) raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, depth)
     var rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, depth))
-    var tensor = LayoutTensor[dtype, layout, MutAnyOrigin](ptr, rt_layout)
+    var tensor = LayoutTensor[dtype, layout](ptr, rt_layout)
 
     res = rebind[QOTMATile[dtype, BM, BK, swizzle_mode]](
         create_tensor_tile[
@@ -2315,7 +2315,7 @@ struct MLA_SM100_Decode_Common[
             swizzle_mode=Self.config.swizzle_mode,
         ],
     ):
-        var tid = Int(thread_idx.x)
+        var tid = thread_idx.x
 
         # -- 1. Write -inf to LSE so combine gives this split zero weight --
         # LSE layout: (num_splits, batch_size, max_seq_len, num_heads)
@@ -2576,7 +2576,7 @@ struct MLA_SM100_Decode_Common[
         var c_prod = DecodeCProducer(c_bars.producer())
         var warp_idx = warp.broadcast(warp_id())
         # 0..127 inside the softmax WG
-        var lane_id = Int(thread_idx.x)
+        var lane_id = thread_idx.x
         # Lane mapping inside the softmax warpgroup
         var row: Int = lane_id & 0x3F  # 0..63
         var half: Int = lane_id >> 6  # 0 or 1
@@ -2616,7 +2616,8 @@ struct MLA_SM100_Decode_Common[
                 pack=False,
             ](s_tmem_slot)
 
-            s_row.ptr.store(0, s_row_val)
+            comptime for _i in range(type_of(s_row_val).size):
+                s_row.ptr.store(_i, s_row_val[_i])
             tcgen05_load_wait()
 
             s_cons.release()
@@ -2708,12 +2709,15 @@ struct MLA_SM100_Decode_Common[
                 # write back the exp2f(mi - new_max); to the correction_max_smem
                 # corr_max_Smem_Tensor[lane_id] = scale_for_old
                 # Issue the TMEM store: 32 datapaths × 32 bits × repeat=1
+                var _scale_tuple = InlineArray[Scalar[Self.AccumType], 1](
+                    fill=scale_for_old_max
+                )
                 tcgen05_st[
                     datapaths=32,
                     bits=32,
                     repeat=1,
                     pack=False,
-                ](corr_scale_tmem, scale_for_old_max)
+                ](corr_scale_tmem, _scale_tuple)
                 #  signal to the correction warpgroup:
                 c_prod.commit()
 
@@ -2892,16 +2896,16 @@ struct MLA_SM100_Decode_Common[
                 var o_row_subtile = tt_stack_allocation[
                     dtype=Self.AccumType, address_space=AddressSpace.LOCAL
                 ](row_major[total_elems]())
-                o_row_subtile.ptr.store(
-                    0,
-                    tcgen05_ld[
-                        datapaths=32,
-                        bits=32,
-                        repeat=total_elems,
-                        dtype=Self.AccumType,
-                        pack=False,
-                    ](o_tmem_base),
-                )
+                var _o_ld_result = tcgen05_ld[
+                    datapaths=32,
+                    bits=32,
+                    repeat=total_elems,
+                    dtype=Self.AccumType,
+                    pack=False,
+                ](o_tmem_base)
+
+                comptime for _i in range(total_elems):
+                    o_row_subtile.ptr.store(_i, _o_ld_result[_i])
                 tcgen05_load_wait()
 
                 out_prod.acquire()
@@ -2964,7 +2968,7 @@ struct MLA_SM100_Decode_Common[
             # after computing per-row c_scalar from max/li:
             c_cons.wait()
             # 2) Issue TMEM load: 32 datapaths × 32 bits × repeat=1
-            var scale_value = tcgen05_ld[
+            var scale_value_tuple = tcgen05_ld[
                 datapaths=32,
                 bits=32,
                 repeat=1,
@@ -2973,6 +2977,7 @@ struct MLA_SM100_Decode_Common[
             ](corr_scale_tmem)
             tcgen05_load_wait()
             c_cons.release()
+            var scale_value = scale_value_tuple[0]
             change = _vote_nvidia_helper(scale_value < 1.0) != 0
             comptime num_o_tiles = Self.config.MMA_PV_N // (
                 Self.output_tile_width * 2
@@ -2995,16 +3000,16 @@ struct MLA_SM100_Decode_Common[
                             dtype=Self.AccumType,
                             address_space=AddressSpace.LOCAL,
                         ](row_major[Self.config.BN]())
-                        o_row_subtile.ptr.store(
-                            0,
-                            tcgen05_ld[
-                                datapaths=32,
-                                bits=32,
-                                repeat=Self.config.BN,
-                                dtype=Self.AccumType,
-                                pack=False,
-                            ](o_tmem_subtile),
-                        )
+                        var _o_ld_corr = tcgen05_ld[
+                            datapaths=32,
+                            bits=32,
+                            repeat=Self.config.BN,
+                            dtype=Self.AccumType,
+                            pack=False,
+                        ](o_tmem_subtile)
+
+                        comptime for _i in range(Self.config.BN):
+                            o_row_subtile.ptr.store(_i, _o_ld_corr[_i])
                         tcgen05_load_wait()
 
                         var float2_register = o_row_subtile.vectorize[2]()
@@ -3015,7 +3020,13 @@ struct MLA_SM100_Decode_Common[
                             )
                             float2_register[j] = rebind[
                                 type_of(float2_register[j])
-                            ](element * SIMD[Self.AccumType, 2](scale_value[0]))
+                            ](element * SIMD[Self.AccumType, 2](scale_value))
+                        var _o_st_corr = InlineArray[
+                            Scalar[Self.AccumType], Self.config.BN
+                        ](uninitialized=True)
+
+                        comptime for _i in range(Self.config.BN):
+                            _o_st_corr[_i] = o_row_subtile.ptr.load(_i)
                         tcgen05_st[
                             datapaths=32,
                             bits=32,
@@ -3023,7 +3034,7 @@ struct MLA_SM100_Decode_Common[
                             pack=False,
                         ](
                             o_tmem_subtile,
-                            o_row_subtile.ptr.load[width=Self.config.BN](),
+                            _o_st_corr,
                         )
                 o_cons.release()
             tiles_done += 1

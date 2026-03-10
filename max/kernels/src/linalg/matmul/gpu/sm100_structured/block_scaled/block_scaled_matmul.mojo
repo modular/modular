@@ -18,9 +18,6 @@ then launches the warp-specialized kernel.
 """
 
 from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -266,8 +263,8 @@ fn _create_tma_and_launch[
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
     a_tma_op = create_tma_tile[
-        matmul_kernel.ATmaTile.tile_layout,
-        matmul_kernel.ATmaTile.desc_layout,
+        matmul_kernel.ATileLayout,
+        matmul_kernel.ADescLayout,
         a_tma_tile_shape,
         swizzle_mode=config.a_swizzle,
     ](ctx, a_3d)
@@ -279,8 +276,8 @@ fn _create_tma_and_launch[
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
     b_tma_op = create_tma_tile[
-        matmul_kernel.BTmaTile.tile_layout,
-        matmul_kernel.BTmaTile.desc_layout,
+        matmul_kernel.BTileLayout,
+        matmul_kernel.BDescLayout,
         b_tma_tile_shape,
         swizzle_mode=config.b_swizzle,
     ](ctx, b_3d)
@@ -298,8 +295,8 @@ fn _create_tma_and_launch[
         config.c_swizzle.bytes() // size_of[c_type](),
     )
     var c_tma_op = create_tma_tile[
-        matmul_kernel.CTmaTile.tile_layout,
-        matmul_kernel.CTmaTile.desc_layout,
+        matmul_kernel.CTileLayout,
+        matmul_kernel.CDescLayout,
         c_tma_tile_shape_final,
         swizzle_mode=config.c_swizzle,
     ](ctx, c_3d)
@@ -313,8 +310,8 @@ fn _create_tma_and_launch[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfa_tma_op = create_tma_tile[
-        matmul_kernel.SFATmaTile.tile_layout,
-        matmul_kernel.SFATmaTile.desc_layout,
+        matmul_kernel.SFATileLayout,
+        matmul_kernel.SFADescLayout,
         sfa_tma_tile_shape,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
     ](ctx, sfa_5d)
@@ -327,8 +324,8 @@ fn _create_tma_and_launch[
         SF_ATOM_M[1] * SF_ATOM_K,
     )
     var sfb_tma_op = create_tma_tile[
-        matmul_kernel.SFBTmaTile.tile_layout,
-        matmul_kernel.SFBTmaTile.desc_layout,
+        matmul_kernel.SFBTileLayout,
+        matmul_kernel.SFBDescLayout,
         sfb_tma_tile_shape,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
     ](ctx, sfb_5d)

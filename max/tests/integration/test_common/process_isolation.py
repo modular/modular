@@ -27,7 +27,8 @@ ReturnT = TypeVar("ReturnT")
 
 
 def _isolated_process_wrapper(
-    func: Callable[[], ReturnT], result_queue: multiprocessing.Queue
+    func: Callable[[], ReturnT],
+    result_queue: multiprocessing.Queue,  # type: ignore[type-arg]
 ) -> None:
     """Execute a function and queue the result or exception.
 

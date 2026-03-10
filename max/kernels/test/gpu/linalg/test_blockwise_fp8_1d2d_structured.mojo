@@ -44,9 +44,6 @@ from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8_1d2d import (
     grouped_matmul_dynamic_scaled_fp8_1d2d,
 )
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -88,10 +85,9 @@ def test_blockwise_fp8_1d2d_structured[
         total_num_tokens += M
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
 
-    debug_assert(
-        total_num_tokens * size_of[DType.float32]() % 16 == 0,
-        "TMA expects total_num_tokens to be divisible by 16 bytes",
-    )
+    assert (
+        total_num_tokens * size_of[DType.float32]() % 16 == 0
+    ), "TMA expects total_num_tokens to be divisible by 16 bytes"
 
     print(
         "== test_blockwise_fp8_1d2d_structured",
@@ -133,8 +129,8 @@ def test_blockwise_fp8_1d2d_structured[
     )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var c_host_managed = ManagedLayoutTensor[c_type, c_layout](
         RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
         ctx,
@@ -143,21 +139,11 @@ def test_blockwise_fp8_1d2d_structured[
         RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
         ctx,
     )
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
-    var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        num_experts
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
+    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
 
     var dynamic_a_shape = IndexList[2](total_num_tokens, K)
     var dynamic_c_shape = IndexList[2](total_num_tokens, N)

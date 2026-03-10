@@ -23,7 +23,6 @@ from std.collections import Deque
 
 
 from std.bit import next_power_of_two
-from std.builtin.constrained import _constrained_conforms_to
 import std.format._utils as fmt
 
 # ===-----------------------------------------------------------------------===#
@@ -34,9 +33,10 @@ import std.format._utils as fmt
 struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
+    Equatable where conforms_to(ElementType, Equatable),
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(ElementType, Writable),
 ):
     """Implements a double-ended queue.
 
@@ -271,14 +271,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             for element in orig:
                 self.append(element.copy())
 
-    fn __eq__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], other: Deque[T]) -> Bool:
+    fn __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if two deques are equal.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -292,18 +288,16 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset_self = self._physical_index(self._head + i)
             offset_other = other._physical_index(other._head + i)
-            if (self._data + offset_self)[] != (other._data + offset_other)[]:
+            ref lhs = trait_downcast[Equatable]((self._data + offset_self)[])
+            ref rhs = trait_downcast[Equatable]((other._data + offset_other)[])
+            if lhs != rhs:
                 return False
         return True
 
-    fn __ne__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], other: Deque[T]) -> Bool:
+    fn __ne__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if two deques are not equal.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -403,9 +397,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
     fn _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.ElementType, Writable
+    ):
         var iterator = self.__iter__()
 
         @parameter
@@ -416,11 +410,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes `my_deque.__str__()` to a `Writer`.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -428,11 +421,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes the repr representation of this deque to a `Writer`.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -448,7 +440,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of a `Deque`.
 
         Returns:
@@ -460,7 +452,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of a `Deque`.
 
         Returns:

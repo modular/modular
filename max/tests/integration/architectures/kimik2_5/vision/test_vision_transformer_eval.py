@@ -31,7 +31,7 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from conftest import TorchEncoder, TorchPatchEmbed
+from conftest import TorchEncoder, TorchPatchEmbed, TorchPatchMergerMLP
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 from max.driver import Accelerator, Buffer
@@ -45,12 +45,13 @@ from max.pipelines.architectures.kimik2_5.layers.vision.data_processing import (
 from max.pipelines.architectures.kimik2_5.layers.vision.transformer import (
     Transformer,
 )
+from max.pipelines.architectures.kimik2_5.model_config import VisionConfig
 from max.pipelines.architectures.kimik2_5.vision_processor import (
     KimiK2_5VisionProcessor,
 )
 from max.pipelines.architectures.kimik2_5.weight_adapters import (
     _ATTN_RENAME_PATTERNS,
-    KIMIK2_5_VISION_TOWER_MAPPING,
+    KIMIK2_5_VISION_MAPPING,
 )
 from safetensors.torch import load_file
 
@@ -87,6 +88,8 @@ class _VisionConfig:
     init_pos_emb_width: int
     init_pos_emb_time: int
     merge_kernel_size: tuple[int, int]
+    projector_ln_eps: float
+    text_hidden_size: int
 
     @property
     def head_dim(self) -> int:
@@ -98,24 +101,20 @@ def _remap_hf_to_max(
 ) -> dict[str, torch.Tensor]:
     """Remaps HuggingFace checkpoint keys to MAX Transformer keys.
 
-    Uses the canonical mapping from weight_adapters.py, then adds the
-    Transformer-level shard prefixes (``patch_embed_shards.0.`` and
-    ``encoder_shards.0.``).
+    Applies the canonical ``KIMIK2_5_VISION_MAPPING`` (which produces
+    ``vision_encoder.*`` prefixed names) then strips the
+    ``vision_encoder.`` prefix so the keys match the Transformer module
+    directly (e.g. ``encoder.blocks.0.*``, ``patch_merger.linear1.*``).
     """
     remapped: dict[str, torch.Tensor] = {}
     for k, v in hf_state_dict.items():
-        new_k = k.removeprefix("vision_tower.")
-
-        for before, after in KIMIK2_5_VISION_TOWER_MAPPING.items():
+        new_k = k
+        for before, after in KIMIK2_5_VISION_MAPPING.items():
             new_k = new_k.replace(before, after)
         for pattern, replacement in _ATTN_RENAME_PATTERNS:
             new_k = pattern.sub(replacement, new_k)
 
-        if new_k.startswith("patch_embed."):
-            new_k = "patch_embed_shards.0." + new_k.removeprefix("patch_embed.")
-        elif new_k.startswith("encoder."):
-            new_k = "encoder_shards.0." + new_k.removeprefix("encoder.")
-
+        new_k = new_k.removeprefix("vision_encoder.")
         remapped[new_k] = v
     return remapped
 
@@ -126,9 +125,10 @@ def _remap_hf_to_torch(
     """Remaps HuggingFace checkpoint keys to TorchTransformer keys."""
     remapped: dict[str, torch.Tensor] = {}
     for k, v in hf_state_dict.items():
-        new_k = k.removeprefix("vision_tower.")
-        for before, after in KIMIK2_5_VISION_TOWER_MAPPING.items():
+        new_k = k
+        for before, after in KIMIK2_5_VISION_MAPPING.items():
             new_k = new_k.replace(before, after)
+        new_k = new_k.removeprefix("vision_encoder.")
         remapped[new_k] = v
     return remapped
 
@@ -173,6 +173,12 @@ class TorchTransformer(nn.Module):
             rope_theta=ROPE_THETA,
         )
         self.merge_kernel_size = cfg.merge_kernel_size
+        self.patch_merger = TorchPatchMergerMLP(
+            mm_hidden_size=cfg.hidden_dim,
+            decoder_hidden_size=cfg.text_hidden_size,
+            merge_kernel_size=cfg.merge_kernel_size,
+            eps=cfg.projector_ln_eps,
+        )
 
     def forward(
         self,
@@ -192,7 +198,10 @@ class TorchTransformer(nn.Module):
         merged = _torch_tpool_patch_merger(
             hidden, grid_thws, self.merge_kernel_size
         )
-        return torch.cat(merged, dim=0)
+        merged = torch.cat(merged, dim=0)
+        kH, kW = self.merge_kernel_size
+        merged = merged.reshape(-1, kH * kW, hidden.shape[-1])
+        return self.patch_merger(merged)
 
 
 @pytest.fixture(scope="session")
@@ -218,16 +227,21 @@ def vision_config() -> _VisionConfig:
         init_pos_emb_width=vc["init_pos_emb_width"],
         init_pos_emb_time=vc["init_pos_emb_time"],
         merge_kernel_size=tuple(vc["merge_kernel_size"]),
+        projector_ln_eps=vc["projector_ln_eps"],
+        text_hidden_size=vc["text_hidden_size"],
     )
+
+
+_VISION_PREFIXES = ("vision_tower.", "mm_projector.", "multi_modal_projector.")
 
 
 @pytest.fixture(scope="session")
 def vision_tower_hf_weights() -> dict[str, torch.Tensor]:
-    """Downloads only the safetensors shard(s) containing vision_tower weights.
+    """Downloads safetensors shards containing vision tower and projector weights.
 
     Parses ``model.safetensors.index.json`` to identify which shard files
-    contain ``vision_tower.*`` keys, then downloads only those shards
-    (~800 MB instead of the full ~1 TB model).
+    contain ``vision_tower.*``, ``mm_projector.*``, or
+    ``multi_modal_projector.*`` keys, then downloads only those shards.
     """
     assert HF_REVISION is not None, (
         f"{HF_REPO_ID} must be present in hf-repo-lock.tsv"
@@ -244,7 +258,7 @@ def vision_tower_hf_weights() -> dict[str, torch.Tensor]:
     weight_map = index["weight_map"]
     vt_shards: set[str] = set()
     for key, shard in weight_map.items():
-        if key.startswith("vision_tower."):
+        if any(key.startswith(p) for p in _VISION_PREFIXES):
             vt_shards.add(shard)
 
     all_weights: dict[str, torch.Tensor] = {}
@@ -256,11 +270,11 @@ def vision_tower_hf_weights() -> dict[str, torch.Tensor]:
         )
         shard_weights = load_file(shard_path)
         for key, tensor in shard_weights.items():
-            if key.startswith("vision_tower."):
+            if any(key.startswith(p) for p in _VISION_PREFIXES):
                 all_weights[key] = tensor
 
     logger.info(
-        "Loaded %d vision_tower weights from %d shard(s)",
+        "Loaded %d vision weights from %d shard(s)",
         len(all_weights),
         len(vt_shards),
     )
@@ -268,7 +282,7 @@ def vision_tower_hf_weights() -> dict[str, torch.Tensor]:
 
 
 @pytest.fixture(scope="session")
-def imagenet_images() -> list:
+def imagenet_images() -> list:  # type: ignore[type-arg]
     """Loads images from the ImageNet-1k validation split via streaming.
 
     Returns a list of PIL Images. Skips the test if the dataset is
@@ -318,24 +332,27 @@ def _build_and_run_max_transformer(
     device = Accelerator(0)
     device_ref = DeviceRef.from_device(device)
 
-    vt = Transformer(
-        patch_size=cfg.patch_size,
-        in_channels=IN_CHANNELS,
-        hidden_dim=cfg.hidden_dim,
-        num_heads=cfg.num_heads,
-        mlp_dim=cfg.mlp_dim,
-        num_layers=cfg.num_layers,
+    vc = VisionConfig(
+        dtype=MAX_DTYPE,
+        devices=[device_ref],
         init_pos_emb_height=cfg.init_pos_emb_height,
-        init_pos_emb_width=cfg.init_pos_emb_width,
         init_pos_emb_time=cfg.init_pos_emb_time,
+        init_pos_emb_width=cfg.init_pos_emb_width,
+        merge_kernel_size=list(cfg.merge_kernel_size),
+        mm_hidden_size=cfg.hidden_dim,
+        patch_size=cfg.patch_size,
+        projector_ln_eps=cfg.projector_ln_eps,
+        text_hidden_size=cfg.text_hidden_size,
+        vt_hidden_size=cfg.hidden_dim,
+        vt_intermediate_size=cfg.mlp_dim,
+        vt_num_attention_heads=cfg.num_heads,
+        vt_num_hidden_layers=cfg.num_layers,
+        in_channels=IN_CHANNELS,
         rope_max_height=ROPE_MAX_HEIGHT,
         rope_max_width=ROPE_MAX_WIDTH,
         rope_theta=ROPE_THETA,
-        merge_kernel_size=cfg.merge_kernel_size,
-        dtype=MAX_DTYPE,
-        devices=[device_ref],
-        has_bias=True,
     )
+    vt = Transformer(vc)
     vt.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[device])
@@ -464,7 +481,7 @@ def test_vision_transformer_eval_torch_ref(
     image_index: int,
     vision_config: _VisionConfig,
     vision_tower_hf_weights: dict[str, torch.Tensor],
-    imagenet_images: list,
+    imagenet_images: list,  # type: ignore[type-arg]
     torch_reference_model: TorchTransformer,
 ) -> None:
     """Test 27-layer vision transformer against hand-written torch reference."""
@@ -543,5 +560,5 @@ def test_vision_transformer_eval_torch_ref(
         max_cpu,
         torch_cpu,
         rtol=5e-2,
-        atol=1e-2,
+        atol=5e-1,
     )

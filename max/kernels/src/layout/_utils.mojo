@@ -140,10 +140,9 @@ struct ManagedLayoutTensor[
     fn device_tensor[
         update: Bool = True
     ](self) raises -> Self.layout_tensor_type:
-        debug_assert(
-            self.ctx.api() != "cpu",
-            "device_tensor cannot be constructed for host only tensor.",
-        )
+        assert (
+            self.ctx.api() != "cpu"
+        ), "device_tensor cannot be constructed for host only tensor."
 
         comptime if update:
             self._update_device()

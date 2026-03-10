@@ -111,6 +111,8 @@ def _handle_decode_overflow(
 class IdentityPipelineTokenizer(
     PipelineTokenizer[TokenGeneratorContext, str, TextGenerationRequest],
 ):
+    """A pass-through tokenizer that returns prompts unchanged."""
+
     @property
     def eos(self) -> int:
         """Returns the end-of-sequence token ID (0 for identity)."""
@@ -145,6 +147,8 @@ class PreTrainedPipelineTokenizer(
         TextGenerationRequest,
     ],
 ):
+    """A pipeline tokenizer backed by a Hugging Face pre-trained tokenizer."""
+
     def __init__(
         self, delegate: PreTrainedTokenizer | PreTrainedTokenizerFast
     ) -> None:

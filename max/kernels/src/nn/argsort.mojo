@@ -117,7 +117,7 @@ fn _argsort_gpu_impl[
     # Create a device buffer to store a copy of the input data
     var n = indices.numel()
 
-    debug_assert(n.is_power_of_two(), "n must be a power of two")
+    assert n.is_power_of_two(), "n must be a power of two"
 
     # Define block size for GPU kernel execution
     comptime BLOCK_SIZE = 256

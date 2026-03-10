@@ -998,7 +998,7 @@ fn update_w_tile_2d[
     input_dt: DType,
     filter_dt: DType,
 ](
-    output: UnsafePointer[Scalar[output_dt], _],
+    output: UnsafePointer[mut=True, Scalar[output_dt], _],
     input: UnsafePointer[Scalar[input_dt], _],
     filter: UnsafePointer[Scalar[filter_dt], _],
     _init_output: Bool,
@@ -1179,7 +1179,7 @@ fn accumulate_wo_tile[
     filter_dt: DType,
 ](
     c_tile_size: Int,
-    output: UnsafePointer[Scalar[output_dt], _],
+    output: UnsafePointer[mut=True, Scalar[output_dt], _],
     output_stride: Int,
     input: UnsafePointer[Scalar[input_dt], _],
     input_stride: Int,
@@ -1252,10 +1252,9 @@ fn pack_filter_shape(
     # Filter is in RSFC layout. The 2nd last dim is F.
     var F = Int(filter.dim[filter.rank - 2]())
 
-    debug_assert(
-        F % num_groups == 0,
-        "number of filters F must be divisible by number of groups",
-    )
+    assert (
+        F % num_groups == 0
+    ), "number of filters F must be divisible by number of groups"
     var F_per_group = F // num_groups
 
     # FRSCf layout.
@@ -1680,7 +1679,7 @@ fn _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            {},
+            OpaquePointer[ExternalOrigin[mut=True]](),
             0,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,

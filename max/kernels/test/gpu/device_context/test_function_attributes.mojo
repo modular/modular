@@ -14,14 +14,11 @@
 from std.gpu import thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.func_attribute import Attribute
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_equal
 
 
 def test_function_attributes() raises:
-    fn kernel(x: UnsafePointer[Int]):
+    fn kernel(x: UnsafePointer[Int, MutAnyOrigin]):
         x[0] = Int(thread_idx.x)
 
     with DeviceContext() as ctx:

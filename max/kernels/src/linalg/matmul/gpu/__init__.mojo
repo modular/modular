@@ -23,7 +23,7 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
 from std.algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -33,7 +33,8 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_layout import TensorLayout
+from layout.tile_tensor import TileTensor
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from std.logger import Logger
@@ -185,21 +186,25 @@ fn matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    c_layout_type: TensorLayout,
+    a_layout_type: TensorLayout,
+    b_layout_type: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout_type, MutAnyOrigin],
+    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin],
+    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert c.flat_rank == 2, "expected 2D tensor for c"
+    comptime assert a.flat_rank == 2, "expected 2D tensor for a"
+    comptime assert b.flat_rank == 2, "expected 2D tensor for b"
+
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
 
@@ -496,10 +501,7 @@ fn _matmul_gpu[
     comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
     comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
-    comptime if (
-        has_nvidia_gpu_accelerator()
-        and ctx.default_device_info.compute > H100.compute
-    ):
+    comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -765,25 +767,25 @@ fn _matmul_gpu[
             comptime _NUM_WARPS = 4
             comptime _WARP_SIZE = 32
 
-            var c_lt = from_ndbuffer_row_major(c)
-            var a_lt = from_ndbuffer_row_major(a)
-            var b_lt = from_ndbuffer_row_major(b)
+            var c_tt = TileTensor(c)
+            var a_tt = TileTensor(a)
+            var b_tt = TileTensor(b)
 
             comptime rdna_kernel = gemm_kernel_rdna[
                 c_type,
                 a_type,
                 b_type,
-                c_lt.layout,
-                a_lt.layout,
-                b_lt.layout,
+                type_of(c_tt).LayoutType,
+                type_of(a_tt).LayoutType,
+                type_of(b_tt).LayoutType,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[rdna_kernel, rdna_kernel](
-                c_lt,
-                a_lt,
-                b_lt,
+                c_tt,
+                a_tt,
+                b_tt,
                 m,
                 n,
                 k,
@@ -795,26 +797,26 @@ fn _matmul_gpu[
     logger.info("Executing: Naive MATMUL kernel")
     comptime BLOCK_DIM = 16
 
-    var c_layout_tensor = from_ndbuffer_row_major(c)
-    var a_layout_tensor = from_ndbuffer_row_major(a)
-    var b_layout_tensor = from_ndbuffer_row_major(b)
+    var c_tensor = TileTensor(c)
+    var a_tensor = TileTensor(a)
+    var b_tensor = TileTensor(b)
 
     comptime kernel = matmul_kernel_naive[
         c_type,
         a_type,
         b_type,
-        c_layout_tensor.layout,
-        a_layout_tensor.layout,
-        b_layout_tensor.layout,
+        type_of(c_tensor).LayoutType,
+        type_of(a_tensor).LayoutType,
+        type_of(b_tensor).LayoutType,
         BLOCK_DIM,
         transpose_b,
         elementwise_lambda_fn=elementwise_lambda_wrapper,
     ]
 
     ctx.enqueue_function[kernel, kernel](
-        c_layout_tensor,
-        a_layout_tensor,
-        b_layout_tensor,
+        c_tensor,
+        a_tensor,
+        b_tensor,
         m,
         n,
         k,
@@ -892,9 +894,9 @@ fn multistage_gemm[
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
     comptime if (
         has_amd_gpu_accelerator()
@@ -986,9 +988,9 @@ fn multistage_gemm[
     logger.info(config)
     logger.info("K partitions:", runtime_config.num_k_partitions)
 
-    var tensor_c = from_ndbuffer_row_major(c)
-    var tensor_a = from_ndbuffer_row_major(a)
-    var tensor_b = from_ndbuffer_row_major(b)
+    var tensor_c = TileTensor(c).to_layout_tensor()
+    var tensor_a = TileTensor(a).to_layout_tensor()
+    var tensor_b = TileTensor(b).to_layout_tensor()
 
     if runtime_config.num_k_partitions > 1:
         logger.info(

@@ -38,8 +38,12 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
-from max.pipelines.architectures.flux2.pipeline_flux2 import Flux2Pipeline
+from max.pipelines.architectures.flux1_modulev3.pipeline_flux import (
+    FluxPipeline,
+)
+from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
+    Flux2Pipeline,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
@@ -723,6 +727,7 @@ class GenericOracle(PipelineOracle):
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
@@ -796,12 +801,11 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding | None,
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
-        trust_remote_code = self.config_params.get("trust_remote_code", False)
         model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
             revision=model_revision,
-            trust_remote_code=trust_remote_code,
+            trust_remote_code=self.trust_remote_code,
         )
         weight_path = self.weight_path(encoding) if encoding else None
         if weight_path:
@@ -830,7 +834,7 @@ class GenericOracle(PipelineOracle):
                     config=config,
                     gguf_file=str(downloaded_weight_path),
                     device_map=device,
-                    trust_remote_code=trust_remote_code,
+                    trust_remote_code=self.trust_remote_code,
                     torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                     if encoding
                     else None,
@@ -840,7 +844,7 @@ class GenericOracle(PipelineOracle):
                 self.model_path,
                 revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 device_map=device,
-                trust_remote_code=trust_remote_code,
+                trust_remote_code=self.trust_remote_code,
                 torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                 if encoding
                 else None,
@@ -1236,6 +1240,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": GenericOracle(
+        model_path="RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
+    ),
     "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
         config_params={"max_length": 512},
@@ -1453,6 +1464,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="Qwen/Qwen3-30B-A3B-Instruct-2507",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8": GenericOracle(
+        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
     "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",

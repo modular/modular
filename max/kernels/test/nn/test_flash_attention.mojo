@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.collections import Optional
 from std.math import exp, isclose
 from std.random import rand, seed
@@ -112,7 +109,7 @@ def reference_attention_bshd[
     )
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
+    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -230,7 +227,7 @@ def reference_attention_bshd_with_sinks[
     var kv_group_count = num_heads // kv_num_heads
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
+    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -421,7 +418,7 @@ def build_ndbuffer[
 ](shape: IndexList[rank]) raises -> LayoutTensor[
     dtype, Layout.row_major(static_shape), MutAnyOrigin
 ]:
-    var ptr = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
+    var ptr = alloc[Scalar[dtype]](shape.flattened_length())
     rand(ptr, shape.flattened_length())
     return LayoutTensor[dtype, Layout.row_major(static_shape), MutAnyOrigin](
         ptr, RuntimeLayout[Layout.row_major(static_shape)].row_major(shape)

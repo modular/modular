@@ -35,11 +35,9 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from std.memory import LegacyUnsafePointer
 from layout._fillers import random
 from std.gpu.host.info import B200
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,

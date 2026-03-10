@@ -15,8 +15,9 @@
 Flow:
 - Model worker creates the runner and executes pre-ready warmup.
 - Warmup captures hot decode buckets, largest-first.
-- Serving path replays by (batch_token_count, decode_kernel_mode) key,
-  where decode_kernel_mode is the MHA decode num_partitions value.
+- Serving path replays by (batch_token_count, num_partitions, q_max_seq_len)
+  key. Only ``q_max_seq_len=1`` graphs are captured; a ``RuntimeError`` is
+  raised for any other value.
 """
 
 from __future__ import annotations
@@ -44,11 +45,9 @@ from .interfaces import ModelInputs, ModelOutputs
 logger = logging.getLogger("max.pipelines")
 
 
-GraphKey = tuple[int, int]
+GraphKey = tuple[int, int, int]
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
-WarmupModelInputs = Callable[[int], AbstractContextManager[ModelInputs]]
-
-_GRAPH_KEY_COMPONENT_MAX = 2**32 - 1
+WarmupModelInputs = Callable[[int, int], AbstractContextManager[ModelInputs]]
 
 
 class AttentionMetadataProbeStrategy(ABC):
@@ -120,24 +119,9 @@ def _ragged_kv_inputs_from_model_inputs(
     return tuple(seq)
 
 
-def attention_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
-    """Builds a replay key from token count and decode kernel mode."""
-    batch_token_count = int(model_inputs.buffers[0].shape[0])
-    metadata = _ragged_kv_inputs_from_model_inputs(model_inputs)[
-        0
-    ].attention_dispatch_metadata
-    if metadata is None:
-        raise ValueError(
-            "Expected attention_dispatch_metadata in "
-            "KVCacheInputs for overlap graph capture."
-        )
-    num_partitions = int(metadata.to_numpy()[2])
-    if num_partitions < 1:
-        raise ValueError(
-            "Expected positive decode kernel mode (num_partitions), got "
-            f"{num_partitions}."
-        )
-    return (batch_token_count, num_partitions)
+def _pack_model_graph_key(key: GraphKey) -> int:
+    """Maps a GraphKey tuple to a uint64 for the C++ capture layer."""
+    return hash(key) & 0xFFFFFFFFFFFFFFFF
 
 
 def _create_model_inputs_with_dispatch_metadata(
@@ -174,22 +158,6 @@ def _create_model_inputs_with_dispatch_metadata(
     return result
 
 
-def _pack_model_graph_key(replay_graph_key: GraphKey) -> int:
-    batch_token_count, num_partitions = replay_graph_key
-    if batch_token_count < 0 or num_partitions < 0:
-        raise ValueError(
-            f"graph key values must be non-negative, got {replay_graph_key}."
-        )
-    if (
-        batch_token_count > _GRAPH_KEY_COMPONENT_MAX
-        or num_partitions > _GRAPH_KEY_COMPONENT_MAX
-    ):
-        raise ValueError(
-            f"graph key values exceed uint32 packing range: {replay_graph_key}."
-        )
-    return (num_partitions << 32) | batch_token_count
-
-
 class ServeGraphCaptureRunner:
     """Central owner for serve-time graph capture state."""
 
@@ -218,7 +186,6 @@ class ServeGraphCaptureRunner:
             device=kv_params.devices[0],
             is_mla=kv_params.is_mla,
             n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
-            q_max_seq_len=kv_params.q_max_seq_len,
             num_q_heads=kv_params.num_q_heads,
         )
         if max_batch_size < 1:
@@ -235,7 +202,7 @@ class ServeGraphCaptureRunner:
         self.graph_entries: dict[GraphKey, GraphEntry] = {}
 
     def dispatch_metadata(
-        self, batch_size: int
+        self, batch_size: int, q_max_seq_len: int
     ) -> list[AttentionDispatchMetadataScalars]:
         """Returns capture metadata selected by the probe strategy.
 
@@ -248,7 +215,7 @@ class ServeGraphCaptureRunner:
         )
         metadata_by_num_partitions = {
             (
-                metadata := self._resolver(batch_size, length)
+                metadata := self._resolver(batch_size, q_max_seq_len, length)
             ).num_partitions: metadata
             for length in probe_lengths
         }
@@ -263,16 +230,18 @@ class ServeGraphCaptureRunner:
         )
         # Conservative/defensive warmup: capture largest-first so peak
         # allocations happen up front and oversized configs fail fast.
+        # TODO: Support q_max_seq_len > 1. We currently OOM.
         for batch_size in range(self._max_batch_size, 0, -1):
-            with self._warmup_model_inputs(batch_size) as model_inputs:
+            with self._warmup_model_inputs(batch_size, 1) as model_inputs:
                 batch_token_count = int(model_inputs.buffers[0].shape[0])
                 source_ragged = _ragged_kv_inputs_from_model_inputs(
                     model_inputs
                 )
-                for dispatch_metadata in self.dispatch_metadata(batch_size):
+                for dispatch_metadata in self.dispatch_metadata(batch_size, 1):
                     key = (
                         batch_token_count,
                         dispatch_metadata.num_partitions,
+                        1,
                     )
                     assert key not in self.graph_entries, (
                         "unexpected duplicate key"
@@ -280,7 +249,9 @@ class ServeGraphCaptureRunner:
 
                     capture_inputs = (
                         _create_model_inputs_with_dispatch_metadata(
-                            model_inputs, source_ragged, dispatch_metadata
+                            model_inputs,
+                            source_ragged,
+                            dispatch_metadata,
                         )
                     )
                     # Warmup eager twice for stable kernel/runtime
@@ -328,10 +299,16 @@ class ServeGraphCaptureRunner:
             meta = kv.attention_dispatch_metadata
             return int(meta.to_numpy()[2]) if meta is not None else 0
 
+        def _q_seq_val(kv: KVCacheInputsPerDevice) -> int:
+            meta = kv.attention_dispatch_metadata
+            return int(meta.to_numpy()[1]) if meta is not None else 0
+
         if self._is_data_parallel and len(ragged_inputs) > 1:
             synced_np = max(_np_val(kv) for kv in ragged_inputs)
+            q_max_seq_len = max(_q_seq_val(kv) for kv in ragged_inputs)
         else:
             synced_np = _np_val(ragged_inputs[0])
+            q_max_seq_len = _q_seq_val(ragged_inputs[0])
 
         if synced_np < 1:
             raise ValueError(
@@ -339,11 +316,18 @@ class ServeGraphCaptureRunner:
                 f"{synced_np}."
             )
 
+        if q_max_seq_len != 1:
+            raise RuntimeError(
+                f"q_max_seq_len={q_max_seq_len} != 1; only q_max_seq_len=1 "
+                "graphs are captured."
+            )
+
         # Broadcast canonical metadata to all shards for DP.
         if self._is_data_parallel and len(ragged_inputs) > 1:
             primary_meta = ragged_inputs[0].attention_dispatch_metadata
             if primary_meta is not None:
                 canonical = primary_meta.to_numpy().copy()
+                canonical[1] = q_max_seq_len
                 canonical[2] = synced_np
                 for kv in ragged_inputs:
                     if kv.attention_dispatch_metadata is not None:
@@ -353,10 +337,14 @@ class ServeGraphCaptureRunner:
                             )
                         )
 
-        replay_graph_key = (batch_token_count, synced_np)
+        replay_graph_key = (batch_token_count, synced_np, q_max_seq_len)
         if replay_graph_key not in self.graph_entries:
             captured_nps = sorted(
-                {k[1] for k in self.graph_entries if k[0] == batch_token_count}
+                {
+                    k[1]
+                    for k in self.graph_entries
+                    if k[0] == batch_token_count and k[2] == q_max_seq_len
+                }
             )
             bucketed_np = self._probe_strategy.bucket_num_partitions(
                 synced_np, captured_nps
@@ -369,7 +357,7 @@ class ServeGraphCaptureRunner:
                     f"Available batch_token_counts: "
                     f"{sorted({k[0] for k in self.graph_entries})}."
                 )
-            replay_graph_key = (batch_token_count, bucketed_np)
+            replay_graph_key = (batch_token_count, bucketed_np, q_max_seq_len)
 
             # Patch num_partitions in each shard's dispatch metadata to match
             # the captured value. This is presumably safe because num_partitions only
@@ -402,9 +390,6 @@ class ServeGraphCaptureRunner:
         different (but graph-key-equivalent) input shape.
         """
         replay_graph_key = self._resolve_replay_key(model_inputs)
-        if debug_verify_model_inputs is not None:
-            self._resolve_replay_key(debug_verify_model_inputs)
-
         input_buffers = model_inputs.buffers
 
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)
@@ -417,7 +402,7 @@ class ServeGraphCaptureRunner:
 
         if debug_verify_replay:
             verify_inputs = debug_verify_model_inputs or model_inputs
-            verify_graph_key = attention_graph_key_from_inputs(verify_inputs)
+            verify_graph_key = self._resolve_replay_key(verify_inputs)
             if verify_graph_key != replay_graph_key:
                 raise ValueError(
                     "debug_verify_model_inputs must map to the same graph key "

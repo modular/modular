@@ -265,7 +265,7 @@ def _build_graph_and_compile(
     rope: DeepseekYarnRotaryEmbedding,
     kv_manager: PagedKVCacheManager,
     devices: list[Accelerator],
-) -> tuple:
+) -> tuple:  # type: ignore[type-arg]
     """Builds a per-device inputs graph and compiles it."""
     input_types: list[TensorType | BufferType] = []
     for d in devices:
@@ -319,8 +319,8 @@ def _build_graph_and_compile(
     return compiled, g
 
 
-def _flatten_kv_kv_inputs(kv_cache_inputs: KVCacheInputs) -> list:
-    flat: list = []
+def _flatten_kv_kv_inputs(kv_cache_inputs: KVCacheInputs) -> list:  # type: ignore[type-arg]
+    flat: list = []  # type: ignore[type-arg]
     for f in kv_cache_inputs.inputs:
         flat.extend(f)
     return flat

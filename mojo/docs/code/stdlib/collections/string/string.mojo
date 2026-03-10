@@ -21,7 +21,7 @@ struct Person(Writable):
         t"{self.name} ({self.age})".write_to(writer)
 
 
-def string_summary():
+def string_summary() raises:
     from std.testing import assert_equal, assert_raises
 
     var person = Person("Alice", 30)

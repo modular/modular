@@ -25,6 +25,7 @@ from std.logger import Logger
 from layout.layout_tensor import (
     LayoutTensor,
 )
+from layout.tile_tensor import lt_to_tt
 from nn.mha_fa3_utils import (
     NonNullPointer,
     NullPointer,
@@ -46,6 +47,44 @@ comptime logger = Logger()
 # Optimized for DeepSeek V3/R1 (num_heads=128, BM=64) where
 # wave_quantum = sm_count / gcd(ctas_per_partition, sm_count) = 74.
 comptime MAX_NUM_SPLITS = 74
+
+# Fixed bucket values for num_partitions to reduce CUDA graph captures.
+# Instead of up to 74 distinct num_partitions values (each requiring a separate
+# CUDA graph capture), we map to 10 fixed buckets. This reduces graph captures
+# from O(batch_size * num_partitions) to at most 10.
+# Bucket values are optimally chosen based on the actual distribution of
+# num_partitions across all realistic (batch_size, cache_len) configurations
+# for DeepSeek V3/R1 on B200.
+comptime NUM_PARTITIONS = {
+    0: 1,
+    1: 2,
+    2: 4,
+    3: 8,
+    4: 16,
+    5: 32,
+    6: 37,
+    7: 64,
+    8: 72,
+    9: 74,
+}
+comptime DEFAULT_NUM_PARTITIONS = NUM_PARTITIONS.get(len(NUM_PARTITIONS) - 1, 0)
+
+
+@always_inline
+fn _get_partition_bucket[i: Int]() -> Int:
+    """Return the i-th partition bucket value."""
+    comptime res = NUM_PARTITIONS.get(i, DEFAULT_NUM_PARTITIONS)
+    return res
+
+
+fn _bucket_num_partitions(num_partitions: Int) -> Int:
+    """Map num_partitions to the smallest bucket value >= num_partitions."""
+    comptime for kv in NUM_PARTITIONS.items():
+        comptime v = kv.value
+        if num_partitions <= v:
+            return v
+    return DEFAULT_NUM_PARTITIONS
+
 
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
@@ -225,6 +264,13 @@ fn _compute_num_partitions[
     if num_partitions > 1 and num_kv_cache_pages > 0:
         var pages_per_split = ceildiv(num_kv_cache_pages, num_partitions)
         num_partitions = ceildiv(num_kv_cache_pages, pages_per_split)
+
+    # Bucket num_partitions to one of 10 fixed values to reduce CUDA graph
+    # captures. The bucketed value is used for grid dimensions and combine
+    # kernel dispatch. Extra CTAs (where split_idx >= real splits) will have
+    # num_keys_this_split == 0 and early-exit via pdl_early_exit, writing
+    # LSE=-inf so the combine kernel is numerically correct.
+    num_partitions = _bucket_num_partitions(num_partitions)
     return num_partitions
 
 
@@ -650,6 +696,15 @@ fn _mla_decode_sm100_dispatch_impl[
                 ctx,
             )
 
+        @parameter
+        fn dispatch_combine[wph: Int]() raises:
+            """Dispatch the combine kernel with the given warps_per_head,
+            matching num_partitions to the correct compile-time bucket."""
+            comptime for _b in range(len(NUM_PARTITIONS)):
+                comptime if _get_partition_bucket[_b]() >= 2:
+                    if num_partitions == _get_partition_bucket[_b]():
+                        launch_combine[_get_partition_bucket[_b](), wph]()
+
         # Choose warps_per_head (wph) for the combine kernel.
         # The combine grid is (batch_size, seq_len, ceildiv(num_heads, hpb))
         # where hpb = heads_per_block = 8 // wph. Each CTA processes hpb
@@ -719,34 +774,30 @@ fn _mla_decode_sm100_dispatch_impl[
             #   bs=128, cl=1024: np=2, wph=1, 2048 CTAs (14 waves)
             #     vs wph=4: 8192 CTAs (56 waves). 4x fewer waves.
 
-            comptime for i in range(2, MAX_NUM_SPLITS + 1):
-                if num_partitions == i:
-                    launch_combine[i, 1]()
+            # Only 9 bucket values need combine dispatch (bucket 1 takes
+            # the np==1 path). Using fixed buckets instead of
+            # range(2, MAX_NUM_SPLITS+1) reduces compile-time specializations
+            # from 73 to 9 per wph branch.
+            dispatch_combine[1]()
         elif combine_ctas_base >= 2048 and num_partitions > 4:
             # Large combine grid with many splits: use wph=2 to minimize the
             # number of combine CTAs. Each CTA has enough reduction work
             # (>4 splits) to amortize launch overhead.
 
-            comptime for i in range(5, MAX_NUM_SPLITS + 1):
-                if num_partitions == i:
-                    launch_combine[i, 2]()
+            dispatch_combine[2]()
         elif combine_ctas_base >= 512:
             # Medium combine grid, OR large grid with few splits (np <= 4):
             # use wph=4. For few-split large-grid configs (e.g., bs=128/1K
             # with np=2), the combine work per CTA is tiny and wph=4 hides
             # per-CTA latency better than wph=2.
 
-            comptime for i in range(2, MAX_NUM_SPLITS + 1):
-                if num_partitions == i:
-                    launch_combine[i, 4]()
+            dispatch_combine[4]()
         else:
             # Small combine grid (< 512 CTAs at wph=2): maximize intra-head
             # parallelism with wph=8. The extra CTAs from higher wph are not
             # a concern since the grid is small.
 
-            comptime for i in range(2, MAX_NUM_SPLITS + 1):
-                if num_partitions == i:
-                    launch_combine[i, 8]()
+            dispatch_combine[8]()
     else:
         comptime SplitAccumType = NullPointer[AccumType]
         var lse_accum_split_ptr: SplitAccumType = {}
@@ -1184,7 +1235,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         scale,
         mla_decode_pack,
         scales_ptr,
-        scalar_args_buf,
+        lt_to_tt(scalar_args_buf),
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
@@ -1276,7 +1327,7 @@ fn launch_mla_sm100_decode_native_fp8[
         scale,
         mla_decode_pack,
         scales_ptr,
-        scalar_args_buf,
+        lt_to_tt(scalar_args_buf),
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,

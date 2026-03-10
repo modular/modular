@@ -181,7 +181,7 @@ __extension Attention:
             var k_rope_tile = LayoutTensor[
                 k_rope_t.dtype,
                 k_rope_gmem_layout,
-                MutAnyOrigin,
+                ImmutAnyOrigin,
                 masked=True,
             ](
                 k_rope.block_paged_ptr[Int(Self.BN)](
@@ -252,7 +252,7 @@ __extension Attention:
             )
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
+            self.softmax.rowsum_tensor.to_layout_tensor()
         )
 
         self.store_output()

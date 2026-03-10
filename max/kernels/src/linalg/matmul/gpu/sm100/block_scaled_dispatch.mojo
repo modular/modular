@@ -41,13 +41,13 @@ from linalg.utils import (
 )
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
-from buffer import Dim, NDBuffer
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from std.memory import bitcast
+from layout import TileTensor
+from layout.coord import Coord, Idx
+from layout.tile_layout import row_major
+from std.memory import UnsafePointer, bitcast
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import barrier
 from std.sys import size_of, align_of, simd_width_of
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from std.algorithm import elementwise
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
@@ -76,9 +76,6 @@ fn heuristic_and_outliers_dispatch[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
     sfa_layout: Layout,
     sfb_layout: Layout,
     //,
@@ -90,20 +87,20 @@ fn heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
     b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim(0)
+    var m = Int(c.dim[0]())
 
-    comptime static_N = c_layout.shape[1].value()
-    comptime static_K = a_layout.shape[
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[
         1
-    ].value() * 2 if a_type == DType.uint8 else a_layout.shape[1].value()
+    ] * 2 if a_type == DType.uint8 else a.static_shape[1]
 
     comptime assert (
         ctx.default_device_info.compute == B200.compute
@@ -232,9 +229,6 @@ fn _block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
     sfa_layout: Layout,
     sfb_layout: Layout,
     //,
@@ -247,9 +241,9 @@ fn _block_scaled_matmul_with_epilogue[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     a_scales: LayoutTensor[scales_dtype, sfa_layout, ImmutAnyOrigin],
     b_scales: LayoutTensor[scales_dtype, sfb_layout, ImmutAnyOrigin],
     tensor_sf: Float32,
@@ -261,8 +255,8 @@ fn _block_scaled_matmul_with_epilogue[
     operations.
     """
 
-    var m = c.dim(0)
-    var n = c.dim(1)
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
     if m == 0 or n == 0:
         return
 
@@ -270,8 +264,10 @@ fn _block_scaled_matmul_with_epilogue[
         if not c.ptr:
             raise "c must be allocated!"
 
+        comptime K_phys = a.static_shape[1]
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
+            K=K_phys,
             config=config,
             pdl_level=pdl_level,
         ](
@@ -292,23 +288,27 @@ fn _block_scaled_matmul_with_epilogue[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
+        # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
+        # using row-major offset since TileTensor.load's Coord constraint
+        # can't be proved when c's layout type is fully inferred.
         @parameter
-        @__copy_capture(c)
+        @__copy_capture(c, n)
         fn epilogue_wrapper[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
-            var c_val = c.load[width=simd_width,](c_coord)
+            var c_val = rebind[SIMD[c_type, simd_width]](
+                c.ptr.load[width=simd_width](idx[0] * n + idx[1])
+            )
             epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
         # apply the epilogue.
         if c.ptr:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
-
+            comptime K_phys = a.static_shape[1]
             blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
+                K=K_phys,
                 config=config,
                 pdl_level=pdl_level,
             ](
@@ -326,9 +326,14 @@ fn _block_scaled_matmul_with_epilogue[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
-        var c_tmp = c
-        c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
+        var num_elems = m * n
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
+        var c_tmp = TileTensor(
+            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
+                tmp_device_buffer.unsafe_ptr()
+            ),
+            row_major(Coord(Idx(m), Idx(n))),
+        )
 
         _block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,

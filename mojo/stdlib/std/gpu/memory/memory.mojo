@@ -651,9 +651,7 @@ fn async_copy[
     comptime cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
     comptime if Bool(fill) and fill.value() == 0:
-        debug_assert(
-            not predicate, "Predicate bit has to be set False for zero fill."
-        )
+        assert not predicate, "Predicate bit has to be set False for zero fill."
 
         comptime args_with_fill = " [$0], [$1], $2, $3"
         comptime asm = cp_async_asm + args_with_fill
@@ -724,9 +722,7 @@ fn async_copy[
             )
 
     else:
-        debug_assert(
-            not predicate, "Predicate bit has to set False for no fill."
-        )
+        assert not predicate, "Predicate bit has to set False for no fill."
 
         comptime args = " [$0], [$1], $2"
         comptime asm = cp_async_asm + args
@@ -762,7 +758,7 @@ fn async_copy_commit_group():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -791,7 +787,7 @@ fn async_copy_wait_group(n: Int32):
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -818,7 +814,7 @@ fn async_copy_wait_all():
         # This operation is a no-op on AMD and CPU.
         pass
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 

@@ -258,9 +258,7 @@ fn scatter_nd[
 fn linear_fill[
     dtype: DType
 ](buf: NDBuffer[dtype, _, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
-    debug_assert(
-        buf.num_elements() == len(elems), "must fill all elements of tensor"
-    )
+    assert buf.num_elements() == len(elems), "must fill all elements of tensor"
 
     for i in range(buf.num_elements()):
         buf[i] = elems[i]

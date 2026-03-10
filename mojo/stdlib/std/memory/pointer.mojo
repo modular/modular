@@ -20,6 +20,8 @@ from std.memory import Pointer
 """
 
 from std.format._utils import FormatStruct, Named, TypeNames
+from std.memory import UnsafeMaybeUninit
+from std.utils._nicheable import UnsafeSingleNicheable, NicheIndex
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -201,7 +203,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -384,3 +386,25 @@ struct Pointer[
             A pointer merged with the specified `other_type`.
         """
         return {_mlir_value = self._value}  # allow lit.ref to convert.
+
+    # ===------------------------------------------------------------------===#
+    # UnsafeNicheable
+    # ===------------------------------------------------------------------===#
+
+    comptime _NullPointerType = UnsafePointer[
+        Self.type, MutAnyOrigin, address_space=Self.address_space
+    ]
+
+    @staticmethod
+    @always_inline
+    @doc_private
+    fn write_niche(memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]):
+        memory.bitcast[Self._NullPointerType]().init_pointee_move({})
+
+    @staticmethod
+    @always_inline
+    @doc_private
+    fn isa_niche(
+        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+    ) -> Bool:
+        return not Bool(memory.bitcast[Self._NullPointerType]()[])

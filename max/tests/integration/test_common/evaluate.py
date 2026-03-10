@@ -137,8 +137,8 @@ def _create_requests(
 
 
 def run_model(
-    pipeline: pipelines.TextGenerationPipelineInterface,
-    tokenizer: PipelineTokenizer,
+    pipeline: pipelines.TextGenerationPipelineInterface,  # type: ignore[type-arg]
+    tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
     requests: Sequence[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
@@ -213,7 +213,7 @@ class StoreLogits:
     def __init__(
         self,
         ids: Sequence[RequestID],
-        tokenizer: PipelineTokenizer,
+        tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
         generate_logprobs: bool = False,
     ) -> None:
         self.values: dict[RequestID, list[TokenInfo]] = {id: [] for id in ids}
@@ -296,7 +296,7 @@ class ReplaceLogitsWithReference:
 
 
 def run_pixel_generation(
-    pipeline: pipelines.PixelGenerationPipeline,
+    pipeline: pipelines.PixelGenerationPipeline,  # type: ignore[type-arg]
     tokenizer: PixelGenerationTokenizer,
     requests: list[MockPixelGenerationRequest],
     num_steps: int,

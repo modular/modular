@@ -31,9 +31,6 @@ from linalg.matmul.gpu.sm100.blockwise_fp8 import (
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_epilogue_type
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -72,10 +69,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         total_num_tokens += M
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
 
-    debug_assert(
-        total_num_tokens * size_of[scales_type]() % 16 == 0,
-        "TMA expects total_num_tokens to be divisible by 16 bytes",
-    )
+    assert (
+        total_num_tokens * size_of[scales_type]() % 16 == 0
+    ), "TMA expects total_num_tokens to be divisible by 16 bytes"
 
     print(
         "== test_grouped_sm100_blockwise_scaled_fp8_matmul",
@@ -98,10 +94,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         transpose_b,
     )
 
-    debug_assert(
-        (K % BLOCK_SCALE_K == 0),
-        "K must be divisible by BLOCK_SCALE_K",
-    )
+    assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
     # Define shapes
     comptime static_a_shape = DimList(Dim(), K)
@@ -143,22 +136,14 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_active_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_active_experts
-    )
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_size
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
 
     var a_host = LayoutTensor[a_type, a_layout](
         a_host_ptr,

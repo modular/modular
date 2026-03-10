@@ -25,15 +25,13 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import stack_allocation
 from std.testing import assert_true
 
 
 fn alloc_test_fn[cta_group: Int32]():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space=AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[cta_group](ptr_tmem_addr, num_cols)
@@ -58,7 +56,7 @@ fn test_tcgen05_alloc() raises:
 
 fn alloc_dealloc_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space=AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
     var tmem_addr: UInt32 = 0
     var num_cols: UInt32 = 32
@@ -80,7 +78,7 @@ fn test_tcgen05_dealloc() raises:
 
 fn ld_test_fn[repeat: Int]():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space=AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -115,12 +113,12 @@ fn test_tcgen05_ld() raises:
 
 fn st_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space=AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     var tmem_addr = ptr_tmem_addr[0]
-    var data = SIMD[DType.float32, 64](0)
+    var data = InlineArray[Scalar[DType.float32], 64](uninitialized=True)
     tcgen05_st[
         datapaths=32,
         bits=32,
@@ -142,7 +140,7 @@ fn test_tcgen05_st() raises:
 
 fn cp_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space=AddressSpace.SHARED
+        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)

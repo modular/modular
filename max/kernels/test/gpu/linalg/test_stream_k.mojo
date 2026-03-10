@@ -17,11 +17,11 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu import Semaphore, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import TileTensor
+from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import alloc
 from std.testing import assert_almost_equal
 
 from std.utils import Index, IndexList
@@ -67,13 +67,13 @@ fn mac_loop[
     a_type: DType,
     b_type: DType,
 ](
-    C: UnsafePointer[Scalar[c_type]],
-    A: UnsafePointer[Scalar[a_type]],
-    B: UnsafePointer[Scalar[b_type]],
+    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32],
+    locks: UnsafePointer[Int32, MutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -145,13 +145,13 @@ fn first_wave_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type]],
-    A: UnsafePointer[Scalar[a_type]],
-    B: UnsafePointer[Scalar[b_type]],
+    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32],
+    locks: UnsafePointer[Int32, MutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -215,13 +215,13 @@ fn full_tiles_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type]],
-    A: UnsafePointer[Scalar[a_type]],
-    B: UnsafePointer[Scalar[b_type]],
+    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
+    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32],
+    locks: UnsafePointer[Int32, ImmutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -432,10 +432,10 @@ fn run_matmul_stream_k[
 ](ctx: DeviceContext,) raises:
     print("== run_matmul kernel stream_k")
 
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rng_width = 2
     var rand_min = -1 * rng_width
@@ -493,26 +493,43 @@ fn run_matmul_stream_k[
 
     comptime BLOCK_DIM = 16
 
-    var c_buf_n = NDBuffer[dtype, 2](c_device_n.unsafe_ptr(), Index(M, N))
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
 
-    var c_tensor = from_ndbuffer_row_major(c_buf_n)
-    var a_tensor = from_ndbuffer_row_major(a_buf)
-    var b_tensor = from_ndbuffer_row_major(b_buf)
+    var c_tt = TileTensor(
+        c_device_n.unsafe_ptr(),
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
+    )
 
     comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,
-        c_tensor.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
 
     ctx.enqueue_function_experimental[kernel](
-        c_tensor,
-        a_tensor,
-        b_tensor,
+        c_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,

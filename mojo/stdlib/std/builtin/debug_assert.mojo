@@ -21,7 +21,7 @@ from std.os import abort
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
 )
@@ -418,7 +418,7 @@ fn _debug_assert_msg(
     abort's implementation could use debug_assert)
     """
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         print("At: ", loc, ": Assert Error: ", message, sep="")
 
         comptime if ASSERT_MODE != "warn":

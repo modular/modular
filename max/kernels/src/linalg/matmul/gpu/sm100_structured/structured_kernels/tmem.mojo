@@ -22,6 +22,7 @@ shared memory. This module provides type-safe abstractions:
 """
 
 from layout import Layout
+from std.sys import size_of
 
 from std.gpu import syncwarp
 from std.gpu.compute.arch.tcgen05 import (
@@ -162,7 +163,7 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self) -> SIMD[dtype, width]:
+    ](self) -> InlineArray[Scalar[dtype], width]:
         """Load upper accumulator fragment (rows 0-15)."""
         return tcgen05_ld[
             datapaths=data_paths,
@@ -180,7 +181,7 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self) -> SIMD[dtype, width]:
+    ](self) -> InlineArray[Scalar[dtype], width]:
         """Load lower accumulator fragment (rows 16-31)."""
         return tcgen05_ld[
             datapaths=data_paths,
@@ -198,7 +199,7 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self, data: SIMD[dtype, width]):
+    ](self, data: InlineArray[Scalar[dtype], width]):
         """Store upper accumulator fragment (rows 0-15)."""
         tcgen05_st[
             datapaths=data_paths,
@@ -214,7 +215,7 @@ struct TmemAddress(TrivialRegisterPassable):
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 1,
-    ](self, data: SIMD[dtype, width]):
+    ](self, data: InlineArray[Scalar[dtype], width]):
         """Store lower accumulator fragment (rows 16-31)."""
         tcgen05_st[
             datapaths=data_paths,
@@ -249,7 +250,7 @@ struct TmemTensor[
 ](TrivialRegisterPassable):
     """Typed tensor view over Tensor Memory (TMEM) for MMA accumulators.
 
-    Provides a LayoutTensor-like abstraction for TMEM with:
+    Provides a typed abstraction for TMEM with:
     - Type safety: dtype and layout known at compile time
     - Fragment access: upper (rows 0-15) and lower (rows 16-31)
     - MMA integration: offset() returns raw address for MMA operations
@@ -311,14 +312,14 @@ struct TmemTensor[
     @always_inline
     fn load_upper[
         repeat: Int = 1,
-    ](self) -> SIMD[Self.dtype, Self.frag_size * repeat]:
+    ](self) -> InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]:
         """Load upper accumulator fragment (rows 0-15).
 
         Parameters:
             repeat: Number of times to repeat the load pattern.
 
         Returns:
-            SIMD vector containing the upper fragment data.
+            InlineArray containing the upper fragment data.
         """
         return self.address().load_upper[
             Self.dtype,
@@ -331,14 +332,14 @@ struct TmemTensor[
     @always_inline
     fn load_lower[
         repeat: Int = 1,
-    ](self) -> SIMD[Self.dtype, Self.frag_size * repeat]:
+    ](self) -> InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]:
         """Load lower accumulator fragment (rows 16-31).
 
         Parameters:
             repeat: Number of times to repeat the load pattern.
 
         Returns:
-            SIMD vector containing the lower fragment data.
+            InlineArray containing the lower fragment data.
         """
         return self.address().load_lower[
             Self.dtype,
@@ -351,14 +352,14 @@ struct TmemTensor[
     @always_inline
     fn store_upper[
         repeat: Int = 1,
-    ](self, data: SIMD[Self.dtype, Self.frag_size * repeat]):
+    ](self, data: InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]):
         """Store upper accumulator fragment (rows 0-15).
 
         Parameters:
             repeat: Number of times to repeat the store pattern.
 
         Args:
-            data: SIMD vector containing the data to store.
+            data: InlineArray containing the data to store.
         """
         self.address().store_upper[
             Self.dtype,
@@ -371,14 +372,14 @@ struct TmemTensor[
     @always_inline
     fn store_lower[
         repeat: Int = 1,
-    ](self, data: SIMD[Self.dtype, Self.frag_size * repeat]):
+    ](self, data: InlineArray[Scalar[Self.dtype], Self.frag_size * repeat]):
         """Store lower accumulator fragment (rows 16-31).
 
         Parameters:
             repeat: Number of times to repeat the store pattern.
 
         Args:
-            data: SIMD vector containing the data to store.
+            data: InlineArray containing the data to store.
         """
         self.address().store_lower[
             Self.dtype,
@@ -470,7 +471,7 @@ struct TmemFragments[
     is_lower_required: Bool = True,
     data_paths: Int = 16,
     bits: Int = 256,
-](TrivialRegisterPassable):
+](Copyable, Movable):
     """Paired upper/lower accumulator fragments from TMEM.
 
     Encapsulates the SM100 TMEM row-split hardware detail:
@@ -501,24 +502,28 @@ struct TmemFragments[
         TmemFragments.wait_store()
     """
 
-    var upper: SIMD[Self.dtype, Self.frag_size]
-    var lower: SIMD[Self.dtype, Self.frag_size]
+    var upper: InlineArray[Scalar[Self.dtype], Self.frag_size]
+    var lower: InlineArray[Scalar[Self.dtype], Self.frag_size]
 
     @always_inline
     fn __init__(out self):
         """Initialize with zero fragments."""
-        self.upper = SIMD[Self.dtype, Self.frag_size]()
-        self.lower = SIMD[Self.dtype, Self.frag_size]()
+        self.upper = InlineArray[Scalar[Self.dtype], Self.frag_size](
+            fill=Scalar[Self.dtype](0)
+        )
+        self.lower = InlineArray[Scalar[Self.dtype], Self.frag_size](
+            fill=Scalar[Self.dtype](0)
+        )
 
     @always_inline
     fn __init__(
         out self,
-        upper: SIMD[Self.dtype, Self.frag_size],
-        lower: SIMD[Self.dtype, Self.frag_size],
+        upper: InlineArray[Scalar[Self.dtype], Self.frag_size],
+        lower: InlineArray[Scalar[Self.dtype], Self.frag_size],
     ):
         """Initialize with provided fragments."""
-        self.upper = upper
-        self.lower = lower
+        self.upper = upper.copy()
+        self.lower = lower.copy()
 
     @staticmethod
     @always_inline
@@ -555,7 +560,7 @@ struct TmemFragments[
                 Self.dtype, width, Self.data_paths, Self.bits, repeat
             ]()
 
-        return result
+        return result^
 
     @always_inline
     fn store[repeat: Int = 1](self, tmem: TmemAddress):
@@ -590,12 +595,30 @@ struct TmemFragments[
             Self.frag_size,
             is_lower_required=Self.is_lower_required,
         ]()
-        result.upper = self.upper.cast[target_dtype]()
+
+        # Cast in SIMD chunks of at least 4 bytes for efficient
+        # hardware cast instructions.
+        comptime cast_width = 4 // size_of[Scalar[target_dtype]]()
+        comptime for _chunk in range(Self.frag_size // cast_width):
+            comptime offset = _chunk * cast_width
+            var src = SIMD[Self.dtype, cast_width]()
+            comptime for _j in range(cast_width):
+                src[_j] = self.upper[offset + _j]
+            var dst = src.cast[target_dtype]()
+            comptime for _j in range(cast_width):
+                result.upper[offset + _j] = dst[_j]
 
         comptime if Self.is_lower_required:
-            result.lower = self.lower.cast[target_dtype]()
+            comptime for _chunk in range(Self.frag_size // cast_width):
+                comptime offset = _chunk * cast_width
+                var src = SIMD[Self.dtype, cast_width]()
+                comptime for _j in range(cast_width):
+                    src[_j] = self.lower[offset + _j]
+                var dst = src.cast[target_dtype]()
+                comptime for _j in range(cast_width):
+                    result.lower[offset + _j] = dst[_j]
 
-        return result
+        return result^
 
     @staticmethod
     @always_inline
@@ -678,6 +701,7 @@ struct BlockScaledTmem[
     cta_group: Int = 1,
     total_cols: Int = 512,
     num_sf_k_tiles: Int = 1,
+    SFB_N: Int = MMA_N,
 ](TrivialRegisterPassable):
     """TMEM region for block-scaled matmul with typed tile accessors.
 
@@ -706,6 +730,11 @@ struct BlockScaledTmem[
         num_sf_k_tiles: Scaling factor tiles per K-iteration.
             MXFP8 uses 1 (one SF vector per K-tile).
             NVFP4 uses 4 (multiple SF vectors per K-tile).
+        SFB_N: SFB N dimension for TMEM layout. Defaults to MMA_N.
+            Set to align_up(MMA_N, SF_MN_GROUP_SIZE) when
+            MMA_N < SF_MN_GROUP_SIZE so the TMEM tile is wide enough
+            for the SMEM-to-TMEM copy (which always writes a full
+            SF_MN_GROUP_SIZE group).
     """
 
     # Tile layouts (stride derived automatically from layout.size())
@@ -716,7 +745,7 @@ struct BlockScaledTmem[
         1, Self.num_sf_k_tiles * (Self.BM // 32)
     )
     comptime sfb_layout = Layout.row_major(
-        1, Self.num_sf_k_tiles * (Self.MMA_N // 32)
+        1, Self.num_sf_k_tiles * (Self.SFB_N // 32)
     )
 
     # Array types for each TMEM region
@@ -916,7 +945,7 @@ struct TmemStage[
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 4,
-    ](self) -> SIMD[dtype, frag_size]:
+    ](self) -> InlineArray[Scalar[dtype], frag_size]:
         """Load upper accumulator fragment (rows 0-15)."""
         return self.address().load_upper[
             dtype, frag_size, data_paths, bits, repeat
@@ -929,7 +958,7 @@ struct TmemStage[
         data_paths: Int = 16,
         bits: Int = 256,
         repeat: Int = 4,
-    ](self) -> SIMD[dtype, frag_size]:
+    ](self) -> InlineArray[Scalar[dtype], frag_size]:
         """Load lower accumulator fragment (rows 16-31)."""
         return self.address().load_lower[
             dtype, frag_size, data_paths, bits, repeat

@@ -1278,6 +1278,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
         # Note: the quantization_encoding is possibly not set yet here, so we first check for an explicit override.
         if cache_dtype := self._get_cache_override():
+            # Handled by `create_kv_cache_config` but we set it again here to ensure it takes precedence over quantization encoding.
             self.kv_cache._cache_dtype = cache_dtype
 
     def set_cache_dtype_given_quantization_encoding(
@@ -1292,8 +1293,9 @@ class MAXModelConfig(MAXModelConfigBase):
         3. Falls back to ``float32`` if no encoding is specified.
         """
         # First check for an explicit override.
-        if self.kv_cache.kv_cache_format is not None:
-            return  # No default needed, override is set.
+        if cache_dtype := self._get_cache_override():
+            self.kv_cache._cache_dtype = cache_dtype
+            return
 
         # If there's no quantization encoding return a default value.
         if not self.quantization_encoding:

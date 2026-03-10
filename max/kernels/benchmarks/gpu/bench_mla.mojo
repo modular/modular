@@ -25,9 +25,6 @@ from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
@@ -260,8 +257,8 @@ fn bench_prefill[
     )
 
     # input row offsets and cache row offsets
-    var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
-    var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var input_row_offsets = alloc[UInt32](batch_size + 1)
+    var cache_row_offsets = alloc[UInt32](batch_size + 1)
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)

@@ -120,10 +120,10 @@ following requirements:
   ```mojo
   # The following function definitions are equivalent
 
-  def greet(name: String):
+  def greet(name: String) raises:
     print("Hello," name)
 
-  def greet(name: String) -> None:
+  def greet(name: String) raises -> None:
     print("Hello," name)
   ```
 
@@ -134,10 +134,10 @@ following requirements:
   ```mojo
   # The following function definitions are equivalent
 
-  def incr(a: Int) -> Int:
+  def incr(a: Int) raises -> Int:
     return a + 1
 
-  def incr(a: Int, out b: Int):
+  def incr(a: Int, out b: Int) raises:
     b = a + 1
   ```
 
@@ -776,7 +776,7 @@ and the error propagates to the calling function. If the calling function
 doesn't handle the error, it continues to propagate up the call stack.
 
 ```mojo
-def raises_error():
+def raises_error() raises:
     raise Error("There was an error.")
 ```
 

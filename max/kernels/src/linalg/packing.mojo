@@ -19,12 +19,9 @@ from std.algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
 from std.memory import (
-    LegacyUnsafePointer,
     memcpy,
     stack_allocation,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from register import register_internal
 
 from std.utils.index import Index, IndexList
@@ -361,10 +358,9 @@ struct PackMatrixCols[
                 offset.
         """
         comptime assert Self.column_inner_size % Self.simd_size == 0
-        debug_assert(
-            pack_tile_dim[1] % Self.column_inner_size == 0,
-            "Unimplemented tile pattern.",
-        )
+        assert (
+            pack_tile_dim[1] % Self.column_inner_size == 0
+        ), "Unimplemented tile pattern."
 
         var instance = Self(
             packed_matrix,
@@ -675,10 +671,9 @@ fn pack_b[
         var k_out = dst.dim[0]()
         var n_out = dst.dim[1]()
 
-        debug_assert(
-            n_out % tile_n == 0,
-            "N dimension of output must be padded to tile_n",
-        )
+        assert (
+            n_out % tile_n == 0
+        ), "N dimension of output must be padded to tile_n"
 
         for idx_k in range(0, k_out, tile_k):
             var tile_k2 = align_up(min(tile_k, k_out - idx_k), factor)
@@ -722,10 +717,9 @@ fn pack_b[
         var k_out_t = dst.dim[0]()
         var n_out_t = dst.dim[1]()
 
-        debug_assert(
-            n_out_t % tile_n == 0,
-            "N dimension of output must be padded to tile_n",
-        )
+        assert (
+            n_out_t % tile_n == 0
+        ), "N dimension of output must be padded to tile_n"
 
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
@@ -908,7 +902,7 @@ struct BTileGenerator[
     var b: NDBuffer[
         Self.b_type, 2, Self.origin, Self.shape
     ]  # packed layout if b_packed is True
-    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type]]
+    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type], MutAnyOrigin]
     var tile_n_k: IndexList[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
@@ -927,12 +921,13 @@ struct BTileGenerator[
         Self.b_packed,
         Self.origin,
     ]:
-        var b_tile_stack_ptr = UnsafePointer[Scalar[Self.b_type]]()
+        var b_tile_stack_ptr = UnsafePointer[
+            Scalar[Self.b_type], MutAnyOrigin
+        ]()
 
-        debug_assert(
-            not (Self.transpose_b and Self.b_packed),
-            "b cannot be both transposed and pre-packed.",
-        )
+        assert not (
+            Self.transpose_b and Self.b_packed
+        ), "b cannot be both transposed and pre-packed."
 
         comptime if not Self.b_packed:
             b_tile_stack_ptr = stack_allocation[
@@ -1068,8 +1063,6 @@ struct BTileGenerator[
             return b_tile_view.as_any_origin()
 
         else:
-            debug_assert(
-                False, "unreachable, b_packed not supported with transpose_b"
-            )
+            assert False, "unreachable, b_packed not supported with transpose_b"
 
         return packed_b.get_immutable()

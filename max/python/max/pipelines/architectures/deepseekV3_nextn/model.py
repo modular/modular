@@ -18,7 +18,7 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 from max.driver import Buffer, Device, DLPackArray
@@ -36,6 +36,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
+    PipelineModel,
 )
 from max.pipelines.lib.config.config_enums import (
     is_float4_encoding,
@@ -48,10 +49,7 @@ from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model
-from ..deepseekV3.model import (
-    DeepseekV3Inputs,
-    DeepseekV3Model,
-)
+from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
 from .deepseekV3_nextn import DeepseekV3NextN
 from .model_config import DeepseekV3NextNConfig
 
@@ -70,8 +68,6 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
-    supports_shared_weights = True
-
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -117,8 +113,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         cache_dtype: DType,
     ) -> KVCacheParams:
         encoding = pipeline_config.model.quantization_encoding
-        if encoding is not None and is_float4_encoding(encoding):
-            cache_dtype = DType.bfloat16
         return DeepseekV3NextNConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -646,3 +640,39 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             return_n_logits=prev_model_inputs.return_n_logits,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
         )
+
+
+def maybe_build_deepseekv3_nextn_kwargs(
+    target_model: PipelineModel[TextContext],
+    draft_model_cls: type[PipelineModel[TextContext]],
+) -> dict[str, Any]:
+    """Builds kwargs needed to pass to DeepseekV3NextNModel constructor."""
+    if not issubclass(draft_model_cls, DeepseekV3NextNModel):
+        return {}
+    if not isinstance(target_model, DeepseekV3Model):
+        raise ValueError(
+            "DeepseekV3NextNModel can only be used with DeepseekV3 target models"
+        )
+
+    required_prefixes = ("embed_tokens.", "lm_head.")
+    shared_weights: dict[str, DLPackArray] = {}
+    for name, value in target_model.state_dict.items():
+        for prefix in required_prefixes:
+            if name.startswith(prefix):
+                shared_weights[name] = value
+
+    if len(shared_weights) != len(required_prefixes):
+        raise ValueError(
+            f"Missing weight prefixes {required_prefixes} in target DeepseekV3 "
+            f"state_dict. Cannot share weights with NextN draft model."
+        )
+
+    logger.info(
+        "Sharing DeepseekV3 embedding and head weights with NextN draft model."
+    )
+
+    return {
+        "shared_weights": shared_weights,
+        # Share EP buffers between target and draft to avoid duplicating
+        "shared_ep_comm_initializer": target_model.ep_comm_initializer,
+    }

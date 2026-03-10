@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import ceildiv, isclose
 from std.random import randn
 from std.sys import argv, has_nvidia_gpu_accelerator
@@ -98,15 +95,15 @@ fn test[
     )
 
     # Allocate memory for all variables.
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var q_ptr = alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = alloc[Scalar[qkv_type]](k_size)
+    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+    var output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
 
     # Q, K, V are randomly initialized.
     if use_index_input:
-        debug_assert(batch_size == 1)
+        assert batch_size == 1
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
@@ -325,7 +322,7 @@ fn test[
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE)
             ](
-                UnsafePointer[UInt32](),
+                UnsafePointer[UInt32, MutAnyOrigin](),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     Index(0)
                 ),
@@ -465,11 +462,11 @@ fn test_prefill[
     var o_size = batch_size * seq_len * num_heads * kv_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
-    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var cache_ptr = UnsafePointer[Scalar[k_rope_type]].alloc(cache_size)
-    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var q_ptr = alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = alloc[Scalar[qkv_type]](v_size)
+    var cache_ptr = alloc[Scalar[k_rope_type]](cache_size)
+    var output_ptr = alloc[Scalar[qkv_type]](o_size)
 
     # Q, K, V, cache are randomly initialized.
     randn[qkv_type](q_ptr, q_size)
@@ -478,8 +475,8 @@ fn test_prefill[
     randn[k_rope_type](cache_ptr, cache_size)
 
     # input row offsets and cache row offsets
-    var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
-    var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var input_row_offsets = alloc[UInt32](batch_size + 1)
+    var cache_row_offsets = alloc[UInt32](batch_size + 1)
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -653,13 +650,13 @@ fn test_prefill[
 
     # create reference K and V
     # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
-    var k_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var k_ref_ptr = alloc[Scalar[qkv_type]](
         batch_size * num_keys * num_heads * depth
     )
-    var v_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var v_ref_ptr = alloc[Scalar[qkv_type]](
         batch_size * num_keys * num_heads * depth
     )
-    var output_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+    var output_ref_ptr = alloc[Scalar[qkv_type]](
         batch_size * seq_len * num_heads * depth
     )
 
@@ -759,7 +756,7 @@ fn test_prefill[
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        UnsafePointer[UInt32](),
+        UnsafePointer[UInt32, MutAnyOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

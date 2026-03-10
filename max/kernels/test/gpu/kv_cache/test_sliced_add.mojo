@@ -32,10 +32,9 @@ fn test_sliced_add[
     batch_end_idx: Int,
 ](ctx: DeviceContext) raises:
     """Test the sliced_add_ragged kernel."""
-    debug_assert(
-        batch_end_idx <= rows,
-        "batch_end_idx must be less than or equal to rows",
-    )
+    assert (
+        batch_end_idx <= rows
+    ), "batch_end_idx must be less than or equal to rows"
 
     # Create managed buffers and host views.
     var shape = IndexList[2](rows, cols)

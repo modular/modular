@@ -27,7 +27,7 @@ from std.os import abort
 from std.sys import (
     CompilationTarget,
     is_amd_gpu,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
 )
@@ -75,10 +75,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         written = external_call["write", c_ssize_t](
             self.value, bytes.unsafe_ptr(), len(bytes)
         )
-        debug_assert(
-            written == len(bytes),
-            "expected amount of bytes not written",
-        )
+        assert written == len(bytes), "expected amount of bytes not written"
 
     fn write_string(mut self, string: StringSlice):
         """
@@ -112,17 +109,15 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 
-        comptime if CompilationTarget.is_macos() or CompilationTarget.is_linux():
-            var read = external_call["read", c_ssize_t](
-                self.value, buffer.unsafe_ptr(), len(buffer)
-            )
-            if read < 0:
-                raise Error("Failed to read bytes.")
-            return UInt(read)
-        else:
-            comptime assert (
-                False
-            ), "`read_bytes()` is not yet implemented for unknown platform."
+        comptime assert (
+            CompilationTarget.is_macos() or CompilationTarget.is_linux()
+        ), "`read_bytes()` is not yet implemented for unknown platform."
+        var read = external_call["read", c_ssize_t](
+            self.value, buffer.unsafe_ptr(), len(buffer)
+        )
+        if read < 0:
+            raise Error("Failed to read bytes.")
+        return UInt(read)
 
     fn isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.

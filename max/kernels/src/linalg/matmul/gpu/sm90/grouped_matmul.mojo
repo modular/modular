@@ -33,8 +33,7 @@ from std.gpu import (
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory, fence_mbarrier_init
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
@@ -139,7 +138,7 @@ fn grouped_matmul_sm90[
     comptime BK = config.block_tile_shape[2]
 
     # Create TMA op for the entire A tensor including all tokens.
-    a_tensor = from_ndbuffer_row_major(a)
+    a_tensor = TileTensor(a).to_layout_tensor()
     a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
         ctx, a_tensor
     )
@@ -148,7 +147,6 @@ fn grouped_matmul_sm90[
     b_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * N, K),
-        MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
     b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
@@ -156,7 +154,7 @@ fn grouped_matmul_sm90[
     )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
-    c_tensor = from_ndbuffer_row_major(c)
+    c_tensor = TileTensor(c).to_layout_tensor()
     c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
         ctx, c_tensor
     )

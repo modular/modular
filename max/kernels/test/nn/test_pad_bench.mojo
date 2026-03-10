@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
 
 import std.benchmark
@@ -105,7 +102,7 @@ fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input_ptr = alloc[Scalar[DType.int]](in_size)
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
@@ -122,7 +119,7 @@ fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output_ptr = alloc[Scalar[DType.int]](out_size)
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),
@@ -177,7 +174,7 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input_ptr = alloc[Scalar[DType.int]](in_size)
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
@@ -194,7 +191,7 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output_ptr = alloc[Scalar[DType.int]](out_size)
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),

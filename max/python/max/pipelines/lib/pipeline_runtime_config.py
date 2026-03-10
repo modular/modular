@@ -233,6 +233,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    reasoning_parser: str | None = Field(
+        default=None,
+        description=(
+            "Name of the reasoning output parser. The parser extracts thinking blocks to "
+            "populate the 'reasoning' field in chat completion responses."
+        ),
+    )
+
     # TODO(SERVSYS-1096): Remove this field once we've reworked how required
     # config fields are validated.
     defer_resolve: bool = Field(

@@ -13,6 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, recip
+from std.math.uutils import ufloordiv
 from nn.mha_utils import DynamicInt
 from std.math.constants import log2e
 from std.sys import (
@@ -43,7 +44,7 @@ from std.gpu import (
     block_idx,
     global_idx,
     lane_id,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import (
     DeviceContext,
@@ -75,6 +76,7 @@ from layout.layout_tensor import (
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -266,7 +268,7 @@ fn flare_mla_decoding[
     var num_keys = k.dim[1]()
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, k.origin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -723,7 +725,7 @@ fn mla_decoding[
             num_partitions,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -782,7 +784,7 @@ fn mla_decoding_single_batch[
     ), "mla_decoding doesn't support warp split-k."
 
     var tid = thread_idx.x
-    var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
+    var warp_id = warp.broadcast(UInt(ufloordiv(tid, WARP_SIZE)))
     var lane = lane_id()
 
     # Coordinates of the current warp.
@@ -1429,7 +1431,7 @@ fn flare_mla_prefill[
             max_prompt_len = Int(k_rope.max_prompt_length())
 
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1438,7 +1440,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutAnyOrigin,
+                cache_row_offsets.origin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1447,7 +1449,7 @@ fn flare_mla_prefill[
             ),
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1456,7 +1458,7 @@ fn flare_mla_prefill[
             LayoutTensor[
                 cache_row_offsets.dtype,
                 cache_row_offsets.layout,
-                MutAnyOrigin,
+                cache_row_offsets.origin,
             ](
                 cache_row_offsets.ptr,
                 RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1586,7 +1588,7 @@ fn flare_mla_prefill[
         var cache_row_offsets_lt = LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1594,7 +1596,7 @@ fn flare_mla_prefill[
             ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1603,7 +1605,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1612,7 +1614,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
@@ -1733,7 +1735,7 @@ fn flare_mla_prefill[
         var cache_row_offsets_lt = LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            cache_row_offsets.origin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -1741,7 +1743,7 @@ fn flare_mla_prefill[
             ),
         )
         var k_operand = RaggedMHAOperand(
-            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+            LayoutTensor[k.dtype, k.layout, k.origin](
                 k.ptr,
                 RuntimeLayout[k.layout].row_major(
                     k.runtime_layout.shape.value.canonicalize()
@@ -1750,7 +1752,7 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var v_operand = RaggedMHAOperand(
-            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+            LayoutTensor[v.dtype, v.layout, v.origin](
                 v.ptr,
                 RuntimeLayout[v.layout].row_major(
                     v.runtime_layout.shape.value.canonicalize()
@@ -1759,14 +1761,14 @@ fn flare_mla_prefill[
             cache_row_offsets_lt,
         )
         var k_rope_operand = LayoutTensorMHAOperand(
-            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
+            LayoutTensor[k_rope.dtype, k_rope.layout, k_rope.origin](
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
                 ),
             ),
             LayoutTensor[
-                k_rope_scales.dtype, k_rope_scales.layout, MutAnyOrigin
+                k_rope_scales.dtype, k_rope_scales.layout, k_rope_scales.origin
             ](
                 k_rope_scales.ptr,
                 RuntimeLayout[k_rope_scales.layout].row_major(
@@ -2085,7 +2087,7 @@ fn mla_prefill[
             k_rope,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -2108,7 +2110,7 @@ fn mla_prefill_single_batch[
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    output_ptr: UnsafePointer[mut=True, Scalar[output_type], _],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
@@ -2145,7 +2147,7 @@ fn mla_prefill_single_batch[
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    var tid: Int = Int(thread_idx.x)
+    var tid: Int = thread_idx.x
     var warp_id = UInt32(warp.broadcast(tid // WARP_SIZE))
     var lane = UInt32(lane_id())
 
@@ -3083,23 +3085,19 @@ fn _k_cache_to_buffer[
     ],
     k_cache: cache_t,
     length: Int32,
-    buffer: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    buffer: TileTensor[mut=True, dtype=dtype, ...],
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads
     comptime assert num_heads == 1, "num_heads should be equal to 1"
+    comptime assert buffer.rank == 2, "buffer should be rank 2"
 
     @always_inline
     @parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
-    fn copy_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    fn copy_fn[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         comptime assert rank == 2, "rank should be equal to 2"
 
-        var idx = rebind[IndexList[2]](idx_arg)
         var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
@@ -3120,11 +3118,11 @@ fn _k_cache_to_buffer[
             ).cast[dtype]()
         )
 
-        buffer.store(idx, cache_val)
+        buffer.store_linear(idx, cache_val)
 
     var launch_shape = IndexList[2](
         Int(length),
-        buffer.dim[1](),
+        Int(buffer.dim[1]()),
     )
     comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 

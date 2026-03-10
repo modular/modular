@@ -181,7 +181,7 @@ fn flash_attention[
                 LayoutTensor[
                     mask.dtype,
                     Layout.row_major(mask.layout.shape),
-                    MutAnyOrigin,
+                    mask.origin,
                 ](
                     mask.ptr,
                     RuntimeLayout[
@@ -1238,7 +1238,7 @@ fn flash_attention[
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -1246,7 +1246,7 @@ fn flash_attention[
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()
@@ -1339,7 +1339,7 @@ fn flash_attention_ragged[
     var cache_row_offsets = input_row_offsets.as_any_origin()
 
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -1348,7 +1348,7 @@ fn flash_attention_ragged[
         cache_row_offsets,
     )
     var v_operand = RaggedMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()
@@ -1592,7 +1592,7 @@ fn mha[
         else:
             attention.mha_prefill()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -1806,10 +1806,9 @@ fn mha_single_batch[
 
     comptime for i in range(0, Int(WM), 2):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
                 sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
                 * log2e
@@ -2529,10 +2528,9 @@ fn mha_single_batch_pipelined[
 
     comptime for i in range(0, Int(WM), p_frag_simdwidth):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
                 sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
                 * log2e
@@ -3282,7 +3280,7 @@ fn mha_decoding[
             num_partitions,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -3549,10 +3547,9 @@ fn mha_decoding_single_batch[
 
     comptime for i in range(WM):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
                     sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]()
@@ -4230,10 +4227,9 @@ fn mha_decoding_single_batch_pipelined[
 
     comptime for i in range(WM):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
                     sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]()
@@ -4570,19 +4566,17 @@ fn mha_splitk_reduce[
         + " should be equal to the warp_size:"
         + String(WARP_SIZE)
     )
-    debug_assert(
-        block_dim.x == UInt(WARP_SIZE),
-        "block_dim.x should be equal to the warp_size",
-    )
+    assert block_dim.x == UInt(
+        WARP_SIZE
+    ), "block_dim.x should be equal to the warp_size"
 
     comptime accum_type = get_accum_type[output_type]()
     var batch_idx = block_idx.z
     var q_head_idx = block_idx.y
 
-    debug_assert(
-        num_partitions <= WARP_SIZE,
-        "number of partitions should be less than or equal to the warp_size",
-    )
+    assert (
+        num_partitions <= WARP_SIZE
+    ), "number of partitions should be less than or equal to the warp_size"
     var partition_idx = thread_idx.x
 
     var qk_max_offset = (
@@ -4594,7 +4588,7 @@ fn mha_splitk_reduce[
     if partition_idx < UInt(num_partitions):
         l = qk_max_ptr[qk_max_offset]
 
-    var qk_max = warp.lane_group_max_and_broadcast[WARP_SIZE](l)
+    var qk_max = warp.lane_group_max[WARP_SIZE](l)
 
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = LayoutTensor[
@@ -4914,11 +4908,8 @@ fn _bmm0_bs[
         cur_cache_len = max_cache_size
         p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)
 
-    debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
-    debug_assert(
-        cur_cache_len <= padded_num_keys,
-        "Invalid cur_cache_len",
-    )
+    assert cur_query_len <= max_prompt_len, "Invalid cur_query_len"
+    assert cur_cache_len <= padded_num_keys, "Invalid cur_cache_len"
 
     if x >= UInt(padded_num_keys) or y >= UInt(max_prompt_len):
         return
@@ -5048,7 +5039,7 @@ fn _bmm1_bs[
         cur_cache_len = max_cache_size
         p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)
 
-    debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
+    assert cur_query_len <= max_prompt_len, "Invalid cur_query_len"
 
     if x >= UInt(depth) or y >= UInt(cur_query_len):
         return
@@ -5115,7 +5106,7 @@ fn mha_gpu_naive[
             LayoutTensor[
                 mask_type,
                 Layout.row_major(mask.layout.shape),
-                MutAnyOrigin,
+                mask.origin,
             ](
                 mask.ptr,
                 RuntimeLayout[Layout.row_major(mask.layout.shape)].row_major(
@@ -5165,7 +5156,7 @@ fn mha_gpu_naive[
     ] = None,
 ) raises:
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -5173,7 +5164,7 @@ fn mha_gpu_naive[
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()

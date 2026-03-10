@@ -81,7 +81,7 @@ struct StateContext(TrivialRegisterPassable):
 
     @always_inline
     fn __getitem__(self, index: Int) -> OpaquePointer[MutAnyOrigin]:
-        debug_assert(0 <= index < self.num_slots, "index must be within bounds")
+        assert 0 <= index < self.num_slots, "index must be within bounds"
         return external_call[
             "MGP_RT_GetContextPayloadPtr",
             OpaquePointer[MutAnyOrigin],
@@ -546,7 +546,7 @@ fn mgp_buffer_constant_external(
     size: UInt64,
     align: UInt64,
 ) raises -> NDBuffer[DType.int8, 1, MutAnyOrigin]:
-    debug_assert(align > 0, "align must be a positive integer value")
+    assert align > 0, "align must be a positive integer value"
 
     if not weights:
         raise Error(
@@ -586,15 +586,12 @@ fn fill_buffer[
 fn mgp_buffer_set_with_index[
     bDevice: StaticString
 ](buffer: NDBuffer[DType.int8, 1, MutAnyOrigin], *vals: Int) raises:
-    debug_assert(
-        is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
-    )
+    assert is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
-    debug_assert(
-        bufSize % numArgs == 0,
-        "buffer size not divisible by number of index args",
-    )
+    assert (
+        bufSize % numArgs == 0
+    ), "buffer size not divisible by number of index args"
 
     var elSize = bufSize // numArgs
     if elSize == 4:
@@ -610,12 +607,9 @@ fn mgp_buffer_set_with_index[
 fn mgp_buffer_to_bool[
     bDevice: StaticString
 ](buffer: NDBuffer[DType.int8, 1, ImmutAnyOrigin]) -> Bool:
-    debug_assert(is_cpu[bDevice](), "to_bool can only work on cpu buffers")
+    assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
     var bufSize = buffer.num_elements()
-    debug_assert(
-        bufSize == 1,
-        "buffer size must be a size of 1",
-    )
+    assert bufSize == 1, "buffer size must be a size of 1"
     return buffer[0] != 0
 
 
@@ -1036,7 +1030,7 @@ fn ManagedTensorSliceDef[
     rank: Int,
     //,
     io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[dtype, rank],
+    static_spec: StaticTensorSpec[dtype, rank, _, _],
 ](
     ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
@@ -1065,7 +1059,7 @@ fn reshape_contiguous_buffer[
 ](
     buffer: ManagedTensorSlice[
         io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, old_rank].create_unknown(),
+        static_spec=StaticTensorSpec[dtype, old_rank, ...].get_unknown(),
     ],
     shape: IndexList[new_rank],
 ) -> DynamicTensor[dtype, new_rank]:
@@ -1097,25 +1091,6 @@ fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
 
 
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-fn build_static_tensor_specs[
-    dtype: DType,
-    rank: Int,
-](
-    shape: DimList,
-    strides: DimList,
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[dtype, rank]:
-    comptime SpecType = StaticTensorSpec[dtype, rank]
-
-    return SpecType(
-        shape, strides, alignment, address_space, exclusive, None, None, None
-    )
-
-
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @register_internal("to_managed_tensor_slice")
@@ -1127,7 +1102,7 @@ fn to_managed_tensor_slice[
     shape: UnsafePointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var shape_ptr = shape
     var shape_tuple = IndexList[rank]()
@@ -1162,7 +1137,7 @@ fn get_scalar_from_managed_tensor_slice[
 ](
     tensor: ManagedTensorSlice[
         io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[dtype, 1].create_unknown(),
+        static_spec=StaticTensorSpec[dtype, 1, ...].get_unknown(),
     ]
 ) -> Scalar[dtype]:
     return _get_scalar_from_managed_tensor_slice(tensor)
@@ -1184,7 +1159,7 @@ fn _to_managed_tensor_slice_index_list_shape[
     shape_tuple: IndexList[rank],
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
+    static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
 ]:
     var stride_tuple = IndexList[rank]()
     var stride: Int = 1
@@ -1207,7 +1182,7 @@ fn to_managed_tensor_slice_list[
     out out_list: List[
         ManagedTensorSlice[
             io_spec=IOSpec[mut, input](),
-            static_spec=StaticTensorSpec[dtype, rank].create_unknown(),
+            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
         ]
     ],
 ):
@@ -1542,9 +1517,7 @@ fn mogg_tensor_init[
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[dtype, rank](
-        static_shape,
-        static_stride,
+    static_spec=StaticTensorSpec[dtype, rank, static_shape, static_stride](
         alignment,
         AddressSpace.GENERIC,
         exclusive,
@@ -1566,6 +1539,14 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     Marks the chain as ready.
     """
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
+
+
+@register_internal("mogg.async.check_task_error")
+@no_inline
+fn mogg_async_check_task_error(mut error: Optional[Error]) raises:
+    """Raises the captured error from an async task, if present."""
+    if error:
+        raise error.take()
 
 
 @register_internal("mogg.async.error")
@@ -1602,9 +1583,9 @@ fn tmp_reshape_contiguous_buffer[
     shape: IndexList[new_rank],
 ) -> ManagedTensorSlice[
     io_spec=buffer.io_spec,
-    static_spec=StaticTensorSpec[buffer.dtype, new_rank](
-        static_shape,
-        static_stride,
+    static_spec=StaticTensorSpec[
+        buffer.dtype, new_rank, static_shape, static_stride
+    ](
         1,
         AddressSpace.GENERIC,
         True,

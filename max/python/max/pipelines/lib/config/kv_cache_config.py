@@ -140,7 +140,6 @@ class KVCacheConfig(ConfigFileModel):
         data_parallel_degree: int = 1,
         is_mla: bool = False,
         num_q_heads: int | None = None,
-        q_max_seq_len: int = 1,
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
@@ -155,8 +154,6 @@ class KVCacheConfig(ConfigFileModel):
             is_mla: Whether the model uses Multi-Latent Attention.
             num_q_heads: Number of query attention heads. Required when
                 ``is_mla`` is True.
-            q_max_seq_len: Query tokens per sequence during decode (1 for
-                standard decode, >1 for MTP).
             kvcache_quant_config: KV cache quantization configuration.
 
         Returns:
@@ -174,7 +171,6 @@ class KVCacheConfig(ConfigFileModel):
             devices=devices,
             is_mla=is_mla,
             num_q_heads=num_q_heads,
-            q_max_seq_len=q_max_seq_len,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
             disk_offload_dir=self.disk_offload_dir,

@@ -24,7 +24,7 @@ Supports two write modes:
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx
+from std.gpu import WARP_SIZE, lane_id, thread_idx_int as thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
@@ -214,15 +214,33 @@ struct BlockwiseFP8TileWriter[
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
 
-            # Cast from accum_type to c_type, then write to SMEM
+            # Cast from accum_type to c_type in SIMD chunks of at
+            # least 4 bytes for efficient hardware cast instructions.
             comptime frag_size = Self.epc.fragment_size * Self.repeats
+            var upper_st = InlineArray[Scalar[Self.c_type], frag_size](
+                uninitialized=True
+            )
+            var lower_st = InlineArray[Scalar[Self.c_type], frag_size](
+                uninitialized=True
+            )
+
+            comptime cast_width = 4 // size_of[Scalar[Self.c_type]]()
+            comptime for _chunk in range(
+                Self.fragments_per_stage // cast_width
+            ):
+                comptime offset = _chunk * cast_width
+                var casted_u = upper_frag.slice[
+                    cast_width, offset=offset
+                ]().cast[Self.c_type]()
+                var casted_l = lower_frag.slice[
+                    cast_width, offset=offset
+                ]().cast[Self.c_type]()
+                comptime for _j in range(cast_width):
+                    upper_st[offset + _j] = casted_u[_j]
+                    lower_st[offset + _j] = casted_l[_j]
             smem_writer.write_fragments[Self.repeats](
-                rebind[SIMD[Self.c_type, frag_size]](
-                    upper_frag.cast[Self.c_type]()
-                ),
-                rebind[SIMD[Self.c_type, frag_size]](
-                    lower_frag.cast[Self.c_type]()
-                ),
+                rebind[InlineArray[Scalar[Self.c_type], frag_size]](upper_st),
+                rebind[InlineArray[Scalar[Self.c_type], frag_size]](lower_st),
                 c_smem_tile,
             )
 
@@ -363,18 +381,47 @@ struct BlockwiseFP8TileWriter[
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 Self.data_paths, Self.stageN
             ](0, 0)
+            # Cast in SIMD chunks of at least 4 bytes for efficient
+            # hardware cast instructions.
+            var upper_st = InlineArray[
+                Scalar[Self.c_type], Self.fragments_per_stage
+            ](uninitialized=True)
+
+            comptime cast_width = 4 // size_of[Scalar[Self.c_type]]()
+            comptime for _chunk in range(
+                Self.fragments_per_stage // cast_width
+            ):
+                comptime offset = _chunk * cast_width
+                var casted = upper_frag.slice[cast_width, offset=offset]().cast[
+                    Self.c_type
+                ]()
+                comptime for _j in range(cast_width):
+                    upper_st[offset + _j] = casted[_j]
             stsm_helper[
                 swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
-            ](upper_frag.cast[Self.c_type](), c_smem_warp_tile_upper)
+            ](upper_st, c_smem_warp_tile_upper)
 
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 Self.data_paths, Self.stageN
             ](1, 0)
 
             comptime if Self.is_lower_frag_required:
+                var lower_st = InlineArray[
+                    Scalar[Self.c_type], Self.fragments_per_stage
+                ](uninitialized=True)
+
+                comptime for _chunk in range(
+                    Self.fragments_per_stage // cast_width
+                ):
+                    comptime offset = _chunk * cast_width
+                    var casted = lower_frag.slice[
+                        cast_width, offset=offset
+                    ]().cast[Self.c_type]()
+                    comptime for _j in range(cast_width):
+                        lower_st[offset + _j] = casted[_j]
                 stsm_helper[
                     swizzle, UInt(Self.stageN), swizzle_mode=Self.c_swizzle
-                ](lower_frag.cast[Self.c_type](), c_smem_warp_tile_lower)
+                ](lower_st, c_smem_warp_tile_lower)
 
             named_barrier[Int32(Self.num_output_warps * UInt(WARP_SIZE))]()
 
@@ -447,7 +494,7 @@ struct BlockwiseFP8TileWriter[
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
                     element_type=DType.uint32,
-                ](Int(thread_idx.x), j)
+                ](thread_idx.x, j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),
                     zipped.shape,

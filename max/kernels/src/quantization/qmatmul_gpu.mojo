@@ -36,7 +36,6 @@ from std.gpu.memory import (
     external_memory,
 )
 from layout import RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (

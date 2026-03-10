@@ -40,22 +40,22 @@ WARNING_INTERVAL = 30.0  # seconds
 
 
 def _is_macos() -> bool:
-    """Check if the current platform is macOS.
+    """Checks if the current platform is macOS.
 
     Returns:
-        True if running on macOS (Darwin), False otherwise
+        ``True`` if running on macOS (Darwin), ``False`` otherwise.
     """
     return platform.system() == "Darwin"
 
 
 def can_allocate(size: int) -> bool:
-    """Check if we can allocate the given size in shared memory.
+    """Checks if the given size can be allocated in shared memory.
 
     Args:
-        size: Size in bytes to check
+        size: Size in bytes to check.
 
     Returns:
-        True if allocation is likely to succeed
+        ``True`` if allocation is likely to succeed.
     """
     # macOS doesn't support /dev/shm, so shared memory allocation is disabled
     if _is_macos():
@@ -72,10 +72,10 @@ def can_allocate(size: int) -> bool:
 
 
 class SharedMemoryArray:
-    """Wrapper for numpy array stored in shared memory.
+    """A wrapper for a NumPy array stored in shared memory.
 
-    This class is used as a placeholder in pixel_values during serialization.
-    It will be encoded as a dict with __shm__ flag and decoded back to a numpy
+    This class is used as a placeholder in ``pixel_values`` during serialization.
+    It will be encoded as a dict with ``__shm__`` flag and decoded back to a NumPy
     array.
     """
 
@@ -86,16 +86,17 @@ class SharedMemoryArray:
 
 
 def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
-    """Convert a NumPy array to shared memory and return a reference descriptor.
+    """Converts a NumPy array to shared memory and returns a reference descriptor.
 
     Includes capacity checking to prevent exhausting /dev/shm.
 
     Args:
-        arr: The NumPy array to store in shared memory
+        arr: The NumPy array to store in shared memory.
 
     Returns:
-        SharedMemoryArray if successful, None if shared memory is full or creation fails.
-        On macOS, always returns None as /dev/shm is not supported.
+        A :class:`SharedMemoryArray` if successful, ``None`` if shared memory is
+        full or creation fails. On macOS, always returns ``None`` as /dev/shm is
+        not supported.
     """
     # macOS doesn't support /dev/shm, so disable shared memory completely
     if _is_macos():
@@ -150,17 +151,17 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
 
 
 def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
-    """Open a shared memory array.
+    """Opens a shared memory array and returns it as a NumPy view.
 
     Args:
-        meta: Dictionary with 'name', 'shape', and 'dtype' keys
+        meta: Dictionary with ``'name'``, ``'shape'``, and ``'dtype'`` keys.
 
     Returns:
-        NumPy array either as a view of the shared memory
+        A NumPy array as a view of the shared memory.
 
     Raises:
         RuntimeError: If the shared memory segment cannot be opened or mapped
-            (e.g., insufficient permissions or ENOMEM under memory pressure).
+            (for example, insufficient permissions or ENOMEM under memory pressure).
     """
     with Tracer("open_shm_array_file"):
         try:

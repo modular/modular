@@ -209,7 +209,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
 
 @traced
-def build_scatter_future_tokens_graph() -> Graph:
+def build_scatter_future_tokens_graph(device: DeviceRef) -> Graph:
     """Builds a trivial scatter_nd graph."""
     with Graph(
         "my_scatter_future_tokens_graph",
@@ -218,19 +218,19 @@ def build_scatter_future_tokens_graph() -> Graph:
             TensorType(
                 DType.int64,
                 shape=[SymbolicDim("curr_batch_size")],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
             # Generated tokens for batch N-1
             TensorType(
                 DType.int64,
                 shape=[SymbolicDim("prev_batch_size"), Dim(1)],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
             # Indices that maps generated tokens from batch N-1 to batch N
             TensorType(
                 DType.int32,
                 shape=[SymbolicDim("prev_batch_size")],
-                device=DeviceRef.GPU(0),
+                device=device,
             ),
         ],
     ) as graph:
@@ -256,9 +256,9 @@ class ScatterFutureTokenProcessor:
     present in the previous batch.
     """
 
-    def __init__(self, session: InferenceSession) -> None:
+    def __init__(self, session: InferenceSession, device: DeviceRef) -> None:
         self._scatter_future_tokens = session.load(
-            build_scatter_future_tokens_graph()
+            build_scatter_future_tokens_graph(device)
         )
 
     def _compute_scatter_future_tok_indices(
@@ -480,7 +480,9 @@ class OverlapTextGenerationPipeline(
 
         # Load the scatter future tokens graph.
         self._scatter_future_tokens: ScatterFutureTokenProcessor = (
-            ScatterFutureTokenProcessor(session)
+            ScatterFutureTokenProcessor(
+                session, DeviceRef.from_device(self._devices[0])
+            )
         )
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
@@ -515,7 +517,9 @@ class OverlapTextGenerationPipeline(
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
-    def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
+    def _warmup_model_inputs(
+        self, batch_size: int, q_max_seq_len: int = 1
+    ) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
         for _replica_idx in range(dp_size):
@@ -523,7 +527,9 @@ class OverlapTextGenerationPipeline(
                 [
                     TextContext(
                         max_length=self._pipeline_model.max_seq_len,
-                        tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
+                        tokens=TokenBuffer(
+                            np.zeros(q_max_seq_len, dtype=np.int64)
+                        ),
                         eos_token_ids=self._eos_token_id,
                         model_name=self._pipeline_config.model.model_name,
                     )
@@ -748,24 +754,24 @@ class OverlapTextGenerationPipeline(
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Executes a batch of requests asynchronously on the GPU.
 
-        This method will return before the outputs for the current batch are ready.
-        The caller may need to call `.execute()` again (possibly with an empty batch)
-        to retrieve these outputs. For example:
+        This method returns before the outputs for the current batch are
+        ready. The caller may need to call ``execute()`` again (possibly
+        with an empty batch) to retrieve these outputs. For example:
 
-        ```python
-        output_a = pipeline.execute(inputs)
-        assert len(outputs) == 0
+        .. code-block:: python
 
-        output_b = pipeline.execute(empty_inputs)
-        assert len(outputs) == len(inputs.flat_batch)
-        ```
+            output_a = pipeline.execute(inputs)
+            assert len(outputs) == 0
+
+            output_b = pipeline.execute(empty_inputs)
+            assert len(outputs) == len(inputs.flat_batch)
 
         Args:
             inputs: The inputs for the batch.
 
         Returns:
-            A dictionary of request IDs to outputs. The outputs will not correspond
-            to the requests in the input batch. Instead they are of the previous batch.
+            A dictionary of request IDs to outputs. The outputs do not correspond
+            to the requests in the input batch. Instead they are from the previous batch.
         """
         if inputs.enable_log_probs:
             raise ValueError(

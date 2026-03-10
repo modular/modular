@@ -26,7 +26,9 @@ from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import Model
 from max.interfaces import BatchProcessorInputs, TextGenerationContextType
+from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -145,92 +147,26 @@ class FusedSamplingProcessor:
                 device=device,
             )
 
-        temperature_host = to_pinned_host_buffer(
-            [context.sampling_params.temperature for context in context_batch],
-            device=device,
-        )
-        self.temperature = temperature_host.to(device)
-
-        # top_k is a tensor of shape (batch_size,)
-        top_k_host = to_pinned_host_buffer(
-            [context.sampling_params.top_k for context in context_batch],
-            device=device,
-            dtype=DType.int64,
-        )
-        self.top_k = top_k_host.to(device)
-
-        # max_k is a scalar 0-d tensor. It does not need to be pinned since it
-        # is not copied to the device.
-        max_k_np = np.array(np.max(top_k_host.to_numpy()), dtype=np.int64)
-        self.max_k = Buffer.from_numpy(max_k_np)
-
-        # top_p is a tensor of shape (batch_size,)
-        top_p_host = to_pinned_host_buffer(
-            [context.sampling_params.top_p for context in context_batch],
-            device=device,
-        )
-        self.top_p = top_p_host.to(device)
-
-        # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
-        # is not copied to the device.
-        min_top_p_np = np.array(np.min(top_p_host.to_numpy()), dtype=np.float32)
-        self.min_top_p = Buffer.from_numpy(min_top_p_np)
-
-        # seed is a tensor of shape (batch_size,)
-        seed_host = to_pinned_host_buffer(
-            [
-                context.sampling_params.seed + len(context.tokens)
-                for context in context_batch
-            ],
-            device=device,
-            dtype=DType.uint64,
-        )
-        self.seed = seed_host.to(device)
+        self.sampler_inputs = SamplerInputs.create(context_batch, device)
 
         self.frequency_data: list[FrequencyData] | None = None
         self.frequency_penalty: Buffer | None = None
         self.presence_penalty: Buffer | None = None
         self.repetition_penalty: Buffer | None = None
 
-        if pipeline_config.sampling.enable_penalties:
-            # TODO: migrate penalties to pinned memory
-            self.frequency_data = [
-                _build_token_frequency_csr(context_batch, num_steps, device),
-                _build_token_frequency_csr(
-                    context_batch, num_steps, device, include_prompt=True
-                ),
-            ]
-
-            self.frequency_penalty = Buffer.from_numpy(
-                np.array(
-                    [
-                        context.sampling_params.frequency_penalty
-                        for context in context_batch
-                    ],
-                    dtype=np.float32,
+        self.penalty_inputs: PenaltyInputs | None = None
+        needs_penalties = any(
+            context.sampling_params.needs_penalties for context in context_batch
+        )
+        if needs_penalties:
+            if pipeline_config.sampling.enable_penalties:
+                self.penalty_inputs = PenaltyInputs.create(
+                    context_batch, device, num_steps
                 )
-            ).to(device)
-            self.presence_penalty = Buffer.from_numpy(
-                np.array(
-                    [
-                        context.sampling_params.presence_penalty
-                        for context in context_batch
-                    ],
-                    dtype=np.float32,
+            else:
+                logger.warning(
+                    "Penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
                 )
-            ).to(device)
-            self.repetition_penalty = Buffer.from_numpy(
-                np.array(
-                    [
-                        context.sampling_params.repetition_penalty
-                        for context in context_batch
-                    ],
-                    dtype=np.float32,
-                )
-            ).to(device)
-
-        else:
-            _check_need_penalties(context_batch)
 
         self.min_tokens_masks = _build_min_tokens_masks(
             context_batch,
@@ -250,21 +186,13 @@ class FusedSamplingProcessor:
             self.sampler,
             logits,
             self.generated_tokens,
-            self.top_k,
-            self.max_k,
-            self.temperature,
-            self.top_p,
-            self.min_top_p,
-            self.seed,
+            self.sampler_inputs,
             logit_offsets=logit_offsets,
             bitmask=self.tensor_bitmask,
-            frequency_data=self.frequency_data,
             min_tokens_mask=self.min_tokens_masks[self.step_counter]
             if self.min_tokens_masks
             else None,
-            frequency_penalty=self.frequency_penalty,
-            presence_penalty=self.presence_penalty,
-            repetition_penalty=self.repetition_penalty,
+            penalty_inputs=self.penalty_inputs,
         )
 
         assert isinstance(new_tokens, Buffer)
@@ -276,20 +204,6 @@ class FusedSamplingProcessor:
         self.new_tokens = new_tokens
 
         self.step_counter += 1
-
-
-def _check_need_penalties(batch: list[TextGenerationContextType]) -> None:
-    """Check if the batch has penalties, but enable_penalties is False."""
-    for context in batch:
-        if (
-            context.sampling_params.frequency_penalty != 0.0
-            or context.sampling_params.presence_penalty != 0.0
-            or context.sampling_params.repetition_penalty != 1.0
-        ):
-            logger.warning(
-                "penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
-            )
-            return
 
 
 @traced
@@ -405,44 +319,24 @@ def _sample_logits(
     sampler: Model,
     logits: Buffer,
     prev_tokens: Buffer,
-    top_k: Buffer,
-    max_k: Buffer,
-    temperature: Buffer,
-    top_p: Buffer,
-    min_top_p: Buffer,
-    seed: Buffer,
+    sampler_inputs: SamplerInputs,
     *,
     logit_offsets: Buffer | None = None,
     bitmask: Buffer | None = None,
-    frequency_data: Sequence[FrequencyData] | None = None,
     min_tokens_mask: Buffer | None = None,
-    frequency_penalty: Buffer | None = None,
-    presence_penalty: Buffer | None = None,
-    repetition_penalty: Buffer | None = None,
+    penalty_inputs: PenaltyInputs | None = None,
 ) -> tuple[Buffer, Buffer, Buffer]:
     opt_inputs = [logit_offsets, bitmask]
 
     base_inputs = [
         logits,
         prev_tokens,
-        top_k,
-        max_k,
-        temperature,
-        top_p,
-        min_top_p,
-        seed,
+        *sampler_inputs.as_list(),
     ]
 
     # Add frequency data if provided
-    if frequency_data:
-        for freq_data in frequency_data:
-            opt_inputs.extend([freq_data.data, freq_data.offsets])
-        assert frequency_penalty is not None
-        assert presence_penalty is not None
-        assert repetition_penalty is not None
-        opt_inputs.extend(
-            [frequency_penalty, presence_penalty, repetition_penalty]
-        )
+    if penalty_inputs:
+        opt_inputs.extend(penalty_inputs.as_list())
 
     if min_tokens_mask:
         opt_inputs.append(min_tokens_mask)
@@ -458,3 +352,172 @@ def _sample_logits(
     assert isinstance(generated_tokens, Buffer)
     assert isinstance(new_seed, Buffer)
     return (tokens, generated_tokens, new_seed)
+
+
+@dataclass
+class PenaltyInputs:
+    """Container for penalty inputs."""
+
+    frequency_data: list[FrequencyData]
+    frequency_penalty: Buffer
+    presence_penalty: Buffer
+    repetition_penalty: Buffer
+
+    def as_list(self) -> list[Buffer]:
+        """Returns the penalty inputs as a list of buffers."""
+        buffers = []
+        for fd in self.frequency_data:
+            buffers.extend([fd.data, fd.offsets])
+        buffers.extend(
+            [
+                self.frequency_penalty,
+                self.presence_penalty,
+                self.repetition_penalty,
+            ]
+        )
+        return buffers
+
+    @classmethod
+    def create(
+        cls,
+        batch: list[TextContext],
+        device: Device,
+        num_steps: int = 1,
+    ) -> Self:
+        """Create penalty input tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters.
+            device: Device to place the tensors on.
+            num_steps: Number of generation steps for frequency CSR padding.
+
+        Returns:
+            PenaltyInputs containing the penalty input tensors
+        """
+        frequency_data = [
+            _build_token_frequency_csr(batch, num_steps, device),
+            _build_token_frequency_csr(
+                batch, num_steps, device, include_prompt=True
+            ),
+        ]
+
+        frequency_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.frequency_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+        presence_penalty = Buffer.from_numpy(
+            np.array(
+                [context.sampling_params.presence_penalty for context in batch],
+                dtype=np.float32,
+            )
+        ).to(device)
+        repetition_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.repetition_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+
+        return cls(
+            frequency_data=frequency_data,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            repetition_penalty=repetition_penalty,
+        )
+
+
+@dataclass
+class SamplerInputs:
+    """Container for sampler inputs."""
+
+    top_k: Buffer
+    max_k: Buffer
+    temperature: Buffer
+    top_p: Buffer
+    min_top_p: Buffer
+    seed: Buffer
+
+    def as_list(self) -> list[Buffer]:
+        """Returns the sampler inputs as a list of buffers."""
+        return [
+            self.top_k,
+            self.max_k,
+            self.temperature,
+            self.top_p,
+            self.min_top_p,
+            self.seed,
+        ]
+
+    @classmethod
+    def create(
+        cls,
+        batch: list[TextContext],
+        device: Device,
+    ) -> Self:
+        """Create sampling parameter tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters
+            device: Device to place the tensors on
+
+        Returns:
+            SamplerInputs containing the sampling parameter tensors
+        """
+        temperature_host = to_pinned_host_buffer(
+            [context.sampling_params.temperature for context in batch],
+            device=device,
+        )
+        temperature = temperature_host.to(device)
+
+        # top_k is a tensor of shape (batch_size,)
+        top_k_host = to_pinned_host_buffer(
+            [context.sampling_params.top_k for context in batch],
+            device=device,
+            dtype=DType.int64,
+        )
+        top_k = top_k_host.to(device)
+
+        # max_k is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
+        max_k_np = np.array(np.max(top_k_host.to_numpy()), dtype=np.int64)
+        max_k = Buffer.from_numpy(max_k_np)
+
+        # top_p is a tensor of shape (batch_size,)
+        top_p_host = to_pinned_host_buffer(
+            [context.sampling_params.top_p for context in batch],
+            device=device,
+        )
+        top_p = top_p_host.to(device)
+
+        # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
+        min_top_p_np = np.array(np.min(top_p_host.to_numpy()), dtype=np.float32)
+        min_top_p = Buffer.from_numpy(min_top_p_np)
+
+        # seed is a tensor of shape (batch_size,)
+        seed_host = to_pinned_host_buffer(
+            [
+                context.sampling_params.seed + len(context.tokens)
+                for context in batch
+            ],
+            device=device,
+            dtype=DType.uint64,
+        )
+        seed = seed_host.to(device)
+
+        return cls(
+            top_k=top_k,
+            max_k=max_k,
+            temperature=temperature,
+            top_p=top_p,
+            min_top_p=min_top_p,
+            seed=seed,
+        )

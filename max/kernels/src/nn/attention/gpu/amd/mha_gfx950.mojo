@@ -169,7 +169,7 @@ struct KVCacheIterator[
         out result: LayoutTensor[
             Self.cache_t.dtype,
             Self.kv_gmem_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             masked=True,
         ],
     ):
@@ -275,6 +275,7 @@ struct KVBuffer[
         head_idx: UInt,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
+            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             ...,
         ],
@@ -791,7 +792,7 @@ __extension Attention:
         barrier()
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
+            self.softmax.rowsum_tensor.to_layout_tensor()
         )
 
         if high_warps == 0:

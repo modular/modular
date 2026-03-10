@@ -25,9 +25,6 @@ from std.benchmark import (
 from buffer import NDBuffer
 from std.gpu.host import DeviceContext
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils import IndexList
 
 
@@ -39,9 +36,9 @@ fn bench_add[
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
     var output_ptr = ctx.enqueue_create_buffer[type](size)
-    var input0_ptr_host = UnsafePointer[Scalar[type]].alloc(size)
-    var input1_ptr_host = UnsafePointer[Scalar[type]].alloc(size)
-    var output_ptr_host = UnsafePointer[Scalar[type]].alloc(size)
+    var input0_ptr_host = alloc[Scalar[type]](size)
+    var input1_ptr_host = alloc[Scalar[type]](size)
+    var output_ptr_host = alloc[Scalar[type]](size)
     randn(input0_ptr_host, size)
     randn(input1_ptr_host, size)
     randn(output_ptr_host, size)

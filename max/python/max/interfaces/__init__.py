@@ -69,6 +69,10 @@ from .pipeline_variants import (
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
+from .reasoning import (
+    ReasoningParser,
+    ReasoningSpan,
+)
 from .request import (
     DUMMY_REQUEST_ID,
     OpenResponsesRequest,
@@ -149,6 +153,8 @@ __all__ = [
     "PixelGenerationInputs",
     "PixelGenerationOutput",
     "ProcessorInputs",
+    "ReasoningParser",
+    "ReasoningSpan",
     "Request",
     "RequestID",
     "RequestType",

@@ -85,8 +85,8 @@ modular_py_binary(
         "//max/python/max/pipelines",
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
-        requirement("typing-extensions"),
         requirement("click"),
+        requirement("typing-extensions"),
     ],
 )
 

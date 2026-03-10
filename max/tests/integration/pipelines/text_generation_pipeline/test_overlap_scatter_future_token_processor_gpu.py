@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
+from max.graph import DeviceRef
 from max.interfaces import TextGenerationInputs, TokenBuffer
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
@@ -76,8 +77,10 @@ def _create_async_batch(
 
 @pytest.fixture(scope="module")
 def scatter_future_token_processor() -> ScatterFutureTokenProcessor:
+    device = Accelerator()
     return ScatterFutureTokenProcessor(
-        InferenceSession(devices=[Accelerator()])
+        InferenceSession(devices=[device]),
+        DeviceRef.from_device(device),
     )
 
 
