@@ -15,12 +15,68 @@
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
+from max.nn.kernels import flash_attention_gpu, rope_ragged_with_position_ids
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 
-from .embeddings import apply_rotary_emb, get_1d_rotary_pos_embed
+from .embeddings import get_1d_rotary_pos_embed
+
+
+def _apply_flux2_qk_rope(
+    query: TensorValue,
+    key: TensorValue,
+    cos: TensorValue,
+    sin: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    batch_size = query.shape[0]
+    seq_len = query.shape[1]
+    num_heads = query.shape[2]
+    head_dim = query.shape[3]
+
+    query_ragged = ops.reshape(
+        query, [batch_size * seq_len, num_heads, head_dim]
+    )
+    key_ragged = ops.reshape(key, [batch_size * seq_len, num_heads, head_dim])
+
+    # Convert repeat-interleaved ([cos, cos], [sin, sin]) to [cos, sin] pairs.
+    cos_pairs = ops.reshape(cos, [cos.shape[0], cos.shape[1] // 2, 2])[..., 0]
+    sin_pairs = ops.reshape(sin, [sin.shape[0], sin.shape[1] // 2, 2])[..., 0]
+    freqs_cis = ops.reshape(
+        ops.stack([cos_pairs, sin_pairs], axis=-1),
+        [cos.shape[0], cos.shape[1]],
+    )
+    position_ids = ops.range(
+        0,
+        seq_len,
+        1,
+        dtype=DType.uint32,
+        device=query.device,
+    )
+    # broadcast_to instead of tile: tile has no GPU kernel and forces a
+    # CPU round-trip. broadcast_to expands [1, seq_len] -> [batch_size, seq_len]
+    # entirely on GPU.
+    position_ids = ops.broadcast_to(
+        ops.unsqueeze(position_ids, 0), [batch_size, seq_len]
+    )
+    position_ids = ops.reshape(position_ids, [batch_size * seq_len])
+
+    query_out = rope_ragged_with_position_ids(
+        query_ragged,
+        freqs_cis,
+        position_ids,
+        interleaved=True,
+    )
+    key_out = rope_ragged_with_position_ids(
+        key_ragged,
+        freqs_cis,
+        position_ids,
+        interleaved=True,
+    )
+    return (
+        ops.reshape(query_out, [batch_size, seq_len, num_heads, head_dim]),
+        ops.reshape(key_out, [batch_size, seq_len, num_heads, head_dim]),
+    )
 
 
 class Flux2SwiGLU(Module):
@@ -132,6 +188,8 @@ class Flux2PosEmbed(Module):
                 axis_dim,
                 pos[..., i],
                 theta=self.theta,
+                use_real=True,
+                repeat_interleave_real=True,
             )
             cos_out.append(cos)
             sin_out.append(sin)
@@ -328,15 +386,9 @@ class Flux2Attention(Module):
             value = ops.concat([encoder_value, value], axis=1)
 
         # Apply rotary embeddings if provided
-        # Store original dtype to cast back after RoPE (which may upcast to float32)
-        original_dtype = query.dtype
         if image_rotary_emb is not None:
-            query = apply_rotary_emb(query, image_rotary_emb, sequence_dim=1)
-            key = apply_rotary_emb(key, image_rotary_emb, sequence_dim=1)
-
-            # Cast back to original dtype to match value
-            query = ops.cast(query, original_dtype)
-            key = ops.cast(key, original_dtype)
+            cos, sin = image_rotary_emb
+            query, key = _apply_flux2_qk_rope(query, key, cos, sin)
 
         # Scaled dot-product attention
         scale = 1.0 / (self.head_dim**0.5)
@@ -463,7 +515,7 @@ class Flux2ParallelSelfAttention(Module):
         Returns:
             Output tensor of shape [B, S, D].
         """
-        del attention_mask
+        # Fused projection
         fused = self.to_qkv_mlp_proj(hidden_states)
 
         # Split into QKV and MLP parts
@@ -493,14 +545,9 @@ class Flux2ParallelSelfAttention(Module):
         key = self.norm_k(key)
 
         # Apply rotary embeddings
-        # Store original dtype to cast back after RoPE (which may upcast to float32)
-        original_dtype = query.dtype
         if image_rotary_emb is not None:
-            query = apply_rotary_emb(query, image_rotary_emb, sequence_dim=1)
-            key = apply_rotary_emb(key, image_rotary_emb, sequence_dim=1)
-            # Cast back to original dtype to match value
-            query = ops.cast(query, original_dtype)
-            key = ops.cast(key, original_dtype)
+            cos, sin = image_rotary_emb
+            query, key = _apply_flux2_qk_rope(query, key, cos, sin)
         hidden_states = flash_attention_gpu(
             query,
             key,

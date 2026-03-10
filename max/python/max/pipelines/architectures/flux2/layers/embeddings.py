@@ -41,12 +41,15 @@ def get_timestep_embedding(
 
     # Expand timesteps: [B] -> [B, 1]
     # Expand emb: [half_dim] -> [1, half_dim]
-    timesteps_f32 = ops.cast(timesteps, DType.float32)
+    timesteps_expanded = ops.cast(ops.unsqueeze(timesteps, -1), DType.float32)
     # emb_expanded = F.reshape(emb, [1] * len(timesteps.shape) + [half_dim])
+    emb_expanded = ops.unsqueeze(emb, 0)
 
-    emb = ops.outer(timesteps_f32, emb) * scale
+    # Multiply: [B, 1] * [1, half_dim] -> [B, half_dim]
+    emb = scale * timesteps_expanded * emb_expanded
     emb = ops.concat([ops.sin(emb), ops.cos(emb)], axis=-1)
 
+    # Concatenate sin and cos
     if flip_sin_to_cos:
         emb = ops.concat([emb[:, half_dim:], emb[:, :half_dim]], axis=-1)
 
@@ -84,7 +87,8 @@ def apply_rotary_emb(
     if not use_real:
         raise NotImplementedError("Only use_real=True is supported")
 
-    cos, sin = freqs_cis
+    cos, sin = freqs_cis  # [S, D]
+    # Expand cos/sin to match x shape based on sequence_dim
     if sequence_dim == 2:
         cos = ops.unsqueeze(ops.unsqueeze(cos, 0), 0)
         sin = ops.unsqueeze(ops.unsqueeze(sin, 0), 0)
@@ -95,41 +99,66 @@ def apply_rotary_emb(
         raise ValueError(f"`sequence_dim={sequence_dim}` but should be 1 or 2.")
 
     input_dtype = x.dtype
-    x_shape = list(x.shape)
     if use_real_unbind_dim == -1:
+        # Used for Flux, CogVideoX, Hunyuan-Dit
+        # Reshape x: [..., D] -> [..., D//2, 2]
+        x_shape = list(x.shape)
         x_reshaped = ops.reshape(
             x,
             x_shape[:-1] + [x_shape[-1] // 2, 2],
         )
+        # Split into real and imaginary parts: [..., D//2, 2] -> 2 x [..., D//2]
         x_real = x_reshaped[..., 0]
         x_imag = x_reshaped[..., 1]
-        x_rotated = ops.stack([-x_imag, x_real], axis=-1)
-        x_rotated = ops.reshape(x_rotated, x_shape)
+
+        # Create rotated version: stack([-x_imag, x_real], dim=-1) then flatten
+        # This creates [..., D//2, 2]
+        x_rotated_real = -x_imag
+        x_rotated_imag = x_real
+        x_rotated_stacked = ops.stack(
+            [x_rotated_real, x_rotated_imag], axis=-1
+        )
+
+        # Flatten back to [..., D]
+        x_rotated = ops.reshape(x_rotated_stacked, x_shape)
     elif use_real_unbind_dim == -2:
+        # Used for Stable Audio, OmniGen, CogView4, Cosmos
+        # Reshape x: [..., D] -> [..., 2, D//2]
+        x_shape = list(x.shape)
         x_reshaped = ops.reshape(
             x,
             x_shape[:-1] + [2, x_shape[-1] // 2],
         )
+        # Split into real and imaginary parts: [..., 2, D//2] -> 2 x [..., D//2]
         x_real = x_reshaped[..., 0, :]
         x_imag = x_reshaped[..., 1, :]
+
+        # Create rotated version: cat([-x_imag, x_real], dim=-1)
         x_rotated = ops.concat([-x_imag, x_real], axis=-1)
     else:
         raise ValueError(
             f"`use_real_unbind_dim={use_real_unbind_dim}` but should be -1 or -2."
         )
 
-    x_f32 = ops.cast(x, DType.float32)
-    x_rotated_f32 = ops.cast(x_rotated, DType.float32)
-    cos_f32 = ops.cast(cos, DType.float32)
-    sin_f32 = ops.cast(sin, DType.float32)
-    out = x_f32 * cos_f32 + x_rotated_f32 * sin_f32
-    return ops.cast(out, input_dtype)
+    # Apply rotation: x * cos + x_rotated * sin
+    # Cast to float32 for computation, then back to input dtype
+    x_float = ops.cast(x, DType.float32)
+    x_rotated_float = ops.cast(x_rotated, DType.float32)
+    cos_float = ops.cast(cos, DType.float32)
+    sin_float = ops.cast(sin, DType.float32)
+
+    out = x_float * cos_float + x_rotated_float * sin_float
+    out = ops.cast(out, input_dtype)
+
+    return out
 
 
 def get_1d_rotary_pos_embed(
     dim: int,
     pos: TensorValue,
     theta: float = 10000.0,
+    use_real: bool = True,
+    repeat_interleave_real: bool = True,
 ) -> tuple[TensorValue, TensorValue]:
     """Precompute real-valued rotary position embeddings for one axis.
 
@@ -137,12 +166,24 @@ def get_1d_rotary_pos_embed(
         dim: Dimension of the embedding (must be even).
         pos: Position indices tensor of shape [S].
         theta: Base frequency for the sinusoidal encoding.
+        use_real: If True, use real-valued RoPE.
+        repeat_interleave_real: If True, repeat cos/sin along the embedding
+            dimension. If False, raises NotImplementedError.
 
     Returns:
         Tuple of (cos, sin) tensors for rotary position embedding.
     """
-    if dim % 2 != 0:
-        raise ValueError(f"dim must be even, got {dim}")
+    assert dim % 2 == 0, f"dim must be even, got {dim}"
+
+    if not use_real:
+        raise NotImplementedError("Only use_real=True is supported")
+
+    if not repeat_interleave_real:
+        raise NotImplementedError(
+            "Only repeat_interleave_real=True is supported"
+        )
+
+    # Create frequency bands: [dim/2]
     freq_exponent = (
         ops.range(
             0,
@@ -154,15 +195,30 @@ def get_1d_rotary_pos_embed(
         / dim
     )
     freq = 1.0 / (theta**freq_exponent)
+
+    # Compute outer product: [S, dim/2]
     freqs = ops.outer(pos, freq)
+
+    # Compute cos and sin: [S, dim/2]
     cos_emb = ops.cos(freqs)
     sin_emb = ops.sin(freqs)
+
+    # Repeat interleave: [S, dim/2] -> [S, dim]
+    # repeat_interleave not supported on GPU, use stack + reshape instead
+    # PyTorch: repeat_interleave(2, dim=1) makes [a, b, c] -> [a, a, b, b, c, c]
+    # MAX equivalent: stack([x, x], axis=2) + reshape
     cos_stacked = ops.stack([cos_emb, cos_emb], axis=2)
     sin_stacked = ops.stack([sin_emb, sin_emb], axis=2)
-    return (
-        ops.reshape(cos_stacked, [cos_emb.shape[0], dim]),
-        ops.reshape(sin_stacked, [sin_emb.shape[0], dim]),
+    freqs_cos = ops.reshape(
+        cos_stacked,
+        [cos_emb.shape[0], cos_stacked.shape[1] * cos_stacked.shape[2]],
     )
+    freqs_sin = ops.reshape(
+        sin_stacked,
+        [sin_emb.shape[0], sin_stacked.shape[1] * sin_stacked.shape[2]],
+    )
+
+    return freqs_cos, freqs_sin
 
 
 class Timesteps(Module):

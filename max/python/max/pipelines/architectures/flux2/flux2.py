@@ -23,7 +23,7 @@ from .layers.flux2_attention import (
     Flux2ParallelSelfAttention,
     Flux2PosEmbed,
 )
-from .layers.normalizations import AdaLayerNormContinuous, LayerNormNoAffine
+from .layers.normalizations import AdaLayerNormContinuous, LayerNorm
 from .model_config import Flux2Config
 
 
@@ -179,8 +179,22 @@ class Flux2TransformerBlock(Module):
             bias: Whether to use bias in linear layers.
         """
         super().__init__()
-        self.norm1 = LayerNormNoAffine(eps=eps)
-        self.norm1_context = LayerNormNoAffine(eps=eps)
+        self.norm1 = LayerNorm(
+            dim,
+            dtype=dtype,
+            device=device,
+            eps=eps,
+            elementwise_affine=False,
+            use_bias=False,
+        )
+        self.norm1_context = LayerNorm(
+            dim,
+            dtype=dtype,
+            device=device,
+            eps=eps,
+            elementwise_affine=False,
+            use_bias=False,
+        )
         self.attn = Flux2Attention(
             query_dim=dim,
             added_kv_proj_dim=dim,
@@ -194,7 +208,14 @@ class Flux2TransformerBlock(Module):
             dtype=dtype,
             device=device,
         )
-        self.norm2 = LayerNormNoAffine(eps=eps)
+        self.norm2 = LayerNorm(
+            dim,
+            dtype=dtype,
+            device=device,
+            eps=eps,
+            elementwise_affine=False,
+            use_bias=False,
+        )
         self.ff = Flux2FeedForward(
             dim=dim,
             dim_out=dim,
@@ -203,7 +224,14 @@ class Flux2TransformerBlock(Module):
             dtype=dtype,
             device=device,
         )
-        self.norm2_context = LayerNormNoAffine(eps=eps)
+        self.norm2_context = LayerNorm(
+            dim,
+            dtype=dtype,
+            device=device,
+            eps=eps,
+            elementwise_affine=False,
+            use_bias=False,
+        )
         self.ff_context = Flux2FeedForward(
             dim=dim,
             dim_out=dim,
@@ -316,7 +344,14 @@ class Flux2SingleTransformerBlock(Module):
             bias: Whether to use bias in linear layers.
         """
         super().__init__()
-        self.norm = LayerNormNoAffine(eps=eps)
+        self.norm = LayerNorm(
+            dim,
+            dtype=dtype,
+            device=device,
+            eps=eps,
+            elementwise_affine=False,
+            use_bias=False,
+        )
         self.attn = Flux2ParallelSelfAttention(
             query_dim=dim,
             dim_head=attention_head_dim,
@@ -501,6 +536,7 @@ class Flux2Transformer2DModel(Module):
         self.norm_out = AdaLayerNormContinuous(
             embedding_dim=self.inner_dim,
             conditioning_embedding_dim=self.inner_dim,
+            elementwise_affine=False,
             dtype=dtype,
             device=device,
             eps=eps,
