@@ -1,0 +1,32 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from std.sys.defines import MOJO_VERSION
+
+from std.testing import assert_equal
+from std.testing import TestSuite
+
+comptime _EXPECTED_MAJOR: Int = @MOJO_VERSION_MAJOR@
+comptime _EXPECTED_MINOR: Int = @MOJO_VERSION_MINOR@
+comptime _EXPECTED_PATCH: Int = @MOJO_VERSION_PATCH@
+
+
+def test_version_components_consistent() raises:
+    # Verify that the lit ops return the version numbers encoded in mojo_base_version.
+    assert_equal(MOJO_VERSION.major, _EXPECTED_MAJOR)
+    assert_equal(MOJO_VERSION.minor, _EXPECTED_MINOR)
+    assert_equal(MOJO_VERSION.patch, _EXPECTED_PATCH)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()
