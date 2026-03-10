@@ -102,8 +102,7 @@ fn _stencil_impl_gpu[
         var y = bid_y * block_dim.y + tid_y
 
         # Calculate batch and channel from bid_z
-        var batch_idx = bid_z // UInt(shape[3])
-        var channel = bid_z % UInt(shape[3])
+        var batch_idx, channel = divmod(bid_z, UInt(shape[3]))
 
         # Early exit if outside bounds
         if x >= UInt(shape[2]) or y >= UInt(shape[1]):

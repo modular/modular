@@ -484,8 +484,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                     comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
-                    comptime dst_m_offset = dst_idx // N
-                    comptime dst_n_offset = dst_idx % N
+                    comptime dst_m_offset, dst_n_offset = divmod(dst_idx, N)
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 

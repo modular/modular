@@ -509,8 +509,7 @@ fn run_test_blockwise_fp8[
             page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, page_size)
 
         for tok in range(ref_num_keys):
-            var page_idx = tok // page_size
-            var tok_in_page = tok % page_size
+            var page_idx, tok_in_page = divmod(tok, page_size)
             var physical_page = page_base_b + page_idx
 
             for h in range(KV_NUM_HEADS):

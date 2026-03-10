@@ -140,8 +140,7 @@ fn multistage_dual_mma[
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % UInt32(num_warps_n)
-    var warp_y = warp_id // UInt32(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
     var a_iter = a_iter_arg
     var b0_iter = b0_iter_arg
@@ -722,8 +721,7 @@ fn multistage_dual_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
@@ -764,8 +762,7 @@ fn multistage_dual_gemm_kernel[
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
                 comptime alignment = align_of[SIMD[c_type, 2]]()
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 if m < Int(M) and n < Int(N):
                     var vec = (c_reg_frag.ptr + src_idx).load[
                         width=2, alignment=align_of[SIMD[c_type, 2]]()
@@ -1285,8 +1282,7 @@ fn dual_gemv_kernel[
 
     # Sum across warps' results in shared memory and apply the binary op.
     for ii in range(tid, tile_m * tile_n_per_B, num_threads):
-        var mid = ii // tile_n_per_B
-        var nid = ii % tile_n_per_B
+        var mid, nid = divmod(ii, tile_n_per_B)
         var val0 = Scalar[s_type]()
         var val1 = Scalar[s_type]()
 

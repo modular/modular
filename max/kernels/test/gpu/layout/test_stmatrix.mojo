@@ -68,8 +68,7 @@ fn test_stmatrix(
 
     # Transpose B to fit ld_matrix layout.
     for i in range(tid, mma_k * mma_n, WARP_SIZE):
-        var x = i % Int(mma_n)
-        var y = i // Int(mma_n)
+        var y, x = divmod(i, Int(mma_n))
         b_shared[x * Int(mma_k) + y] = b_ptr[i]
 
     barrier()
@@ -89,8 +88,7 @@ fn test_stmatrix(
         c_shared + thread_idx.x * 4, rebind[SIMD[DType.float32, 4]](d_reg)
     )
 
-    var grp = lane_id() // 16
-    var local = lane_id() % 16
+    var grp, local = divmod(lane_id(), 16)
 
     var base = tid * 4
     for i in range(4):
@@ -157,8 +155,7 @@ fn test_stmatrix_gen[
         c_shared + thread_idx.x * 4,
         rebind[SIMD[DType.float32, c_frag_size]](d_reg),
     )
-    var grp = lane_id() // 16
-    var local = lane_id() % 16
+    var grp, local = divmod(lane_id(), 16)
 
     var base = thread_idx.x * 4
     for i in range(4):

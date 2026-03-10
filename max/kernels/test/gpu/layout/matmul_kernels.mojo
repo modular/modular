@@ -1086,8 +1086,7 @@ fn matmul_kernel_tc[
     var warp_id = get_warp_id()  # Warp ID within the block
 
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id // UInt(BN // WN)
-    warp_x = warp_id % UInt(BN // WN)
+    warp_y, warp_x = divmod(warp_id, UInt(BN // WN))
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[

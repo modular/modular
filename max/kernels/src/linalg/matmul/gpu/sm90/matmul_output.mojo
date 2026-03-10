@@ -183,8 +183,7 @@ struct MatmulTileWriter[
         comptime for i in range(num_elements_per_thread):
             comptime smem_idx = shared_fragment.layout(i)
             comptime output_idx = output_fragment.layout(i)
-            comptime row_offset = output_idx // Self.N
-            comptime col_offset = output_idx % Self.N
+            comptime row_offset, col_offset = divmod(output_idx, Self.N)
             var row = UInt32(row_coord + row_offset)
             var col = UInt32(col_coord + col_offset)
 

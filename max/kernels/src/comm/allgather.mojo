@@ -126,8 +126,7 @@ fn _allgather_p2p_kernel[
     # outputs[i] should contain data from GPU i.
     comptime for src_gpu in range(ngpus):
         var length = lengths[src_gpu]
-        var num_simd_vectors = length // simd_width
-        var remainder = length % simd_width
+        var num_simd_vectors, remainder = divmod(length, simd_width)
 
         # Grid-strided loop for this source (vectorized).
         for idx in range(global_tid, num_simd_vectors, stride):

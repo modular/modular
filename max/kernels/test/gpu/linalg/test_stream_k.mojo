@@ -40,10 +40,10 @@ fn swizzle_tile(
     var grid_m = (M + BLOCK_M - 1) // BLOCK_M
     var grid_n = (N + BLOCK_N - 1) // BLOCK_N
     var width = GROUP_M * grid_n
-    var group_id = tile_id // width
+    var group_id, tile_id_rem = divmod(tile_id, width)
     var group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
     var pid_m = group_id * GROUP_M + (tile_id % group_size)
-    var pid_n = (tile_id % width) // group_size
+    var pid_n = tile_id_rem // group_size
     return IndexList[2](pid_m, pid_n)
 
 
@@ -57,8 +57,7 @@ fn linear_tile(
     BLOCK_K: Int,
     GROUP_M: Int,
 ) -> IndexList[2]:
-    var pid_m = tile_id // ((N + BLOCK_N - 1) // BLOCK_N)
-    var pid_n = tile_id % ((N + BLOCK_N - 1) // BLOCK_N)
+    var pid_m, pid_n = divmod(tile_id, ((N + BLOCK_N - 1) // BLOCK_N))
     return IndexList[2](pid_m, pid_n)
 
 
@@ -319,12 +318,15 @@ fn matmul_stream_k[
     var total_tiles_streamk = total_tiles % total_programs_streamk
     var total_blocking_tiles = total_tiles - total_tiles_streamk
     var total_iters_streamk = total_tiles_streamk * iters_per_tile
-    var total_full_tiles_streamk = 0 if (total_iters_streamk == 0) else (
-        total_iters_streamk // total_programs_streamk
-    )
-    var total_partial_tiles_streamk = 0 if (total_iters_streamk == 0) else (
-        total_iters_streamk % total_programs_streamk
-    )
+    var total_full_tiles_streamk: Int
+    var total_partial_tiles_streamk: Int
+    if total_iters_streamk == 0:
+        total_full_tiles_streamk = 0
+        total_partial_tiles_streamk = 0
+    else:
+        total_full_tiles_streamk, total_partial_tiles_streamk = divmod(
+            total_iters_streamk, total_programs_streamk
+        )
 
     var locks_data = ctx.enqueue_create_buffer[DType.int32](total_tiles_streamk)
     ctx.enqueue_memset(locks_data, 0)

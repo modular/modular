@@ -242,8 +242,7 @@ def execute_fused_qkv_matmul[
                 )
 
             for k_dim in range(kv_hidden_size):
-                head_idx = k_dim // kv_params.head_size
-                head_dim_idx = k_dim % kv_params.head_size
+                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[
                         bs * prompt_len + s, hidden_size + Int(k_dim)
@@ -257,8 +256,7 @@ def execute_fused_qkv_matmul[
                 )
 
             for v_dim in range(kv_hidden_size):
-                head_idx = v_dim // kv_params.head_size
-                head_dim_idx = v_dim % kv_params.head_size
+                head_idx, head_dim_idx = divmod(v_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[
                         bs * prompt_len + s,

@@ -487,8 +487,9 @@ fn async_copy_with_bound_check[
 
         # Calculate the 2D coordinates for this element
         # TODO: we should be able to use idx2crd for this.
-        comptime dst_shifted_coord0 = dst_idx // dst_stride0
-        comptime dst_shifted_coord1 = dst_idx % dst_stride0
+        comptime dst_shifted_coord0, dst_shifted_coord1 = divmod(
+            dst_idx, dst_stride0
+        )
         var dst_coord0 = Int32(dst_shifted_coord0) + dst_frag_base_coord0
         var dst_coord1 = Int32(dst_shifted_coord1) + dst_frag_base_coord1
 

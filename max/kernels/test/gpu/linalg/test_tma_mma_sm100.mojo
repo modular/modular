@@ -340,7 +340,8 @@ fn tma_umma_kernel_ss[
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:
-        warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
+        var warp_id_q, warp_id_r = divmod(warp_id, UInt(4))
+        warp_id = UInt(2 * Int(warp_id_r) + Int(warp_id_q))
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
@@ -509,7 +510,8 @@ fn tma_umma_kernel_ts[
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:
-        warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
+        var warp_id_q, warp_id_r = divmod(warp_id, UInt(4))
+        warp_id = UInt(2 * Int(warp_id_r) + Int(warp_id_q))
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // Int(num_threads)
     var a_frag = InlineArray[Scalar[DType.uint32], a_frag_size](

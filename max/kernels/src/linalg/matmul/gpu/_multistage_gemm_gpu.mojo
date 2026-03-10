@@ -259,8 +259,7 @@ fn multistage_mma[
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % UInt32(num_warps_n)
-    var warp_y = warp_id // UInt32(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
@@ -1019,8 +1018,7 @@ fn multistage_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](

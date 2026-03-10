@@ -459,7 +459,8 @@ fn block_scaled_mxfp8_kernel[
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
     var warp_id = get_warp_id()
-    warp_id = 2 * (warp_id % 4) + warp_id // 4
+    var warp_id_q, warp_id_r = divmod(warp_id, 4)
+    warp_id = 2 * warp_id_r + warp_id_q
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 

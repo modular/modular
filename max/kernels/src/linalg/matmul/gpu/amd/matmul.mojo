@@ -560,8 +560,9 @@ fn gemm_kernel_amd[
 
         # Distribute the remaining MMA operations across the smem stores and global
         # memory loads.
-        comptime mmas_per_smem_store = num_remaining_mma_ops // num_smem_store_ops
-        comptime mmas_per_smem_store_extra = num_remaining_mma_ops % num_smem_store_ops
+        comptime mmas_per_smem_store, mmas_per_smem_store_extra = divmod(
+            num_remaining_mma_ops, num_smem_store_ops
+        )
 
         comptime for i in range(num_mn_mmas * (num_k_tiles - 1)):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)

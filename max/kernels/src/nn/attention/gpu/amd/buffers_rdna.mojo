@@ -101,8 +101,7 @@ fn get_rdna_warp_layout() -> Layout:
 fn get_rdna_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
     """Get warp coordinates for RDNA Wave32."""
     comptime num_warps_n = BN // WN
-    var warp_row = get_warp_id() // UInt(num_warps_n)
-    var warp_col = get_warp_id() % UInt(num_warps_n)
+    var warp_row, warp_col = divmod(get_warp_id(), UInt(num_warps_n))
     return IndexList[2](Int(warp_row), Int(warp_col))
 
 
@@ -485,8 +484,7 @@ struct VBufferRDNA[
         comptime depth_per_thread = Self.depth_tile_size // threads_per_row
 
         var lane = lane_id()
-        var thread_row = Int(lane) // threads_per_row
-        var thread_col = Int(lane) % threads_per_row
+        var thread_row, thread_col = divmod(Int(lane), threads_per_row)
 
         var src_row = Int(warp_id) * rows_per_warp + thread_row
         var stride = global_tile.stride[0]()
@@ -542,8 +540,7 @@ struct VBufferRDNA[
         comptime threads_per_row = RDNA_WARP_SIZE // rows_per_warp
         comptime depth_per_thread = Self.depth_tile_size // threads_per_row
 
-        var thread_row = Int(lane) // threads_per_row
-        var thread_col = Int(lane) % threads_per_row
+        var thread_row, thread_col = divmod(Int(lane), threads_per_row)
 
         var smem_tensor = Self.SharedTileType(self.smem_ptr)
         var load_tile = self.load_tile.split[Self.num_stages]()[tile_id]
@@ -551,8 +548,7 @@ struct VBufferRDNA[
         # In shared memory, V is transposed: smem[depth_pos, seq_pos]
         # smem_col_abs = V's row index (sequence position in BK dimension)
         var smem_col_abs = Int(warp_id) * rows_per_warp + thread_row
-        var smem_chunk = smem_col_abs // Self.simd_width
-        var smem_col = smem_col_abs % Self.simd_width
+        var smem_chunk, smem_col = divmod(smem_col_abs, Self.simd_width)
 
         comptime for depth_idx in range(Self.depth // Self.depth_tile_size):
             var smem_tile = smem_tensor.tile[
@@ -614,8 +610,9 @@ struct VBufferRDNA[
             var global_depth_pos = (
                 depth_offset + depth_idx * Self.MMA_M + Int(lane)
             )
-            var dtile_idx = global_depth_pos // Self.depth_tile_size
-            var pos_in_dtile = global_depth_pos % Self.depth_tile_size
+            var dtile_idx, pos_in_dtile = divmod(
+                global_depth_pos, Self.depth_tile_size
+            )
             var depth_row = (
                 dtile_idx * Self.pad[Self.depth_tile_size]() + pos_in_dtile
             )
@@ -953,8 +950,7 @@ struct PRegisterBufferRDNA[
         var warp_base_seq = Int(warp_row) * Self.WM
 
         var lane = Int(lane_id())
-        var lane_seq_offset = lane % 16
-        var lane_key_group = lane // 16
+        var lane_key_group, lane_seq_offset = divmod(lane, 16)
 
         var reg_ptr = self.reg_tile.ptr
 

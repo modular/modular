@@ -379,8 +379,7 @@ def execute_matmul_k_cache_ragged_scale[
         var prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                var head_idx = k_dim // kv_params.head_size
-                var head_dim_idx = k_dim % kv_params.head_size
+                var head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 var a = ref_output_host[
                     Int(input_row_offsets_host_ptr[bs]) + s, Int(k_dim)
                 ]

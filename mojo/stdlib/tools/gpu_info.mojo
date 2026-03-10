@@ -61,8 +61,7 @@ def main() raises:
 
     var compute_capability = ctx.compute_capability()
     var arch_name = ctx.arch_name()
-    var major = compute_capability // 10
-    var minor = compute_capability % 10
+    var major, minor = divmod(compute_capability, 10)
 
     if ctx.api() == "cuda":
         print("GPUInfo(")

@@ -605,8 +605,7 @@ fn _batched_matmul_cpu[
         var b_stride_between_batches = b.size() // b.dim[0]()
         var c_stride_between_batches = c.size() // c.dim[0]()
 
-        var batch_task_id = task_id // num_tasks_matmul
-        var matmul_task_id = task_id % num_tasks_matmul
+        var batch_task_id, matmul_task_id = divmod(task_id, num_tasks_matmul)
 
         var num_batches = c.dim[0]()
         # Set the granularity to 1 to divide the batches among tasks

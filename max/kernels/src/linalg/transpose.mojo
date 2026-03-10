@@ -1313,10 +1313,8 @@ fn _transpose_4d_swap_middle_helper[
             var begin = work_block_size * thread_id
             var end = min(work_block_size * (thread_id + 1), work)
             for block_idx in range(begin, end):
-                var l = block_idx // (M * N)
-                var block_idx_mn = block_idx % (M * N)
-                var m = block_idx_mn // N
-                var n = block_idx_mn % N
+                var l, block_idx_mn = divmod(block_idx, M * N)
+                var m, n = divmod(block_idx_mn, N)
 
                 var in_off = l * M * N * K + m * N * K + n * K
                 var out_off = l * M * N * K + n * M * K + m * K

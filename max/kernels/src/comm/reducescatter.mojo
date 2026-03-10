@@ -146,8 +146,7 @@ struct ReduceScatterConfig[
         """
         comptime assert Self.ngpus > 1, "ngpus must be greater than 1"
         self.stride = threads_per_gpu * Self.simd_width
-        self.axis_part = axis_size // Self.ngpus
-        self.axis_remainder = axis_size % Self.ngpus
+        self.axis_part, self.axis_remainder = divmod(axis_size, Self.ngpus)
         self.unit_numel = unit_numel
 
     @always_inline
@@ -160,8 +159,9 @@ struct ReduceScatterConfig[
         comptime assert Self.ngpus > 1, "ngpus must be greater than 1"
         self.stride = threads_per_gpu * Self.simd_width
         var num_simd_vectors = num_elements // Self.simd_width
-        self.axis_part = num_simd_vectors // Self.ngpus
-        self.axis_remainder = num_simd_vectors % Self.ngpus
+        self.axis_part, self.axis_remainder = divmod(
+            num_simd_vectors, Self.ngpus
+        )
         self.unit_numel = Self.simd_width
 
     @always_inline

@@ -245,8 +245,7 @@ fn single_warp_mma_sync_m16n8k8[
     var mat_b_mma = mat_b.transpose().composition[layout_b_mma]()
     var mat_c_mma = mat_c.composition[layout_c_mma]()
 
-    var thread_y: UInt = UInt(thread_idx.x) // 4
-    var thread_x: UInt = UInt(thread_idx.x) % 4
+    var thread_y, thread_x = divmod(thread_idx.x, 4)
 
     var vec_a_layout = SIMD[DType.float32, 4](
         rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 0]),

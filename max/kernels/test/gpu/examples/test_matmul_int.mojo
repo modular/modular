@@ -74,8 +74,7 @@ fn matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i: UInt = thread_idx.x // TILE_SZ_B
-        var j: UInt = thread_idx.x % TILE_SZ_B
+        var i, j = divmod(thread_idx.x, TILE_SZ_B)
 
         # Load the B matrix into shared memory.
         var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])

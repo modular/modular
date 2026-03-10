@@ -209,16 +209,14 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         # Thus, we have head_idx vary fastest.
         #
         # self.idx's max-value = self.max_num_prompt_tiles*num_heads*batch_size
-        quotient = idx // self.max_num_prompt_tiles
-        prompt_tile_idx = idx % self.max_num_prompt_tiles
+        quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
         # max value = num_heads-1
         # head index
         # changes kv whenever head_idx//group changes
-        head_idx = quotient % num_heads
         # max value = batch_size-1
         # prompt index
         # changes kv
-        prompt_idx = quotient // num_heads
+        prompt_idx, head_idx = divmod(quotient, num_heads)
 
         return (prompt_tile_idx, head_idx, prompt_idx)
 
@@ -227,17 +225,15 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         # First dim, offset in prompt length
-        quotient = idx // self.max_num_prompt_tiles
-        prompt_tile_idx = idx % self.max_num_prompt_tiles
+        quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
         # head index
-        head_idx = quotient % num_heads
+        # prompt index
+        prompt_idx, head_idx = divmod(quotient, num_heads)
         # Switch the traverse direction in prompt for odd head.
         prompt_tile_idx = (
             prompt_tile_idx if head_idx % 2
             == 0 else self.max_num_prompt_tiles - 1 - prompt_tile_idx
         )
-        # prompt index
-        prompt_idx = quotient // num_heads
 
         return (prompt_tile_idx, head_idx, prompt_idx)
 

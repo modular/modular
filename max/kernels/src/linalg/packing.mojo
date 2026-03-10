@@ -221,8 +221,9 @@ struct PackMatrixRows[
                 Index(idx, 0)
             )
             # compute the packed index
-            var _row_outer = local_off_set[0] // Self.row_inner_size
-            var _row_inner = local_off_set[0] % Self.row_inner_size
+            var _row_outer, _row_inner = divmod(
+                local_off_set[0], Self.row_inner_size
+            )
 
             if skip_col_bound or (idx < write_bound[1]):
                 self.packed_matrix.store[width=Self.simd_size](
@@ -410,8 +411,9 @@ struct PackMatrixCols[
                 )
 
             # map to packed index
-            var col_idx_outer = col_idx // Self.column_inner_size
-            var col_idx_inner = col_idx % Self.column_inner_size
+            var col_idx_outer, col_idx_inner = divmod(
+                col_idx, Self.column_inner_size
+            )
             self.packed_matrix.store[width=Self.simd_size](
                 Index(col_idx_outer, row_idx, col_idx_inner),
                 data,

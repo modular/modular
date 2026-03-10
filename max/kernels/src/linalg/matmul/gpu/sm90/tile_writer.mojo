@@ -824,8 +824,7 @@ struct RegisterToGMemWriter[
         # Process all vectors
         comptime for frag_idx in range(num_vecs):
             comptime dst_idx = gmem_frag.layout(frag_idx)
-            comptime dst_m_offset = dst_idx // Self.N
-            comptime dst_n_offset = dst_idx % Self.N
+            comptime dst_m_offset, dst_n_offset = divmod(dst_idx, Self.N)
             var m = coords[0] + dst_m_offset
             var n = coords[1] + dst_n_offset
 

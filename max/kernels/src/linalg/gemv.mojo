@@ -460,8 +460,7 @@ fn gemv_split_k[
     # Sum across warps' results in shared memory then output.
     # TODO: should be able to vectorize and maybe use larger tile_n.
     for ii in range(tid, tile_m * tile_n, num_threads):
-        var mid = ii // tile_n
-        var nid = ii % tile_n
+        var mid, nid = divmod(ii, tile_n)
         var val = Scalar[accum_type]()
         comptime ValType = type_of(val)
 

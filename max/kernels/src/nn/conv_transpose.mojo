@@ -341,10 +341,8 @@ fn get_partition(
     micro_kernel_height: Int,
     micro_kernel_f_size: Int,
 ) -> ConvPartition:
-    var task_id_f = task_id % num_partitions[2]
-    var quotient = task_id // num_partitions[2]
-    var task_id_howo = quotient % num_partitions[3]
-    var task_id_ng = quotient // num_partitions[3]
+    var quotient, task_id_f = divmod(task_id, num_partitions[2])
+    var task_id_ng, task_id_howo = divmod(quotient, num_partitions[3])
 
     var ng_range = partition_work(
         task_id_ng, num_partitions[0], conv_shape.n * conv_shape.num_groups, 1
@@ -566,8 +564,7 @@ struct ConvTransposedPacked[
             self.partition.ng_offset,
             self.partition.ng_offset + self.partition.ng_size,
         ):
-            var n = ng // self.conv_shape.num_groups
-            var g = ng % self.conv_shape.num_groups
+            var n, g = divmod(ng, self.conv_shape.num_groups)
 
             # Initialize the output buffer for current batch and group.
             self._zero_output(n, g)

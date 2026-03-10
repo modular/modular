@@ -803,8 +803,7 @@ fn _topk_stage1_old[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id = bid // UInt(num_blocks_per_input)
-    block_lane = bid % UInt(num_blocks_per_input)
+    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
 
     _in_buffer = in_buffer + batch_id * UInt(num_elements)
 
@@ -911,8 +910,7 @@ fn _topk_stage1[
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id = bid // UInt(num_blocks_per_input)
-    block_lane = bid % UInt(num_blocks_per_input)
+    batch_id, block_lane = divmod(bid, UInt(num_blocks_per_input))
 
     var block_offset = block_lane * block_size
     var stride = block_size * UInt(num_blocks_per_input)
@@ -1875,8 +1873,8 @@ fn apply_gumbel_noise_kernel[
 
     var tid = Int(thread_idx.x)
     var sm_id = Int(block_idx.x)
-    var group_id = sm_id // num_blocks_per_token
-    var tid_in_group = tid + (sm_id % num_blocks_per_token) * num_threads
+    var group_id, sm_id_rem = divmod(sm_id, num_blocks_per_token)
+    var tid_in_group = tid + sm_id_rem * num_threads
 
     var num_tokens = input.dim[0]()
 

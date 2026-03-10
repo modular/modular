@@ -91,8 +91,7 @@ fn sgemm_warp_tiling_kernel[
 
     # Placement of the warp in the threadblock tile.
     var warp_idx = warp_id()  # the warp this thread is in
-    var warp_col = warp_idx % UInt(BN // WN)
-    var warp_row = warp_idx // UInt(BN // WN)
+    var warp_row, warp_col = divmod(warp_idx, UInt(BN // WN))
 
     # Size of the warp sub-tile.
     comptime w_sub_m = WM // WMITER  # 64/2=32
@@ -100,10 +99,9 @@ fn sgemm_warp_tiling_kernel[
 
     # Placement of the thread in the warp sub-tile.
     var thread_Idx_In_warp = thread_idx.x % UInt(WARP_SIZE)  # [0, 31]
-    var thread_col_in_warp = thread_Idx_In_warp % UInt(
-        w_sub_n // TN
-    )  # i%(16/4)
-    var thread_row_in_warp = thread_Idx_In_warp // UInt(w_sub_n // TN)  # i/4
+    var thread_row_in_warp, thread_col_in_warp = divmod(
+        thread_Idx_In_warp, UInt(w_sub_n // TN)
+    )
 
     # Allocate space for the current blocktile in SMEM.
     # Pad the A tile in share memory to avoid bank conflicts.
@@ -135,11 +133,9 @@ fn sgemm_warp_tiling_kernel[
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
-    var inner_row_a = thread_idx.x // UInt(BK // 4)
-    var inner_col_a = thread_idx.x % UInt(BK // 4)
+    var inner_row_a, inner_col_a = divmod(thread_idx.x, UInt(BK // 4))
     comptime row_stride_a = (NUM_THREADS * 4) // BK
-    var inner_row_b = thread_idx.x // UInt(BN // 4)
-    var inner_co_ib = thread_idx.x % UInt(BN // 4)
+    var inner_row_b, inner_co_ib = divmod(thread_idx.x, UInt(BN // 4))
     comptime row_stride_b = NUM_THREADS // (BN // 4)
 
     # TODO: We want these to be register-allocated!

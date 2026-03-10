@@ -624,8 +624,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
             # Evaluate the mask, skip OOB element copies
             comptime dim_0_shape = Int(dst.layout.shape[0])
-            var dim_0 = i % dim_0_shape
-            var dim_1 = i // dim_0_shape
+            var dim_1, dim_0 = divmod(i, dim_0_shape)
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
             var can_access = mask_val[0] and mask_val[1]
             if not can_access:
@@ -828,8 +827,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         comptime for i in range(num_elements * src.element_size):
             # Evaluate the mask, skip OOB element copies
             comptime dim_0_shape = Int(src.layout.shape[0])
-            var dim_0 = i % dim_0_shape
-            var dim_1 = i // dim_0_shape
+            var dim_1, dim_0 = divmod(i, dim_0_shape)
             var mask_val = tile_mask.access_mask((dim_0, dim_1))
             var can_access = mask_val[0] and mask_val[1]
             if not can_access:

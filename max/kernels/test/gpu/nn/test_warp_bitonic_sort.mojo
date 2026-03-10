@@ -80,8 +80,7 @@ fn test_warp_bitonic_sort_interleaved[
 
         with scores_dev.map_to_host() as scores_map:
             for i in range(n_experts):
-                var group = i // experts_per_group
-                var pos_in_group = i % experts_per_group
+                var group, pos_in_group = divmod(i, experts_per_group)
                 var score: Float32
 
                 var rank = -1

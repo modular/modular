@@ -378,8 +378,7 @@ def execute_matmul_kv_cache_ragged[
         prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                head_idx = k_dim // kv_params.head_size
-                head_dim_idx = k_dim % kv_params.head_size
+                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[bs * max_seq_length_batch + s, Int(k_dim)],
                     k_cache_host.load[width=1](
@@ -392,8 +391,7 @@ def execute_matmul_kv_cache_ragged[
                 )
 
             for v_dim in range(kv_hidden_size):
-                head_idx = v_dim // kv_params.head_size
-                head_dim_idx = v_dim % kv_params.head_size
+                head_idx, head_dim_idx = divmod(v_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[
                         bs * max_seq_length_batch + s,
@@ -601,8 +599,7 @@ def execute_matmul_k_cache_ragged[
         prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                head_idx = k_dim // kv_params.head_size
-                head_dim_idx = k_dim % kv_params.head_size
+                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[bs * max_seq_length_batch + s, Int(k_dim)],
                     k_cache_host.load[width=1](
@@ -694,8 +691,7 @@ def generic_assert_output_equals[
                     raise e^
 
             for k_dim in range(kv_hidden_size):
-                head_idx = k_dim // kv_params.head_size
-                head_dim_idx = k_dim % kv_params.head_size
+                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 try:
                     assert_almost_equal(
                         ref_output_host[
@@ -715,8 +711,7 @@ def generic_assert_output_equals[
                     raise e^
 
             for v_dim in range(kv_hidden_size):
-                head_idx = v_dim // kv_params.head_size
-                head_dim_idx = v_dim % kv_params.head_size
+                head_idx, head_dim_idx = divmod(v_dim, kv_params.head_size)
                 try:
                     assert_almost_equal(
                         ref_output_host[

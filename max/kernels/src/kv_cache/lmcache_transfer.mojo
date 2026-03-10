@@ -83,15 +83,13 @@ fn _lmcache_offload_kernel[
     if slot < 0:
         return
 
-    var block_id = slot // page_size
-    var offset_in_block = slot % page_size
+    var block_id, offset_in_block = divmod(slot, page_size)
 
     var thread_id: Int = thread_idx.x
     var num_threads = Int(block_dim.x)
 
     for hidden_idx in range(thread_id, hidden_dim_total, num_threads):
-        var head_idx = hidden_idx // head_dim
-        var head_dim_idx = hidden_idx % head_dim
+        var head_idx, head_dim_idx = divmod(hidden_idx, head_dim)
 
         # Read from paged cache: [total_num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim]
         var src_val = paged_cache[
@@ -149,15 +147,13 @@ fn _lmcache_onload_kernel[
     if slot < 0:
         return
 
-    var block_id = slot // page_size
-    var offset_in_block = slot % page_size
+    var block_id, offset_in_block = divmod(slot, page_size)
 
     var thread_id: Int = thread_idx.x
     var num_threads = Int(block_dim.x)
 
     for hidden_idx in range(thread_id, hidden_dim_total, num_threads):
-        var head_idx = hidden_idx // head_dim
-        var head_dim_idx = hidden_idx % head_dim
+        var head_idx, head_dim_idx = divmod(hidden_idx, head_dim)
 
         # Read from input: [kv_dim, num_layers, num_tokens, hidden_dim]
         var src_val = input[kv_idx, layer_idx, token_idx, hidden_idx]

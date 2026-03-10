@@ -169,10 +169,8 @@ fn im2col_reference[
             continue
 
         # Decompose M into (n, oh, ow)
-        var n = m // hw
-        var m_rem = m % hw
-        var oh = m_rem // out_width
-        var ow = m_rem % out_width
+        var n, m_rem = divmod(m, hw)
+        var oh, ow = divmod(m_rem, out_width)
 
         for k_local in range(BK):
             var k = k_start + k_local
@@ -183,10 +181,8 @@ fn im2col_reference[
 
             # Decompose K into (r, s, c)
             # K = r * filter_w * in_channels + s * in_channels + c
-            var c = k % in_channels
-            var filter_idx = k // in_channels
-            var r = filter_idx // filter_w
-            var s = filter_idx % filter_w
+            var filter_idx, c = divmod(k, in_channels)
+            var r, s = divmod(filter_idx, filter_w)
 
             # Compute input coordinates
             var ih = oh * stride_h + r - pad_h

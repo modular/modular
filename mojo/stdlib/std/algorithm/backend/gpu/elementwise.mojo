@@ -117,8 +117,7 @@ fn _elementwise_impl_gpu_clc[
     """
 
     var length = UInt(shape.flattened_length())
-    var num_packed_elems = length // simd_width
-    var unpacked_tail_length = length % simd_width
+    var num_packed_elems, unpacked_tail_length = divmod(length, simd_width)
     var packed_region_length = length - unpacked_tail_length
 
     if length == 0:
@@ -297,8 +296,7 @@ fn _elementwise_impl_gpu_grid_stride[
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
 
     var length = UInt(shape.flattened_length())
-    var num_packed_elems = length // simd_width
-    var unpacked_tail_length = length % simd_width
+    var num_packed_elems, unpacked_tail_length = divmod(length, simd_width)
     var packed_region_length = length - unpacked_tail_length
 
     if length == 0:

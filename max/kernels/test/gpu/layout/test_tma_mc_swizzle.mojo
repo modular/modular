@@ -61,8 +61,7 @@ fn tma_swizzle_multicast_load_kernel[
     comptime subcluster_tileN = subcluster_tile_shape[1]
 
     var block_rank = block_rank_in_cluster()
-    var rank_m = Int(block_rank // UInt32(CLUSTER_N))
-    var rank_n = Int(block_rank % UInt32(CLUSTER_N))
+    var rank_m, rank_n = divmod(Int(block_rank), Int(CLUSTER_N))
 
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
     var tma_multicast_mask = (1 << Int(CLUSTER_SIZE)) - 1

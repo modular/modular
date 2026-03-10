@@ -417,8 +417,7 @@ without copying any data. It serves multiple purposes here. First, for the
 destination tile:
 
 ```mojo
-var col = thread_idx.x % UInt(BN)
-var row = thread_idx.x // UInt(BN)
+var col = divmod(thread_idx.x, UInt(BN))
 
 var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 ```

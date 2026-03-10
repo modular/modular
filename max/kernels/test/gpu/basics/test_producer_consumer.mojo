@@ -151,8 +151,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
     comptime size_per_copy = 16 // size_of[DType.float32]()
     comptime size_per_stage = size_per_copy * 128
 
-    warpgroup_idx = thread_idx.x // 128
-    warpgroup_tid = thread_idx.x % 128
+    warpgroup_idx, warpgroup_tid = divmod(thread_idx.x, 128)
 
     smem = stack_allocation[
         size_per_stage * num_stages,

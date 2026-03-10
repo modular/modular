@@ -75,8 +75,9 @@ fn calculate_coordinate[
     comptime tile_dims = to_index_list[rank, DType.uint32](coalesced_tile)
 
     comptime for index in range(rank):
-        indices[index] = current_coordinate // elements_per_dimension[index]
-        current_coordinate = current_coordinate % elements_per_dimension[index]
+        indices[index], current_coordinate = divmod(
+            current_coordinate, elements_per_dimension[index]
+        )
 
     return indices * tile_dims
 
@@ -267,8 +268,7 @@ def test_2D_swizzle[
                 for jj in range(load_shape_n):
                     offset = swizzle(ii * load_shape_n + jj)
 
-                    m_offset = offset // load_shape_n
-                    n_offset = offset % load_shape_n
+                    m_offset, n_offset = divmod(offset, load_shape_n)
 
                     if reference_tile[ii, jj] != rebind[
                         SIMD[
@@ -317,11 +317,11 @@ def test_3D_swizzle[
                                 + (ii * load_shape_n + jj)
                             )
 
-                            b_offset = offset // (load_shape_m * load_shape_n)
-                            offset = offset % (load_shape_m * load_shape_n)
+                            b_offset, offset = divmod(
+                                offset, load_shape_m * load_shape_n
+                            )
 
-                            m_offset = offset // load_shape_n
-                            n_offset = offset % load_shape_n
+                            m_offset, n_offset = divmod(offset, load_shape_n)
 
                             if reference_tile[bb, ii, jj] != rebind[
                                 SIMD[

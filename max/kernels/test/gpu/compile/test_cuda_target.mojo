@@ -309,8 +309,7 @@ fn gemm(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i = thread_idx.x // TILE_SZ_B
-        var j = thread_idx.x % TILE_SZ_B
+        var i, j = divmod(thread_idx.x, TILE_SZ_B)
 
         # Load the B matrix into shared memory.
         var b_val: Float32
