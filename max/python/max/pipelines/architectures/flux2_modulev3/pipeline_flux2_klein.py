@@ -199,17 +199,21 @@ class Flux2KleinPipeline(Flux2Pipeline):
         image_latents = None
         image_latent_ids = None
         if model_inputs.input_image is not None:
-            image_tensor = self._numpy_image_to_tensor(model_inputs.input_image)
-            image_latents, image_latent_ids = self.prepare_image_latents(
-                images=[image_tensor],
-                batch_size=batch_size,
-                device=self.vae.devices[0],
-                dtype=self.vae.config.dtype,
-            )
+            with Tracer("prepare_image_input"):
+                image_tensor = self._numpy_image_to_tensor(
+                    model_inputs.input_image
+                )
+                image_latents, image_latent_ids = self.prepare_image_latents(
+                    images=[image_tensor],
+                    batch_size=batch_size,
+                    device=self.vae.devices[0],
+                    dtype=self.vae.config.dtype,
+                )
 
         # 3) Prepare latents and conditioning tensors.
-        latents = self.preprocess_latents(model_inputs.latents)
-        latent_image_ids = model_inputs.latent_image_ids
+        with Tracer("preprocess_latents"):
+            latents = self.preprocess_latents(model_inputs.latents)
+            latent_image_ids = model_inputs.latent_image_ids
 
         # 4) Prepare scheduler tensors.
         with Tracer("prepare_scheduler"):
@@ -224,16 +228,21 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 dts_seq = dts_seq.driver_tensor
 
         # 5) Prepare guidance scale tensor for compiled CFG combine.
-        guidance_scale_tensor: Tensor | None = None
-        if do_cfg:
-            guidance_scale_tensor = Tensor.full(
-                [],
-                model_inputs.guidance_scale,
-                device=self.transformer.devices[0],
-                dtype=DType.float32,
-            )
+        with Tracer("prepare_cfg_scale"):
+            guidance_scale_tensor: Tensor | None = None
+            if do_cfg:
+                guidance_scale_tensor = Tensor.full(
+                    [],
+                    model_inputs.guidance_scale,
+                    device=self.transformer.devices[0],
+                    dtype=DType.float32,
+                )
 
-        # 6) Denoising loop.
+        # 6) Select transformer model.
+        with Tracer("select_transformer_model"):
+            self.transformer.use_standard_model()
+
+        # 7) Denoising loop.
         is_img2img = image_latents is not None
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):

@@ -720,17 +720,21 @@ class Flux2Pipeline(DiffusionPipeline):
         image_latents = None
         image_latent_ids = None
         if model_inputs.input_image is not None:
-            image_tensor = self._numpy_image_to_tensor(model_inputs.input_image)
-            image_latents, image_latent_ids = self.prepare_image_latents(
-                images=[image_tensor],
-                batch_size=batch_size,
-                device=self.vae.devices[0],
-                dtype=self.vae.config.dtype,
-            )
+            with Tracer("prepare_image_input"):
+                image_tensor = self._numpy_image_to_tensor(
+                    model_inputs.input_image
+                )
+                image_latents, image_latent_ids = self.prepare_image_latents(
+                    images=[image_tensor],
+                    batch_size=batch_size,
+                    device=self.vae.devices[0],
+                    dtype=self.vae.config.dtype,
+                )
 
         # 2) Prepare latents and conditioning tensors.
-        latents = self.preprocess_latents(model_inputs.latents)
-        latent_image_ids = model_inputs.latent_image_ids
+        with Tracer("preprocess_latents"):
+            latents = self.preprocess_latents(model_inputs.latents)
+            latent_image_ids = model_inputs.latent_image_ids
 
         # 3) Prepare scheduler tensors.
         with Tracer("prepare_scheduler"):
@@ -758,37 +762,39 @@ class Flux2Pipeline(DiffusionPipeline):
             * cfg.patch_size
             * (cfg.out_channels or cfg.in_channels)
         )
-        step_cache_enabled = bool(model_inputs.step_cache)
+        with Tracer("select_transformer_model"):
+            step_cache_enabled = bool(model_inputs.step_cache)
+            if step_cache_enabled:
+                self.transformer.use_step_cache_model()
+            else:
+                self.transformer.use_standard_model()
         if step_cache_enabled:
-            self.transformer.use_step_cache_model()
-        else:
-            self.transformer.use_standard_model()
-        if step_cache_enabled:
-            step_cache_flag = Tensor.full(
-                [1],
-                True,
-                device=device,
-                dtype=DType.bool,
-            )
-            rdt_tensor = Tensor.full(
-                [1],
-                model_inputs.residual_threshold,
-                device=device,
-                dtype=DType.float32,
-            )
-            seq_len_for_cache = model_inputs.image_seq_len
-            if image_latents is not None:
-                seq_len_for_cache += int(image_latents.shape[1])
-            prev_residual = Tensor.zeros(
-                (batch_size, seq_len_for_cache, inner_dim),
-                dtype=dtype,
-                device=device,
-            )
-            prev_output = Tensor.zeros(
-                (batch_size, seq_len_for_cache, out_dim),
-                dtype=dtype,
-                device=device,
-            )
+            with Tracer("create_step_cache_tensors"):
+                step_cache_flag = Tensor.full(
+                    [1],
+                    True,
+                    device=device,
+                    dtype=DType.bool,
+                )
+                rdt_tensor = Tensor.full(
+                    [1],
+                    model_inputs.residual_threshold,
+                    device=device,
+                    dtype=DType.float32,
+                )
+                seq_len_for_cache = model_inputs.image_seq_len
+                if image_latents is not None:
+                    seq_len_for_cache += int(image_latents.shape[1])
+                prev_residual = Tensor.zeros(
+                    (batch_size, seq_len_for_cache, inner_dim),
+                    dtype=dtype,
+                    device=device,
+                )
+                prev_output = Tensor.zeros(
+                    (batch_size, seq_len_for_cache, out_dim),
+                    dtype=dtype,
+                    device=device,
+                )
         with Tracer("denoising_loop"):
             for i in range(model_inputs.num_inference_steps):
                 with Tracer(f"denoising_step_{i}"):

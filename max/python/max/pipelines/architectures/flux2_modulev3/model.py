@@ -98,18 +98,21 @@ class Flux2TransformerModel(ComponentModel):
             )
         return self._step_cache_model
 
+    @traced
     def use_standard_model(self) -> None:
         standard_model = self._ensure_standard_model()
         if self.model is self._step_cache_model:
             self._step_cache_model = None
         self.model = standard_model
 
+    @traced
     def use_step_cache_model(self) -> None:
         step_cache_model = self._ensure_step_cache_model()
         if self.model is self._standard_model:
             self._standard_model = None
         self.model = step_cache_model
 
+    @traced
     def __call__(
         self,
         hidden_states: Tensor,
