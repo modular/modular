@@ -1985,14 +1985,14 @@ void VarDeclOp::changeElementType(Type newElementType) {
 }
 
 //===----------------------------------------------------------------------===//
-// InitializedVarDeclOp
+// VarDeclInitOp
 //===----------------------------------------------------------------------===//
 
-void InitializedVarDeclOp::build(OpBuilder &b, OperationState &state,
-                                 ValueRange initializers, StringRef name,
-                                 StringRef originName) {
+void VarDeclInitOp::build(OpBuilder &b, OperationState &state,
+                          ValueRange initializers, StringRef name,
+                          StringRef originName) {
   assert(!initializers.empty() &&
-         "InitializedVarDeclOp must have at least one initializer");
+         "VarDeclInitOp must have at least one initializer");
   auto originType = b.getType<OriginType>(/*isMutable=*/true);
   auto originNameAttr = b.getAttr<StringAttr>(originName);
   auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
@@ -2001,17 +2001,17 @@ void InitializedVarDeclOp::build(OpBuilder &b, OperationState &state,
   build(b, state, resultType, name, originDecl, initializers);
 }
 
-void InitializedVarDeclOp::getAsmResultNames(
+void VarDeclInitOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), getName());
 }
 
-void InitializedVarDeclOp::walkDefinitions(
+void VarDeclInitOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   walkDef(getParamDecl(), ParamDefValue());
 }
 
-LogicalResult InitializedVarDeclOp::verify() {
+LogicalResult VarDeclInitOp::verify() {
   if (getInitializers().empty())
     return emitOpError() << "must have at least one initializer";
   Type elementType = getType().getElementType();

@@ -999,10 +999,10 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
 }
 
 //===----------------------------------------------------------------------===//
-// InitializedVarDeclOp
+// VarDeclInitOp
 //===----------------------------------------------------------------------===//
 
-def LIT_InitializedVarDeclOp : LITOp<"initialized.var.decl", [
+def LIT_VarDeclInitOp : LITOp<"var.decl.init", [
     ASTDeclInterface,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface>,
@@ -1016,7 +1016,7 @@ def LIT_InitializedVarDeclOp : LITOp<"initialized.var.decl", [
     Example:
 
     ```mlir
-    %foo = lit.initialized.var.decl "foo" (%a, %b, %c) : !lit.ref<index, mut *"foo_origin">
+    %foo = lit.var.decl.init "foo" (%a, %b, %c) : !lit.ref<index, mut *"foo_origin">
     ```
   }];
 
