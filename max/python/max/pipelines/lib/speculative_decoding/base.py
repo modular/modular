@@ -256,7 +256,7 @@ class SpeculativeDecodingPipelineBase(
         self._needs_all_draft_logits = strategy == "residual"
 
         # Initialize metrics tracker
-        self._metrics = SpeculativeDecodingMetrics.empty()
+        self.metrics = SpeculativeDecodingMetrics.empty(log_on_destruction=True)
 
         # Track draft model replica assignments per request
         self._draft_replica_idx: dict[RequestID, int] = {}
@@ -367,23 +367,6 @@ class SpeculativeDecodingPipelineBase(
         assert isinstance(b, Buffer)
         assert isinstance(c, Buffer)
         return (a, b, c)
-
-    @property
-    def metrics(self) -> SpeculativeDecodingMetrics:
-        """Get the current speculative decoding metrics.
-
-        Returns:
-            The SpeculativeDecodingMetrics instance with current statistics
-        """
-        return self._metrics
-
-    def __del__(self) -> None:
-        """Log metrics when the pipeline is destroyed."""
-        if (
-            hasattr(self, "_metrics")
-            and self._metrics.draft_tokens_generated > 0
-        ):
-            logger.info(f"Speculative decoding metrics: {self._metrics}")
 
     @traced
     def release(self, request_id: RequestID) -> None:

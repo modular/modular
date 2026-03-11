@@ -315,7 +315,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_tokens=draft_tokens.to_numpy(),
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
-        self._metrics.update(metrics)
+        self.metrics.update(metrics)
 
         res = build_response(
             context_batch=context_batch, max_seq_len=self._max_seq_len

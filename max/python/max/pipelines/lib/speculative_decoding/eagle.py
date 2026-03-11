@@ -695,7 +695,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_tokens=draft_tokens.to_numpy(),
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
-        self._metrics.update(metrics)
+        self.metrics.update(metrics)
 
         draft_hidden_states = self._extract_hs_for_draft(
             target_hs,
