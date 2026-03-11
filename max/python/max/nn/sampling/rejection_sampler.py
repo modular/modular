@@ -174,200 +174,162 @@ class RejectionSampler(Module):
         return first_rejected_token, sampled_target_tokens
 
 
-class TypicalAcceptanceSampler(Module):
+def _reshape_target_logits(target_logits: TensorValue) -> TensorValue:
+    """Reshapes flat target logits to [batch, num_steps+1, vocab]."""
+    return ops.reshape(
+        ops.rebind(
+            target_logits,
+            shape=[
+                Dim("batch_size") * (Dim("num_steps") + 1),
+                Dim("vocab_size"),
+            ],
+        ),
+        shape=[Dim("batch_size"), Dim("num_steps") + 1, Dim("vocab_size")],
+    )
+
+
+def greedy_acceptance_sampler(
+    draft_tokens: TensorValue,
+    target_logits: TensorValue,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Target-only rejection sampler for speculative decoding.
 
-    Operates in two modes, selected by the ``greedy`` flag:
-
     - **Greedy** (``greedy=True``): accepts a draft token only when it
-      matches the argmax of the target logits.  Recovered tokens are
-      the target argmax at every draft position; the bonus token is the
-      argmax at the final (+1) position.
+    matches the argmax of the target logits.  Recovered tokens are
+    the target argmax at every draft position; the bonus token is the
+    argmax at the final (+1) position.
+
+    Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
+    """
+    if draft_tokens.device != target_logits.device:
+        raise ValueError(
+            "Draft tokens and target logits must be on the same device"
+        )
+    device = draft_tokens.device
+
+    target_logits_3d = _reshape_target_logits(target_logits)
+
+    all_target_tokens = ops.squeeze(
+        ops.argmax(target_logits_3d, axis=-1), axis=-1
+    )
+
+    target_tokens_draft = all_target_tokens[:, :-1]
+    bonus_tokens = all_target_tokens[:, -1:]
+
+    draft_tokens_rb = ops.rebind(
+        draft_tokens, [Dim("batch_size"), Dim("num_steps")]
+    )
+    rejected = ops.not_equal(
+        draft_tokens_rb,
+        ops.rebind(target_tokens_draft, [Dim("batch_size"), Dim("num_steps")]),
+    )
+
+    first_rejected_idx = ops.squeeze(
+        _find_first_rejected(rejected, device), axis=-1
+    )
+
+    return first_rejected_idx, target_tokens_draft, bonus_tokens
+
+
+def stochastic_acceptance_sampler(
+    draft_tokens: TensorValue,
+    target_logits: TensorValue,
+    temperature: TensorValue,
+    top_k: TensorValue,
+    max_k: TensorValue,
+    top_p: TensorValue,
+    min_top_p: TensorValue,
+    seed: int = 0,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Target-only rejection sampler for speculative decoding.
 
     - **Stochastic** (``greedy=False``): accepts a draft token with
-      probability ``p_target(draft_token)`` after applying temperature
-      scaling and softmax.  Recovered tokens are sampled from the
-      target distribution; the bonus token is sampled via
-      ``topk_fused_sampling``.
+    probability ``p_target(draft_token)`` after applying temperature
+    scaling and softmax.  Recovered tokens are sampled from the
+    target distribution; the bonus token is sampled via
+    ``topk_fused_sampling``.
 
-    Both modes return ``(first_rejected_idx, recovered_tokens,
-    bonus_tokens)`` with identical shapes so callers can treat them
-    uniformly.
+    Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
+    ops.random.set_seed(seed)
 
-    def __init__(
-        self,
-        device: DeviceRef,
-        greedy: bool = False,
-        seed: int = 0,
-    ) -> None:
-        self.device = device
-        self.greedy = greedy
-        self.seed = seed
-        if not greedy:
-            ops.random.set_seed(seed)
+    device = draft_tokens.device
 
-    def _reshape_target_logits(self, target_logits: TensorValue) -> TensorValue:
-        """Reshapes flat target logits to [batch, num_steps+1, vocab]."""
-        return ops.reshape(
-            ops.rebind(
-                target_logits,
-                shape=[
-                    Dim("batch_size") * (Dim("num_steps") + 1),
-                    Dim("vocab_size"),
-                ],
+    target_logits_3d = _reshape_target_logits(target_logits)
+
+    draft_verification_logits = target_logits_3d[:, :-1]
+    bonus_logits = ops.rebind(
+        target_logits_3d[:, -1],
+        shape=[Dim("batch_size"), Dim("vocab_size")],
+    )
+
+    temp_3d = ops.reshape(temperature, shape=[Dim("batch_size"), 1, 1])
+    scaled_logits = draft_verification_logits / temp_3d
+
+    target_probs = ops.softmax(scaled_logits)
+
+    batch_size = draft_tokens.shape[0]
+    num_steps = draft_tokens.shape[1]
+
+    batch_indices = ops.broadcast_to(
+        ops.reshape(
+            ops.range(
+                0,
+                batch_size,
+                1,
+                out_dim=Dim("batch_size"),
+                device=device,
+                dtype=DType.int64,
             ),
-            shape=[Dim("batch_size"), Dim("num_steps") + 1, Dim("vocab_size")],
-        )
+            shape=[Dim("batch_size"), 1],
+        ),
+        shape=[Dim("batch_size"), Dim("num_steps")],
+    )
 
-    def __call__(
-        self,
-        draft_tokens: TensorValue,
-        target_logits: TensorValue,
-        target_logit_offsets: TensorValue,
-        temperature: TensorValue | None = None,
-        top_k: TensorValue | None = None,
-        max_k: TensorValue | None = None,
-        top_p: TensorValue | None = None,
-        min_top_p: TensorValue | None = None,
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        if self.greedy:
-            return self._greedy_acceptance(
-                draft_tokens, target_logits, target_logit_offsets
-            )
-        assert temperature is not None
-        assert top_k is not None
-        assert max_k is not None
-        assert top_p is not None
-        assert min_top_p is not None
-        return self._stochastic_acceptance(
-            draft_tokens,
-            target_logits,
-            target_logit_offsets,
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-        )
-
-    def _greedy_acceptance(
-        self,
-        draft_tokens: TensorValue,
-        target_logits: TensorValue,
-        target_logit_offsets: TensorValue,
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        target_logits_3d = self._reshape_target_logits(target_logits)
-
-        all_target_tokens = ops.squeeze(
-            ops.argmax(target_logits_3d, axis=-1), axis=-1
-        )
-
-        target_tokens_draft = all_target_tokens[:, :-1]
-        bonus_tokens = all_target_tokens[:, -1:]
-
-        draft_tokens_rb = ops.rebind(
-            draft_tokens, [Dim("batch_size"), Dim("num_steps")]
-        )
-        rejected = ops.not_equal(
-            draft_tokens_rb,
-            ops.rebind(
-                target_tokens_draft, [Dim("batch_size"), Dim("num_steps")]
+    step_indices = ops.broadcast_to(
+        ops.reshape(
+            ops.range(
+                0,
+                num_steps,
+                1,
+                out_dim=Dim("num_steps"),
+                device=device,
+                dtype=DType.int64,
             ),
-        )
+            shape=[1, Dim("num_steps")],
+        ),
+        shape=[Dim("batch_size"), Dim("num_steps")],
+    )
 
-        first_rejected_idx = ops.squeeze(
-            _find_first_rejected(rejected, self.device), axis=-1
-        )
+    token_indices = ops.rebind(
+        draft_tokens, [Dim("batch_size"), Dim("num_steps")]
+    )
 
-        return first_rejected_idx, target_tokens_draft, bonus_tokens
+    gather_indices = ops.stack(
+        [batch_indices, step_indices, token_indices], axis=2
+    )
 
-    def _stochastic_acceptance(
-        self,
-        draft_tokens: TensorValue,
-        target_logits: TensorValue,
-        target_logit_offsets: TensorValue,
-        temperature: TensorValue,
-        top_k: TensorValue,
-        max_k: TensorValue,
-        top_p: TensorValue,
-        min_top_p: TensorValue,
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        target_logits_3d = self._reshape_target_logits(target_logits)
+    p_target = ops.gather_nd(target_probs, gather_indices)
 
-        draft_verification_logits = target_logits_3d[:, :-1]
-        bonus_logits = ops.rebind(
-            target_logits_3d[:, -1],
-            shape=[Dim("batch_size"), Dim("vocab_size")],
-        )
+    coins = ops.random.uniform(p_target.type)
+    rejected = coins >= p_target
 
-        temp_3d = ops.reshape(temperature, shape=[Dim("batch_size"), 1, 1])
-        scaled_logits = draft_verification_logits / temp_3d
+    first_rejected_idx = ops.squeeze(
+        _find_first_rejected(rejected, device), axis=-1
+    )
 
-        target_probs = ops.softmax(scaled_logits)
+    recovered_token_ids = _multinomial(target_probs)
 
-        batch_size = draft_tokens.shape[0]
-        num_steps = draft_tokens.shape[1]
+    bonus_token_ids = topk_fused_sampling(
+        logits=bonus_logits,
+        top_k=top_k,
+        max_k=max_k,
+        temperature=temperature,
+        top_p=top_p,
+        min_top_p=min_top_p,
+    )
 
-        batch_indices = ops.broadcast_to(
-            ops.reshape(
-                ops.range(
-                    0,
-                    batch_size,
-                    1,
-                    out_dim=Dim("batch_size"),
-                    device=self.device,
-                    dtype=DType.int64,
-                ),
-                shape=[Dim("batch_size"), 1],
-            ),
-            shape=[Dim("batch_size"), Dim("num_steps")],
-        )
-
-        step_indices = ops.broadcast_to(
-            ops.reshape(
-                ops.range(
-                    0,
-                    num_steps,
-                    1,
-                    out_dim=Dim("num_steps"),
-                    device=self.device,
-                    dtype=DType.int64,
-                ),
-                shape=[1, Dim("num_steps")],
-            ),
-            shape=[Dim("batch_size"), Dim("num_steps")],
-        )
-
-        token_indices = ops.rebind(
-            draft_tokens, [Dim("batch_size"), Dim("num_steps")]
-        )
-
-        gather_indices = ops.stack(
-            [batch_indices, step_indices, token_indices], axis=2
-        )
-
-        p_target = ops.gather_nd(target_probs, gather_indices)
-
-        coins = ops.random.uniform(p_target.type)
-        rejected = coins >= p_target
-
-        first_rejected_idx = ops.squeeze(
-            _find_first_rejected(rejected, self.device), axis=-1
-        )
-
-        recovered_token_ids = _multinomial(target_probs)
-
-        bonus_token_ids = topk_fused_sampling(
-            logits=bonus_logits,
-            top_k=top_k,
-            max_k=max_k,
-            temperature=temperature,
-            top_p=top_p,
-            min_top_p=min_top_p,
-        )
-
-        return first_rejected_idx, recovered_token_ids, bonus_token_ids.tensor
+    return first_rejected_idx, recovered_token_ids, bonus_token_ids.tensor
 
 
 class RejectionSamplerWithResiduals(Module):
