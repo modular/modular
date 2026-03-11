@@ -132,11 +132,6 @@ const maxSidebars = {
       collapsed : false,
       items : [
         {
-          id : "pixi",
-          type : "doc",
-          className : "external-link",
-        },
-        {
           label : "max CLI",
           type : "category",
           collapsed : true,
