@@ -1,0 +1,33 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// KGEN diagnostic definitions. Format: DIAG(ID, Category, Component, Message)
+//
+//   ID        — snake_case identifier (becomes DiagID::id)
+//   Category  — Error | Warning | Note
+//   Component — Parser | Type | MLIR | Dialect | Trait | Lifetime | Kernel | CodeGen
+//   Message   — template with {0},{1},... placeholders
+//
+// Grouped by Component, then Category (Errors, Warnings, Notes), sorted by ID.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef DIAG
+#define DIAG(ID, Category, Component, Message)
+#endif
+
+//===----------------------------------------------------------------------===//
+// CodeGen — code generation, lowering, and LLVM emission
+//===----------------------------------------------------------------------===//
+
+// Errors
+
+DIAG(err_sccp_can_only_run_operations, Error, CodeGen,
+     "'sccp' can only be run on operations with all single block regions")
+
+// Warnings
+
+#undef DIAG
