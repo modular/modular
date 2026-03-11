@@ -32,9 +32,14 @@ from internal_utils import assert_almost_equal
 from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.tile_layout import row_major as tile_row_major
-from layout.tile_tensor import TileTensor
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major as tile_row_major,
+)
 from layout._utils import ManagedLayoutTensor
 
 from std.utils.index import Index, IndexList

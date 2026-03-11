@@ -48,9 +48,10 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
     row_major,
 )
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,

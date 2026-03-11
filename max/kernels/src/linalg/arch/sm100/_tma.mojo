@@ -22,10 +22,14 @@ from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
 )
-from layout.int_tuple import IntTuple, depth, to_index_list, product
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+)
+from layout.layout import blocked_product, zipped_divide
+from layout.int_tuple import depth, to_index_list, product
 from layout.runtime_tuple import to_index_list as runtime_tuple_to_index_list
-from layout.layout_tensor import LayoutTensor
-from layout.layout import Layout, zipped_divide, blocked_product
 from layout.copy import CopyPolicy
 from layout.tma_async import SharedMemBarrier
 from std.gpu.host import DeviceBuffer, DeviceContext

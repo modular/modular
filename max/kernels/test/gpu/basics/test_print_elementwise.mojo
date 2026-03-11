@@ -15,9 +15,8 @@ from std.sys import simd_width_of
 
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 
 from std.utils.index import IndexList
 

@@ -27,16 +27,18 @@ from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.dim import Dim
 from std.gpu.memory import AddressSpace, external_memory
-from layout.coord import (
+from layout import (
+    ComptimeInt,
     Coord,
     CoordLike,
     Idx,
     RuntimeInt,
-    ComptimeInt,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import TensorLayout, Layout
-from layout import TileTensor, row_major
+from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
 from std.memory import stack_allocation
 from std.os import Atomic

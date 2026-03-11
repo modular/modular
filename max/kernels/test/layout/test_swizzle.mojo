@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout.int_tuple import IntTuple, size
+from layout import IntTuple, Layout
+from layout.int_tuple import size
 from layout.layout import (
-    Layout,
     MakeTileLayoutList,
     coalesce,
     right_inverse,

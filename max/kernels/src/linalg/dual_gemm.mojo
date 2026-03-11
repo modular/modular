@@ -34,19 +34,15 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import Layout
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple, TileTensor
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
-from layout.tile_tensor import TileTensor
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from std.memory import memset_zero, stack_allocation
 from register import register_internal

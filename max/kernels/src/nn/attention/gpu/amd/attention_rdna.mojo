@@ -31,16 +31,21 @@ from std.sys import size_of, simd_width_of
 from std.algorithm.functional import unswitch
 from std.gpu import barrier, block_idx, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
-from layout import Layout, LayoutTensor, TileTensor, row_major as tt_row_major
-from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.int_tuple import UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major as tt_row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from layout.layout import blocked_product
+from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.layout_tensor import (
     ThreadScope,
     copy_dram_to_local,
     copy_local_to_dram,
 )
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
 from std.memory import stack_allocation

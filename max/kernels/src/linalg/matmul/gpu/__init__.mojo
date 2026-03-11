@@ -32,9 +32,7 @@ from std.gpu import barrier, block_dim, global_idx, thread_idx
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
-from layout import LayoutTensor, RuntimeLayout
-from layout.tile_layout import TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import LayoutTensor, RuntimeLayout, TensorLayout, TileTensor
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from std.logger import Logger

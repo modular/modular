@@ -19,8 +19,7 @@ for several shapes and scale values. Target runtime: < 30s on H100.
 from std.math import ceildiv
 from std.memory import bitcast
 from std.gpu.host import DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
+from layout import TileTensor, row_major
 from linalg.mxfp4_dequant import dequant_mxfp4
 from linalg.fp4_utils import E2M1_TO_FLOAT32
 

@@ -14,23 +14,21 @@
 
 from buffer import Dim, DimList
 from layout import (
-    Layout,
-    LayoutTensor,
-    UNKNOWN_VALUE,
-    RuntimeLayout,
-    TileTensor,
-    lt_to_tt,
-)
-from layout.coord import (
-    _DimsToCoordLike,
+    ComptimeInt,
     Coord,
     CoordLike,
-    ComptimeInt,
+    IntTuple,
+    LTToTTLayout,
+    Layout,
+    LayoutTensor,
     RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    lt_to_tt,
 )
-from layout.int_tuple import IntTuple
+from layout.coord import _DimsToCoordLike
 from layout.tile_layout import Layout as InternalLayout
-from layout.tile_tensor import LTToTTLayout
 from std.memory import UnsafePointer
 from std.utils.index import Index
 from std.testing import assert_equal

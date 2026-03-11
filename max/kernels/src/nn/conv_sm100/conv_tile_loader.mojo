@@ -21,7 +21,7 @@ on-the-fly during memory loads.
 
 from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
-from layout.tile_tensor import TileTensor, TensorLayout
+from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 
 

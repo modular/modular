@@ -30,16 +30,17 @@ from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeTuple,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.int_tuple import IntTuple
-from layout.layout_tensor import zipped_divide, upcast
-from layout.tile_layout import TensorLayout
+from layout.layout import zipped_divide
+from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile

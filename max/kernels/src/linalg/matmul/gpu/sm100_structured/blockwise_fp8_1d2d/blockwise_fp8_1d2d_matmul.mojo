@@ -37,10 +37,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import (
-    TileTensor,
-    flatten_leading,
-)
+from layout import TileTensor, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList

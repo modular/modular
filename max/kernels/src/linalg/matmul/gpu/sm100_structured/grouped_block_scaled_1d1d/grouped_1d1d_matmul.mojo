@@ -38,14 +38,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import (
-    Coord,
-    Idx,
-    RuntimeInt,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, RuntimeInt, RuntimeLayout, TileTensor, row_major
 from layout.tile_layout import Layout as TileLayout
 from structured_kernels.tile_types import create_tma_tile
 

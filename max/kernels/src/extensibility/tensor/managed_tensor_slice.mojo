@@ -32,8 +32,8 @@ from compiler_internal.directives import (
 from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, _DimsToCoordLike
+from layout import Coord, LayoutTensor, TileTensor
+from layout.coord import _DimsToCoordLike
 from layout.tile_layout import Layout as TileLayout
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr

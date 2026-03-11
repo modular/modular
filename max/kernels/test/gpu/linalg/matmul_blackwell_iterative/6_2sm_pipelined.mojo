@@ -37,12 +37,12 @@ from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
-    UNKNOWN_VALUE,
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter

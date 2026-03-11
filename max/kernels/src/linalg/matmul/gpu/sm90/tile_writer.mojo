@@ -31,7 +31,15 @@ Two main traits abstract these writing mechanisms:
 """
 
 from layout.tma_async import TMATensorTile
-from layout.layout_tensor import LayoutTensor, copy_sram_to_dram
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.layout_tensor import copy_sram_to_dram
 from std.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
 from ....structuring import (
@@ -45,14 +53,11 @@ from std.gpu import lane_id
 from std.sys import simd_width_of
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
-from layout import Layout
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
 from std.gpu.compute.mma import st_matrix
 from std.memory import bitcast
-from layout import RuntimeLayout, RuntimeTuple, IntTuple
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
-from layout.runtime_layout import UNKNOWN_VALUE
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from std.utils.index import IndexList
 from std.sys import align_of, size_of

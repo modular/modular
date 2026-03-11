@@ -33,8 +33,7 @@ from std.benchmark import (
 )
 from comm.sync import enable_p2p
 from std.gpu.host import DeviceBuffer, DeviceContext
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.math import ceildiv
 from shmem.ep import (
     ep_dispatch_async_kernel_api,

@@ -19,11 +19,10 @@ from std.gpu import (
     block_idx,
 )
 from std.gpu import warp_id as get_warp_id, WARP_SIZE
-from layout import IntTuple, Layout, LayoutTensor
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element
 from layout.layout_tensor import ThreadScope
-from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import num_matrix_reg
 from std.memory import AddressSpace as BaseAddressSpace
 from std.memory import stack_allocation

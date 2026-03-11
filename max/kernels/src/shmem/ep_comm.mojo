@@ -39,13 +39,15 @@ from std.gpu import (
 from std.gpu.host import get_gpu_target
 from std.gpu.intrinsics import Scope, load_acquire, store_release, threadfence
 from std.gpu.sync import syncwarp
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import (
-    UNKNOWN_VALUE,
+from layout import (
     IntTuple,
-    _get_index_type,
-    _get_layout_type,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
+from layout.int_tuple import _get_index_type, _get_layout_type
 from std.math import exp, recip
 from std.memory import stack_allocation
 from std.memory.unsafe import bitcast

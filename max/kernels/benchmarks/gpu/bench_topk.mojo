@@ -26,13 +26,7 @@ from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
 from std.testing import assert_almost_equal, assert_equal

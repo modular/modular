@@ -52,15 +52,15 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.int_tuple import IntTuple
 from layout.layout import blocked_product
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (

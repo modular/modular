@@ -26,7 +26,7 @@ The TileLoader struct abstracts these loading mechanisms to provide a unified
 interface for the matmul kernel's producer threads.
 """
 from layout.tma_async import TMATensorTile, _idx_product
-from layout.layout_tensor import LayoutTensor
+from layout import LayoutTensor
 from std.gpu.memory import (
     AddressSpace,
     async_copy,

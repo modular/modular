@@ -38,8 +38,7 @@ from std.gpu import (
     thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext
-from layout.tile_layout import TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import TensorLayout, TileTensor
 
 
 # ---------------------------------------------------------------------------

@@ -51,15 +51,15 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
-from layout.int_tuple import IntTuple
-from layout.layout import flatten, coalesce
-from layout.layout_tensor import zipped_divide, upcast
+from layout.layout import flatten, coalesce, zipped_divide
+from layout.layout_tensor import upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (

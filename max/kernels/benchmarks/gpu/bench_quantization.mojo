@@ -29,11 +29,11 @@ from std.benchmark import (
 from std.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from layout._fillers import random
 from std.gpu.host.info import B200

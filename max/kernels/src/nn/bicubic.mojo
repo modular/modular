@@ -23,12 +23,12 @@ from std.gpu import block_dim, block_idx, thread_idx
 from layout import (
     Coord,
     Idx,
+    TensorLayout,
     TileTensor,
     coord,
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import TensorLayout
 from std.runtime.asyncrt import DeviceContextPtr
 from std.utils import Index
 from std.itertools import product

@@ -27,10 +27,14 @@ from std.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from layout import Layout, LayoutTensor, IntTuple
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    UNKNOWN_VALUE,
+)
 from layout.layout import blocked_product
 from layout.layout_tensor import (
-    UNKNOWN_VALUE,
     LayoutTensorIter,
     ThreadScope,
     copy_local_to_shared,

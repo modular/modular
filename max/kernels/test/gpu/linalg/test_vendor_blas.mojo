@@ -18,9 +18,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from std.gpu import block_dim
 from std.gpu.host import DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
 

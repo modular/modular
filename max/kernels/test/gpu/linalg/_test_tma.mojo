@@ -16,7 +16,13 @@ from std.sys import size_of
 
 from std.gpu import barrier, block_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    print_layout,
+)
+from layout.layout import blocked_product, zipped_divide
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import SharedMemBarrier
@@ -25,8 +31,7 @@ from std.memory.pointer import _GPUAddressSpace
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
-from layout.int_tuple import IntTuple, product, depth, to_index_list
-from layout.layout import zipped_divide, blocked_product, print_layout
+from layout.int_tuple import product, depth, to_index_list
 
 from std.random import random_si64
 from linalg.arch.sm100._tma import (

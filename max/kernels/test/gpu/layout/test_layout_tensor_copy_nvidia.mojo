@@ -26,8 +26,6 @@ from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
-    UNKNOWN_VALUE,
-    LayoutTensor,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_dram_to_sram_async,

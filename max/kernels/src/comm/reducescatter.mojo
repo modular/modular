@@ -17,8 +17,8 @@ from std.collections import InlineArray
 from std.collections.optional import Optional
 from std.builtin.variadics import Variadic
 
-from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import TensorLayout, Layout
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

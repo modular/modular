@@ -52,18 +52,24 @@ from std.gpu.memory import (
     external_memory,
 )
 from kv_cache.types import KVCacheT
-from layout import Layout, TileTensor, row_major
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout.layout import *
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.bmm import batched_matmul

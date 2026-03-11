@@ -20,11 +20,8 @@ from std.sys import align_of, argv, simd_width_of
 import std.benchmark
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from layout import Layout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
-from layout.layout_tensor import LayoutTensor
-from layout.runtime_layout import RuntimeLayout
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils import elementwise_epilogue_type

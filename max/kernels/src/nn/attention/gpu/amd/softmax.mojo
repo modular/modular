@@ -20,9 +20,14 @@ from std.gpu import (
     thread_idx,
     warp_id as get_warp_id,
 )
-from layout import Layout, LayoutTensor, TileTensor, row_major as tt_row_major
+from layout import (
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    row_major as tt_row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from layout._utils import idx2crd
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from nn.softmax import _exp2_concrete, _exp_concrete
 
 

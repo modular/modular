@@ -13,12 +13,7 @@
 
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from std.random import rand
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,

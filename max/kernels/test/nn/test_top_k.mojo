@@ -15,9 +15,9 @@
 from std.math import iota
 from std.random import rand, seed
 
-from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
-from layout import TileTensor, row_major
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 

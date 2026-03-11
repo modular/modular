@@ -33,11 +33,11 @@ from std.gpu.sync import syncwarp
 from layout import (
     Coord,
     Idx,
+    TensorLayout,
     TileTensor,
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import TensorLayout
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 

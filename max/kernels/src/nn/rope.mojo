@@ -24,11 +24,12 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    RowMajorLayout,
     RuntimeInt,
+    TensorLayout,
     TileTensor,
     coord,
 )
-from layout.tile_layout import TensorLayout, RowMajorLayout
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList

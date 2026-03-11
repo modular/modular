@@ -50,12 +50,12 @@ from std.gpu.primitives.grid_controls import (
 
 # layout imports
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
     TileTensor,
+    UNKNOWN_VALUE,
 )
 from std.logger import Logger
 from std.memory import stack_allocation

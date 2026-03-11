@@ -18,9 +18,7 @@ from std.math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from layout import TileTensor
-from layout.tile_layout import row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from std.utils import IndexList
 

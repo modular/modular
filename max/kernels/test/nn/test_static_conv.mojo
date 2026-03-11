@@ -16,7 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.itertools import product
-from layout import IntTuple, LayoutTensor, RuntimeLayout, Layout
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,

@@ -34,11 +34,12 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    TensorLayout,
     TileTensor,
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import TensorLayout, Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from std.utils.index import StaticTuple

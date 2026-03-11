@@ -51,6 +51,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major as new_row_major,
 )
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -58,7 +59,6 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from layout.tile_layout import row_major as new_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
 )

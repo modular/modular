@@ -14,7 +14,7 @@
 """Test FP8 E4M3FN to E4M3FNUZ conversion kernel."""
 
 from std.gpu.host import DeviceContext
-from layout import TileTensor, row_major, Coord, RuntimeInt
+from layout import Coord, RuntimeInt, TileTensor, row_major
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from std.testing import assert_equal
 

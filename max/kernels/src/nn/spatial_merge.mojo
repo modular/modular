@@ -13,8 +13,8 @@
 
 from std.gpu import block_dim, block_idx_int as block_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import TensorLayout, Layout
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout.tile_layout import Layout
 from std.utils.index import Index, IndexList
 
 

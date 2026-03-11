@@ -20,7 +20,7 @@ from std.gpu.memory import (
 )
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import Layout, LayoutTensor
+from layout import Layout, LayoutTensor
 from std.testing import assert_true
 
 

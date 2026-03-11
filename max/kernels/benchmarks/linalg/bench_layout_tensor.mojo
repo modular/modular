@@ -20,7 +20,6 @@ import std.benchmark
 from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
 from std.algorithm import sync_parallelize, vectorize
 from layout import *
-from layout.layout_tensor import LayoutTensor
 from std.memory import memset_zero
 from std.python import Python
 

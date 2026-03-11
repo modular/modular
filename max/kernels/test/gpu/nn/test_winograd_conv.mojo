@@ -25,7 +25,7 @@ from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import product
 from layout._fillers import random
 from nn.conv import conv_gpu

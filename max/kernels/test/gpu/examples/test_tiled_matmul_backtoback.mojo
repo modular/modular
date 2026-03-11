@@ -31,9 +31,8 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.memory import external_memory
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import size
 from layout.layout_tensor import (
     LayoutTensorIter,

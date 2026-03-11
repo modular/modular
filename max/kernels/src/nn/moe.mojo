@@ -36,11 +36,12 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
     row_major,
+    stack_allocation as tensor_alloc,
 )
-from layout.tile_layout import TensorLayout
-from layout.tile_tensor import TileTensor, stack_allocation as tensor_alloc
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel
 

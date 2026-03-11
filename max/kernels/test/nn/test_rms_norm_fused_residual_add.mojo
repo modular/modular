@@ -15,13 +15,7 @@ from std.math import sqrt
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import elementwise
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout._fillers import random
 from std.memory import alloc
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu

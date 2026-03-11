@@ -35,17 +35,20 @@ from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace, external_memory
 from std.random import Random
-from layout.coord import (
+from layout import (
     ComptimeInt,
     Coord,
     CoordLike,
-    DynamicCoord,
     Idx,
+    RowMajorLayout,
     RuntimeInt,
+    TensorLayout,
+    TileTensor,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import TensorLayout, Layout, RowMajorLayout
-from layout import TileTensor, row_major
+from layout.coord import DynamicCoord
+from layout.tile_layout import Layout
 from std.math import log2
 from std.memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index

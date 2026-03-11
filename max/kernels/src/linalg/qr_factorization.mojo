@@ -14,8 +14,7 @@
 from std.math import copysign, sqrt
 from std.os import abort
 
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor
 
 
 fn qr_factorization[

@@ -18,14 +18,13 @@ from std.math import ceildiv
 from layout import (
     Idx,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
-    TileTensor,
     TensorLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.layout_tensor import LayoutTensor
-from layout.tile_layout import TensorLayout
 
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute

@@ -36,20 +36,18 @@ from std.gpu import (
 from std.gpu.host import DeviceAttribute, DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from layout._utils import idx2crd
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
 from layout import (
     Coord,
     Idx,
+    Layout,
+    LayoutTensor,
+    RowMajorLayout,
     RuntimeInt,
+    TensorLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
-)
-from layout.tile_layout import RowMajorLayout
-from layout.tile_tensor import (
-    TileTensor,
-    TensorLayout,
     stack_allocation as tt_stack_allocation,
 )
 from layout.tensor_core import get_fragment_size

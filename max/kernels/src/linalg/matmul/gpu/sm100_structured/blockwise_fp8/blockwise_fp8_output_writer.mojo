@@ -32,15 +32,17 @@ from std.gpu.sync import named_barrier
 from layout import (
     Coord,
     Idx,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeTuple,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.int_tuple import IntTuple
-from layout.layout_tensor import zipped_divide, upcast
+from layout.layout import zipped_divide
+from layout.layout_tensor import upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
@@ -55,7 +57,6 @@ from ..structured_kernels.epilogue_components import (
     tma_wait_pipelined,
 )
 from structured_kernels.barriers import WarpGroupBarrier
-from layout.tile_layout import TensorLayout
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 

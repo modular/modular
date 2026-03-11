@@ -23,9 +23,7 @@ Verifies correct behavior for:
 from std.math import clamp, floor, sin, cos
 
 from std.gpu.host import DeviceContext
-from layout.coord import Idx
-from layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import Idx, TileTensor, row_major
 from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
 from std.testing import assert_almost_equal
 

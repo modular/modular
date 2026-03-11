@@ -42,8 +42,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout.tile_layout import row_major as tile_row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor, row_major as tile_row_major
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

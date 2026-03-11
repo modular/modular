@@ -18,7 +18,7 @@ from std.sys import argv, has_amd_gpu_accelerator
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,

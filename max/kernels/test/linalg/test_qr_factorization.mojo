@@ -15,7 +15,7 @@ from std.os import abort
 from std.random import rand, seed
 
 import internal_utils
-from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from linalg.qr_factorization import form_q, qr_factorization
 from std.memory import alloc, memcpy
 from std.testing import assert_almost_equal

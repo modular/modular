@@ -13,9 +13,15 @@
 
 from std.math import sqrt
 
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import arange, random
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
 
 from std.utils import IndexList

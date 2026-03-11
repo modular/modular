@@ -11,18 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import LayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import coalesce as coalesce_layout
-from layout.layout import crd2idx
-from layout.runtime_layout import (
+from layout import (
     IntTuple,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    coalesce,
-    make_layout,
+    UNKNOWN_VALUE,
 )
+from layout.layout import coalesce as coalesce_layout
+from layout.layout import crd2idx
+from layout.runtime_layout import coalesce, make_layout
 from std.testing import assert_equal
 
 

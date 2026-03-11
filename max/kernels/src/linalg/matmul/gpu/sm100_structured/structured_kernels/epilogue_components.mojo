@@ -31,19 +31,19 @@ from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
+    Coord,
+    Idx,
+    IntTuple,
     Layout,
     RuntimeLayout,
     RuntimeTuple,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.int_tuple import IntTuple
-from layout.tile_layout import (
-    Layout as InternalLayout,
-    TensorLayout,
-)
-from layout.layout import blocked_product, zipped_divide, upcast
+from layout.tile_layout import Layout as InternalLayout
+from layout.layout import blocked_product, upcast, zipped_divide
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
@@ -185,7 +185,6 @@ fn store_fragment_to_smem[
     comptime if transpose_c:
         # Use new Layout directly instead of RuntimeLayout wrapper
         from layout.tile_layout import Layout as NewLayout
-        from layout import Coord, Idx
 
         comptime trans_layout = NewLayout(
             Coord(Idx[8](), Idx[2](), Idx[2]()),
@@ -242,7 +241,6 @@ fn store_fragment_to_smem[
     """Store fragment to SMEM via st.matrix."""
     from std.gpu.compute.mma import st_matrix
     from std.memory import bitcast
-    from layout import Coord, Idx
 
     comptime c_type = dst.dtype
     comptime stsmx_row_size = 32 // size_of[
@@ -716,7 +714,6 @@ struct TMAStoreExecutor[
         warp_id: UInt32,
     ):
         """Transpose TMA store using reshape."""
-        from layout import Coord, Idx
 
         comptime if Self.cta_group == 2 and Self.MMA_M == 128:
             # Path A: reshape to (2*stageN, sc_size//2), tile by warp
@@ -1532,7 +1529,6 @@ struct TMEMToSMemWriter[
         - Small swizzle (SWIZZLE_32B): each warp fragment fits within its own
           swizzle block, using simple tiles_per_frag tiling.
         """
-        from layout import Coord, Idx
 
         # SWIZZLE_128B: swizzle_width=64 > data_paths=16 → True
         # SWIZZLE_32B:  swizzle_width=16 == data_paths=16 → False
@@ -1671,7 +1667,6 @@ struct TMEMToSMemWriter[
         c_smem_tile: TileTensor[address_space=AddressSpace.SHARED, ...],
     ):
         """Non-transposed output."""
-        from layout import Coord, Idx
 
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](

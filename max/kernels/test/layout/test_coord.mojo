@@ -18,14 +18,9 @@ from std.sys.intrinsics import _type_is_eq
 
 from std.builtin.variadics import Variadic
 
+from layout import ComptimeInt, Coord, CoordLike, Idx, RuntimeInt, coord
 from layout.coord import (
-    ComptimeInt,
-    CoordLike,
-    Idx,
-    Coord,
-    RuntimeInt,
     coord_to_int_tuple,
-    coord,
     idx2crd,
     _DimsToCoordLike,
     _Idx2CrdResultTypes,

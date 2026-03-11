@@ -28,14 +28,15 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    Layout as LegacyLayout,
     LayoutTensor,
+    Layout as LegacyLayout,
+    RowMajorLayout,
     RuntimeInt,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     row_major,
 )
-from layout.tile_layout import RowMajorLayout, TensorLayout
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 

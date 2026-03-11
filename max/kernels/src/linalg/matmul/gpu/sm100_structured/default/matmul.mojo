@@ -30,13 +30,11 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    RowMajorLayout,
     RuntimeInt,
+    TensorLayout,
     TileTensor,
     row_major,
-)
-from layout.tile_layout import (
-    RowMajorLayout,
-    TensorLayout,
     row_major as tt_row_major,
 )
 from structured_kernels.tile_types import create_tma_tile

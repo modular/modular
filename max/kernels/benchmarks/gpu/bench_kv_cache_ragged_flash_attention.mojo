@@ -30,7 +30,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from std.memory import UnsafePointer
-from layout import UNKNOWN_VALUE, LayoutTensor, Layout, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout.layout import *
 from nn.mha import flash_attention, flash_attention_ragged

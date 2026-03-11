@@ -53,7 +53,7 @@ from layout.tma_async import create_tensor_tile_im2col
 from structured_kernels.tile_types import (
     create_tma_tile,
 )
-from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
+from layout import LayoutTensor, Layout as LegacyLayout, RuntimeLayout
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,

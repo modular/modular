@@ -13,12 +13,7 @@
 
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-)
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import alloc
 from state_space.selective_scan import (

@@ -15,7 +15,7 @@
 import std.sys
 
 from std.gpu.host.compile import _compile_code, get_gpu_target
-from layout import ComptimeInt, Idx, Coord, RuntimeInt
+from layout import ComptimeInt, Coord, Idx, RuntimeInt
 from std.testing import assert_true
 
 

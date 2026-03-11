@@ -16,11 +16,11 @@ from std.sys.info import simd_width_of
 
 from std.gpu.host import DeviceContext
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
 )
 from std.random import rand
 from std.memory import alloc

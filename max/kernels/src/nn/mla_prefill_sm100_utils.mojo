@@ -42,11 +42,13 @@ from nn.mha_fa3_utils import (
 )
 from nn.mha_utils import OptionallyStaticInt, MHAPartitionScheme
 
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from layout.tma_async import RaggedTMA3DTile, PipelineState
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
-from layout import row_major
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 

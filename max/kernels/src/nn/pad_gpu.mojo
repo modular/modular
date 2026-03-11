@@ -18,8 +18,8 @@ from std.gpu import (
     thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import TensorLayout, Layout
+from layout import Coord, Idx, TensorLayout, TileTensor
+from layout.tile_layout import Layout
 from std.math import ceildiv
 from std.sys.info import align_of
 from std.utils.index import IndexList

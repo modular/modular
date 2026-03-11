@@ -33,10 +33,8 @@ from std.gpu.host.info import H100
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory
 from std.gpu.sync import named_barrier
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
-from layout.layout import Layout
+from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.layout_tensor import (
-    LayoutTensor,
     LayoutTensorIter,
     copy_local_to_shared,
     copy_sram_to_dram,

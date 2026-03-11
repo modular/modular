@@ -26,7 +26,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList

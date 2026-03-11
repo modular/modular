@@ -18,10 +18,9 @@ from std.sys import CompilationTarget, argv, simd_width_of, size_of
 
 import std.benchmark
 from std.algorithm.functional import vectorize
-from layout import Layout, RuntimeLayout
-from layout.int_tuple import IntTuple, size
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout.int_tuple import size
 from layout.layout import expand_modes_alike, flatten
-from layout.layout_tensor import LayoutTensor
 from std.memory import alloc, stack_allocation
 from std.testing import assert_false
 

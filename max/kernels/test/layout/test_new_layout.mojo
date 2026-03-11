@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout.tile_layout import (
-    Layout,
-    ZippedDivideLayout,
-    BlockedProductLayout,
-    col_major,
-    blocked_product,
-)
 from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    IntTuple,
     RuntimeInt,
     TileTensor,
+    col_major,
     row_major,
 )
-from layout.int_tuple import IntTuple
+from layout.tile_layout import (
+    Layout,
+    ZippedDivideLayout,
+    BlockedProductLayout,
+    blocked_product,
+)
 from std.testing import assert_equal, assert_true, TestSuite
 
 

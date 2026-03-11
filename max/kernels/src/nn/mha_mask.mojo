@@ -14,7 +14,7 @@
 from std.utils import StaticTuple
 from std.math import iota, ceildiv
 from std.sys import is_nvidia_gpu
-from layout import LayoutTensor, Layout, UNKNOWN_VALUE
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from std.collections import OptionalReg
 from std.utils.index import IndexList, Index
 from std.builtin.device_passable import DevicePassable

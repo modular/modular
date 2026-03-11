@@ -14,17 +14,18 @@
 from buffer import NDBuffer, Dim, DimList
 from std.gpu.memory import AddressSpace
 from std.utils.index import IndexList
-from layout.tile_layout import Layout, RowMajorLayout
 from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    IntTuple,
+    RowMajorLayout,
     RuntimeInt,
     TileTensor,
     row_major,
     stack_allocation,
 )
-from layout.int_tuple import IntTuple
+from layout.tile_layout import Layout
 from layout.swizzle import Swizzle
 from std.math import ceildiv
 from std.testing import (

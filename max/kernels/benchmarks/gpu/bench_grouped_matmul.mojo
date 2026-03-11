@@ -53,13 +53,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import (
-    Coord,
-    Idx,
-    RuntimeInt,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
