@@ -4752,6 +4752,7 @@ struct Conv:
     ) capturing raises:
         @parameter
         @always_inline
+        @__copy_capture(output)
         fn output_fn[
             _dtype: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
@@ -4939,6 +4940,7 @@ struct Conv2dResidualAdd:
     ) capturing raises:
         @parameter
         @always_inline
+        @__copy_capture(output, bias)
         fn output_fn[
             _dtype: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):

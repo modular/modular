@@ -1290,6 +1290,7 @@ fn test_conv_gpu_scale_epilogue[
 
     @parameter
     @always_inline
+    @__copy_capture(out_epilogue_tt)
     fn scale_epilogue[
         _dtype: DType, _rank: Int, _width: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
@@ -1431,6 +1432,7 @@ fn test_conv_gpu_additive_epilogue[
 
     @parameter
     @always_inline
+    @__copy_capture(out_epilogue_tt)
     fn add_bias_epilogue[
         _dtype: DType, _rank: Int, _width: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):

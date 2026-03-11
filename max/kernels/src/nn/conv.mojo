@@ -3846,6 +3846,7 @@ fn conv_gpu[
 
                     @parameter
                     @always_inline
+                    @__copy_capture(hw, out_w)
                     fn sm100_void_epilogue[
                         _dtype: DType,
                         _width: Int,
