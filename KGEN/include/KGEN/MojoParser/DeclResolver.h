@@ -153,6 +153,21 @@ private:
                                StringAttr declNameInModule = StringAttr(),
                                bool allowMultipleWithSameName = false);
 
+  /// Check whether \p incoming decls can coexist in scope with \p existing
+  /// decls under the same naming rules as local declarations
+  /// (attachDeclToParentNameTable):
+  ///   - Functions form overload sets; multiple FnOps with the same name are
+  ///     allowed.
+  ///   - A struct and its extensions may share a name (single namespace).
+  ///   - Everything else conflicts: fn+non-fn, non-fn+fn, non-fn+non-fn.
+  ///
+  /// Returns failure() if a conflict is found, regardless of emitDiagnostics.
+  /// emitDiagnostics only gates whether an error is reported to the user.
+  LogicalResult checkImportNamingConflict(ArrayRef<ASTDecl *> incoming,
+                                          ArrayRef<ASTDecl *> existing,
+                                          StringAttr name, llvm::SMLoc aliasLoc,
+                                          bool emitDiagnostics);
+
 public:
   /// Import the given module into the provided destination. If isLeafBinding
   /// is true, the import is a dotted `import a.b` without `as`; unqualified

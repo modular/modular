@@ -9,11 +9,6 @@
 comptime StringLiteralAlias = __mlir_attr.`"foobar" : !kgen.string`
 
 
-# COM: AnyType stub to allow testing without builtins.
-trait AnyType:
-    pass
-
-
 trait Trait:
     pass
 
