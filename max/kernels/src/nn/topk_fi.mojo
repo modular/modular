@@ -1061,14 +1061,15 @@ fn TopKTopPSamplingFromProbKernel[
 
         if (
             aggregate_gt_pivot_0.count < Int32(k)
-            and aggregate_gt_pivot_0.value < p
+            and aggregate_gt_pivot_0.value <= p
         ):
             # Case 1: pivot_0 accepted - count below k AND prob mass below p.
+            # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
             break
 
         if (
             aggregate_gt_pivot_1.count < Int32(k)
-            and aggregate_gt_pivot_1.value < p
+            and aggregate_gt_pivot_1.value <= p
         ):
             # Case 2: pivot_0 rejected, pivot_1 accepted.
             low = pivot_0
