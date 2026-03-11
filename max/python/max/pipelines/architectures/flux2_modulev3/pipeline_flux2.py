@@ -86,8 +86,8 @@ class Flux2ModelInputs:
     step_cache: bool = False
     """Enable step-cache runtime behavior."""
 
-    rdt: float = 0.08
-    """Relative difference threshold for cache reuse decisions."""
+    residual_threshold: float = 0.08
+    """Residual threshold for cache reuse decisions."""
 
     input_image: npt.NDArray[np.uint8] | None
     """Optional input image for image-to-image generation (HWC uint8)."""
@@ -258,7 +258,7 @@ class Flux2Pipeline(DiffusionPipeline):
             num_inference_steps=context.num_inference_steps,
             num_images_per_prompt=context.num_images_per_prompt,
             step_cache=getattr(context, "step_cache", False),
-            rdt=getattr(context, "rdt", 0.08),
+            residual_threshold=context.residual_threshold,
             input_image=context.input_image,
         )
 
@@ -761,7 +761,7 @@ class Flux2Pipeline(DiffusionPipeline):
             )
             rdt_tensor = Tensor.full(
                 [1],
-                model_inputs.rdt,
+                model_inputs.residual_threshold,
                 device=device,
                 dtype=DType.float32,
             )

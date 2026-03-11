@@ -172,10 +172,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Enable first-block step cache optimization.",
     )
     parser.add_argument(
-        "--rdt",
+        "--residual-threshold",
         type=float,
         default=None,
-        help="Relative-difference threshold for step cache.",
+        help="Residual threshold for step cache early stopping.",
     )
 
     args = parser.parse_args(argv)
@@ -190,8 +190,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "num-inference-steps must be a positive integer."
     )
     assert args.guidance_scale > 0.0, "guidance-scale must be positive."
-    if args.rdt is not None:
-        assert args.rdt >= 0.0, "rdt must be non-negative."
 
     return args
 
@@ -368,6 +366,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )
@@ -384,6 +387,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )
@@ -400,15 +408,14 @@ async def generate_image(args: argparse.Namespace) -> None:
     # Image is now extracted from the message content automatically
     context = await tokenizer.new_context(request)
     context.step_cache = args.step_cache
-    if args.rdt is not None:
-        context.rdt = args.rdt
 
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
     )
     if args.step_cache:
-        rdt_info = f", rdt={args.rdt}" if args.rdt is not None else ""
-        print(f"Step cache enabled{rdt_info}.")
+        print(
+            f"Step cache enabled, residual_threshold={context.residual_threshold}."
+        )
 
     # Step 6: Prepare inputs for the pipeline
     # Create a batch with a single context
@@ -430,6 +437,11 @@ async def generate_image(args: argparse.Namespace) -> None:
                     width=args.width,
                     steps=args.num_inference_steps,
                     guidance_scale=args.guidance_scale,
+                    **(
+                        {"residual_threshold": args.residual_threshold}
+                        if args.residual_threshold is not None
+                        else {}
+                    ),
                 )
             ),
         )
@@ -441,8 +453,6 @@ async def generate_image(args: argparse.Namespace) -> None:
             request_warmup, input_image=input_image
         )
         context_warmup.step_cache = args.step_cache
-        if args.rdt is not None:
-            context_warmup.rdt = args.rdt
         inputs_warmup = PixelGenerationInputs[PixelContext](
             batch={context_warmup.request_id: context_warmup}
         )
