@@ -43,16 +43,16 @@ M::AsyncRT::Globals::getRuntimeTableSingleton(
 MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment,
                                                  size_t size) {
 #if defined(__APPLE__)
-  return ::tc_new_aligned(size, std::align_val_t(alignment));
+  return ::tc_memalign(alignment, size);
 #else
-  return TCMallocInternalNewAligned(size, std::align_val_t(alignment));
+  return TCMallocInternalMemalign(alignment, size);
 #endif
 }
 MODULAR_CXX_EXPORT void TCMallocGlobals::tc_delete(void *ptr) {
 #if defined(__APPLE__)
-  return ::tc_delete(ptr);
+  return ::tc_free(ptr);
 #else
-  return TCMallocInternalDelete(ptr);
+  return TCMallocInternalFree(ptr);
 #endif
 }
 
