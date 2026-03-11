@@ -1,6 +1,5 @@
 """Define bazel dependencies common to the internal and external repos."""
 
-bazel_dep(name = "abseil-cpp", version = "20250512.1")
 bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
@@ -25,11 +24,6 @@ bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 
 # TODO: Remove when transitives bump to this version or above
 bazel_dep(name = "rules_nodejs", version = "6.5.0")
-
-single_version_override(
-    module_name = "abseil-cpp",
-    version = "20250512.1",
-)
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
