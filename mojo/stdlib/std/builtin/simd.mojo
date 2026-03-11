@@ -2163,7 +2163,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the SIMD value".
+        """Write the string representation of the SIMD value.
 
         Args:
             writer: The value to write to.

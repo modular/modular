@@ -459,7 +459,7 @@ struct DType(
 
     @always_inline("nodebug")
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the DType".
+        """Write the string representation of the DType.
 
         Args:
             writer: The value to write to.
