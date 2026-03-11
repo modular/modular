@@ -152,6 +152,7 @@ class Flux2Pipeline(DiffusionPipeline):
         "transformer": Flux2TransformerModel,
     }
 
+    @traced
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
         # Store derived config/device references before unwrapping.
@@ -261,6 +262,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_image=context.input_image,
         )
 
+    @traced
     def build_preprocess_latents(self) -> None:
         device = self.transformer.devices[0]
         input_types = [
@@ -275,6 +277,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced
     def build_prepare_image_latents(self) -> None:
         dtype = self.vae.config.dtype
         device = self.vae.devices[0]
@@ -294,6 +297,7 @@ class Flux2Pipeline(DiffusionPipeline):
             ],
         )
 
+    @traced
     def build_prepare_scheduler(self) -> None:
         input_types = [
             TensorType(
@@ -307,6 +311,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced
     def build_scheduler_step(self) -> None:
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
@@ -324,6 +329,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced
     def build_concat_image_latents(self) -> None:
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
@@ -344,6 +350,7 @@ class Flux2Pipeline(DiffusionPipeline):
             input_types=input_types,
         )
 
+    @traced
     def build_decode_latents(self) -> None:
         device = self.transformer.devices[0]
         self._bn_mean: Tensor = self.vae.bn.running_mean

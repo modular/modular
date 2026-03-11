@@ -61,11 +61,13 @@ class Flux2KleinPipeline(Flux2Pipeline):
         "transformer": Flux2Pipeline.components["transformer"],
     }
 
+    @traced
     def init_remaining_components(self) -> None:
         """Initialize derived attributes, including the compiled CFG combine."""
         super().init_remaining_components()
         self.build_cfg_combine()
 
+    @traced
     def build_cfg_combine(self) -> None:
         """Compile the CFG combine formula with symbolic shapes."""
         dtype = self.transformer.config.dtype

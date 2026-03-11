@@ -20,6 +20,7 @@ from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.profiler import traced
 
 from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
@@ -52,6 +53,7 @@ class Flux2TransformerModel(ComponentModel):
         )
         self.load_model()
 
+    @traced
     def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
         self._state_dict = state_dict
@@ -77,6 +79,7 @@ class Flux2TransformerModel(ComponentModel):
         self.model = self._model_not_loaded
         return self.model
 
+    @traced
     def _ensure_standard_model(self) -> Callable[..., Any]:
         if self._standard_model is None:
             self._standard_model = self._flux_model.compile(
@@ -85,6 +88,7 @@ class Flux2TransformerModel(ComponentModel):
             )
         return self._standard_model
 
+    @traced
     def _ensure_step_cache_model(self) -> Callable[..., Any]:
         if self._step_cache_model is None:
             assert self._flux_model is not None
