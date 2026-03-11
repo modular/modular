@@ -376,38 +376,6 @@ struct Span[
                 return True
         return False
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__[U: Writable, //](self: Span[U, _]) -> String:
-        """Returns a string representation of a `Span`.
-
-        Parameters:
-            U: The type of the elements in the span. Must implement the
-              trait `Representable`.
-
-        Returns:
-            A string representation of the span.
-
-        Notes:
-            Note that since we can't condition methods on a trait yet,
-            the way to call this method is a bit special. Here is an example
-            below:
-
-            ```mojo
-            var my_list = [1, 2, 3]
-            var my_span = Span(my_list)
-            print(my_span.__str__())
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `String(my_span)` will be enough.
-        """
-        # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
-        var l = len(self)
-        var output = String(capacity=l + 2 * (l - 1) * Int(l > 1) + 3)
-        self.write_to(output)
-        return output^
-
     fn _write_self_to[
         f: fn(Self.T, mut Some[Writer])
     ](self, mut writer: Some[Writer]):
@@ -453,33 +421,6 @@ struct Span[
             fmt.Named("mut", Self.mut),
             fmt.TypeNames[Self.T](),
         ).fields[FieldsFn=write_fields]()
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__[U: Writable, //](self: Span[U, _]) -> String:
-        """Returns a string representation of a `Span`.
-
-        Parameters:
-            U: The type of the elements in the span. Must implement the
-              trait `Writable`.
-
-        Returns:
-            A string representation of the span.
-
-        Notes:
-            Note that since we can't condition methods on a trait yet, the way
-            to call this method is a bit special. Here is an example below:
-
-            ```mojo
-            var my_list = [1, 2, 3]
-            var my_span = Span(my_list)
-            print(my_span.__repr__())
-            ```
-
-            When the compiler supports conditional methods, then a simple
-            `repr(my_span)` will be enough.
-        """
-        return String.write(self)
 
     # ===------------------------------------------------------------------===#
     # Methods

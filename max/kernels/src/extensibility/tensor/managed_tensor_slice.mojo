@@ -1225,25 +1225,14 @@ struct ManagedTensorSlice[
         writer.write(", address_space = ", self.address_space)
         writer.write("}")
 
-    @no_inline
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Gets the buffer as a string.
-
-        Returns:
-          A compact string representation of the buffer.
+    fn write_repr_to(self, mut writer: Some[Writer]):
         """
-        return String.write(self)
+        Formats this buffer to the provided Writer.
 
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Gets the buffer as a string.
-
-        Returns:
-          A compact string of the buffer.
+        Args:
+            writer: The object to write to.
         """
-        return String.write(self)
+        self.write_to(writer)
 
 
 fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:

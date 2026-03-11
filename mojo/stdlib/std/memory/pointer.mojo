@@ -104,16 +104,6 @@ struct AddressSpace(
         """
         return self._value == other._value
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @always_inline("nodebug")
-    fn __str__(self) -> String:
-        """Gets a string representation of the AddressSpace.
-
-        Returns:
-            The string representation of the AddressSpace.
-        """
-        return String.write(self)
-
     @always_inline("nodebug")
     fn write_to(self, mut writer: Some[Writer]):
         """Formats the address space to the provided Writer.
@@ -334,16 +324,6 @@ struct Pointer[
             True if the two pointers are not equal and False otherwise.
         """
         return not (self == rhs)
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Gets a string representation of the Pointer.
-
-        Returns:
-            The string representation of the Pointer.
-        """
-        return String(UnsafePointer(to=self[]))
 
     fn write_to(self, mut writer: Some[Writer]):
         """Formats this pointer address to the provided Writer.

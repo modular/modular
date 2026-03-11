@@ -352,10 +352,6 @@ struct MatmulConfig[
             num_split_k=self.num_split_k,
         )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
         _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
@@ -378,9 +374,8 @@ struct MatmulConfig[
             self.num_split_k,
         )
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
 fn choose_config[
@@ -713,10 +708,6 @@ struct BlockScaledMatmulConfig[
             scaling_kind=self.scaling_kind,
         )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("kernel_")
         writer.write(self.scaling_kind, "_")
@@ -744,9 +735,8 @@ struct BlockScaledMatmulConfig[
             self.num_split_k,
         )
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
 fn choose_block_scaled_config[

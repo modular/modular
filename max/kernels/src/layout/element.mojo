@@ -568,16 +568,6 @@ struct Element[
                 )
 
     @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of the element.
-
-        Returns:
-            A string representation of the element's data.
-        """
-        return String.write(self)
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the element to the specified writer.
 

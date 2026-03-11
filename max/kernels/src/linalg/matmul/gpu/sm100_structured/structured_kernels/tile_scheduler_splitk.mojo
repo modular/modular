@@ -61,11 +61,6 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     fn is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(

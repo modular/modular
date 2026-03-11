@@ -80,7 +80,7 @@ struct String(
     ```
 
     You can convert many Mojo types to a `String` because it's common to
-    implement the [`Stringable`](/mojo/std/builtin/str/Stringable) trait:
+    implement the [`Writable`](/mojo/std/format/Writable) trait:
 
     ```mojo
     var int : Int = 42
@@ -88,16 +88,16 @@ struct String(
     ```
 
     If you have a custom type you want to convert to a string, you can implement
-    the [`Stringable`](/mojo/std/builtin/str/Stringable) trait like this:
+    the [`Writable`](/mojo/std/format/Writable) trait like this:
 
     ```mojo
     @fieldwise_init
-    struct Person(Stringable):
+    struct Person(Writable):
         var name: String
         var age: Int
 
-        fn __str__(self) -> String:
-            return self.name + " (" + String(self.age) + ")"
+        fn write_to(self, mut writer: Some[Writer]):
+            t"{self.name} ({self.age})".write_to(writer)
 
     var person = Person("Alice", 30)
     print(String(person))      # => Alice (30)
@@ -1034,28 +1034,6 @@ struct String(
         ```
         """
         return self.byte_length()
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @always_inline("nodebug")
-    fn __str__(self) -> String:
-        """Gets the string itself.
-
-        This method ensures that you can pass a `String` to a method that
-        takes a `Stringable` value.
-
-        Returns:
-            The string itself.
-        """
-        return self
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Return a Mojo-compatible representation of the `String` instance.
-
-        Returns:
-            A new representation of the string.
-        """
-        return repr(StringSlice(self))
 
     @always_inline("nodebug")
     fn __fspath__(self) -> String:

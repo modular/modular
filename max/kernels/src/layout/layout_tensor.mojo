@@ -5755,21 +5755,6 @@ struct LayoutTensor[
                         self.ptr[idx + element_offset] = val
         return self
 
-    @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Convert the tensor to a string representation.
-
-        This method converts the tensor to a human-readable string
-        representation by writing its contents to a string. It delegates to the
-        `write_to` method which formats the tensor appropriately based on its
-        rank and shape.
-
-        Returns:
-            A string representation of the tensor.
-        """
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Format and write the tensor's contents to a writer.
 

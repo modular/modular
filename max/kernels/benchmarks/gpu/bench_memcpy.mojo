@@ -48,10 +48,6 @@ struct Config(ImplicitlyCopyable, Writable):
     comptime PEER_TO_PEER = Self(Self.P2P, False)
     comptime UNDEFINED = Self(-1, False)
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn __eq__(self, other: Self) -> Bool:
         return (
             self.direction == other.direction

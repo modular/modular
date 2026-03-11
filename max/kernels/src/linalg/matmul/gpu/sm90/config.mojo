@@ -249,10 +249,6 @@ struct MatmulConfig[
             and self.k_group_size == other.k_group_size
         )
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("MatmulConfig(\n")
         writer.write("  a_type: ", Self.a_type, "\n")
@@ -295,9 +291,8 @@ struct MatmulConfig[
         writer.write("  transpose_b: ", "K" if Self.transpose_b else "MN", "\n")
         writer.write(")")
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.

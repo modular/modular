@@ -61,20 +61,6 @@ struct Node[
         self.prev = prev.value() if prev else Self._NodePointer()
         self.next = next.value() if next else Self._NodePointer()
 
-    fn __str__[
-        _ElementType: Copyable & ImplicitlyDestructible & Writable
-    ](self: Node[_ElementType]) -> String:
-        """Convert this node's value to a string representation.
-
-        Parameters:
-            _ElementType: Used to conditionally enable this function if
-                `_ElementType` is `Writable`.
-
-        Returns:
-            String representation of the node's value.
-        """
-        return String.write(self.value)
-
     fn _into_value(deinit self) -> Self.ElementType:
         return self.value^
 
@@ -765,34 +751,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
-        """Convert the list to its string representation.
-
-        Returns:
-            String representation of the list.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        var writer = String()
-        self.write_to(writer)
-        return writer
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
-        """Convert the list to its string representation.
-
-        Returns:
-            String representation of the list.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        var writer = String()
-        self.write_repr_to(writer)
-        return writer
 
     fn write_to(
         self, mut writer: Some[Writer]

@@ -624,16 +624,6 @@ struct NDBuffer[
 
         return product
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Gets the buffer as a string.
-
-        Returns:
-          A compact string of the buffer.
-        """
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this buffer to the provided Writer.
@@ -657,15 +647,14 @@ struct NDBuffer[
 
         writer.write(")")
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String:
-        """Gets the buffer as a string.
-
-        Returns:
-          A compact string representation of the buffer.
+    fn write_repr_to(self, mut writer: Some[Writer]):
         """
-        return String.write(self)
+        Formats this buffer to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_to(writer)
 
     @always_inline
     fn _offset(

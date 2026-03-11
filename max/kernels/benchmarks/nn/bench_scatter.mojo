@@ -103,11 +103,6 @@ struct ScatterSpec(ImplicitlyCopyable, Writable):
     var n1: Int
     var n2: Int
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the scatter spec.
 

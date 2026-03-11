@@ -156,11 +156,6 @@ struct GroupedWorkInfo(
         """Get (m, n) tile coordinates as a tuple."""
         return (UInt(self.m), UInt(self.n))
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(

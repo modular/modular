@@ -165,13 +165,3 @@ struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
         writer.write("sh2: ", self._sh2, "\n")
         writer.write("is_pow2: ", self._is_pow2, "\n")
         writer.write("log2_shift: ", self._log2_shift, "\n")
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Get the object as a string.
-
-        Returns:
-            A string representation.
-        """
-        return String.write(self)

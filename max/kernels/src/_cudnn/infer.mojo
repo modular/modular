@@ -135,10 +135,6 @@ struct cudnnSoftmaxMode_t(
         abort("invalid cudnnSoftmaxMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnSoftmaxMode_t({self})")
 
@@ -189,10 +185,6 @@ struct cudnnReduceTensorIndices_t(
         if self is Self.CUDNN_REDUCE_TENSOR_FLATTENED_INDICES:
             return writer.write("CUDNN_REDUCE_TENSOR_FLATTENED_INDICES")
         abort("invalid cudnnReduceTensorIndices_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -388,10 +380,6 @@ struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnReduceTensorOp_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnReduceTensorOp_t({self})")
 
@@ -475,10 +463,6 @@ struct cudnnDeterminism_t(
         abort("invalid cudnnDeterminism_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnDeterminism_t({self})")
 
@@ -554,10 +538,6 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnStatus_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnStatus_t({self})")
 
@@ -589,10 +569,6 @@ struct cudnnCTCLossAlgo_t(
         if self is Self.CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC:
             return writer.write("CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC")
         abort("invalid cudnnCTCLossAlgo_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -652,10 +628,6 @@ struct cudnnTensorFormat_t(
         if self is Self.CUDNN_TENSOR_NCHW_VECT_C:
             return writer.write("CUDNN_TENSOR_NCHW_VECT_C")
         abort("invalid cudnnTensorFormat_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -812,10 +784,6 @@ struct cudnnNormAlgo_t(
         abort("invalid cudnnNormAlgo_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnNormAlgo_t({self})")
 
@@ -859,10 +827,6 @@ struct cudnnOpTensorOp_t(
         if self is Self.CUDNN_OP_TENSOR_NOT:
             return writer.write("CUDNN_OP_TENSOR_NOT")
         abort("invalid cudnnOpTensorOp_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1156,10 +1120,6 @@ struct cudnnActivationMode_t(
         abort("invalid cudnnActivationMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnActivationMode_t({self})")
 
@@ -1235,10 +1195,6 @@ struct cudnnConvolutionBwdDataAlgo_t(
         if self is Self.CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT:
             return writer.write("CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT")
         abort("invalid cudnnConvolutionBwdDataAlgo_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1318,10 +1274,6 @@ struct cudnnSamplerType_t(
         abort("invalid cudnnSamplerType_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnSamplerType_t({self})")
 
@@ -1380,10 +1332,6 @@ struct cudnnNormMode_t(
         if self is Self.CUDNN_NORM_PER_CHANNEL:
             return writer.write("CUDNN_NORM_PER_CHANNEL")
         abort("invalid cudnnNormMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1496,10 +1444,6 @@ struct cudnnNormOps_t(
         abort("invalid cudnnNormOps_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnNormOps_t({self})")
 
@@ -1566,10 +1510,6 @@ struct cudnnSoftmaxAlgorithm_t(
         if self is Self.CUDNN_SOFTMAX_LOG:
             return writer.write("CUDNN_SOFTMAX_LOG")
         abort("invalid cudnnSoftmaxAlgorithm_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1655,10 +1595,6 @@ struct cudnnBatchNormOps_t(
         abort("invalid cudnnBatchNormOps_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBatchNormOps_t({self})")
 
@@ -1711,10 +1647,6 @@ struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterPassable, Writable):
         if self is Self.CUDNN_CONVOLUTION_FWD_ALGO_COUNT:
             return writer.write("CUDNN_CONVOLUTION_FWD_ALGO_COUNT")
         abort("invalid cudnnConvolutionFwdAlgo_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1931,10 +1863,6 @@ struct cudnnLRNMode_t(
         abort("invalid cudnnLRNMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnLRNMode_t({self})")
 
@@ -2053,10 +1981,6 @@ struct cudnnFoldingDirection_t(
         abort("invalid cudnnFoldingDirection_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnFoldingDirection_t({self})")
 
@@ -2112,10 +2036,6 @@ struct cudnnErrQueryMode_t(
         if self is Self.CUDNN_ERRQUERY_BLOCKING:
             return writer.write("CUDNN_ERRQUERY_BLOCKING")
         abort("invalid cudnnErrQueryMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2268,10 +2188,6 @@ struct cudnnBatchNormMode_t(
         abort("invalid cudnnBatchNormMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBatchNormMode_t({self})")
 
@@ -2355,10 +2271,6 @@ struct cudnnSeverity_t(
         abort("invalid cudnnSeverity_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnSeverity_t({self})")
 
@@ -2401,10 +2313,6 @@ struct cudnnMathType_t(
         abort("invalid cudnnMathType_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnMathType_t({self})")
 
@@ -2436,10 +2344,6 @@ struct cudnnNanPropagation_t(
         if self is Self.CUDNN_PROPAGATE_NAN:
             return writer.write("CUDNN_PROPAGATE_NAN")
         abort("invalid cudnnNanPropagation_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2485,10 +2389,6 @@ struct cudnnRNNAlgo_t(
         if self is Self.CUDNN_RNN_ALGO_COUNT:
             return writer.write("CUDNN_RNN_ALGO_COUNT")
         abort("invalid cudnnRNNAlgo_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2636,10 +2536,6 @@ struct cudnnDataType_t(Equatable, TrivialRegisterPassable, Writable):
         if self is Self.CUDNN_DATA_FAST_FLOAT_FOR_FP8:
             return writer.write("CUDNN_DATA_FAST_FLOAT_FOR_FP8")
         abort("invalid cudnnDataType_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2802,10 +2698,6 @@ struct cudnnIndicesType_t(
         if self is Self.CUDNN_8BIT_INDICES:
             return writer.write("CUDNN_8BIT_INDICES")
         abort("invalid cudnnIndicesType_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -3094,10 +2986,6 @@ struct cudnnConvolutionBwdFilterAlgo_t(
         abort("invalid cudnnConvolutionBwdFilterAlgo_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnConvolutionBwdFilterAlgo_t({self})")
 
@@ -3233,10 +3121,6 @@ struct cudnnPoolingMode_t(
         abort("invalid cudnnPoolingMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnPoolingMode_t({self})")
 
@@ -3318,10 +3202,6 @@ struct cudnnDivNormMode_t(
         if self is Self.CUDNN_DIVNORM_PRECOMPUTED_MEANS:
             return writer.write("CUDNN_DIVNORM_PRECOMPUTED_MEANS")
         abort("invalid cudnnDivNormMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:

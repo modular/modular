@@ -58,10 +58,6 @@ struct Table[type: TuningConfig](Writable):
             keys.append(res)
         return is_valid
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the table as a string.
 

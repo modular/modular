@@ -108,16 +108,6 @@ struct ComplexSIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Get the complex as a string.
-
-        Returns:
-            A string representation.
-        """
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this complex value to the provided Writer.

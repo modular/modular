@@ -473,10 +473,6 @@ struct cudnnFusedOpsConstParamLabel_t(
         abort("invalid cudnnFusedOpsConstParamLabel_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnFusedOpsConstParamLabel_t({self})")
 
@@ -518,10 +514,6 @@ struct cudnnReorderType_t(
         if self is Self.CUDNN_NO_REORDER:
             return writer.write("CUDNN_NO_REORDER")
         abort("invalid cudnnReorderType_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -675,10 +667,6 @@ struct cudnnFusedOps_t(
         abort("invalid cudnnFusedOps_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnFusedOps_t({self})")
 
@@ -731,10 +719,6 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
         if self is Self.CUDNN_PTR_16B_ALIGNED:
             return writer.write("CUDNN_PTR_16B_ALIGNED")
         abort("invalid cudnnFusedOpsPointerPlaceHolder_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -913,10 +897,6 @@ struct cudnnFusedOpsVariantParamLabel_t(
         if self is Self.CUDNN_SCALAR_DOUBLE_BN_EPSILON:
             return writer.write("CUDNN_SCALAR_DOUBLE_BN_EPSILON")
         abort("invalid cudnnFusedOpsVariantParamLabel_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1341,10 +1321,6 @@ struct cudnnConvolutionMode_t(
         if self is Self.CUDNN_CROSS_CORRELATION:
             return writer.write("CUDNN_CROSS_CORRELATION")
         abort("invalid cudnnConvolutionMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:

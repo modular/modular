@@ -53,7 +53,7 @@ def main() raises:
     value = IntLike(42)
     print(Int(value) == 42)
 
-    # Stringable, Representable, Writable example
+    # Writable example
     dog = Dog("Rex", 5)
     print(repr(dog))
     print(dog)

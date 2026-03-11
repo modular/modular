@@ -87,16 +87,6 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
     var file_name: StaticString
     """The file name."""
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the source location.
-
-        Returns:
-            A string in the format "file_name:line:col".
-        """
-        return String.write(self)
-
     @no_inline
     fn prefix[T: Writable](self, msg: T) -> String:
         """Returns the given message prefixed with the source location.

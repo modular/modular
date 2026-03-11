@@ -215,10 +215,6 @@ struct cudnnBackendKnobType_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnBackendKnobType_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBackendKnobType_t({self})")
 
@@ -394,10 +390,6 @@ struct cudnnPointwiseMode_t(Equatable, TrivialRegisterPassable, Writable):
         abort("invalid cudnnPointwiseMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnPointwiseMode_t({self})")
 
@@ -560,10 +552,6 @@ struct cudnnBackendDescriptorType_t(
         abort("invalid cudnnBackendDescriptorType_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBackendDescriptorType_t({self})")
 
@@ -632,10 +620,6 @@ struct cudnnBackendBehaviorNote_t(
         abort("invalid cudnnBackendBehaviorNote_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBackendBehaviorNote_t({self})")
 
@@ -678,10 +662,6 @@ struct cudnnBackendLayoutType_t(
         abort("invalid cudnnBackendLayoutType_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBackendLayoutType_t({self})")
 
@@ -713,10 +693,6 @@ struct cudnnBackendNormFwdPhase_t(
         if self is Self.CUDNN_NORM_FWD_TRAINING:
             return writer.write("CUDNN_NORM_FWD_TRAINING")
         abort("invalid cudnnBackendNormFwdPhase_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -759,10 +735,6 @@ struct cudnnBackendHeurMode_t(
         if self is Self.CUDNN_HEUR_MODES_COUNT:
             return writer.write("CUDNN_HEUR_MODES_COUNT")
         abort("invalid cudnnBackendHeurMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -827,10 +799,6 @@ struct cudnnBackendNumericalNote_t(
         if self is Self.CUDNN_NUMERICAL_NOTE_TYPE_COUNT:
             return writer.write("CUDNN_NUMERICAL_NOTE_TYPE_COUNT")
         abort("invalid cudnnBackendNumericalNote_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -960,10 +928,6 @@ struct cudnnBackendAttributeType_t(
         abort("invalid cudnnBackendAttributeType_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBackendAttributeType_t({self})")
 
@@ -998,10 +962,6 @@ struct cudnnRngDistribution_t(
         if self is Self.CUDNN_RNG_DISTRIBUTION_NORMAL:
             return writer.write("CUDNN_RNG_DISTRIBUTION_NORMAL")
         abort("invalid cudnnRngDistribution_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1044,10 +1004,6 @@ struct cudnnBackendTensorReordering_t(
         if self is Self.CUDNN_TENSOR_REORDERING_F16x16:
             return writer.write("CUDNN_TENSOR_REORDERING_F16x16")
         abort("invalid cudnnBackendTensorReordering_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1813,10 +1769,6 @@ struct cudnnBackendAttributeName_t(
         abort("invalid cudnnBackendAttributeName_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBackendAttributeName_t({self})")
 
@@ -1859,10 +1811,6 @@ struct cudnnBackendNormMode_t(
         abort("invalid cudnnBackendNormMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBackendNormMode_t({self})")
 
@@ -1894,10 +1842,6 @@ struct cudnnSignalMode_t(
         if self is Self.CUDNN_SIGNAL_WAIT:
             return writer.write("CUDNN_SIGNAL_WAIT")
         abort("invalid cudnnSignalMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1936,10 +1880,6 @@ struct cudnnBnFinalizeStatsMode_t(
         abort("invalid cudnnBnFinalizeStatsMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnBnFinalizeStatsMode_t({self})")
 
@@ -1968,10 +1908,6 @@ struct cudnnGenStatsMode_t(
         if self is Self.CUDNN_GENSTATS_SUM_SQSUM:
             return writer.write("CUDNN_GENSTATS_SUM_SQSUM")
         abort("invalid cudnnGenStatsMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2043,10 +1979,6 @@ struct cudnnResampleMode_t(
         abort("invalid cudnnResampleMode_t entry")
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn __repr__(self) -> String:
         return String(t"cudnnResampleMode_t({self})")
 
@@ -2112,10 +2044,6 @@ struct cudnnPaddingMode_t(
         if self is Self.CUDNN_EDGE_VAL_PAD:
             return writer.write("CUDNN_EDGE_VAL_PAD")
         abort("invalid cudnnPaddingMode_t entry")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:

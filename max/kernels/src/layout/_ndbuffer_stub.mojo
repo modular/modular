@@ -264,11 +264,6 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
         self.stride = IndexList[Self.rank]()
 
     @no_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(Self.shape, ":", self.stride)
 

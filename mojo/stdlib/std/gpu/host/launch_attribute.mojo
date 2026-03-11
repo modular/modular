@@ -184,15 +184,6 @@ struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the `LaunchAttribute`.
-
-        Returns:
-            A string representation of the attribute.
-        """
-        return String.write(self)
-
-    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the attribute to a writer.
 
@@ -302,15 +293,6 @@ struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
             True if the instances have different values, False otherwise.
         """
         return not (self == other)
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the `AccessProperty`.
-
-        Returns:
-            A string representation of the `AccessProperty`.
-        """
-        return String.write(self)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -466,15 +448,6 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
         self.hit_ratio = hit_ratio
         self.hit_prop = hit_prop
         self.miss_prop = miss_prop
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the `AccessPolicyWindow`.
-
-        Returns:
-            A string representation of the `AccessPolicyWindow`.
-        """
-        return String.write(self)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

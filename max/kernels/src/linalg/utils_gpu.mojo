@@ -243,10 +243,6 @@ struct MatmulConfig[
         else:
             return False
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
         writer.write(Self.a_type, "_")
@@ -265,9 +261,8 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        return String.write(self)
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.

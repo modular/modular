@@ -1054,27 +1054,6 @@ struct Int(
 
         writer.write(self)
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Get the integer as a string.
-
-        Returns:
-            A string representation.
-        """
-
-        return String.write(self)
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String:
-        """Get the integer as a string. Returns the same `String` as `__str__`.
-
-        Returns:
-            A string representation.
-        """
-        return String(self)
-
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this int value.
 

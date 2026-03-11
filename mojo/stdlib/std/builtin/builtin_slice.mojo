@@ -85,30 +85,6 @@ struct Slice(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Gets the string representation of the span.
-
-        Returns:
-            The string representation of the span.
-        """
-        var output = String()
-        self.write_to(output)
-        return output^
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __repr__(self) -> String:
-        """Gets the string representation of the span.
-
-        Returns:
-            The string representation of the span.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Write Slice string representation to a `Writer`.

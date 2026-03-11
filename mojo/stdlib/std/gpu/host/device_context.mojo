@@ -233,16 +233,6 @@ struct StreamPriorityRange(TrivialRegisterPassable, Writable):
     var greatest: Int
     """The highest (numerically largest) priority value."""
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the stream priority range.
-
-        Returns:
-            A string in the format "StreamPriorityRange(least=X, greatest=Y)".
-        """
-        return String.write(self)
-
     @always_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the stream priority range to the given writer.
@@ -698,19 +688,6 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
                 self.unsafe_ptr(), size
             )
         writer.write(")")
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of the `HostBuffer`.
-
-        This method creates a human-readable string representation of the buffer's contents
-        by mapping the device memory to host memory and formatting the elements.
-
-        Returns:
-            A string containing the formatted buffer contents.
-        """
-        comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
-        return String.write(self)
 
     fn __getitem__(self, idx: Int) -> Scalar[Self.dtype]:
         """Retrieves the element at the specified index from the host buffer.
@@ -1341,19 +1318,6 @@ struct DeviceBuffer[dtype: DType](
                 writer.write(")")
         except e:
             abort(t"failed to write DeviceBuffer:{e}")
-
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        """Returns a string representation of the `DeviceBuffer`.
-
-        This method creates a human-readable string representation of the buffer's contents
-        by mapping the device memory to host memory and formatting the elements.
-
-        Returns:
-            A string containing the formatted buffer contents.
-        """
-        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return String.write(self)
 
 
 # @doc_private does not work on structs - see MOTO-992.

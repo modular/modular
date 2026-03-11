@@ -175,16 +175,6 @@ struct Path(
             self.path += DIR_SEPARATOR
             self.path += suffix
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the path.
-
-        Returns:
-          A string representation of the path.
-        """
-        return self.path
-
     @always_inline
     fn __bool__(self) -> Bool:
         """Checks if the path is not empty.
@@ -223,17 +213,6 @@ struct Path(
           A string representation of the path.
         """
         return self.path
-
-    @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
-        """Returns a printable representation of the path.
-
-        Returns:
-          A printable representation of the path.
-        """
-        var output = String()
-        self.write_repr_to(output)
-        return output^
 
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if the two paths are equal.

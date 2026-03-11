@@ -288,10 +288,6 @@ struct Mode(TrivialRegisterPassable, Writable):
     fn append(mut self, other: Self):
         self._value |= other._value
 
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the mode as a string.
 

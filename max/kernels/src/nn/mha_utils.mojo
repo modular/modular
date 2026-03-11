@@ -103,11 +103,6 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
         return self._value != other._value
 
     @always_inline
-    @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @always_inline
     fn init(self, dtype: DType) -> Self:
         if self._value == -1:
             comptime if is_sm90or100:
@@ -367,9 +362,6 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 == DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
             )
         )
-
-    fn __str__(self) -> String:
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         if self.algorithm == 2:
