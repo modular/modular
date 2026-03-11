@@ -147,15 +147,18 @@ def get_pipeline_for_task(
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:
-        role = pipeline_config.runtime.pipeline_role
-        if (
-            task == PipelineTask.TEXT_GENERATION
-            and role == "prefill_and_decode"
-        ):
+        if task == PipelineTask.TEXT_GENERATION:
+            # TODO: Enable overlap pipeline for prefill_only workers
+            # once the prefill overlap pipeline is implemented.
+            if pipeline_config.runtime.pipeline_role == "prefill_only":
+                raise ValueError(
+                    "Overlap scheduling is not yet supported for "
+                    "prefill_only workers (WIP)."
+                )
             return OverlapTextGenerationPipeline[TextContext]
         raise ValueError(
-            "Overlap scheduler is only supported for TEXT_GENERATION task "
-            f"and PrefillAndDecode pipeline role, got {task} and {role}"
+            f"Overlap scheduler requires the TEXT_GENERATION pipeline task, "
+            f"got task={task}."
         )
     elif task == PipelineTask.TEXT_GENERATION:
         return TextGenerationPipeline[TextContext]

@@ -37,7 +37,11 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
+from max.pipelines.lib import (
+    OverlapTextGenerationPipeline,
+    PipelineConfig,
+    TextGenerationPipeline,
+)
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
@@ -337,6 +341,15 @@ class DecodeScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
+        # Filter out responses for already-released requests. With the
+        # overlap pipeline, the previous batch may produce a token for a
+        # request that already hit EOS and was released.
+        responses = {
+            req_id: response
+            for req_id, response in responses.items()
+            if self.batch_constructor.contains(req_id)
+        }
+
         self.batch_constructor.advance_requests(inputs)
 
         # Release terminated requests
@@ -346,16 +359,18 @@ class DecodeScheduler(Scheduler):
                 self.batch_constructor.release_request(request_id)
                 num_terminated_requests += 1
 
-        # send the responses to the API process
-        self.response_queue.put_nowait(
-            {
-                req_id: SchedulerResult.create(response)
-                for req_id, response in responses.items()
-            }
-        )
+        # Send the responses to the API process
+        if responses:
+            self.response_queue.put_nowait(
+                {
+                    req_id: SchedulerResult.create(response)
+                    for req_id, response in responses.items()
+                }
+            )
 
         return num_terminated_requests
 
+    @traced
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.
 
@@ -389,13 +404,21 @@ class DecodeScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # If the batch is empty, skip
-        if len(inputs.flat_batch) == 0:
+        # Check whether the overlap pipeline has deferred outputs that must
+        # be drained even when the current batch is empty.
+        has_pending_outputs = (
+            isinstance(self.pipeline, OverlapTextGenerationPipeline)
+            and self.pipeline.has_pending_outputs()
+        )
+        if not (inputs or has_pending_outputs):
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({inputs})"):
+        if inputs:
+            with Tracer(f"_schedule({inputs})"):
+                num_terminated_reqs = self.schedule(inputs)
+        else:
             num_terminated_reqs = self.schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0

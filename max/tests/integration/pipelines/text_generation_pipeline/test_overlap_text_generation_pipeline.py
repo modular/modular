@@ -16,12 +16,18 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
+from max.interfaces import (
+    PipelineTask,
+    RequestID,
+    TextGenerationInputs,
+    TokenBuffer,
+)
 from max.pipelines.core import TextContext
 from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
 )
+from max.pipelines.lib.registry import get_pipeline_for_task
 
 
 def test_throws_if_num_steps_gt_1() -> None:
@@ -118,3 +124,31 @@ def test_warmup_graph_capture_batch_size(
             pipeline._max_graph_capture_batch_size
             == expected_capture_batch_size
         )
+
+
+def _make_pipeline_config_mock(
+    *, enable_overlap: bool, pipeline_role: str
+) -> MagicMock:
+    config = MagicMock()
+    config.runtime.enable_overlap_scheduler = enable_overlap
+    config.runtime.pipeline_role = pipeline_role
+    config.speculative = None
+    return config
+
+
+def test_decode_only_gets_overlap_pipeline() -> None:
+    """Decode-only workers use the overlap pipeline when overlap is enabled."""
+    config = _make_pipeline_config_mock(
+        enable_overlap=True, pipeline_role="decode_only"
+    )
+    result = get_pipeline_for_task(PipelineTask.TEXT_GENERATION, config)
+    assert result is OverlapTextGenerationPipeline[TextContext]
+
+
+def test_prefill_and_decode_gets_overlap_pipeline() -> None:
+    """Non-DI workers continue to use the overlap pipeline as before."""
+    config = _make_pipeline_config_mock(
+        enable_overlap=True, pipeline_role="prefill_and_decode"
+    )
+    result = get_pipeline_for_task(PipelineTask.TEXT_GENERATION, config)
+    assert result is OverlapTextGenerationPipeline[TextContext]
