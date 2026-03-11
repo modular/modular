@@ -31,18 +31,15 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from max.driver import Device
+from max.driver import Buffer, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Conv2d, Module, ModuleList
-from max.experimental.nn.norm.rms_norm import rms_norm
-from max.experimental.tensor import Tensor
-from max.graph import TensorType
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.graph.weights import WeightData, Weights
-from max.pipelines.architectures.autoencoders.layers.upsampling import (
-    interpolate_2d_nearest,
-)
+from max.nn.conv import Conv2d
+from max.nn.layer import LayerList, Module
 from max.pipelines.lib import SupportedEncoding
+from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .model_config import (
@@ -51,7 +48,30 @@ from .model_config import (
 )
 
 
-class NCHWRMSNorm(Module[[Tensor], Tensor]):
+def _interpolate_2d_nearest(
+    x: TensorValue,
+    *,
+    scale_factor: int = 2,
+) -> TensorValue:
+    """Upsample an NCHW tensor using nearest-neighbor expansion."""
+    if x.rank != 4:
+        raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
+    if scale_factor != 2:
+        raise NotImplementedError(
+            f"Only scale_factor=2 is supported, got {scale_factor}"
+        )
+
+    n, c, h, w = x.shape
+    x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
+    ones = ops.broadcast_to(
+        ops.constant(1.0, dtype=x.dtype, device=x.device),
+        [1, 1, 1, scale_factor, 1, scale_factor],
+    )
+    x_expanded = x_reshaped * ones
+    return ops.reshape(x_expanded, [n, c, h * scale_factor, w * scale_factor])
+
+
+class NCHWRMSNorm(Module):
     """RMS normalization with learnable gamma for NCHW tensors.
 
     The Wan VAE RMS norm computes mean(x^2) over the channel dimension.
@@ -67,21 +87,48 @@ class NCHWRMSNorm(Module[[Tensor], Tensor]):
         eps: float = 1e-6,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
         self.eps = eps
-        self.gamma = Tensor.ones([dim], dtype=dtype, device=device)
+        self.gamma = Weight(
+            "gamma",
+            dtype or DType.float32,
+            [dim],
+            device=device or DeviceRef.CPU(),
+        )
 
-    def forward(self, x: Tensor) -> Tensor:
-        # x: [B, C, H, W] -> permute to [B, H, W, C]
-        x_perm = F.permute(x, [0, 2, 3, 1])
-        # rms_norm normalizes over last dim (C)
-        x_normed = rms_norm(x_perm, self.gamma.to(x.device), self.eps)
-        # Permute back to [B, C, H, W]
-        return F.permute(x_normed, [0, 3, 1, 2])
+    def __call__(self, x: TensorValue) -> TensorValue:
+        x_perm = ops.permute(x, [0, 2, 3, 1])
+        gamma = self.gamma.cast(x_perm.dtype)
+        if x_perm.device:
+            gamma = gamma.to(x_perm.device)
+        x_normed = ops.custom(
+            "rms_norm",
+            x_perm.device,
+            [
+                x_perm,
+                gamma,
+                ops.constant(
+                    self.eps, dtype=x_perm.dtype, device=DeviceRef.CPU()
+                ),
+                ops.constant(
+                    0.0, dtype=x_perm.dtype, device=DeviceRef.CPU()
+                ),
+            ],
+            [
+                TensorType(
+                    dtype=x_perm.dtype,
+                    shape=x_perm.shape,
+                    device=x_perm.device,
+                )
+            ],
+            parameters={"multiply_before_cast": True},
+        )[0].tensor
+        return ops.permute(x_normed, [0, 3, 1, 2])
 
 
-class ResBlock(Module[[Tensor], Tensor]):
+class ResBlock(Module):
     """Residual block with RMS norm and Conv2d.
 
     HF keys: norm1.gamma, conv1.{weight,bias}, norm2.gamma, conv2.{weight,bias}
@@ -95,8 +142,9 @@ class ResBlock(Module[[Tensor], Tensor]):
         eps: float = 1e-6,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
         self.norm1 = NCHWRMSNorm(
             in_ch, eps, dtype=dtype, device=device
         )
@@ -136,18 +184,18 @@ class ResBlock(Module[[Tensor], Tensor]):
                 permute=True,
             )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def __call__(self, x: TensorValue) -> TensorValue:
         shortcut = (
             self.conv_shortcut(x) if self.conv_shortcut is not None else x
         )
-        h = F.silu(self.norm1(x))
+        h = ops.silu(self.norm1(x))
         h = self.conv1(h)
-        h = F.silu(self.norm2(h))
+        h = ops.silu(self.norm2(h))
         h = self.conv2(h)
         return h + shortcut
 
 
-class Attention(Module[[Tensor], Tensor]):
+class Attention(Module):
     """Self-attention for VAE mid-block using 1x1 Conv2d.
 
     HF has fused to_qkv; we split into to_q/to_k/to_v during weight loading.
@@ -160,8 +208,9 @@ class Attention(Module[[Tensor], Tensor]):
         eps: float = 1e-6,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
         self._dim = dim
         self.scale = 1.0 / math.sqrt(dim)
         self.norm = NCHWRMSNorm(
@@ -204,7 +253,7 @@ class Attention(Module[[Tensor], Tensor]):
             permute=True,
         )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def __call__(self, x: TensorValue) -> TensorValue:
         residual = x
         x = self.norm(x)
 
@@ -217,17 +266,17 @@ class Attention(Module[[Tensor], Tensor]):
         v = self.to_v(x)
 
         # Reshape [B, C, H, W] -> [B, H*W, C] for attention
-        q = F.permute(F.reshape(q, [n, c, seq_len]), [0, 2, 1])
-        k = F.permute(F.reshape(k, [n, c, seq_len]), [0, 2, 1])
-        v = F.permute(F.reshape(v, [n, c, seq_len]), [0, 2, 1])
+        q = ops.permute(ops.reshape(q, [n, c, seq_len]), [0, 2, 1])
+        k = ops.permute(ops.reshape(k, [n, c, seq_len]), [0, 2, 1])
+        v = ops.permute(ops.reshape(v, [n, c, seq_len]), [0, 2, 1])
 
         # Scaled dot-product attention (single-head)
-        attn = q @ F.permute(k, [0, 2, 1]) * self.scale
-        attn = F.softmax(attn, axis=-1)
+        attn = q @ ops.permute(k, [0, 2, 1]) * self.scale
+        attn = ops.softmax(attn, axis=-1)
         out = attn @ v
 
         # Reshape back [B, H*W, C] -> [B, C, H, W]
-        out = F.reshape(F.permute(out, [0, 2, 1]), [n, c, h, w])
+        out = ops.reshape(ops.permute(out, [0, 2, 1]), [n, c, h, w])
 
         # Output projection
         out = self.proj(out)
@@ -235,30 +284,25 @@ class Attention(Module[[Tensor], Tensor]):
         return residual + out
 
 
-class Interpolate2D(Module[[Tensor], Tensor]):
+class Interpolate2D(Module):
     """2x nearest-neighbor interpolation with no learnable parameters.
 
-    Used as index 0 of the upsampler's resample ModuleList (Conv2d at index 1).
+    Used as index 0 of the upsampler's resample layer list (Conv2d at index 1).
     This ensures weight keys match HF: resample.1.{weight,bias}.
     """
 
-    def forward(self, x: Tensor) -> Tensor:
-        return interpolate_2d_nearest(x, scale_factor=2)  # type: ignore[return-value]
+    def __call__(self, x: TensorValue) -> TensorValue:
+        return _interpolate_2d_nearest(x, scale_factor=2)
 
 
-class ZeroPadBottomRight2D(Module[[Tensor], Tensor]):
+class ZeroPadBottomRight2D(Module):
     """Pad right and bottom by 1 pixel (matches HF ZeroPad2d((0,1,0,1)))."""
 
-    def forward(self, x: Tensor) -> Tensor:
-        return F.pad(
-            x,
-            paddings=[0, 0, 0, 0, 0, 1, 0, 1],
-            mode="constant",
-            value=0,
-        )
+    def __call__(self, x: TensorValue) -> TensorValue:
+        return ops.pad(x, paddings=[0, 0, 0, 0, 0, 1, 0, 1], value=0)
 
 
-class Upsampler(Module[[Tensor], Tensor]):
+class Upsampler(Module):
     """Spatial upsampler: 2x interpolation then Conv2d.
 
     HF keys: resample.0 (no weights), resample.1.{weight,bias}
@@ -270,9 +314,10 @@ class Upsampler(Module[[Tensor], Tensor]):
         out_ch: int,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
-        self.resample: ModuleList = ModuleList(
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.resample = LayerList(
             [
                 Interpolate2D(),
                 Conv2d(
@@ -288,13 +333,13 @@ class Upsampler(Module[[Tensor], Tensor]):
             ]
         )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def __call__(self, x: TensorValue) -> TensorValue:
         x = self.resample[0](x)
         x = self.resample[1](x)
         return x
 
 
-class Downsampler(Module[[Tensor], Tensor]):
+class Downsampler(Module):
     """Spatial downsampler with key layout matching HF resample.1.* weights."""
 
     def __init__(
@@ -303,9 +348,10 @@ class Downsampler(Module[[Tensor], Tensor]):
         out_ch: int,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
-        self.resample: ModuleList = ModuleList(
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.resample = LayerList(
             [
                 ZeroPadBottomRight2D(),
                 Conv2d(
@@ -322,13 +368,13 @@ class Downsampler(Module[[Tensor], Tensor]):
             ]
         )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def __call__(self, x: TensorValue) -> TensorValue:
         x = self.resample[0](x)
         x = self.resample[1](x)
         return x
 
 
-class MidBlock(Module[[Tensor], Tensor]):
+class MidBlock(Module):
     """Mid block: ResBlock -> Attention -> ResBlock.
 
     HF keys: resnets.{0,1}.*, attentions.0.*
@@ -340,9 +386,10 @@ class MidBlock(Module[[Tensor], Tensor]):
         eps: float = 1e-6,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
-        self.resnets: ModuleList[ResBlock] = ModuleList(
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
+        self.resnets = LayerList(
             [
                 ResBlock(
                     dim, dim, eps, dtype=dtype, device=device
@@ -352,18 +399,18 @@ class MidBlock(Module[[Tensor], Tensor]):
                 ),
             ]
         )
-        self.attentions: ModuleList[Attention] = ModuleList(
+        self.attentions = LayerList(
             [Attention(dim, eps, dtype=dtype, device=device)]
         )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def __call__(self, x: TensorValue) -> TensorValue:
         x = self.resnets[0](x)
         x = self.attentions[0](x)
         x = self.resnets[1](x)
         return x
 
 
-class UpBlock(Module[[Tensor], Tensor]):
+class UpBlock(Module):
     """Up block: ResBlocks then optional upsampler.
 
     HF keys: resnets.{0,1,2}.*, upsamplers.0.resample.1.*
@@ -378,8 +425,9 @@ class UpBlock(Module[[Tensor], Tensor]):
         eps: float = 1e-6,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
         resnets = []
         for i in range(num_resnets):
             res_in = in_ch if i == 0 else out_ch
@@ -388,11 +436,11 @@ class UpBlock(Module[[Tensor], Tensor]):
                     res_in, out_ch, eps, dtype=dtype, device=device
                 )
             )
-        self.resnets: ModuleList[ResBlock] = ModuleList(resnets)
+        self.resnets = LayerList(resnets)
 
-        self.upsamplers: ModuleList[Upsampler] | None = None
+        self.upsamplers: LayerList | None = None
         if upsample_out_ch is not None:
-            self.upsamplers = ModuleList(
+            self.upsamplers = LayerList(
                 [
                     Upsampler(
                         out_ch,
@@ -403,7 +451,7 @@ class UpBlock(Module[[Tensor], Tensor]):
                 ]
             )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def __call__(self, x: TensorValue) -> TensorValue:
         for resnet in self.resnets:
             x = resnet(x)
         if self.upsamplers is not None:
@@ -411,7 +459,7 @@ class UpBlock(Module[[Tensor], Tensor]):
         return x
 
 
-class DownBlock(Module[[Tensor], Tensor]):
+class DownBlock(Module):
     """Down block: ResBlocks then optional downsampler."""
 
     def __init__(
@@ -423,8 +471,9 @@ class DownBlock(Module[[Tensor], Tensor]):
         eps: float = 1e-6,
         *,
         dtype: DType | None = None,
-        device: Any = None,
-    ):
+        device: DeviceRef | None = None,
+    ) -> None:
+        super().__init__()
         resnets = []
         for i in range(num_resnets):
             res_in = in_ch if i == 0 else out_ch
@@ -433,11 +482,11 @@ class DownBlock(Module[[Tensor], Tensor]):
                     res_in, out_ch, eps, dtype=dtype, device=device
                 )
             )
-        self.resnets: ModuleList[ResBlock] = ModuleList(resnets)
+        self.resnets = LayerList(resnets)
 
-        self.downsamplers: ModuleList[Downsampler] | None = None
+        self.downsamplers: LayerList | None = None
         if add_downsample:
-            self.downsamplers = ModuleList(
+            self.downsamplers = LayerList(
                 [
                     Downsampler(
                         out_ch, out_ch, dtype=dtype, device=device
@@ -445,7 +494,7 @@ class DownBlock(Module[[Tensor], Tensor]):
                 ]
             )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def __call__(self, x: TensorValue) -> TensorValue:
         for resnet in self.resnets:
             x = resnet(x)
         if self.downsamplers is not None:
@@ -453,7 +502,7 @@ class DownBlock(Module[[Tensor], Tensor]):
         return x
 
 
-class QwenImageEncoder3d(Module[[Tensor], Tensor]):
+class QwenImageEncoder3d(Module):
     """QwenImage VAE encoder for T=1 image conditioning."""
 
     def __init__(self, config: AutoencoderKLQwenImageConfigBase):
@@ -462,7 +511,7 @@ class QwenImageEncoder3d(Module[[Tensor], Tensor]):
 
         self._z_dim = config.z_dim
         self._dtype = config.dtype
-        self._device = config.device
+        self._device = DeviceRef.from_device(config.device)
 
         self.conv_in = Conv2d(
             kernel_size=3,
@@ -492,7 +541,7 @@ class QwenImageEncoder3d(Module[[Tensor], Tensor]):
 
         # Flatten to match HF key structure:
         # encoder.down_blocks.{i} where each entry is either a resblock or downsampler.
-        flat_down_blocks: list[Module[[Tensor], Tensor]] = []
+        flat_down_blocks: list[Module] = []
         for block in down_blocks:
             assert isinstance(block, DownBlock)
             for resnet in block.resnets:
@@ -500,7 +549,7 @@ class QwenImageEncoder3d(Module[[Tensor], Tensor]):
             if block.downsamplers is not None:
                 flat_down_blocks.append(block.downsamplers[0])
 
-        self.down_blocks: ModuleList = ModuleList(flat_down_blocks)
+        self.down_blocks = LayerList(flat_down_blocks)
 
         deepest = dims[-1]
         self.mid_block = MidBlock(
@@ -538,19 +587,19 @@ class QwenImageEncoder3d(Module[[Tensor], Tensor]):
             ),
         )
 
-    def forward(self, image: Tensor) -> Tensor:
+    def __call__(self, image: TensorValue) -> TensorValue:
         h = self.conv_in(image)
         for down_block in self.down_blocks:
             h = down_block(h)
         h = self.mid_block(h)
         h = self.norm_out(h)
-        h = F.silu(h)
+        h = ops.silu(h)
         h = self.conv_out(h)
         h = self.quant_conv(h)
         return h
 
 
-class QwenImageDecoder3d(Module[[Tensor], Tensor]):
+class QwenImageDecoder3d(Module):
     """QwenImage VAE decoder for T=1 image generation.
 
     Converts latent [B, 16, H, W] to image [B, 3, 8H, 8W] via:
@@ -570,7 +619,7 @@ class QwenImageDecoder3d(Module[[Tensor], Tensor]):
 
         self._z_dim = config.z_dim
         self._dtype = config.dtype
-        self._device = config.device
+        self._device = DeviceRef.from_device(config.device)
 
         # Post-quantization 1x1 conv (from top-level VAE, routed to decoder)
         self.post_quant_conv = Conv2d(
@@ -631,9 +680,7 @@ class QwenImageDecoder3d(Module[[Tensor], Tensor]):
 
             prev_ch = upsample_out if upsample_out is not None else block_ch
 
-        self.up_blocks: ModuleList[UpBlock] = ModuleList(
-            up_blocks
-        )
+        self.up_blocks = LayerList(up_blocks)
 
         # Output
         shallowest = dims[0]
@@ -660,19 +707,19 @@ class QwenImageDecoder3d(Module[[Tensor], Tensor]):
             ),
         )
 
-    def forward(self, z: Tensor) -> Tensor:
+    def __call__(self, z: TensorValue) -> TensorValue:
         z = self.post_quant_conv(z)
         h = self.conv_in(z)
         h = self.mid_block(h)
         for up_block in self.up_blocks:
             h = up_block(h)
         h = self.norm_out(h)
-        h = F.silu(h)
+        h = ops.silu(h)
         h = self.conv_out(h)
         return h
 
 
-class AutoencoderKLQwenImage(Module[[Tensor], Tensor]):
+class AutoencoderKLQwenImage(Module):
     """QwenImage VAE wrapper for encoder + decoder."""
 
     def __init__(self, config: AutoencoderKLQwenImageConfigBase) -> None:
@@ -680,10 +727,10 @@ class AutoencoderKLQwenImage(Module[[Tensor], Tensor]):
         self.encoder = QwenImageEncoder3d(config)
         self.decoder = QwenImageDecoder3d(config)
 
-    def encode(self, image: Tensor) -> Tensor:
+    def encode(self, image: TensorValue) -> TensorValue:
         return self.encoder(image)
 
-    def forward(self, z: Tensor) -> Tensor:
+    def __call__(self, z: TensorValue) -> TensorValue:
         return self.decoder(z)
 
 
@@ -817,14 +864,16 @@ class AutoencoderKLQwenImageModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        session: InferenceSession | None = None,
     ) -> None:
-        self.latents_mean_tensor: Tensor | None = None
-        self.latents_std_tensor: Tensor | None = None
+        self.latents_mean_tensor: Buffer | None = None
+        self.latents_std_tensor: Buffer | None = None
 
         super().__init__(config, encoding, devices, weights)
         self.config = AutoencoderKLQwenImageConfig.generate(
             config, encoding, devices
         )
+        self.session = session
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
@@ -852,49 +901,78 @@ class AutoencoderKLQwenImageModel(ComponentModel):
             raw_decoder_weights, target_dtype
         )
 
-        # Build and compile encoder + decoder.
-        with F.lazy():
-            autoencoder = AutoencoderKLQwenImage(self.config)
-            autoencoder.encoder.to(self.devices[0])
-            autoencoder.decoder.to(self.devices[0])
-
-        self.encoder = autoencoder.encoder.compile(
-            *autoencoder.encoder.input_types(), weights=encoder_state_dict
+        autoencoder = AutoencoderKLQwenImage(self.config)
+        autoencoder.encoder.load_state_dict(
+            encoder_state_dict, weight_alignment=1, strict=True
         )
-        self.model = autoencoder.decoder.compile(
-            *autoencoder.decoder.input_types(), weights=decoder_state_dict
+        autoencoder.decoder.load_state_dict(
+            decoder_state_dict, weight_alignment=1, strict=True
+        )
+
+        session = self.session
+        if session is None:
+            session = InferenceSession()
+
+        with Graph(
+            "qwen_image_vae_encoder",
+            input_types=autoencoder.encoder.input_types(),
+        ) as graph:
+            encoded = autoencoder.encoder(graph.inputs[0].tensor)
+            graph.output(encoded[:, : self.config.z_dim, :, :])
+        self.encoder: Model = session.load(
+            graph,
+            weights_registry=autoencoder.encoder.state_dict(),
+        )
+
+        with Graph(
+            "qwen_image_vae_decoder",
+            input_types=autoencoder.decoder.input_types(),
+        ) as graph:
+            decoded = autoencoder.decoder(graph.inputs[0].tensor)
+            graph.output(decoded)
+        self.model: Model = session.load(
+            graph,
+            weights_registry=autoencoder.decoder.state_dict(),
         )
 
         # Store latents_mean and latents_std as tensors on device
         if self.config.latents_mean:
-            mean_np = np.array(self.config.latents_mean, dtype=np.float32)
-            self.latents_mean_tensor = (
-                Tensor.from_dlpack(mean_np)
-                .to(self.devices[0])
-                .cast(target_dtype)
+            self.latents_mean_tensor = self._buffer_from_float_array(
+                self.config.latents_mean,
+                target_dtype=target_dtype,
             )
 
         if self.config.latents_std:
-            std_np = np.array(self.config.latents_std, dtype=np.float32)
-            self.latents_std_tensor = (
-                Tensor.from_dlpack(std_np)
-                .to(self.devices[0])
-                .cast(target_dtype)
+            self.latents_std_tensor = self._buffer_from_float_array(
+                self.config.latents_std,
+                target_dtype=target_dtype,
             )
 
-        return self.model
+        return self.model.execute
 
-    def encode(self, image: Tensor) -> Tensor:
-        moments = self.encoder(image)
-        if isinstance(moments, (list, tuple)):
-            moments = moments[0]
-        z_dim = self.config.z_dim
-        return F.slice_tensor(
-            moments, [slice(None), slice(0, z_dim), slice(None), slice(None)]
-        )
+    def _buffer_from_float_array(
+        self,
+        values: list[float],
+        *,
+        target_dtype: DType,
+    ) -> Buffer:
+        arr = np.asarray(values, dtype=np.float32)
+        if target_dtype == DType.bfloat16:
+            u16 = float32_to_bfloat16_as_uint16(arr)
+            return Buffer.from_numpy(u16).to(self.devices[0]).view(
+                dtype=DType.bfloat16, shape=arr.shape
+            )
+        if target_dtype == DType.float16:
+            arr = arr.astype(np.float16)
+        return Buffer.from_dlpack(arr).to(self.devices[0])
 
-    def decode(self, z: Tensor) -> Tensor:
-        return self.model(z)
+    def encode(self, image) -> Buffer:
+        result = self.encoder.execute(image)
+        return result[0] if isinstance(result, tuple) else result
 
-    def __call__(self, z: Tensor) -> Tensor:
+    def decode(self, z) -> Buffer:
+        result = self.model.execute(z)
+        return result[0] if isinstance(result, tuple) else result
+
+    def __call__(self, z) -> Buffer:
         return self.decode(z)
