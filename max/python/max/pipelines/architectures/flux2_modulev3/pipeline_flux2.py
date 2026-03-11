@@ -497,8 +497,18 @@ class Flux2Pipeline(DiffusionPipeline):
             image_latents = F.concat(packed_latents, axis=1)
 
         if batch_size > 1:
-            image_latents = F.tile(image_latents, (batch_size, 1, 1))
-            image_latent_ids = F.tile(image_latent_ids, (batch_size, 1, 1))
+            image_latents = F.broadcast_to(
+                image_latents,
+                [batch_size, image_latents.shape[1], image_latents.shape[2]],
+            )
+            image_latent_ids = F.broadcast_to(
+                image_latent_ids,
+                [
+                    batch_size,
+                    image_latent_ids.shape[1],
+                    image_latent_ids.shape[2],
+                ],
+            )
         image_latent_ids = image_latent_ids.to(device)
 
         return image_latents, image_latent_ids
@@ -533,12 +543,13 @@ class Flux2Pipeline(DiffusionPipeline):
 
         with Tracer("post_process"):
             if num_images_per_prompt != 1:
-                prompt_embeds = F.tile(
-                    prompt_embeds, (1, num_images_per_prompt, 1)
-                )
-                prompt_embeds = F.reshape(
+                prompt_embeds = F.broadcast_to(
                     prompt_embeds,
-                    [batch_size * num_images_per_prompt, seq_len, -1],
+                    [
+                        num_images_per_prompt,
+                        seq_len,
+                        prompt_embeds.shape[2],
+                    ],
                 )
 
             batch_size_final = batch_size * num_images_per_prompt
