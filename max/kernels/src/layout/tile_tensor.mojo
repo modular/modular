@@ -2765,12 +2765,14 @@ fn lt_to_tt[
         stride_types=ResultLayout._stride_types,
     ],
     lt.origin,
+    address_space=lt.address_space,
 ]:
     """Convert a LayoutTensor to a TileTensor.
 
     Static dimensions (known at compile time) are preserved as ComptimeInt.
     Dynamic dimensions (UNKNOWN_VALUE) become RuntimeInt, filled from the
-    LayoutTensor's runtime layout.  Works for any flat rank.
+    LayoutTensor's runtime layout.  The address space is preserved from the
+    source LayoutTensor.  Works for any flat rank.
 
     By default the TileTensor layout is derived automatically from the
     LayoutTensor's legacy layout.  Pass an explicit ``ResultLayout`` to
@@ -2786,7 +2788,8 @@ fn lt_to_tt[
         lt: The LayoutTensor to convert.
 
     Returns:
-        A TileTensor with the same data and equivalent layout.
+        A TileTensor with the same data, equivalent layout, and matching
+        address space.
     """
     comptime ConcLayout = Layout[
         shape_types=ResultLayout._shape_types,
@@ -2807,10 +2810,12 @@ fn lt_to_tt[
                 Scalar[DType.int64](lt.runtime_layout.stride.value[i])
             )
 
-    var ptr = UnsafePointer[Scalar[dtype], lt.origin](
-        unsafe_from_address=Int(lt.ptr)
-    )
-    return TileTensor[dtype, ConcLayout, lt.origin](
+    var ptr = UnsafePointer[
+        Scalar[dtype], lt.origin, address_space=lt.address_space
+    ](unsafe_from_address=Int(lt.ptr))
+    return TileTensor[
+        dtype, ConcLayout, lt.origin, address_space=lt.address_space
+    ](
         ptr=ptr,
         layout=ConcLayout(shape_c, stride_c),
     )
