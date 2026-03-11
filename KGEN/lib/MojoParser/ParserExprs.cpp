@@ -417,6 +417,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___struct_field_names:
   case Token::kw___struct_field_type_at_index:
   case Token::kw___struct_field_ref:
+  case Token::kw___is_run_in_comptime_interpreter:
 #ifndef MODULAR_PRODUCTION
   case Token::kw___mojo_crash:
 #endif // MODULAR_PRODUCTION
@@ -633,6 +634,14 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     if (failed(parseMagicFunction(result)))
       return failure();
     break;
+
+  case Token::kw___is_run_in_comptime_interpreter: {
+    Token tok = consumeToken();
+    result = alloc<MagicFunctionNode>(ExprNode::kIsRunInComptimeInterpreter,
+                                      tok.getLoc(), tok.getSpelling(),
+                                      ArrayRef<ExprNode *>{}, tok.getLoc());
+    break;
+  }
 
 #ifndef MODULAR_PRODUCTION
   case Token::kw___mojo_crash:
