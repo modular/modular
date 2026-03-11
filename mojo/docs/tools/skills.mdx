@@ -1,0 +1,52 @@
+---
+title: Modular AI skills
+sidebar_position: 7
+id: skills
+description: Official Modular AI agent skills for developing projects on the Modular Platform with MAX and Mojo. Follows the Agent Skills Standard and encodes best practices for AI coding agents.
+---
+Modular's official [AI agent skills](https://github.com/modular/skills)
+help AI coding agents work more effectively with your Mojo projects.
+Use skills to generate more accurate code, produce better answers, and
+learn Mojo with up-to-date content.
+
+Skills provide context about Mojo syntax and common development
+patterns, including Python interop and GPU fundamentals. They also
+support recommended workflows for working with Mojo. The skills follow
+the [Agent Skills Standard](https://agentskills.io/specification).
+
+Without this context, AI coding agents may produce suggestions that
+don't match current Mojo conventions. Modular AI skills provide
+guidance that helps agents generate more accurate Mojo code for your
+projects.
+
+## Installation
+
+With [Node.js installed](https://nodejs.org/en/download),
+add the Modular AI skills with `npx`:
+
+```sh
+npx skills add modular/skills
+```
+
+You can also install individual skills in isolation:
+
+```sh
+npx skills add modular/skills --skill mojo-syntax
+```
+
+To update:
+
+```sh
+npx skills update
+```
+
+Follow the instructions from your AI tooling to apply the skills.
+
+:::tip
+Modern Node.js installations includes `npx`. To check that it's
+available, use:
+
+```sh
+npx --version
+```
+:::
