@@ -28,7 +28,7 @@ Weight transformations in load_model():
 
 import math
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -86,8 +86,8 @@ class NCHWRMSNorm(Module):
         dim: int,
         eps: float = 1e-6,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self.eps = eps
@@ -139,8 +139,8 @@ class ResBlock(Module):
         out_ch: int,
         eps: float = 1e-6,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self.norm1 = NCHWRMSNorm(in_ch, eps, dtype=dtype, device=device)
@@ -201,8 +201,8 @@ class Attention(Module):
         dim: int,
         eps: float = 1e-6,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self._dim = dim
@@ -305,8 +305,8 @@ class Upsampler(Module):
         in_ch: int,
         out_ch: int,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self.resample = LayerList(
@@ -339,8 +339,8 @@ class Downsampler(Module):
         in_ch: int,
         out_ch: int,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self.resample = LayerList(
@@ -377,8 +377,8 @@ class MidBlock(Module):
         dim: int,
         eps: float = 1e-6,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         self.resnets = LayerList(
@@ -412,8 +412,8 @@ class UpBlock(Module):
         upsample_out_ch: int | None = None,
         eps: float = 1e-6,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         resnets = []
@@ -456,8 +456,8 @@ class DownBlock(Module):
         add_downsample: bool,
         eps: float = 1e-6,
         *,
-        dtype: DType | None = None,
-        device: DeviceRef | None = None,
+        dtype: DType,
+        device: DeviceRef,
     ) -> None:
         super().__init__()
         resnets = []
@@ -527,7 +527,7 @@ class QwenImageEncoder3d(Module):
             for resnet in block.resnets:
                 flat_down_blocks.append(resnet)
             if block.downsamplers is not None:
-                flat_down_blocks.append(block.downsamplers[0])
+                flat_down_blocks.append(cast(Module, block.downsamplers[0]))
 
         self.down_blocks = LayerList(flat_down_blocks)
 
@@ -889,7 +889,7 @@ class AutoencoderKLQwenImageModel(ComponentModel):
 
         session = self.session
         if session is None:
-            session = InferenceSession()
+            session = InferenceSession(devices=self.devices)
 
         with Graph(
             "qwen_image_vae_encoder",
