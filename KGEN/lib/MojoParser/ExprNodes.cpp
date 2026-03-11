@@ -4030,6 +4030,7 @@ static bool isStableMagicFunction(ExprNode::Kind kind) {
   case ExprNode::kTypeOf:
   case ExprNode::kConformsTo:
   case ExprNode::kFunctionsInModule:
+  case ExprNode::kIsRunInComptimeInterpreter:
     return true;
   default:
     return false;
@@ -4067,6 +4068,9 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       return {};
     return emitGetCurrentFunctionName(dest, emitter);
   }
+
+  if (kind == kIsRunInComptimeInterpreter)
+    return emitIsRunInComptimeInterpreter(dest, emitter);
 
   if (kind == kConformsTo) {
     if (!checkArgCount(2))
@@ -4305,6 +4309,24 @@ MagicFunctionNode::emitGetCurrentFunctionName(ValueDest &dest,
       funcName = s->str();
   }
   return StringLiteralNode::emitCtorCall(funcName, this, dest, emitter);
+}
+
+AnyValue
+MagicFunctionNode::emitIsRunInComptimeInterpreter(ValueDest &dest,
+                                                  IREmitter &emitter) const {
+  // Emit a dynamic SSA value which cannot be used in comptime expression.
+  if (!emitter.builder)
+    return emitter.emitErrorForDynamicValueInParameter(this);
+  auto op = IsRunInComptimeInterpreterOp::create(*emitter.builder,
+                                                 this->getLocation(emitter));
+  // Wrap the i1 result in a Bool so callers can use it with 'not', 'and',
+  // 'or', etc.
+  ASTType boolType =
+      emitter.shared.getBuiltinBoolType(emitter.getDeclScope(), getLoc());
+  AnyValue i1Value = SRValue(op.getResult());
+  CallOperands ctorOps(CallSyntax::kImplicitConvert, this,
+                       ArrayRef<ASTExprAnd<AnyValue>>{{i1Value, this}});
+  return emitter.emitConstructorCall(boolType, std::move(ctorOps), dest);
 }
 
 AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,

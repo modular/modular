@@ -79,21 +79,22 @@ public:
     kFunctionType,      // async fn[](owned Int, &F32) capturing raises -> F64
 
     // Magic functions
-    kGetMValueAsLitRef,        // __get_mvalue_as_litref(x)
-    kGetLitRefAsMValue,        // __get_litref_as_mvalue(x)
-    kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
-    kGetAddressAsOwned,        // __get_address_as_owned_value(x)
-    kOriginOf,                 // origin_of(x)
-    kTypeOf,                   // type_of(x)
-    kConformsTo,               // conforms_to(T, Trait)
-    kFunctionsInModule,        // __functions_in_module()
-    kGetCurrentFunctionName,   // __get_current_function_name()
-    kStructFieldTypes,         // __struct_field_types[T]()
-    kStructFieldNames,         // __struct_field_names[T]()
-    kStructFieldTypeAtIndex,   // __struct_field_type_at_index(T, idx)
-    kStructFieldRef,           // __struct_field_ref(idx, s)
+    kGetMValueAsLitRef,          // __get_mvalue_as_litref(x)
+    kGetLitRefAsMValue,          // __get_litref_as_mvalue(x)
+    kGetAddressAsUninitLValue,   // __get_address_as_uninit_lvalue(x)
+    kGetAddressAsOwned,          // __get_address_as_owned_value(x)
+    kOriginOf,                   // origin_of(x)
+    kTypeOf,                     // type_of(x)
+    kConformsTo,                 // conforms_to(T, Trait)
+    kFunctionsInModule,          // __functions_in_module()
+    kGetCurrentFunctionName,     // __get_current_function_name()
+    kStructFieldTypes,           // __struct_field_types[T]()
+    kStructFieldNames,           // __struct_field_names[T]()
+    kStructFieldTypeAtIndex,     // __struct_field_type_at_index(T, idx)
+    kStructFieldRef,             // __struct_field_ref(idx, s)
+    kIsRunInComptimeInterpreter, // __is_run_in_comptime_interpreter
     kFirstMagicFunction = kGetMValueAsLitRef,
-    kLastMagicFunction = kStructFieldRef,
+    kLastMagicFunction = kIsRunInComptimeInterpreter,
 
     // Prefix and Postfix unary expressions.
     kNeg,      // -x

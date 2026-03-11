@@ -10,7 +10,7 @@
 fn diverge_comptime(i: Int) -> Int:
     var t = 0
     # Intentionally have then and else branches mismatch logic for testing.
-    if __mlir_op.`kgen.is_run_in_comptime_interpreter`():
+    if __is_run_in_comptime_interpreter:
         t = i + 40
     else:
         t = i + 1

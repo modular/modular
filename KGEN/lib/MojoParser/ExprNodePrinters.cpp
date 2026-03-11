@@ -103,6 +103,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "StructFieldTypeAtIndex";
   case ExprNode::kStructFieldRef:
     return "StructFieldRef";
+  case ExprNode::kIsRunInComptimeInterpreter:
+    return "IsRunInComptimeInterpreter";
   case ExprNode::kNeg:
     return "Neg";
   case ExprNode::kPos:

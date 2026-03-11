@@ -164,6 +164,7 @@ TOK_KEYWORD(__struct_field_types)
 TOK_KEYWORD(__struct_field_names)
 TOK_KEYWORD(__struct_field_type_at_index)
 TOK_KEYWORD(__struct_field_ref)
+TOK_KEYWORD(__is_run_in_comptime_interpreter)
 
 #ifndef MODULAR_PRODUCTION
 TOK_KEYWORD(__mojo_crash) // Crashes the compiler. Not shipped to users.
