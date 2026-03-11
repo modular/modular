@@ -248,6 +248,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description="Whether to defer resolving the pipeline config.",
     )
 
+    enable_fbc: bool = Field(
+        default=False,
+        description=(
+            "Enable first-block caching (FBC) for diffusion pipelines. "
+            "When enabled, reuses the first transformer block's output across "
+            "denoising steps when the residual change is below the threshold, "
+            "reducing computation."
+        ),
+    )
+
     _config_file_section_name: str = PrivateAttr(default="runtime")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
