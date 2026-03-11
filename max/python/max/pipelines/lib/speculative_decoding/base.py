@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, load_devices
+from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import (
@@ -39,21 +39,17 @@ from max.pipelines.lib.sampling import (
     RejectionRunner,
     rejection_runner_registry,
 )
+from max.pipelines.lib.sampling.sampling import TokenSampler
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..interfaces import ModelOutputs, PipelineModel, PipelineModelWithKVCache
+from ..interfaces import PipelineModel, PipelineModelWithKVCache
 from ..pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
     get_eos_tokens,
     get_weight_paths,
 )
-from ..sampling import (
-    PenaltyInputs,
-    SamplerInputs,
-    SamplingConfig,
-    token_sampler,
-)
+from ..sampling import SamplingConfig
 from .ragged_token_merger import RaggedTokenMergerRunner
 from .utils import SpeculativeDecodingMetrics
 
@@ -221,15 +217,14 @@ class SpeculativeDecodingPipelineBase(
             **draft_kwargs,
         )
 
-        # Load draft sampler
-        draft_sampling_config: SamplingConfig = self.pipeline_config.sampling
-        draft_sampling_config.enable_variable_logits = False
-        self._draft_sampler = self._session.load(
-            token_sampler(
-                draft_sampling_config,
-                return_logits=True,
-                device=device_refs[0],
-            )
+        # Load sampler
+        sampling_config: SamplingConfig = self.pipeline_config.sampling
+        sampling_config.enable_variable_logits = False
+        self._sampler = TokenSampler(
+            session=self._session,
+            sampling_config=sampling_config,
+            device=device_refs[0],
+            return_logits=True,
         )
 
         strategy = self._speculative_config.rejection_sampling_strategy
@@ -343,30 +338,6 @@ class SpeculativeDecodingPipelineBase(
     ]:
         """Returns the tokenizer for this speculative pipeline."""
         return self._tokenizer
-
-    @traced
-    def sample_draft_logits(
-        self,
-        model_outputs: ModelOutputs,
-        prev_tokens: Buffer,
-        prev_logits: Buffer,
-        sampler_inputs: SamplerInputs,
-        penalty_inputs: PenaltyInputs | None = None,
-    ) -> tuple[Buffer, Buffer, Buffer]:
-        """Samples draft tokens from the draft model logits."""
-        graph_inputs: list[Buffer] = [
-            model_outputs.logits,
-            prev_tokens,
-            *sampler_inputs.as_list(),
-            prev_logits,
-        ]
-        if penalty_inputs is not None:
-            graph_inputs.extend(penalty_inputs.as_list())
-        a, b, c = self._draft_sampler(*graph_inputs)[:3]
-        assert isinstance(a, Buffer)
-        assert isinstance(b, Buffer)
-        assert isinstance(c, Buffer)
-        return (a, b, c)
 
     @traced
     def release(self, request_id: RequestID) -> None:

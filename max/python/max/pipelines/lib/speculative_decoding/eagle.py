@@ -31,16 +31,12 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
-from max.pipelines.lib.interfaces import (
-    ModelInputs,
-    ModelOutputs,
-    PipelineModel,
-)
+from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..sampling import PenaltyInputs, SamplerInputs, token_sampler
+from ..sampling import PenaltyInputs, SamplerInputs
 from .base import SpeculativeDecodingPipelineBase
 from .eagle_hidden_state_graphs import build_gather_graph
 from .utils import (
@@ -107,67 +103,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             draft_weight_adapters,
         )
 
-        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
-        self._target_sampler = self._session.load(
-            token_sampler(
-                self.pipeline_config.sampling,
-                return_logits=True,
-                device=device_refs[0],
-            )
-        )
-
         # Gather graph for extracting hidden states corresponding to accepted tokens after verification
+        device_refs = [DeviceRef.from_device(dev) for dev in self.devices]
         hf_config = self._target_model.huggingface_config
         hidden_dim = _get_hidden_dim(hf_config)
         self._hs_gather_model = self._session.load(
             build_gather_graph(device_refs, DType.bfloat16, hidden_dim)
         )
-
-    @traced
-    def sample_target_token(
-        self,
-        target_outputs: ModelOutputs,
-        context_batch: list[TextContext],
-    ) -> Buffer:
-        """Sample token from target model's logits.
-
-        Args:
-            target_outputs: Outputs from target model execution containing logits
-            context_batch: List of context objects to update
-
-        Returns:
-            Buffer of sampled tokens with shape [batch_size, 1]
-        """
-        sampler_inputs = SamplerInputs.create(context_batch, self.devices[0])
-
-        prev_tokens = Buffer.zeros(
-            (len(context_batch), 0),
-            dtype=DType.int64,
-            device=self.devices[0],
-        )
-        prev_logits = Buffer.zeros(
-            (len(context_batch), 0),
-            dtype=DType.float32,
-            device=self.devices[0],
-        )
-
-        graph_inputs: list[Buffer] = [
-            target_outputs.logits,
-            prev_tokens,
-            *sampler_inputs.as_list(),
-            prev_logits,
-        ]
-
-        if self.pipeline_config.sampling.enable_penalties:
-            penalty_inputs = PenaltyInputs.create(
-                context_batch, self.devices[0]
-            )
-            graph_inputs.extend(penalty_inputs.as_list())
-
-        sampled_tokens, _, _ = self._target_sampler(*graph_inputs)[:3]
-        assert isinstance(sampled_tokens, Buffer)
-
-        return sampled_tokens
 
     def _prepare_draft_batch(
         self,
@@ -305,14 +247,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 batch, self.devices[0], num_steps=num_steps
             )
 
-        generated_tokens = Buffer.zeros(
-            (len(batch), 0), dtype=DType.int64, device=self.devices[0]
-        )
-
-        generated_logits = Buffer.zeros(
-            (len(batch), 0), dtype=DType.float32, device=self.devices[0]
-        )
-
         curr_step_inputs = model_inputs
 
         for _ in range(num_steps):
@@ -320,18 +254,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 model_inputs=curr_step_inputs
             )
 
-            new_tokens, new_generated_tokens, new_generated_logits = (
-                self.sample_draft_logits(
-                    model_outputs,
-                    generated_tokens,
-                    generated_logits,
-                    sampler_inputs=sampler_inputs,
-                    penalty_inputs=penalty_inputs,
-                )
+            new_tokens, new_generated_tokens, _ = self._sampler.sample_logits(
+                logits=model_outputs.logits,
+                sampler_inputs=sampler_inputs,
+                penalty_inputs=penalty_inputs,
             )
 
             generated_tokens = new_generated_tokens
-            generated_logits = new_generated_logits
 
             assert curr_step_inputs.kv_cache_inputs is not None
             curr_step_inputs.kv_cache_inputs = (
@@ -598,8 +527,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         target_outputs = self._target_model.execute(model_inputs=inputs)
 
-        target_sampled_tokens = self.sample_target_token(
-            target_outputs, context_batch
+        penalty_inputs: PenaltyInputs | None = None
+        if self.pipeline_config.sampling.enable_penalties:
+            penalty_inputs = PenaltyInputs.create(
+                context_batch, self.devices[0]
+            )
+
+        sampler_inputs = SamplerInputs.create(context_batch, self.devices[0])
+
+        target_sampled_tokens, _, _ = self._sampler.sample_logits(
+            logits=target_outputs.logits,
+            sampler_inputs=sampler_inputs,
+            penalty_inputs=penalty_inputs,
         )
         target_sampled_tokens_np = target_sampled_tokens.to_numpy()
 

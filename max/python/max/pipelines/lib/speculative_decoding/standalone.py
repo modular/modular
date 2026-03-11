@@ -149,11 +149,11 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
-                self.sample_draft_logits(
-                    model_outputs,
-                    generated_tokens,
-                    generated_logits,
-                    sampler_inputs,
+                self._sampler.sample_logits_with_prev(
+                    logits=model_outputs.logits,
+                    prev_tokens=generated_tokens,
+                    prev_logits=generated_logits,
+                    sampler_inputs=sampler_inputs,
                 )
             )
             generated_tokens = new_generated_tokens

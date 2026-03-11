@@ -37,6 +37,7 @@ from max.nn.sampling import (
 from max.pipelines.core import TextContext
 
 from .sampling_config import SamplingConfig
+from .sampling_logits_processor import PenaltyInputs, SamplerInputs
 
 
 def _sampling_input_types(
@@ -320,6 +321,72 @@ def token_sampler(
             graph.output(tokens, all_tokens, seed)
 
         return graph
+
+
+class TokenSampler:
+    """Samples tokens from the logits."""
+
+    def __init__(
+        self,
+        session: InferenceSession,
+        sampling_config: SamplingConfig,
+        device: DeviceRef,
+        return_logits: bool = False,
+    ) -> None:
+        self._model = session.load(
+            token_sampler(
+                sampling_config=sampling_config,
+                device=device,
+                return_logits=return_logits,
+            )
+        )
+        self._device = device.to_device()
+
+    def sample_logits_with_prev(
+        self,
+        logits: Buffer,
+        prev_tokens: Buffer,
+        prev_logits: Buffer,
+        sampler_inputs: SamplerInputs,
+        penalty_inputs: PenaltyInputs | None = None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        """Samples tokens from the logits with previous logits."""
+        graph_inputs: list[Buffer] = [
+            logits,
+            prev_tokens,
+            *sampler_inputs.as_list(),
+            prev_logits,
+        ]
+        if penalty_inputs is not None:
+            graph_inputs.extend(penalty_inputs.as_list())
+        tokens, all_tokens, all_logits = self._model(*graph_inputs)[:3]
+        return tokens, all_tokens, all_logits
+
+    def sample_logits(
+        self,
+        logits: Buffer,
+        sampler_inputs: SamplerInputs,
+        penalty_inputs: PenaltyInputs | None = None,
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        """Samples tokens from the logits."""
+        batch_size = sampler_inputs.top_k.shape[0]
+        prev_tokens = Buffer.zeros(
+            (batch_size, 0),
+            dtype=DType.int64,
+            device=self._device,
+        )
+        prev_logits = Buffer.zeros(
+            (batch_size, 0),
+            dtype=DType.float32,
+            device=self._device,
+        )
+        return self.sample_logits_with_prev(
+            logits=logits,
+            prev_tokens=prev_tokens,
+            prev_logits=prev_logits,
+            sampler_inputs=sampler_inputs,
+            penalty_inputs=penalty_inputs,
+        )
 
 
 def rejection_sampler(
