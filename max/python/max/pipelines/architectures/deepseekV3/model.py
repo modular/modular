@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -88,6 +88,34 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
+
+    @staticmethod
+    def _get_mtp_draft_ep_dispatch_dtype(
+        pipeline_config: PipelineConfig,
+    ) -> DType | None:
+        """Returns the draft model's EP dispatch dtype for MTP with FP4 target.
+
+        When MTP speculative decoding is used with an FP4 target model, EP
+        buffers must be sized for the draft model's (larger) dispatch dtype.
+        Returns None if this override is not needed.
+        """
+        spec_config = pipeline_config.speculative
+        if spec_config is None or not spec_config.is_mtp():
+            return None
+
+        encoding = pipeline_config.model.quantization_encoding
+        if encoding is None or not is_float4_encoding(encoding):
+            return None
+
+        draft_encoding = (
+            pipeline_config.draft_model.quantization_encoding
+            if pipeline_config.draft_model is not None
+            else None
+        )
+        if draft_encoding is None:
+            return None
+
+        return supported_encoding_dtype(draft_encoding)
 
     @classmethod
     def get_kv_params(
@@ -386,9 +414,16 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             n_gpus_per_node = len(pipeline_config.model.device_specs)
             n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
 
+            ep_dispatch_dtype = supported_encoding_dtype(encoding)
+            draft_ep_dtype = cls._get_mtp_draft_ep_dispatch_dtype(
+                pipeline_config
+            )
+            if draft_ep_dtype is not None:
+                ep_dispatch_dtype = draft_ep_dtype
+
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
-                dispatch_dtype=supported_encoding_dtype(encoding),
+                dispatch_dtype=ep_dispatch_dtype,
                 combine_dtype=DType.bfloat16,
                 max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,
@@ -460,8 +495,28 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # since NVSHMEM functions cannot be linked without real GPU devices.
         # We still keep ep_config to generate the correct graph structure.
         if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+            ep_alloc_config = config.ep_config
+            # When EAGLE/MTP speculative decoding shares EP buffers between
+            # target (FP4) and draft (BF16) models, allocate buffers
+            # large enough for the draft model's dispatch dtype.
+            draft_ep_dtype = self._get_mtp_draft_ep_dispatch_dtype(
+                self.pipeline_config
+            )
+            if draft_ep_dtype is not None:
+                ep_alloc_config = replace(
+                    config.ep_config,
+                    dispatch_dtype=draft_ep_dtype,
+                    dispatch_fp8_config=None,
+                )
+                logger.info(
+                    f"Upsizing EP buffers for draft model dispatch dtype: {draft_ep_dtype}"
+                )
+            self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
             self.ep_comm_initializer.ep_init(session)
+            # ep_init() sets node_id on the initializer's config; propagate
+            # it back to the model's ep_config (which may be a different
+            # object when we created a copy above).
+            config.ep_config.node_id = ep_alloc_config.node_id
             if config.ep_config.node_id == -1:
                 raise ValueError(
                     "EP node ID is not set. Please check if the EP initialization is successful."
