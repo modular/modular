@@ -31,18 +31,11 @@ def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
 fn to_string[
     string: StaticString, *extra: StaticString
 ]() -> __mlir_type.`!kgen.string`:
-    return to_string[string, extra]()
-
-
-@always_inline("nodebug")
-fn to_string[
-    string: StaticString, extra: VariadicParamList[StaticString]
-]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<data_to_str,`,
         string,
         `,`,
-        extra.value,
+        extra,
         `> : !kgen.string`,
     ]
 
