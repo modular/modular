@@ -156,6 +156,10 @@ def test_optional_conditional_conformances() raises:
     assert_true(conforms_to(Optional[String], Writable))
     assert_false(conforms_to(Optional[MoveOnly[Int]], Writable))
 
+    assert_true(conforms_to(Optional[Int], Copyable))
+    assert_true(conforms_to(Optional[String], Copyable))
+    assert_false(conforms_to(Optional[MoveOnly[Int]], Copyable))
+
 
 def test_optional_write_to() raises:
     check_write_to(Optional[Int](None), expected="None", is_repr=False)

@@ -101,9 +101,6 @@ struct Optional[T: Movable](
     Your value can take on a value or `None`, and you need to check
     and explicitly extract the value to get it out.
 
-    Currently T is required to be a `Copyable` so we can implement
-    copy/move for Optional and allow it to be used in collections itself.
-
     ## Layout
 
     The layout of `Optional` is not guaranteed and may change at any time.

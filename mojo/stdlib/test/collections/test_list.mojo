@@ -1077,6 +1077,22 @@ def test_list_can_infer_iterable_element_type() raises:
     )
 
 
+def test_list_hash() raises:
+    # Equal lists should produce the same hash.
+    assert_equal(hash([1, 2, 3]), hash([1, 2, 3]))
+
+    # Empty list hashing.
+    assert_equal(hash(List[Int]()), hash(List[Int]()))
+
+    # Different lists should (likely) produce different hashes.
+    assert_not_equal(hash([1, 2, 3]), hash([1, 2, 4]))
+    assert_not_equal(hash([1, 2]), hash([2, 1]))
+
+    # Hashable conformance is conditional.
+    assert_true(conforms_to(List[Int], Hashable))
+    assert_true(conforms_to(List[String], Hashable))
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#

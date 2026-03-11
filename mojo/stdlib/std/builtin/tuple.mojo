@@ -21,8 +21,11 @@ from std.format._utils import (
     TypeNames,
     FormatStruct,
 )
+from std.hashlib.hasher import Hasher
 from std.reflection.traits import (
     AllCopyable,
+    AllEquatable,
+    AllHashable,
     AllImplicitlyCopyable,
     AllWritable,
 )
@@ -40,6 +43,8 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
     Copyable where AllCopyable[*element_types],
+    Equatable where AllEquatable[*element_types],
+    Hashable where AllHashable[*element_types],
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
     # ImplicitlyCopyable refines Copyable, but the compiler can't infer
     # parent trait constraints from derived ones yet. Remove AllCopyable
@@ -256,15 +261,10 @@ struct Tuple[*element_types: Movable](
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
 
     @always_inline
-    fn __eq__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    fn __eq__(
+        self, other: Self
+    ) -> Bool where AllEquatable[*Self.element_types]:
         """Compare this tuple to another tuple using equality comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -272,9 +272,33 @@ struct Tuple[*element_types: Movable](
         Returns:
             True if this tuple is equal to the other tuple, False otherwise.
         """
+        comptime for i in range(type_of(self).__len__()):
+            if trait_downcast[Equatable](self[i]) != trait_downcast[Equatable](
+                other[i]
+            ):
+                return False
+        return True
 
-        # We do not use self._compare here because we only want
-        # Equatable conformance for the method.
+    @always_inline
+    fn __eq__[
+        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
+        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
+    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+        """Compare this tuple to another tuple of a potentially different type.
+
+        This overload enables cross-type and cross-length comparisons such as
+        `(1, "a") == (1, "b")` or `(1, 2, 3) == (1, 2)`.
+
+        Parameters:
+            self_elt_types: The types of the elements in this tuple.
+            other_elt_types: The types of the elements in the other tuple.
+
+        Args:
+            other: The other tuple to compare against.
+
+        Returns:
+            True if the tuples are equal, False otherwise.
+        """
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
@@ -296,20 +320,33 @@ struct Tuple[*element_types: Movable](
         self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
         other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
     ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
-        """Compare this tuple to another tuple using inequality comparison.
+        """Compare this tuple to another tuple of a potentially different type.
 
         Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
+            self_elt_types: The types of the elements in this tuple.
+            other_elt_types: The types of the elements in the other tuple.
 
         Args:
             other: The other tuple to compare against.
 
         Returns:
-            True if this tuple is not equal to the other tuple, False otherwise.
+            True if the tuples are not equal, False otherwise.
         """
-
         return not self == other
+
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where AllHashable[*Self.element_types]:
+        """Hashes the tuple using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        comptime for i in range(type_of(self).__len__()):
+            trait_downcast[Hashable](self[i]).__hash__(hasher)
 
     @no_inline
     fn _write_tuple_to[

@@ -17,6 +17,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Standard library types now use conditional conformances, replacing previous
+  `_constrained_conforms_to` checks:
+  - `List`: `Hashable`
+  - `Tuple`: `Equatable`, `Hashable`
+
 - The `DimList` type has moved to representing its dimensions as parameters to
   the type instead of values inside the type, directly reflecting that the
   dimensions are known at compile time.  Please change `DimList(x, y)`

@@ -19,6 +19,7 @@ These APIs are imported automatically, just like builtins.
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 import std.format._utils as fmt
+from std.hashlib import Hasher
 from std.reflection import get_type_name
 from std.collections._index_normalization import normalize_index
 from std.collections._asan_annotations import (
@@ -99,6 +100,7 @@ struct List[T: Copyable](
     Copyable,
     Defaultable,
     Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
     Iterable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -464,6 +466,20 @@ struct List[T: Copyable](
                 return False
             index += 1
         return True
+
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Updates hasher with the hash of each element in the list.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        for element in self:
+            trait_downcast[Hashable](element).__hash__(hasher)
 
     fn __contains__[
         U: Equatable & Copyable, //
