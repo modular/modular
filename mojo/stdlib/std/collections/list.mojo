@@ -61,7 +61,8 @@ struct _ListIter[
     ]: Iterator = Self
 
     var index: Int
-    var src: Pointer[List[Self.Element], Self.origin]
+    var src: UnsafePointer[Self.T, Self.origin]
+    var length: Int
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -71,22 +72,22 @@ struct _ListIter[
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
         comptime if Self.forward:
-            if self.index >= len(self.src[]):
+            if self.index >= self.length:
                 raise StopIteration()
             self.index += 1
-            return self.src[][self.index - 1]
+            return self.src[self.index - 1]
         else:
             if self.index <= 0:
                 raise StopIteration()
             self.index -= 1
-            return self.src[][self.index]
+            return self.src[self.index]
 
     @always_inline
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
         comptime if Self.forward:
-            iter_len = len(self.src[]) - self.index
+            iter_len = self.length - self.index
         else:
             iter_len = self.index
 
@@ -565,7 +566,7 @@ struct List[T: Copyable](
         Returns:
             An iterator of immutable references to the list elements.
         """
-        return {0, Pointer(to=self)}
+        return _ListIter(index=0, src=self.unsafe_ptr(), length=self._len)
 
     fn __reversed__(
         ref self,
@@ -575,7 +576,9 @@ struct List[T: Copyable](
         Returns:
             A reversed iterator of immutable references to the list elements.
         """
-        return _ListIter[forward=False](len(self), Pointer(to=self))
+        return _ListIter[forward=False](
+            index=len(self), src=self.unsafe_ptr(), length=self._len
+        )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
