@@ -59,7 +59,8 @@ using namespace M::KGEN::LIT;
 LogicalResult ExprNode::emitDestructuringPValue(PValue value,
                                                 IREmitter &emitter) const {
   emitter.emitError(
-      getLoc(), "invalid comptime declaration: expected an identifier or '_'");
+      getLoc(),
+      Diag::DiagID::err_invalid_comptime_declaration_expected_identifier);
   return failure();
 }
 
@@ -112,8 +113,8 @@ static Attribute parseMLIRAttrFromStringWithError(StringRef name, SMLoc loc,
                                                   SharedState &shared) {
   auto result = parseMLIRAttrFromString(name, loc, shared);
   if (result.isError()) {
-    auto diag = shared.emitError(loc, "invalid MLIR attribute: ")
-                << result.takeError().get();
+    auto diag = shared.emitError(loc, Diag::DiagID::err_invalid_mlir_attribute,
+                                 result.takeError().get());
     diag.attachNote(loc) << "attempting to parse: '" << name << "'";
     return {};
   }
@@ -159,7 +160,8 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
   for (const Operand &operand : node.operands) {
     ExprNode *expr = operand.expr;
     if (!operand.isPositional()) {
-      emitter.emitError(loc, "only positional operands allowed in mlir magic")
+      emitter.emitError(loc,
+                        Diag::DiagID::err_only_positional_operands_allowed_mlir)
           << expr->getRange();
       return {};
     }
@@ -218,8 +220,9 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       indexVal.get().print(os, elideType);
   }
 
-  if (result.empty())
-    emitter.emitError(loc, "mlir magic expanded to an empty string");
+  if (result.empty()) {
+    emitter.emitError(loc, Diag::DiagID::err_mlir_magic_expanded_empty_string);
+  }
   return result;
 }
 
@@ -231,7 +234,8 @@ buildAttrCtorDeferredAttrFromMLIRAttr(const SubscriptNode &node,
   for (const Operand &operand : node.operands) {
     ExprNode *expr = operand.expr;
     if (!operand.isPositional()) {
-      emitter.emitError(loc, "only positional operands allowed in mlir magic")
+      emitter.emitError(loc,
+                        Diag::DiagID::err_only_positional_operands_allowed_mlir)
           << expr->getRange();
       return {};
     }
@@ -263,8 +267,9 @@ buildAttrCtorDeferredAttrFromMLIRAttr(const SubscriptNode &node,
     strings.push_back(ToStringDeferredAttr::get(indexVal.get(), elideType));
   }
 
-  if (strings.empty())
-    emitter.emitError(loc, "mlir magic expanded to an empty string");
+  if (strings.empty()) {
+    emitter.emitError(loc, Diag::DiagID::err_mlir_magic_expanded_empty_string);
+  }
 
   return AttrCtorDeferredAttr::get(strings);
 }
@@ -369,7 +374,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 
   // Only allow applying attributes to something without them.
   if (!unboundOp.getAttrs().empty()) {
-    emitter.emitError(loc, "operation already has attributes")
+    emitter.emitError(loc, Diag::DiagID::err_operation_already_attributes)
         << subscript.getRange();
     return {};
   }
@@ -380,8 +385,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   for (const Operand &operand : subscript.operands) {
     ExprNode *valueExpr = operand.expr;
     if (!operand.isKeyword()) {
-      MojoInflightDiag diag =
-          emitter.emitError(loc, "attribute spec requires a keyword parameter");
+      MojoInflightDiag diag = emitter.emitError(
+          loc, Diag::DiagID::err_attribute_spec_requires_keyword_parameter);
 
       // Jump through some hoops to emit a hint about using the old syntax.
       if (auto *slice = dyn_cast<SliceLiteralNode>(valueExpr);
@@ -460,18 +465,18 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       // unbound parameters, walk the attribute and check for ParamDeclRefAttrs
       // to values that are UnboundAttrs.
       TypedAttr aliasValue = decl.getValueAttr();
-      WalkResult findUnboundParams = aliasValue.walk([&](ParamDeclRefAttr attr)
-                                                         -> WalkResult {
-        if (auto it = paramDeclIndices.find(attr.getName());
-            it != paramDeclIndices.end() &&
-            isa<UnboundAttr>(paramValues[it->second])) {
-          emitter.shared.emitError(refLoc, "cannot access comptime member '")
-              << declName << "' with unbound parameter '"
-              << structDecl.getName() << "." << attr.getName().str() << "'";
-          return WalkResult::interrupt();
-        }
-        return WalkResult::advance();
-      });
+      WalkResult findUnboundParams =
+          aliasValue.walk([&](ParamDeclRefAttr attr) -> WalkResult {
+            if (auto it = paramDeclIndices.find(attr.getName());
+                it != paramDeclIndices.end() &&
+                isa<UnboundAttr>(paramValues[it->second])) {
+              emitter.shared.emitError(
+                  refLoc, Diag::DiagID::err_cannot_access_comptime_member,
+                  declName, structDecl.getName(), attr.getName().str());
+              return WalkResult::interrupt();
+            }
+            return WalkResult::advance();
+          });
       if (findUnboundParams.wasInterrupted())
         return {};
 
@@ -569,7 +574,8 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     // The discard pattern can only be used in case where we have an inferred
     // type for the lvalue or pvalue.
     if (!initializerType) {
-      emitter.emitError(getLoc(), "cannot read from discard pattern '_'");
+      emitter.emitError(getLoc(),
+                        Diag::DiagID::err_cannot_read_discard_pattern__);
       return {};
     }
 
@@ -584,9 +590,7 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       emitter.declScope
           .getNearestDeclOfType<StructDeclOp, TraitDeclOp, ExtensionDeclOp>();
   if (!astDecl) {
-    emitter.emitError(
-        getLoc(),
-        "'Self' type may only be used inside a struct, trait, or extension");
+    emitter.emitError(getLoc(), Diag::DiagID::err_self_type_only_used_inside);
     return {};
   }
 
@@ -594,7 +598,7 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (!selfType) {
     // The user is attempting to use "Self" when the self type hasn't yet been
     // computed (e.g. inside a struct's parameter list). This is not allowed.
-    emitter.emitError(getLoc(), "'Self' type is not available in this context");
+    emitter.emitError(getLoc(), Diag::DiagID::err_self_type_available_context);
     return {};
   }
 
@@ -623,7 +627,7 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
   if (!litStruct || litStruct.getParams().size() != 1 ||
       !sugarIsa<POP::IntLiteralType, POP::FloatLiteralType, StringType>(
           litStruct.getParams()[0].getType())) {
-    emitter.emitError(expr->getLoc(), "malformed Literal type");
+    emitter.emitError(expr->getLoc(), Diag::DiagID::err_malformed_literal_type);
     return {};
   }
 

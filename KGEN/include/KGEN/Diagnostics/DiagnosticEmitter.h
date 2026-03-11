@@ -29,9 +29,10 @@ namespace M::KGEN::Diag {
 template <typename... Args>
 inline std::string diagMsg(DiagID id, Args &&...args) {
   const DiagnosticInfo *info = DiagnosticRegistry::get().lookup(id);
-  if (!info)
+  if (!info) {
     llvm_unreachable(
         "unknown DiagID; every DiagID must be in DiagnosticIDs.def");
+  }
   return llvm::formatv(info->messageTemplate.data(),
                        std::forward<Args>(args)...)
       .str();
@@ -47,6 +48,18 @@ inline mlir::InFlightDiagnostic emitError(OpT &&op, DiagID id, Args &&...args) {
 template <typename OpT, typename... Args>
 inline mlir::InFlightDiagnostic emitError(OpT *op, DiagID id, Args &&...args) {
   return op->emitError(diagMsg(id, std::forward<Args>(args)...));
+}
+
+/// Emit an error via a registered DiagID at a given location.
+template <typename ObjT, typename LocT, typename... Args>
+inline auto emitError(ObjT &&obj, LocT loc, DiagID id, Args &&...args) {
+  return obj.emitError(loc, diagMsg(id, std::forward<Args>(args)...));
+}
+
+/// Emit a warning via a registered DiagID at a given location.
+template <typename ObjT, typename LocT, typename... Args>
+inline auto emitWarning(ObjT &&obj, LocT loc, DiagID id, Args &&...args) {
+  return obj.emitWarning(loc, diagMsg(id, std::forward<Args>(args)...));
 }
 
 } // namespace M::KGEN::Diag

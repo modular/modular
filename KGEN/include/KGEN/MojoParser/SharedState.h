@@ -20,6 +20,7 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace M::KGEN {
 class CompilationOptions;
@@ -164,6 +165,17 @@ public:
   /// Emit a warning.
   MojoInflightDiag emitWarning(Location loc, const Twine &message = {});
   MojoInflightDiag emitWarning(llvm::SMLoc loc, const Twine &message = {});
+
+  /// Emit an error/warning from a DiagID; arguments are formatted via
+  /// addToDiagnostic so MLIR types and ASTTypes render correctly.
+  template <typename LocT, typename... Args>
+  MojoInflightDiag emitError(LocT loc, Diag::DiagID id, Args &&...args) {
+    return diags.emitError(loc, id, std::forward<Args>(args)...);
+  }
+  template <typename LocT, typename... Args>
+  MojoInflightDiag emitWarning(LocT loc, Diag::DiagID id, Args &&...args) {
+    return diags.emitWarning(loc, id, std::forward<Args>(args)...);
+  }
 
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
@@ -676,6 +688,17 @@ public:
                                const Twine &message = {}) const {
     return shared.emitWarning(loc, message);
   }
+
+  template <typename LocT, typename... Args>
+  MojoInflightDiag emitError(LocT loc, Diag::DiagID id, Args &&...args) const {
+    return shared.emitError(loc, id, std::forward<Args>(args)...);
+  }
+  template <typename LocT, typename... Args>
+  MojoInflightDiag emitWarning(LocT loc, Diag::DiagID id,
+                               Args &&...args) const {
+    return shared.emitWarning(loc, id, std::forward<Args>(args)...);
+  }
+
   // Allow assignments in derived classes.
   void operator=(const SharedStateUser &other) {
     assert(&other.shared == &shared);

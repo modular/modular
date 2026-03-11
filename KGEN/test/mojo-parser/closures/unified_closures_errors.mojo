@@ -28,7 +28,7 @@ fn use(a:Mem):
 
 
 fn foo(a: Mem):
-    # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable.}}
+    # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable}}
     fn closure() unified register_passable {var}:
         use(a)
 
