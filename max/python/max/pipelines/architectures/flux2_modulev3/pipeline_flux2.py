@@ -83,9 +83,6 @@ class Flux2ModelInputs:
     num_images_per_prompt: int
     """Number of images to generate per prompt."""
 
-    step_cache: bool = False
-    """Enable step-cache runtime behavior."""
-
     residual_threshold: float = 0.08
     """Residual threshold for cache reuse decisions."""
 
@@ -177,6 +174,10 @@ class Flux2Pipeline(DiffusionPipeline):
         self._cached_sigmas: dict[str, Tensor] = {}
         self._cached_shape_carriers: dict[int, Tensor] = {}
 
+        enable_fbc = self.pipeline_config.runtime.enable_fbc
+        self.transformer.compile_model(enable_fbc)
+        self._enable_fbc = enable_fbc
+
     @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2ModelInputs."""
@@ -257,7 +258,6 @@ class Flux2Pipeline(DiffusionPipeline):
             width=context.width,
             num_inference_steps=context.num_inference_steps,
             num_images_per_prompt=context.num_images_per_prompt,
-            step_cache=getattr(context, "step_cache", False),
             residual_threshold=context.residual_threshold,
             input_image=context.input_image,
         )
@@ -762,12 +762,7 @@ class Flux2Pipeline(DiffusionPipeline):
             * cfg.patch_size
             * (cfg.out_channels or cfg.in_channels)
         )
-        with Tracer("select_transformer_model"):
-            step_cache_enabled = bool(model_inputs.step_cache)
-            if step_cache_enabled:
-                self.transformer.use_step_cache_model()
-            else:
-                self.transformer.use_standard_model()
+        step_cache_enabled = self._enable_fbc
         if step_cache_enabled:
             with Tracer("create_step_cache_tensors"):
                 step_cache_flag = Tensor.full(
