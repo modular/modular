@@ -431,6 +431,9 @@ class InferenceSession:
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
 
+        if pdl_level := os.getenv("PDL_LEVEL"):
+            self._pdl_level(pdl_level)
+
     def __repr__(self) -> str:
         if self.num_threads:
             return f"<modular engine InferenceSession(num_threads={self.num_threads})>"
