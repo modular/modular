@@ -84,7 +84,7 @@ trait Copyable(Movable):
 
         fn __init__(out self, *, copy: Self):
             print("copying value")
-            self.s = other.s
+            self.s = copy.s
     ```
 
     You can now copy objects inside a generic function:
