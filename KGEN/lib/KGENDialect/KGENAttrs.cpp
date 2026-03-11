@@ -148,8 +148,9 @@ LogicalResult VariadicAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   Type elementType = type.getElementType();
   for (auto [idx, value] : llvm::enumerate(values))
     if (value.getType() != elementType)
-      return emitError() << diagMsg(DiagID::err_variadic_sequence_element_2,
-                                    idx, value.getType(), elementType);
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_variadic_sequence_element_2, idx,
+                 value.getType(), elementType);
   return success();
 }
 
@@ -205,7 +206,7 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                            TypedAttr mapper) {
   if (type != base.getType())
     return emitError() << diagMsg(
-               DiagID::err_mismatch_between_reduce_base_value_2, type,
+               Diag::DiagID::err_mismatch_between_reduce_base_value_2, type,
                base.getType());
 
   auto toApply = dyn_cast<GeneratorType>(mapper.getType());
@@ -213,7 +214,7 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   if (!toApply || !srcTp)
     return emitError() << diagMsg(
-               DiagID::err_expected_input_variadic_type_generatorattr_2);
+               Diag::DiagID::err_expected_input_variadic_type_generatorattr_2);
 
   // Adjust the depth by -1 before type comparision, since the generator attr
   // increases the depth by one.
@@ -224,17 +225,17 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   ArrayRef<Type> mapperInputTps = toApply.getInputParamTypes();
   if (mapperInputTps.size() != 3)
     return emitError() << diagMsg(
-               DiagID::err_expected_generatorattr_takes_3_argument);
+               Diag::DiagID::err_expected_generatorattr_takes_3_argument);
 
   if (base.getType() != mapperInputTps[0] || srcTp != mapperInputTps[1] ||
       mapperInputTps[2] != IndexType::get(type.getContext()))
-    return emitError() << diagMsg(DiagID::err_expected_generatorattr_takes_2,
-                                  base.getType(), srcTp, mapperInputTps[0],
-                                  mapperInputTps[1], mapperInputTps[2]);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_expected_generatorattr_takes_2, base.getType(),
+               srcTp, mapperInputTps[0], mapperInputTps[1], mapperInputTps[2]);
 
   if (toApply.getBody() != type)
     return emitError() << diagMsg(
-               DiagID::err_expected_generatorattr_output_type_2, type,
+               Diag::DiagID::err_expected_generatorattr_output_type_2, type,
                toApply.getBody());
 
   return success();
@@ -244,11 +245,12 @@ LogicalResult
 VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                         VariadicType type, TypedAttr variadics) {
   if (variadics.getType() != type)
-    return emitError() << diagMsg(DiagID::err_expected_same_input_output_type_2,
-                                  type, variadics.getType());
+    return emitError() << diagMsg(
+               Diag::DiagID::err_expected_same_input_output_type_2, type,
+               variadics.getType());
   if (!isa<VariadicType>(type.getElementType()))
     return emitError() << diagMsg(
-               DiagID::err_expected_zip_variadic_variadic_values);
+               Diag::DiagID::err_expected_zip_variadic_variadic_values);
 
   return success();
 }
@@ -358,7 +360,7 @@ VariadicSizeAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                          IndexType type, TypedAttr variadic) {
   if (!isa<VariadicType>(variadic.getType()))
     return emitError() << diagMsg(
-               DiagID::err_expected_variadic_type_count_got_2,
+               Diag::DiagID::err_expected_variadic_type_count_got_2,
                variadic.getType());
   return success();
 }
@@ -421,12 +423,12 @@ VariadicConcatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   auto toConcatVA = dyn_cast<VariadicType>(variadics.getType());
   if (!toConcatVA)
     return emitError() << diagMsg(
-               DiagID::err_expected_concat_variadic_variadic_values);
+               Diag::DiagID::err_expected_concat_variadic_variadic_values);
 
   if (type != toConcatVA.getElementType())
     return emitError() << diagMsg(
-               DiagID::err_mismatch_between_variadics_concatenate_output, type,
-               toConcatVA.getElementType());
+               Diag::DiagID::err_mismatch_between_variadics_concatenate_output,
+               type, toConcatVA.getElementType());
 
   return success();
 }
@@ -640,7 +642,7 @@ verifyCastAttr(function_ref<mlir::InFlightDiagnostic()> emitError, Type type,
   bool isResultVA = isa<VariadicType>(type);
   if (isInputVA != isResultVA)
     return emitError() << diagMsg(
-               DiagID::err_casting_variadic_type_variadic_type);
+               Diag::DiagID::err_casting_variadic_type_variadic_type);
   // NOTE: we should also verify that the output type must be a trait type, but
   // we don't have access to LIT::TraitType here due to build dependency.
   return success();
@@ -706,7 +708,7 @@ TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                 TypedAttr typeValue, VariadicAttr traitNames) {
   if (!isa<StringType>(traitNames.getType().getElementType()))
     return emitError() << diagMsg(
-               DiagID::err_expected_variadic_strings_trait_names_2,
+               Diag::DiagID::err_expected_variadic_strings_trait_names_2,
                traitNames.getType());
 
   return success();
@@ -762,7 +764,8 @@ LogicalResult CompileOffloadClosureAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
     TypedAttr func, Type type) {
   if (!::isa<TargetType>(target.getType()))
-    return emitError() << diagMsg(DiagID::err_target_operand_kgen_target_type);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_target_operand_kgen_target_type);
   return success();
 }
 
@@ -776,7 +779,8 @@ LogicalResult GetLinkageNameAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
     TypedAttr func, Type type) {
   if (!::isa<TargetType>(target.getType()))
-    return emitError() << diagMsg(DiagID::err_target_operand_kgen_target_type);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_target_operand_kgen_target_type);
   return success();
 }
 
@@ -797,20 +801,22 @@ LogicalResult CompileAssemblyAttr::verify(
     TypedAttr emissionKind, TypedAttr emissionOptions, BoolAttr propagateError,
     TypedAttr func, Type type) {
   if (!::isa<TargetType>(target.getType()))
-    return emitError() << diagMsg(DiagID::err_target_operand_kgen_target_type);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_target_operand_kgen_target_type);
 
   if (!::isa<IndexType>(emissionKind.getType()))
-    return emitError() << diagMsg(DiagID::err_emissionkind_operand_index_type);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_emissionkind_operand_index_type);
   if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(emissionKind)) {
     if (!::isa<EmitAsAttr>(emissionIntAttr)) {
       return emitError() << diagMsg(
-                 DiagID::err_emissionkind_operand_evaluate_either_asm);
+                 Diag::DiagID::err_emissionkind_operand_evaluate_either_asm);
     }
   }
 
   if (!::isa<StringType>(emissionOptions.getType())) {
     return emitError() << diagMsg(
-               DiagID::err_emissionoptions_operand_kgen_string_type);
+               Diag::DiagID::err_emissionoptions_operand_kgen_string_type);
   }
 
   return success();
@@ -862,7 +868,8 @@ LogicalResult StructFieldOffsetByIndexAttr::verify(
   // Only verify target type - fieldIndex type is checked during evaluation
   // since it may be a Mojo Int that gets converted to index.
   if (!::isa<TargetType>(target.getType()))
-    return emitError() << diagMsg(DiagID::err_target_operand_kgen_target_type);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_target_operand_kgen_target_type);
   return success();
 }
 
@@ -882,7 +889,8 @@ LogicalResult StructFieldOffsetByNameAttr::verify(
   // Only verify target type - fieldName type is checked during evaluation
   // since it may be a Mojo StringLiteral that gets converted to kgen.string.
   if (!::isa<TargetType>(target.getType()))
-    return emitError() << diagMsg(DiagID::err_target_operand_kgen_target_type);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_target_operand_kgen_target_type);
   return success();
 }
 
@@ -1068,12 +1076,13 @@ BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   auto genType = sugarDynCast<GeneratorType>(generator.getType());
   if (!genType)
     return emitError() << diagMsg(
-               DiagID::err_bind_params_generator_operand_generatortype_got_2,
+               Diag::DiagID::
+                   err_bind_params_generator_operand_generatortype_got_2,
                generator.getType());
 
   if (paramValues.size() > genType.getInputParamTypes().size())
     return emitError() << diagMsg(
-               DiagID::err_bind_params_more_parameters_than_generator);
+               Diag::DiagID::err_bind_params_more_parameters_than_generator);
 
   // It is possible that the parameter values do not have identical types as
   // what the generator type expects. This happens for example during
@@ -1506,14 +1515,15 @@ LogicalResult StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   std::optional<SmallVector<Type>> types = type.getElementTypes();
   if (!types)
     return emitError() << diagMsg(
-               DiagID::err_cannot_verify_struct_attribute_parametric);
+               Diag::DiagID::err_cannot_verify_struct_attribute_parametric);
   if (types->size() != values.size())
-    return emitError() << diagMsg(DiagID::err_struct_attribute_type_requires_2,
-                                  types->size(), values.size());
+    return emitError() << diagMsg(
+               Diag::DiagID::err_struct_attribute_type_requires_2,
+               types->size(), values.size());
   for (auto [idx, value, type] :
        llvm::zip(llvm::seq<unsigned>(0, types->size()), values, *types)) {
     if (value.getType() != type) {
-      return emitError() << diagMsg(DiagID::err_struct_element_2, idx,
+      return emitError() << diagMsg(Diag::DiagID::err_struct_element_2, idx,
                                     value.getType(), type);
     }
   }
@@ -1626,18 +1636,19 @@ LogicalResult PackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   auto variadic = packType.getVariadicIfResolved();
   if (!variadic)
     return emitError() << diagMsg(
-               DiagID::err_pack_attribute_expected_variadic_constant_3,
+               Diag::DiagID::err_pack_attribute_expected_variadic_constant_3,
                packType.getVariadic());
 
   ArrayRef<TypedAttr> expected = variadic.getValues();
   if (values.size() != expected.size())
-    return emitError() << diagMsg(DiagID::err_pack_attribute_type_requires_2,
-                                  expected.size(), values.size());
+    return emitError() << diagMsg(
+               Diag::DiagID::err_pack_attribute_type_requires_2,
+               expected.size(), values.size());
   // Verify the constant elements have the right type.
   for (auto [i, value, typeAttr] :
        llvm::zip(llvm::seq<size_t>(0, expected.size()), values, expected))
     if (value.getType() != ParamType::get(typeAttr))
-      return emitError() << diagMsg(DiagID::err_pack_attribute_element, i,
+      return emitError() << diagMsg(Diag::DiagID::err_pack_attribute_element, i,
                                     value.getType(), typeAttr);
   return success();
 }
@@ -1654,12 +1665,13 @@ LogicalResult VariantAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   TypedAttr value, unsigned index,
                                   VariantType type) {
   if (index >= type.getNumTypes())
-    return emitError() << diagMsg(DiagID::err_variant_index_out_of_bounds,
+    return emitError() << diagMsg(Diag::DiagID::err_variant_index_out_of_bounds,
                                   index);
   if (type.getType(index) == value.getType())
     return success();
-  return emitError() << diagMsg(DiagID::err_variant_attribute_value_type_2,
-                                value.getType(), index, type.getType(index));
+  return emitError() << diagMsg(
+             Diag::DiagID::err_variant_attribute_value_type_2, value.getType(),
+             index, type.getType(index));
 }
 
 /// The variant attribute is a constant if the value type is a constant and its
@@ -1682,16 +1694,16 @@ LogicalResult EnvAttr::verify(function_ref<InFlightDiagnostic()> emitError,
     if (auto intVal = ::dyn_cast<IntegerAttr>(value)) {
       if (!::isa<IndexType>(intVal.getType()))
         return emitError() << diagMsg(
-                   DiagID::err_environment_value_integer_not_index,
+                   Diag::DiagID::err_environment_value_integer_not_index,
                    attr.getName());
     } else if (auto strVal = ::dyn_cast<StringAttr>(value)) {
       if (!::isa<StringType>(strVal.getType()))
         return emitError() << diagMsg(
-                   DiagID::err_environment_value_string_not_kgen_string,
+                   Diag::DiagID::err_environment_value_string_not_kgen_string,
                    attr.getName());
     } else if (!::isa<UnitAttr>(value)) {
       return emitError() << diagMsg(
-                 DiagID::err_environment_value_not_index_string_unit,
+                 Diag::DiagID::err_environment_value_not_index_string_unit,
                  attr.getName());
     }
   }
@@ -1847,7 +1859,7 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
     inputTypes = inputTypes.drop_back();
 
   if (operands.size() != inputTypes.size()) {
-    return emitError() << diagMsg(DiagID::err_apply_function_expected_2,
+    return emitError() << diagMsg(Diag::DiagID::err_apply_function_expected_2,
                                   inputTypes.size(), operands.size());
   }
   for (auto [i, operand, type] : llvm::enumerate(operands, inputTypes)) {
@@ -1855,7 +1867,7 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
     // This is a strict type equality check, sugar shouldn't be allowed in the
     // way, otherwise we can't print/parse the operation.
     if (operand.getType() != expected) {
-      auto diag = emitError() << diagMsg(DiagID::err_apply_operand_2, i,
+      auto diag = emitError() << diagMsg(Diag::DiagID::err_apply_operand_2, i,
                                          operand.getType(), expected);
       diag.attachNote() << "callee: " << callee;
       return failure();
@@ -1873,11 +1885,13 @@ static LogicalResult verifyApply(ArrayRef<TypedAttr> operands, Type type,
   // Verify the result.
   auto sig = cast<FuncTypeGeneratorType>(operands.front().getType()).getBody();
   if (sig.getResults().size() != 1)
-    return emitError() << diagMsg(DiagID::err_apply_function_return_one_result);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_apply_function_return_one_result);
   Type resultType = upbindApplyResult(sig.getResults().front());
   if (type != resultType)
-    return emitError() << diagMsg(DiagID::err_apply_function_result_type_2,
-                                  type, resultType);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_apply_function_result_type_2, type,
+               resultType);
 
   return success();
 }
@@ -1895,7 +1909,7 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
     auto expectedResult = resultPtr.getElementType();
     if (expectedResult != type)
       return emitError() << diagMsg(
-                 DiagID::err_apply_result_function_result_type_2,
+                 Diag::DiagID::err_apply_result_function_result_type_2,
                  expectedResult, type);
   }
   return success();
@@ -1906,17 +1920,17 @@ verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
                      function_ref<InFlightDiagnostic()> emitError) {
   if (operands.size() != 2)
     return emitError() << diagMsg(
-               DiagID::err_variadic_ptr_map_requires_2_operands);
+               Diag::DiagID::err_variadic_ptr_map_requires_2_operands);
 
   auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
   if (!srcVariadic || !isa<TypeType, ParamType>(srcVariadic.getElementType()) ||
       type != srcVariadic)
     return emitError() << diagMsg(
-               DiagID::err_variadic_ptr_map_operand_kgen_variadic_kgen,
+               Diag::DiagID::err_variadic_ptr_map_operand_kgen_variadic_kgen,
                operands[0].getType());
   if (!operands[1].getType().isIndex())
     return emitError() << diagMsg(
-               DiagID::err_variadic_ptr_map_addr_space_operand_index);
+               Diag::DiagID::err_variadic_ptr_map_addr_space_operand_index);
 
   return success();
 }
@@ -1926,18 +1940,20 @@ verifyVariadicPtrRemoveMap(ArrayRef<TypedAttr> operands, Type type,
                            function_ref<InFlightDiagnostic()> emitError) {
   if (operands.size() != 1)
     return emitError() << diagMsg(
-               DiagID::err_variadic_ptrremove_map_requires_1_operand);
+               Diag::DiagID::err_variadic_ptrremove_map_requires_1_operand);
 
   auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
   if (!srcVariadic || // May still be parametric
       !isa<TypeType>(srcVariadic.getElementType()))
     return emitError() << diagMsg(
-               DiagID::err_variadic_ptrremove_map_operand_kgen_variadic_kgen,
+               Diag::DiagID::
+                   err_variadic_ptrremove_map_operand_kgen_variadic_kgen,
                operands[0].getType());
   auto dstVariadic = dyn_cast<VariadicType>(type);
   if (!dstVariadic || !isa<TypeType>(dstVariadic.getElementType()))
     return emitError() << diagMsg(
-               DiagID::err_variadic_ptrremove_map_result_kgen_variadic_kgen,
+               Diag::DiagID::
+                   err_variadic_ptrremove_map_result_kgen_variadic_kgen,
                type);
   return success();
 }
@@ -1967,7 +1983,7 @@ LogicalResult ParamOperatorAttr::verify(
     if (!llvm::all_of(operands, [&](auto operand) {
           return operand.getType() == operands.front().getType();
         }))
-      return emitError() << diagMsg(DiagID::err_operand_type_mismatch);
+      return emitError() << diagMsg(Diag::DiagID::err_operand_type_mismatch);
   }
 
   // Check invariants on the expression.
@@ -1985,12 +2001,12 @@ LogicalResult ParamOperatorAttr::verify(
                          << " operator must have at least one operand";
     if (type != operands[0].getType())
       return emitError() << diagMsg(
-                 DiagID::err_result_type_match_operand_types);
+                 Diag::DiagID::err_result_type_match_operand_types);
     // Check the types that are supported.
     if (type.isIntOrIndex())
       break; // Index and fixed-width integer types supported for all of these.
     return emitError() << diagMsg(
-               DiagID::err_operator_requires_index_integer_type);
+               Diag::DiagID::err_operator_requires_index_integer_type);
     break;
   // Binary expressions.
   case POC::Shl:
@@ -2008,72 +2024,74 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode) << " must have two operands";
     if (type != operands[0].getType())
       return emitError() << diagMsg(
-                 DiagID::err_result_type_match_operand_types);
+                 Diag::DiagID::err_result_type_match_operand_types);
     if (!operands[0].getType().isIntOrIndex())
       return emitError() << diagMsg(
-                 DiagID::err_operator_requires_index_integer_type);
+                 Diag::DiagID::err_operator_requires_index_integer_type);
     break;
   case POC::EQ:
     if (operands.size() != 2)
       return emitError() << diagMsg(
-                 DiagID::err_comparison_operators_two_operands);
+                 Diag::DiagID::err_comparison_operators_two_operands);
     if (!type.isInteger(1))
-      return emitError() << diagMsg(DiagID::err_comparisons_return_i1);
+      return emitError() << diagMsg(Diag::DiagID::err_comparisons_return_i1);
     break;
   case POC::LT:
   case POC::LE:
     if (operands.size() != 2)
       return emitError() << diagMsg(
-                 DiagID::err_comparison_operators_two_operands);
+                 Diag::DiagID::err_comparison_operators_two_operands);
 
     if (!type.isInteger(1))
-      return emitError() << diagMsg(DiagID::err_comparisons_return_i1);
+      return emitError() << diagMsg(Diag::DiagID::err_comparisons_return_i1);
 
     // Relational operations only work on index types.
     if (!operands[0].getType().isIntOrIndex())
       return emitError() << diagMsg(
-                 DiagID::err_relational_comparisons_only_allowed_index_2);
+                 Diag::DiagID::err_relational_comparisons_only_allowed_index_2);
     break;
   case POC::CurrentTarget:
     if (!operands.empty())
       return emitError() << diagMsg(
-                 DiagID::err_current_target_expected_no_operands);
+                 Diag::DiagID::err_current_target_expected_no_operands);
     if (!llvm::isa<TargetType>(type))
       return emitError() << diagMsg(
-                 DiagID::err_current_target_return_target_type);
+                 Diag::DiagID::err_current_target_return_target_type);
     break;
   case POC::TargetHasFeature:
   case POC::TargetGetField:
     if (operands.size() != 2)
-      return emitError() << diagMsg(DiagID::err_target_get_field_two_operands);
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_target_get_field_two_operands);
     if (!llvm::isa<TargetType>(operands[0].getType()))
       return emitError() << diagMsg(
-                 DiagID::err_target_get_field_operand_0_target_type);
+                 Diag::DiagID::err_target_get_field_operand_0_target_type);
     if (!llvm::isa<StringType>(operands[1].getType()))
       return emitError() << diagMsg(
-                 DiagID::err_target_get_field_operand_1_string_type);
+                 Diag::DiagID::err_target_get_field_operand_1_string_type);
     break;
   case POC::CrossCompilation:
     if (!operands.empty())
       return emitError() << diagMsg(
-                 DiagID::err_cross_compilation_expected_no_operands);
+                 Diag::DiagID::err_cross_compilation_expected_no_operands);
     if (!type.isInteger(1))
-      return emitError() << diagMsg(DiagID::err_cross_compilation_return_i1);
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_cross_compilation_return_i1);
     break;
   case POC::AcceleratorArch:
     if (!operands.empty())
       return emitError() << diagMsg(
-                 DiagID::err_accelerator_arch_expected_no_operands);
+                 Diag::DiagID::err_accelerator_arch_expected_no_operands);
     if (!llvm::isa<StringType>(type))
       return emitError() << diagMsg(
-                 DiagID::err_accelerator_arch_return_string_type);
+                 Diag::DiagID::err_accelerator_arch_return_string_type);
     break;
   case POC::In:
     if (operands.empty())
       return emitError() << diagMsg(
-                 DiagID::err_operator_requires_least_one_operand);
+                 Diag::DiagID::err_operator_requires_least_one_operand);
     if (!type.isInteger(1))
-      return emitError() << diagMsg(DiagID::err_comparisons_return_i1);
+      return emitError() << diagMsg(Diag::DiagID::err_comparisons_return_i1);
     break;
   case POC::GetSizeOf:
   case POC::GetAlignOf:
@@ -2102,64 +2120,68 @@ LogicalResult ParamOperatorAttr::verify(
     break;
   case POC::Rebind:
     if (operands.size() != 1)
-      return emitError() << diagMsg(DiagID::err_rebind_expects_one_operand);
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_rebind_expects_one_operand);
     break;
   case POC::VariadicGet: {
     if (operands.size() != 2)
       return emitError() << diagMsg(
-                 DiagID::err_variadic_get_expected_two_operands);
+                 Diag::DiagID::err_variadic_get_expected_two_operands);
     auto variadicType = ::dyn_cast<VariadicType>(operands.front().getType());
     if (!variadicType)
       return emitError() << diagMsg(
-                 DiagID::err_variadic_get_expected_first_operand_variadic);
+                 Diag::DiagID::
+                     err_variadic_get_expected_first_operand_variadic);
     if (!::isa<IndexType>(operands.back().getType()))
       return emitError() << diagMsg(
-                 DiagID::err_variadic_get_expected_second_operand_index);
+                 Diag::DiagID::err_variadic_get_expected_second_operand_index);
     Type elType = variadicType.getElementType();
     if (type != elType)
       return emitError() << diagMsg(
-                 DiagID::err_variadic_get_result_type_variadic_element, elType,
-                 type);
+                 Diag::DiagID::err_variadic_get_result_type_variadic_element,
+                 elType, type);
     break;
   }
   case POC::Cond:
     if (operands.size() != 3)
       return emitError() << diagMsg(
-                 DiagID::err_conditional_expressions_three_operands);
+                 Diag::DiagID::err_conditional_expressions_three_operands);
     if (!operands[0].getType().isInteger(1))
       return emitError() << diagMsg(
-                 DiagID::err_conditional_expression_operand_0_i1);
+                 Diag::DiagID::err_conditional_expression_operand_0_i1);
     if (operands[1].getType() != operands[2].getType())
       return emitError() << diagMsg(
-                 DiagID::err_conditional_expression_operands_1_2_2);
+                 Diag::DiagID::err_conditional_expression_operands_1_2_2);
     if (operands[1].getType() != type)
-      return emitError() << diagMsg(DiagID::err_result_type_match_operands_1);
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_result_type_match_operands_1);
     break;
   case POC::GetEnv:
     if (operands.size() != 1 || !::isa<StringType>(operands.front().getType()))
       return emitError() << diagMsg(
-                 DiagID::err_get_env_expects_one_string_typed);
+                 Diag::DiagID::err_get_env_expects_one_string_typed);
     if (auto intType = ::dyn_cast<IntegerType>(type)) {
       if (!intType.isSignlessInteger(1))
         return emitError() << diagMsg(
-                   DiagID::err_get_env_return_index_i1_string);
+                   Diag::DiagID::err_get_env_return_index_i1_string);
     } else if (!::isa<IndexType, StringType>(type)) {
-      return emitError() << diagMsg(DiagID::err_get_env_return_index_i1_string);
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_get_env_return_index_i1_string);
     }
     break;
   case POC::PtrBitcast:
     if (operands.size() != 1)
       return emitError() << diagMsg(
-                 DiagID::err_ptr_bitcast_expects_one_operand);
+                 Diag::DiagID::err_ptr_bitcast_expects_one_operand);
     if (!::isa<PointerType>(type) ||
         !::isa<PointerType>(operands.front().getType()))
       return emitError() << diagMsg(
-                 DiagID::err_ptr_bitcast_requires_operand_result_types_2);
+                 Diag::DiagID::err_ptr_bitcast_requires_operand_result_types_2);
     break;
   case POC::LoadFromMem:
     if (operands.size() != 1)
       return emitError() << diagMsg(
-                 DiagID::err_load_from_mem_expects_one_operand);
+                 Diag::DiagID::err_load_from_mem_expects_one_operand);
     break;
   case POC::VariadicPtrMap:
     return verifyVariadicPtrMap(operands, type, emitError);
@@ -2170,41 +2192,43 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::DataToStr:
     if (operands.size() != 2)
       return emitError() << diagMsg(
-                 DiagID::err_data_to_str_expects_two_operands_one);
+                 Diag::DiagID::err_data_to_str_expects_two_operands_one);
 
     if (!isEqualCanon(VariadicType::get(operands[0].getType()),
                       operands[1].getType()))
       return emitError() << diagMsg(
-                 DiagID::err_data_to_str_expects_two_operands_one_2,
+                 Diag::DiagID::err_data_to_str_expects_two_operands_one_2,
                  operands[0].getType(), operands[1].getType());
 
     break;
   case POC::StringAddress:
     if (operands.size() != 1 || !::isa<StringType>(operands[0].getType()))
       return emitError() << diagMsg(
-                 DiagID::err_string_address_expects_one_kgen_string);
+                 Diag::DiagID::err_string_address_expects_one_kgen_string);
     break;
   case POC::StrConcat:
     // Already checked the input/result types all match.
     if (operands.size() != 2 || !::isa<StringType>(operands[0].getType()))
       return emitError() << diagMsg(
-                 DiagID::err_str_concat_expects_two_kgen_string);
+                 Diag::DiagID::err_str_concat_expects_two_kgen_string);
     break;
   case POC::FunctionGetArgTypes:
     if (operands.size() != 1)
       return emitError() << diagMsg(
-                 DiagID::err_function_get_arg_types_expects_one_kgen_func);
+                 Diag::DiagID::
+                     err_function_get_arg_types_expects_one_kgen_func);
     auto operand = operands[0];
     if (auto paramRef1 = sugarDynCast<ParamDeclRefAttr>(operand)) {
       if (auto paramRefType1 = sugarDynCast<ParamType>(paramRef1.getType())) {
         auto param1 = paramRefType1.getParam();
         if (!::isa<ParamDeclRefAttr>(param1))
           return emitError() << diagMsg(
-                     DiagID::err_function_get_arg_types_operand_paramrefs_type,
+                     Diag::DiagID::
+                         err_function_get_arg_types_operand_paramrefs_type,
                      param1);
       } else {
         return emitError() << diagMsg(
-                   DiagID::
+                   Diag::DiagID::
                        err_function_get_arg_types_operand_paramrefs_type_signature,
                    paramRef1.getType());
       }
@@ -2212,7 +2236,7 @@ LogicalResult ParamOperatorAttr::verify(
       auto mlirType = typeConstAttr.getMlirType();
       if (!::isa<FuncTypeGeneratorType>(mlirType))
         return emitError() << diagMsg(
-                   DiagID::
+                   Diag::DiagID::
                        err_function_get_arg_types_operand_typeconstantattrs_mlir_2,
                    mlirType);
     } else if (auto paramIndexRef = sugarDynCast<ParamIndexRefAttr>(operand)) {
@@ -2223,14 +2247,15 @@ LogicalResult ParamOperatorAttr::verify(
         // Do nothing, is fine
       } else
         return emitError() << diagMsg(
-                   DiagID::
+                   Diag::DiagID::
                        err_function_get_arg_types_operand_paramindexrefs_type_2,
                    mlirType);
     } else if (::isa<SymbolConstantAttr>(operand)) {
       // Do nothing, is fine.
     } else {
       return emitError() << diagMsg(
-                 DiagID::err_function_get_arg_types_expects_one_kgen_paramref_2,
+                 Diag::DiagID::
+                     err_function_get_arg_types_expects_one_kgen_paramref_2,
                  operand);
     }
     break;
@@ -3861,10 +3886,11 @@ LogicalResult MLIROpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  FuncTypeGeneratorType type) {
   if (type.getBody().getNumResults() != 1)
     return emitError() << diagMsg(
-               DiagID::err_operation_parameter_expression_return_one);
+               Diag::DiagID::err_operation_parameter_expression_return_one);
   if (!type.isFullyBound())
     return emitError() << diagMsg(
-               DiagID::err_operation_parameter_expression_concrete_signature);
+               Diag::DiagID::
+                   err_operation_parameter_expression_concrete_signature);
   return success();
 }
 
@@ -3990,7 +4016,8 @@ LogicalResult
 DeferredAttr::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                      Attribute attr) {
   if (::isa<TypedAttr>(attr))
-    return emitError() << diagMsg(DiagID::err_kgen_deferred_can_only_used);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_kgen_deferred_can_only_used);
   return success();
 }
 
@@ -4009,7 +4036,8 @@ LogicalResult AttrCtorDeferredAttr::verify(
   for (TypedAttr attr : strings) {
     if (!::isa<StringAttr, ToStringDeferredAttr>(attr))
       return emitError() << diagMsg(
-                 DiagID::err_kgen_attr_ctor_deferred_can_only_used_2, attr);
+                 Diag::DiagID::err_kgen_attr_ctor_deferred_can_only_used_2,
+                 attr);
   }
   return success();
 }
@@ -4032,7 +4060,7 @@ ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   // Verify that the proposition has i1 type
   if (!proposition.getType().isSignlessInteger(1)) {
     return emitError() << diagMsg(
-               DiagID::err_constraint_proposition_i1_type_got_2,
+               Diag::DiagID::err_constraint_proposition_i1_type_got_2,
                proposition.getType());
   }
   return success();
@@ -4049,7 +4077,7 @@ LogicalResult LLVMBitcodeLibAttr::verify(
   // or DenseResourceElementsAttr (for package bitcode).
   if (!isa<StringAttr>(library) && !isa<DenseResourceElementsAttr>(library)) {
     return emitError() << diagMsg(
-               DiagID::err_library_attribute_either_stringattr_file);
+               Diag::DiagID::err_library_attribute_either_stringattr_file);
   }
   return success();
 }

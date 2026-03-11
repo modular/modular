@@ -522,7 +522,7 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
   // Check we have the right number of conventions.
   if (argConventions.size() != values.getInputs().size())
     return emitError() << diagMsg(
-               DiagID::err_incorrect_input_conventions_specified);
+               Diag::DiagID::err_incorrect_input_conventions_specified);
 
   // If the FuncType has metadata, defer to it for further verification.
   // Otherwise, run the standard KGEN FuncType verification.
@@ -536,15 +536,17 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
        llvm::enumerate(values.getInputs(), argConventions)) {
     if (conv == ArgConvention::ByRefResult) {
       if (byRefResultIdx >= 0)
-        return emitError() << diagMsg(DiagID::err_func_type_cannot_more_than_2);
+        return emitError() << diagMsg(
+                   Diag::DiagID::err_func_type_cannot_more_than_2);
       byRefResultIdx = i;
     }
     if (conv == ArgConvention::ByRefError) {
       if (byRefErrorIdx >= 0)
-        return emitError() << diagMsg(DiagID::err_func_type_cannot_more_than_3);
+        return emitError() << diagMsg(
+                   Diag::DiagID::err_func_type_cannot_more_than_3);
       if (!effects.isThrows())
         return emitError() << diagMsg(
-                   DiagID::err_func_type_byref_error_argument_throws);
+                   Diag::DiagID::err_func_type_byref_error_argument_throws);
       byRefErrorIdx = i;
     }
 
@@ -564,8 +566,9 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
       if (type.getDialect().getNamespace() == "lit")
         continue;
 
-      return emitError() << diagMsg(DiagID::err_argument_func_type_pointer, i,
-                                    stringifyEnum(conv), type);
+      return emitError() << diagMsg(
+                 Diag::DiagID::err_argument_func_type_pointer, i,
+                 stringifyEnum(conv), type);
     }
   }
 
@@ -573,11 +576,11 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
   bool hasByRefError = byRefErrorIdx >= 0;
   if (hasByRefResult && byRefResultIdx != values.getNumInputs() - 1)
     return emitError() << diagMsg(
-               DiagID::err_byref_result_argument_last_argument);
+               Diag::DiagID::err_byref_result_argument_last_argument);
   if (hasByRefError &&
       byRefErrorIdx != values.getNumInputs() - 1 - hasByRefResult)
     return emitError() << diagMsg(
-               DiagID::err_byref_error_argument_last_argument_before);
+               Diag::DiagID::err_byref_error_argument_last_argument_before);
 
   return success();
 }
@@ -717,8 +720,8 @@ LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
                                   Type type, TypedAttr addressSpace,
                                   bool isNonNull) {
   if (!addressSpace.getType().isIndex()) {
-    return emitError() << diagMsg(DiagID::err_pointer_address_space_parameter,
-                                  addressSpace);
+    return emitError() << diagMsg(
+               Diag::DiagID::err_pointer_address_space_parameter, addressSpace);
   }
   // isNonNull is always valid (bool), no verification needed
   return success();
@@ -1219,7 +1222,7 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  TypedAttr minAlignment) {
   // Alignment must have index type.
   if (!sugarIsa<IndexType>(minAlignment.getType()))
-    return emitError() << diagMsg(DiagID::err_alignment_index_type_got_2,
+    return emitError() << diagMsg(Diag::DiagID::err_alignment_index_type_got_2,
                                   minAlignment.getType());
   // Accept any VariadicType (for concrete cases).
   if (llvm::isa<VariadicType>(variadic.getType()))
@@ -1228,7 +1231,7 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (llvm::isa<TypeType>(variadic.getType()))
     return success();
   return emitError() << diagMsg(
-             DiagID::err_expected_operand_variadic_type_type_2,
+             Diag::DiagID::err_expected_operand_variadic_type_type_2,
              variadic.getType());
 }
 
@@ -1593,7 +1596,7 @@ LogicalResult StructInstanceType::verify(
     ArrayRef<StructDefFieldAttr> fields, bool isMemoryOnly) {
   if (paramNames.size() != paramValues.size()) {
     return emitError() << diagMsg(
-               DiagID::err_parameter_name_parameter_value_length_2,
+               Diag::DiagID::err_parameter_name_parameter_value_length_2,
                paramNames.size(), paramValues.size());
   }
   return success();
@@ -1632,7 +1635,7 @@ LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (::isa<VariadicType>(variadic.getType()))
     return success();
   return emitError() << diagMsg(
-             DiagID::err_expected_operand_variadic_type_got_2,
+             Diag::DiagID::err_expected_operand_variadic_type_got_2,
              variadic.getType());
 }
 
@@ -2031,7 +2034,7 @@ VariadicSplatType::verify(function_ref<InFlightDiagnostic()> emitError,
                           Type elementType, TypedAttr count) {
   if (auto intAttr = dyn_cast<IntegerAttr>(count);
       intAttr && intAttr.getInt() <= 0)
-    return emitError() << diagMsg(DiagID::err_expected_count_0_got_2,
+    return emitError() << diagMsg(Diag::DiagID::err_expected_count_0_got_2,
                                   intAttr.getInt());
 
   return success();

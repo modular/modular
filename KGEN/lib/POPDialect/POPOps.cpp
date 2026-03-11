@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -111,8 +112,8 @@ LogicalResult BitcastOp::verify() {
   // If the sizes do not match, then we cannot cast.
   if (inputDTypeWidth * *inputSize == outputDTypeWidth * *outputSize)
     return success();
-  return emitOpError("input type ") << inputType << " and result type "
-                                    << outputType << " are cast incompatible";
+  return emitOpError(
+      diagMsg(Diag::DiagID::err_input_type_2, inputType, outputType));
 }
 
 //===----------------------------------------------------------------------===//
@@ -160,18 +161,19 @@ LogicalResult SIMDShuffleOp::verify() {
     return success();
   auto maskType = cast<ArrayType>(getMask().getType());
   if (!isa<IndexType>(maskType.getElementType()))
-    return emitOpError("expected mask to be a list of indices");
+    return emitOpError(diagMsg(Diag::DiagID::err_expected_mask_list_indices));
   auto mask = dyn_cast_or_null<ArrayAttr>(getMask());
   if (!mask)
     return success();
 
   if (*size != static_cast<int64_t>(mask.getValues().size()))
-    return emitOpError("expected result to be a vector of ")
-           << mask.getValues().size() << " elements";
+    return emitOpError(diagMsg(Diag::DiagID::err_expected_result_vector,
+                               mask.getValues().size()));
 
   auto lhsType = cast<SIMDType>(getLhs().getType());
   if (lhsType.getDType() != getType().getDType())
-    return emitOpError("expected result dtype to match operand dtypes");
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_expected_result_dtype_match_operand));
 
   if (std::optional<int64_t> size = lhsType.getResolvedSize()) {
     for (TypedAttr indexAttr : mask.getValues()) {
@@ -179,8 +181,8 @@ LogicalResult SIMDShuffleOp::verify() {
       if (!index)
         continue;
       if (index.getInt() >= *size * 2)
-        return emitOpError("mask element ")
-               << index.getInt() << " is out of bounds";
+        return emitOpError(
+            diagMsg(Diag::DiagID::err_mask_element, index.getInt()));
     }
   }
 
@@ -197,7 +199,7 @@ LogicalResult SIMDSplatOp::verify() {
     return success();
 
   if (*size <= 0)
-    return emitOpError("requires a non-negative size");
+    return emitOpError(diagMsg(Diag::DiagID::err_requires_non_negative_size));
 
   return success();
 }
@@ -222,19 +224,18 @@ LogicalResult LoadOp::verify() {
   AtomicOrdering ordering = getOrdering();
   if ((ordering != AtomicOrdering::NOT_ATOMIC) &&
       (getIsVolatile() || getIsInvariant()))
-    return emitOpError(
-        "invalid combination of volatile or invariant with atomic load");
+    return emitOpError(diagMsg(
+        Diag::DiagID::err_invalid_combination_volatile_invariant_atomic));
 
   if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
-    return emitOpError("cannot specify syncscope without an atomic load");
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_cannot_specify_syncscope_without_atomic));
 
   if (llvm::is_contained(
           {AtomicOrdering::RELEASE, AtomicOrdering::ACQUIRE_RELEASE},
           ordering)) {
-    return emitOpError("invalid atomic ordering '")
-           << stringifyAtomicOrdering(ordering)
-           << "' for load operation. Valid orderings are: unordered, "
-              "monotonic, acquire, seq_cst";
+    return emitOpError(diagMsg(Diag::DiagID::err_invalid_atomic_ordering,
+                               stringifyAtomicOrdering(ordering)));
   }
 
   return success();
@@ -256,15 +257,14 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
 LogicalResult StoreOp::verify() {
   AtomicOrdering ordering = getOrdering();
   if ((ordering != AtomicOrdering::NOT_ATOMIC) && getIsVolatile())
-    return emitOpError("volatile stores cannot be atomic");
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_volatile_stores_cannot_atomic));
 
   if (llvm::is_contained(
           {AtomicOrdering::ACQUIRE, AtomicOrdering::ACQUIRE_RELEASE},
           ordering)) {
-    return emitOpError("invalid atomic ordering '")
-           << stringifyAtomicOrdering(ordering)
-           << "' for store operation. Valid orderings are: unordered, "
-              "monotonic, release, seq_cst";
+    return emitOpError(diagMsg(Diag::DiagID::err_invalid_atomic_ordering_store,
+                               stringifyAtomicOrdering(ordering)));
   }
 
   return success();
@@ -286,8 +286,8 @@ LogicalResult MemcpyOp::verify() {
 
   if (dstType.getElementType() != srcType.getElementType()) {
     return emitOpError(
-               "source and destination must have same element type, got ")
-           << srcType.getElementType() << " and " << dstType.getElementType();
+        diagMsg(Diag::DiagID::err_source_destination_same_element_type,
+                srcType.getElementType(), dstType.getElementType()));
   }
 
   return success();
@@ -300,8 +300,9 @@ LogicalResult MemcpyOp::verify() {
 LogicalResult ArrayCreateOp::verify() {
   int64_t size = *getType().getResolvedSize();
   if (size != getNumOperands())
-    return emitOpError("expected ")
-           << size << " operands to create array but got " << getNumOperands();
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_expected_n_operands_to_create_array, size,
+                getNumOperands()));
   return success();
 }
 
@@ -320,10 +321,10 @@ LogicalResult ArrayRepeatOp::verify() {
   if (!size)
     return success();
   if (*size < 0)
-    return emitOpError("requires a non-negative size");
+    return emitOpError(diagMsg(Diag::DiagID::err_requires_non_negative_size));
   if (*size != 0 && getNumOperands() == 0)
-    return emitOpError("requires at least one operand to create an array whose "
-                       "size is non-zero");
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_requires_least_one_operand_create));
   return success();
 }
 
@@ -341,7 +342,8 @@ static LogicalResult verifyArrayIndex(Operation *op, TypedAttr indexExpr,
 
   int64_t index = indexAttr.getInt();
   if (index < 0 || index >= *size)
-    return op->emitOpError("array index out of bounds: ") << index;
+    return op->emitOpError(
+        diagMsg(Diag::DiagID::err_array_index_out_bounds, index));
   return success();
 }
 
@@ -455,18 +457,19 @@ LogicalResult StackAllocationOp::verify() {
   // TODO: Re-enable this check when stdlib is updated.
   if (0 && target.getTriple().isAMDGCN()) {
     if (addressSpace != llvm::AMDGPUAS::PRIVATE_ADDRESS) {
-      return emitOpError("expected private address space (")
-             << (unsigned)llvm::AMDGPUAS::PRIVATE_ADDRESS
-             << "), but got address space (" << *addressSpace << ')';
+      return emitOpError(
+          diagMsg(Diag::DiagID::err_expected_private_address_space,
+                  (unsigned)llvm::AMDGPUAS::PRIVATE_ADDRESS, *addressSpace));
     }
     return success();
   }
   // TODO: Re-enable this check when stdlib is updated.
   if (0 && target.getTriple().isNVPTX()) {
     if (addressSpace != llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL) {
-      return emitOpError("expected local address space (")
-             << (unsigned)llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL
-             << "), but got address space (" << *addressSpace << ')';
+      return emitOpError(
+          diagMsg(Diag::DiagID::err_expected_local_address_space,
+                  (unsigned)llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL,
+                  *addressSpace));
     }
     return success();
   }
@@ -482,23 +485,23 @@ static LogicalResult verifyLifetimeMarker(Operation *op) {
   for (auto [idx, value] : llvm::enumerate(op->getOperands())) {
     auto alloc = value.getDefiningOp<StackAllocationOp>();
     if (!alloc) {
-      InFlightDiagnostic diag = op->emitOpError()
-                                << "operand #" << idx
-                                << " is not defined by a stack allocation op";
+      InFlightDiagnostic diag =
+          op->emitOpError()
+          << diagMsg(Diag::DiagID::err_operand_not_stack_alloc, idx);
       diag.attachNote(value.getLoc()) << "value is defined here";
       return diag;
     }
     if (!alloc.getMarkedLifetimes()) {
       InFlightDiagnostic diag =
           op->emitOpError()
-          << "operand #" << idx
-          << " is not defined by a stack allocation with marked lifetimes";
+          << diagMsg(Diag::DiagID::err_operand_not_stack_alloc_marked, idx);
       diag.attachNote(alloc.getLoc()) << "stack allocation defined here";
       return diag;
     }
     if (!seen.insert(value).second) {
-      InFlightDiagnostic diag = op->emitOpError("operand #")
-                                << idx << " is a duplicate";
+      InFlightDiagnostic diag =
+          op->emitOpError()
+          << diagMsg(Diag::DiagID::err_operand_duplicate, idx);
       diag.attachNote(value.getLoc()) << "operand defined here";
       return diag;
     }
@@ -763,8 +766,8 @@ LogicalResult FenceOp::verify() {
   if (llvm::is_contained({AtomicOrdering::NOT_ATOMIC, AtomicOrdering::UNORDERED,
                           AtomicOrdering::MONOTONIC},
                          getOrdering()))
-    return emitOpError("can be given only acquire, release, acq_rel, "
-                       "and seq_cst orderings");
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_can_given_only_acquire_release));
   return success();
 }
 
@@ -775,8 +778,8 @@ LogicalResult FenceOp::verify() {
 LogicalResult VariantBitcastOp::verify() {
   auto ptrType = getVariant().getType();
   if (ptrType.getAddressSpace() != getType().getAddressSpace()) {
-    return emitOpError("result pointer should have the same address space as "
-                       "the input pointer");
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_result_pointer_same_address_space));
   }
 
   // Only verify the result type if the variant type is concrete.
@@ -789,16 +792,15 @@ LogicalResult VariantBitcastOp::verify() {
   unsigned index = indexAttr.getInt();
 
   if (index >= variant.getNumTypes()) {
-    return emitOpError("variant index ")
-           << index << " is out of bounds in range [0, "
-           << variant.getNumTypes() << ")";
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_variant_index_out_of_bounds_range, index,
+                variant.getNumTypes()));
   }
   Type elementType = variant.getType(index);
   if (elementType == getType().getElementType())
     return success();
-  return emitOpError("variant element at index ")
-         << index << " expected type " << elementType << " but result has type "
-         << getType().getElementType();
+  return emitOpError(diagMsg(Diag::DiagID::err_variant_element_result_type,
+                             index, elementType, getType().getElementType()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -808,8 +810,8 @@ LogicalResult VariantBitcastOp::verify() {
 LogicalResult VariantDiscrGEPOp::verify() {
   auto ptrType = getVariant().getType();
   if (ptrType.getAddressSpace() != getType().getAddressSpace()) {
-    return emitOpError("result pointer should have the same address space as "
-                       "the input pointer");
+    return emitOpError(
+        diagMsg(Diag::DiagID::err_result_pointer_same_address_space));
   }
 
   // Only verify the result type if the variant type is concrete.
@@ -828,8 +830,9 @@ LogicalResult VariantDiscrGEPOp::verify() {
   size_t discrSize = dtype->getIntegerWidthInBits();
   if (variantSize == discrSize)
     return success();
-  return emitOpError("variant expected discriminant bitwidth to be ")
-         << variantSize << " but result returns uint with width " << discrSize;
+  return emitOpError(
+      diagMsg(Diag::DiagID::err_variant_expected_discriminant_bitwidth,
+              variantSize, discrSize));
 }
 
 //===----------------------------------------------------------------------===//

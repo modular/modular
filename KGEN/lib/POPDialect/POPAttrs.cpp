@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPAttrs.h"
+#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -49,8 +50,8 @@ LogicalResult UnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   auto it = llvm::find(type.getTypes(), value.getType());
   if (it != type.getTypes().end())
     return success();
-  return emitError() << "value type " << value.getType()
-                     << " is not a union element type of " << type;
+  return emitError() << diagMsg(Diag::DiagID::err_value_type, value.getType(),
+                                type);
 }
 
 //===----------------------------------------------------------------------===//
@@ -134,9 +135,10 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
     if (fitted.extOrTrunc(apsInt.getBitWidth()) != apsInt) {
       SmallVector<char, 256> strVal;
       apsInt.toString(strVal);
-      p.emitError(loc, "integer value doesn't fit into ")
-          << dtype.getIntegerWidthInBits()
-          << " bits: " << StringRef(strVal.data(), strVal.size());
+      p.emitError(loc,
+                  diagMsg(Diag::DiagID::err_integer_value_doesnt_fit_into_2,
+                          dtype.getIntegerWidthInBits(),
+                          StringRef(strVal.data(), strVal.size())));
       return failure();
     }
     return DTypeValue(std::move(fitted), dtype);
@@ -157,7 +159,7 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
     }
     auto *semantics = dtype.getFloatSemantics();
     if (!semantics) {
-      p.emitError(loc, "unknown float semantics for type");
+      p.emitError(loc, diagMsg(Diag::DiagID::err_unknown_float_semantics_type));
       return failure();
     }
 
@@ -165,15 +167,16 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
     llvm::Expected<APFloat::opStatus> status =
         apFp.convertFromString(strVal, APFloat::rmNearestTiesToEven);
     if (llvm::errorToBool(status.takeError())) {
-      p.emitError(loc, "failed to parse floating point value");
+      p.emitError(loc,
+                  diagMsg(Diag::DiagID::err_failed_parse_floating_point_value));
       return failure();
     }
     if (*status != APFloat::opOK && !(*status & APFloat::opInexact)) {
       SmallVector<char> c;
       apFp.toString(c);
-      p.emitError(loc, "cannot convert ")
-          << strVal << " to " << dtype.getAsString() << ": got "
-          << StringRef(c.data(), c.size());
+      p.emitError(loc,
+                  diagMsg(Diag::DiagID::err_cannot_convert_float_string, strVal,
+                          dtype.getAsString(), StringRef(c.data(), c.size())));
       return failure();
     }
     return DTypeValue(apFp, dtype);
@@ -188,7 +191,8 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
     if constexpr (optionalParse)
       return std::nullopt;
     else
-      return p.emitError(loc, "expected 'true' or 'false' for bool literal");
+      return p.emitError(
+          loc, diagMsg(Diag::DiagID::err_expected_true_false_bool_literal));
   }
 
   // Handle indices.
@@ -258,16 +262,17 @@ LogicalResult SIMDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   std::optional<KGENDType> dtype = type.getResolvedDType();
   std::optional<int64_t> size = type.getResolvedSize();
   if (!dtype || !size)
-    return emitError() << "SIMD attribute requires fully-resolved SIMD type";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_simd_attribute_requires_fully_resolved);
   if (static_cast<int64_t>(values.size()) != *size)
-    return emitError() << "wrong number of elements, got " << values.size()
-                       << " but expected " << *size;
+    return emitError() << diagMsg(Diag::DiagID::err_wrong_number_elements_got_2,
+                                  values.size(), *size);
   if (!llvm::all_of(values, [&](const DTypeValue &value) {
         return value.getDType() == *dtype;
       }))
-    return emitError() << "all elements must have dtype "
-                       << dtype->getAsString() << " but the first element is "
-                       << values[0].getDType().getAsString();
+    return emitError() << diagMsg(Diag::DiagID::err_all_elements_dtype_2,
+                                  dtype->getAsString(),
+                                  values[0].getDType().getAsString());
   return success();
 }
 
@@ -501,15 +506,17 @@ POP::ArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        ArrayRef<TypedAttr> values, ArrayType type) {
   std::optional<int64_t> size = type.getResolvedSize();
   if (!size)
-    return emitError() << "array attribute expected a concrete size";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_array_attribute_expected_concrete_size);
   Type elementType = type.getElementType();
   if (*size != static_cast<int64_t>(values.size()))
-    return emitError() << "array attribute type requires " << *size
-                       << " elements but value has " << values.size();
+    return emitError() << diagMsg(
+               Diag::DiagID::err_array_attribute_type_requires_2, *size,
+               values.size());
   for (auto [idx, value] : llvm::enumerate(values))
     if (value.getType() != elementType)
-      return emitError() << "array element #" << idx << " has type "
-                         << value.getType() << " but expected " << elementType;
+      return emitError() << diagMsg(Diag::DiagID::err_array_element_2, idx,
+                                    value.getType(), elementType);
   return success();
 }
 
@@ -1701,8 +1708,8 @@ bool CastAttr::isConstant() const { return false; }
 LogicalResult CastAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                TypedAttr value, Type out_type) {
   if (!isa<SIMDType>(value.getType()) || !isa<SIMDType>(out_type))
-    return emitError()
-           << "Invalid cast operands: input and output must be SIMD types";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_invalid_cast_operands_input_output);
   return success();
 }
 
@@ -1736,7 +1743,8 @@ LogicalResult
 DTypeToUI8Attr::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr value) {
   if (!isa<DTypeType>(value.getType()))
-    return emitError() << "DType type " << value.getType() << " is invalid";
+    return emitError() << diagMsg(Diag::DiagID::err_dtype_type,
+                                  value.getType());
   return success();
 }
 
@@ -1772,8 +1780,8 @@ DTypeFromUI8Attr::verify(function_ref<InFlightDiagnostic()> emitError,
                          TypedAttr value) {
   auto intTy = dyn_cast<IntegerType>(value.getType());
   if (!intTy || !intTy.isUnsignedInteger(8))
-    return emitError() << "Input type " << value.getType()
-                       << " is invalid: must be ui8";
+    return emitError() << diagMsg(Diag::DiagID::err_input_type,
+                                  value.getType());
   return success();
 }
 
@@ -1839,7 +1847,8 @@ LogicalResult
 CastToBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                           TypedAttr value, Type out_type) {
   if (!isa<SIMDType>(value.getType()))
-    return emitError() << "Invalid operand type: must be SIMDType";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_invalid_operand_type_simdtype);
   return verifyConversionCast(
       [emitError](StringRef msg) { return emitError() << msg; },
       cast<SIMDType>(value.getType()), out_type, /*fromSimd=*/true);
@@ -1874,15 +1883,14 @@ SIMDSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                       TypedAttr value, SIMDType outType) {
   auto simdType = dyn_cast<SIMDType>(value.getType());
   if (!simdType)
-    return emitError() << "requires a SIMD-type operand";
+    return emitError() << diagMsg(Diag::DiagID::err_requires_simd_type_operand);
 
   auto splatDType = outType.getResolvedDType();
   auto valueDType = simdType.getResolvedDType();
   if (splatDType && valueDType && splatDType != valueDType) {
-    return emitError() << "mismatch between value type '"
-                       << valueDType->getAsString()
-                       << "' and splat element type '"
-                       << splatDType->getAsString() << "'";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_mismatch_between_value_type_2,
+               valueDType->getAsString(), splatDType->getAsString());
   }
 
   std::optional<int64_t> size = outType.getResolvedSize();
@@ -1890,7 +1898,7 @@ SIMDSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
     return success();
 
   if (*size <= 0)
-    return emitError() << "requires a non-negative size";
+    return emitError() << diagMsg(Diag::DiagID::err_requires_non_negative_size);
 
   return success();
 }
@@ -2226,15 +2234,18 @@ LogicalResult SIMDCmpAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   NormalizedCmpPredicate cc, TypedAttr lhs,
                                   TypedAttr rhs, Type outType) {
   if (lhs.getType() != rhs.getType())
-    return emitError() << "requires two equally-typed SIMD operands";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_requires_two_equally_typed_simd);
 
   auto outSIMDType = dyn_cast<SIMDType>(outType);
   auto inSIMDType = dyn_cast<SIMDType>(lhs.getType());
   if (!inSIMDType || !outSIMDType)
-    return emitError() << "requires two equally-typed SIMD operands";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_requires_two_equally_typed_simd);
 
   if (inSIMDType.getSize() != outSIMDType.getSize())
-    return emitError() << "mismatched size between operands and result";
+    return emitError() << diagMsg(
+               Diag::DiagID::err_mismatched_size_between_operands_result);
 
   return success();
 }

@@ -1127,8 +1127,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         return success();
       }
 
-      return p.emitError(loc,
-                         diagMsg(DiagID::err_unknown_expression_2, keyword));
+      return p.emitError(
+          loc, diagMsg(Diag::DiagID::err_unknown_expression_2, keyword));
     }
 
     // Otherwise it is a ParamOperatorAttr.  Parse the operand list.
@@ -1168,7 +1168,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     if (opcode == (uint32_t)POCAliases::NEG) {
       if (operands.size() != 1)
         return p.emitError(
-            loc, diagMsg(DiagID::err_neg_operator_expects_single_operand));
+            loc,
+            diagMsg(Diag::DiagID::err_neg_operator_expects_single_operand));
       operands.emplace_back(
           p.getBuilder().getIntegerAttr(operands[0].getType(), -1));
       opcode = (uint32_t)POC::Mul;
@@ -1178,7 +1179,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     if (opcode == (uint32_t)POCAliases::SUB) {
       if (operands.size() != 2)
         return p.emitError(
-            loc, diagMsg(DiagID::err_sub_operator_expects_two_operands));
+            loc, diagMsg(Diag::DiagID::err_sub_operator_expects_two_operands));
       operands[1] = ParamOperatorAttr::getNeg(operands[1]);
       opcode = (uint32_t)POC::Add;
     }
@@ -1205,7 +1206,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     case (uint32_t)POCAliases::NOT:
       if (operands.size() != 1 || !operands[0].getType().isSignlessInteger(1))
         return p.emitError(
-            loc, diagMsg(DiagID::err_operator_returns_single_i1_operand));
+            loc, diagMsg(Diag::DiagID::err_operator_returns_single_i1_operand));
       value = ParamOperatorAttr::getNot(operands[0]);
       return success();
     }
@@ -1674,8 +1675,8 @@ ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(effectStr)) {
       convention = *conv;
     } else {
-      return p.emitError(loc,
-                         diagMsg(DiagID::err_expected_valid_input_convention));
+      return p.emitError(
+          loc, diagMsg(Diag::DiagID::err_expected_valid_input_convention));
     }
   }
   return success();
@@ -2068,9 +2069,9 @@ ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee) {
     return failure();
 
   if (!isa<ParamType, FuncTypeGeneratorType>(callee.getType()))
-    return p.emitError(loc,
-                       diagMsg(DiagID::err_callee_parameter_type_func_type_2,
-                               callee.getType()));
+    return p.emitError(
+        loc, diagMsg(Diag::DiagID::err_callee_parameter_type_func_type_2,
+                     callee.getType()));
   return success();
 }
 
@@ -2238,14 +2239,14 @@ LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
                                        FuncType callee, bool ignoreByRef) {
   unsigned numByRef = ignoreByRef * callee.getNumAsyncReturnSlots();
   if (args.size() != callee.getNumArguments() - numByRef) {
-    return KGEN::Diag::emitError(op, DiagID::err_callee_expected_arguments,
-                                 callee.getNumArguments(), args.size());
+    return KGEN::Diag::emitOpError(op, DiagID::err_callee_expected_arguments,
+                                   callee.getNumArguments(), args.size());
   }
   for (auto [i, arg, type] :
        llvm::enumerate(args, callee.getArguments().drop_back(numByRef))) {
     if (arg.getType() != type) {
-      return KGEN::Diag::emitError(op, DiagID::err_callee_argument, i, type,
-                                   arg.getType());
+      return KGEN::Diag::emitOpError(op, DiagID::err_callee_argument, i, type,
+                                     arg.getType());
     }
   }
   return success();
@@ -2254,13 +2255,13 @@ LogicalResult KGEN::verifyCallOperands(Operation *op, ValueRange args,
 LogicalResult KGEN::verifyCallResults(Operation *op, ValueRange results,
                                       FuncType callee) {
   if (results.size() != callee.getNumResults()) {
-    return KGEN::Diag::emitError(op, DiagID::err_callee_expected_results,
-                                 callee.getNumArguments(), results.size());
+    return KGEN::Diag::emitOpError(op, DiagID::err_callee_expected_results,
+                                   callee.getNumArguments(), results.size());
   }
   for (auto [i, res, type] : llvm::enumerate(results, callee.getResults())) {
     if (res.getType() != type) {
-      return KGEN::Diag::emitError(op, DiagID::err_callee_result, i, type,
-                                   res.getType());
+      return KGEN::Diag::emitOpError(op, DiagID::err_callee_result, i, type,
+                                     res.getType());
     }
   }
   return success();
