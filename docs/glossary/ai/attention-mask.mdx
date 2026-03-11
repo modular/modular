@@ -3,25 +3,40 @@ title: Attention mask
 meta_title: What is an attention mask?
 ---
 
-An attention mask is a mechanism used in the [attention](attention.mdx) layers
-of a [transformer](transformer.mdx) model to indicate which tokens the model
-should ignore when computing attention scores.
+An attention mask specifies which tokens in a sequence a model can attend to
+during [attention](attention.mdx) score computation. This prevents the model
+from attending to tokens it should ignore. For example, when sequences in a
+batch are padded to the same length, an attention mask prevents the model from
+attending to [padding tokens](padding-tokens.mdx), which carry no meaningful
+information.
 
-For example, attention masks can prevent the model from attending to [padding
-tokens](padding-tokens.mdx), which are added to make sequences in a batch the
-same length and thus offer no information for attention.
+## Causal mask
 
-Another common mask is a "causal mask" (or "look-ahead mask"), which prevents
-the [self-attention](self-attention) layer from looking at future tokens when
-predicting a new token, ensuring that it attends only to previous tokens in the
-sequence. Although it sounds absurd that it would even try to look at future
-tokens (because it's generating tokens one at a time, in order), the
-self-attention is designed for more general-purpose attention scoring. In its
-most basic form, self-attention is agnostic to token order—it looks at all
-tokens in the sequence equally, based on their embeddings, and calculates
-scores by looking both backward and ahead in the sequence. (For example,
-self-attention is used during [context encoding](context-encoding.mdx) to
-establish an understanding of the input text.) So instead of creating a
-different kind of attention mechanism for autoregressive inference, the causal
-mask instructs the self-attention layer to simply ignore all future tokens and
-only look backward when generating scores that help predict the next token.
+In [transformer](transformer.mdx) models, self-attention — a specific form of
+attention where a sequence attends to itself — allows every token to attend to
+all other tokens simultaneously, with no inherent notion of order.
+[Autoregressive](autoregression.mdx) language models, however, must generate
+tokens sequentially, meaning each token is conditioned only on preceding
+tokens. The *causal mask* (also called a *look-ahead mask*) resolves this
+tension by preventing the self-attention layer from attending to future tokens,
+ensuring that each token's representation incorporates information only from
+tokens at previous positions.
+
+Concretely, the causal mask is a matrix that sets attention scores to negative
+infinity for future positions. After the softmax operation, these
+negative-infinity values become zero, blocking information flow from later
+tokens to earlier ones.
+
+The causal mask is essential during training, where the model processes entire
+sequences in parallel and must be prevented from attending to tokens it should
+be predicting. The same constraint applies during inference at the [context
+encoding](context-encoding.mdx) (also called prefill) phase,
+where all input tokens are likewise processed in parallel. Without the causal
+mask, information from later tokens would corrupt the representations of
+earlier tokens, producing attention scores that differ from what the model
+learned during training.
+
+Note that during the decode phase of inference, the causal mask is effectively
+redundant: the model generates one token at a time and attends only to the [KV
+cache](kv-cache.mdx) of previously-seen tokens, so there are no future tokens
+to mask.

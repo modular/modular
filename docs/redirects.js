@@ -133,6 +133,14 @@ const redirects = [
     from: '/max/tutorials/custom-kernels-pytorch',
     to: '/max/develop/custom-kernels-pytorch',
   },
+  {
+    from: '/glossary/ai/prefill',
+    to: '/glossary/ai/context-encoding',
+  },
+  {
+    from: '/glossary/ai/self-attention',
+    to: '/glossary/ai/attention',
+  },
   ...mojoRedirects,
 ];
 
