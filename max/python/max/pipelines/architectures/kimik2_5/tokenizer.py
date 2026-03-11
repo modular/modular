@@ -54,6 +54,11 @@ logger = logging.getLogger("max.pipelines")
 # Kimi K2.5 special token for image placeholder padding.
 _MEDIA_PAD_TOKEN = "<|media_pad|>"
 
+# Chat turn terminator. The HF tokenizer lists [EOS] as eos_token, but the
+# chat format ends assistant turns with <|im_end|>.  We need both in the
+# EOS set so generation stops.
+_IM_END_TOKEN = "<|im_end|>"
+
 
 class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
     """Kimi K2.5 tokenizer for multimodal (text + vision) inputs.
@@ -93,6 +98,10 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                 self._default_eos_token_ids.add(eos_token_id)
             elif isinstance(eos_token_id, list):
                 self._default_eos_token_ids.update(eos_token_id)
+
+        im_end_id = self.delegate.convert_tokens_to_ids(_IM_END_TOKEN)
+        if isinstance(im_end_id, int):
+            self._default_eos_token_ids.add(im_end_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
