@@ -54,7 +54,6 @@ from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
     is_big_endian,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,

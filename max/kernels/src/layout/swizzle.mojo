@@ -33,7 +33,7 @@ conflicts can degrade performance.  Applying swizzle layouts
 optimizes memory access patterns for higher throughput.
 """
 
-from std.sys import is_run_in_comptime_interpreter, simd_width_of, size_of
+from std.sys import simd_width_of, size_of
 
 from std.bit import log2_floor
 from std.gpu.host.nvidia.tma import TensorMapSwizzle

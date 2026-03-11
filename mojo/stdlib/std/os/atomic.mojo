@@ -20,7 +20,6 @@ from std.os import Atomic
 """
 
 from std.collections.string.string_slice import _get_kgen_string
-from std.sys import is_run_in_comptime_interpreter
 from std.sys.info import is_nvidia_gpu
 
 from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of

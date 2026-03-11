@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
-from std.sys import is_run_in_comptime_interpreter
 from std.utils import Variant
 import std.format._utils as fmt
 

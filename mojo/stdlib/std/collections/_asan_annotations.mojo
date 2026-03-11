@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.sys.compile import SanitizeAddress, is_run_in_comptime_interpreter
+from std.sys.compile import SanitizeAddress
 from std.ffi import external_call
 
 

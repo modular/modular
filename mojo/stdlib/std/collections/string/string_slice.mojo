@@ -35,7 +35,7 @@ from std.hashlib.hasher import Hasher
 from std.format._utils import _TotalWritableBytes, _WriteBufferStack
 from std.math import align_down
 from std.os import PathLike, abort
-from std.sys import is_run_in_comptime_interpreter, simd_width_of
+from std.sys import simd_width_of
 from std.ffi import c_char
 from std.sys.intrinsics import likely, unlikely
 

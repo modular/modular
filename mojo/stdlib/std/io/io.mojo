@@ -21,7 +21,6 @@ from std.sys import _libc as libc
 from std.ffi import c_char, external_call
 from std.sys import (
     is_amd_gpu,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     stdin,

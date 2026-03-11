@@ -21,7 +21,6 @@ from std.os import abort
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
 )

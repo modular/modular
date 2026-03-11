@@ -24,7 +24,6 @@ from std.sys import (
     bit_width_of,
     is_amd_gpu,
     is_apple_gpu,
-    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,

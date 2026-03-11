@@ -28,7 +28,6 @@ from std.sys import (
     align_of,
     codegen_unreachable,
     get_defined_string,
-    is_run_in_comptime_interpreter,
     is_gpu,
     llvm_intrinsic,
     simd_bit_width,

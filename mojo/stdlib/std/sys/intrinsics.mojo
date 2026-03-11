@@ -21,7 +21,6 @@ from std.sys import PrefetchLocality
 
 import std.math
 from std.collections.string.string_slice import _get_kgen_string
-from std.sys import is_run_in_comptime_interpreter
 from std.sys.info import _is_sm_9x_or_newer, is_gpu
 
 

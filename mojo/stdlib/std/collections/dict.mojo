@@ -40,7 +40,7 @@ See the `Dict` docs for more details.
 from std.compile import get_type_name
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
-from std.sys.intrinsics import is_run_in_comptime_interpreter, likely
+from std.sys.intrinsics import likely
 
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.memory import alloc, bitcast, memcpy, memset, pack_bits
