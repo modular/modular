@@ -6,6 +6,7 @@
 
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Debugging.h"
+#include "KGEN/ToolCommon/OOMHandler.h"
 #include "LSPServer.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "llvm/Support/CommandLine.h"
@@ -24,6 +25,9 @@ using namespace llvm::lsp;
 int main(int argc, char **argv) {
   llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
   llvm::PrettyStackTraceProgram x(argc, argv);
+
+  KGEN::installOOMHandler();
+
   llvm::setBugReportMsg(
       "Please submit a bug report to https://github.com/modular/modular/issues "
       "and include the crash backtrace along with all the relevant source "
