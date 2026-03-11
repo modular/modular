@@ -62,12 +62,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "DeepseekV3ForCausalLMNextN",
 )
 
-_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-)
+_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = ("LlamaForCausalLM",)
 
 
 class PipelineConfig(ConfigFileModel):
