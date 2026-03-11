@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
@@ -31,6 +32,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace KGEN::Diag;
 
 using HLCF::parseLoop;
 using HLCF::printLoop;
@@ -61,8 +63,8 @@ template <typename OpT>
 static LogicalResult verifyParamValueOp(OpT op) {
   if (op.getValue().getType() == op.getType())
     return success();
-  return op.emitOpError() << "parameter type " << op.getValue().getType()
-                          << " does not match result type " << op.getType();
+  return KGEN::Diag::emitError(op, DiagID::err_parameter_type_2,
+                               op.getValue().getType(), op.getType());
 }
 
 /// Return true if the parameter value contains symbol constants, making the
@@ -160,9 +162,9 @@ void ParamDeclareOp::walkDefinitions(
 LogicalResult ParamDeclareOp::verify() {
   if (getParamDecl().getType() == getValue().getType())
     return success();
-  return emitOpError("declares a parameter with type ")
-         << getParamDecl().getType() << " but parameter expression has type "
-         << getValue().getType();
+  return KGEN::Diag::emitOpError(this, DiagID::err_declares_parameter_type,
+                                 getParamDecl().getType(),
+                                 getValue().getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -271,9 +273,9 @@ void ParamDeclareRegionOp::collectParameterUses(
 LogicalResult ParamDeclareRegionOp::verify() {
   if (ArrayAttr argsArray = getLLVMArgMetadataArray();
       !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
-                       "arguments, got ")
-           << argsArray.size();
+    return KGEN::Diag::emitOpError(
+        this, DiagID::err_llvmargmetadataarray_size_not_equal_number,
+        argsArray.size());
   return success();
 }
 
@@ -301,7 +303,7 @@ static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
       p.parseRParen())
     return failure();
   if (calleeType.getBody().getNumResults() != 1)
-    return p.emitError(sigLoc, "expected callee to have 1 result");
+    return p.emitError(sigLoc, diagMsg(DiagID::err_expected_callee_1_result));
   paramDecl =
       ParamDeclAttr::get(paramName, calleeType.getBody().getResults().front());
   operands = ParameterExprArrayAttr::get(p.getContext(), operandValues);
@@ -326,7 +328,7 @@ LogicalResult ParamApplyOp::verify() {
   auto type = cast<FuncTypeGeneratorType>(getCallee().getType());
   if (type.getInputParamTypes().empty())
     return success();
-  return emitOpError("callee signature must be concrete");
+  return KGEN::Diag::emitError(this, DiagID::err_callee_signature_concrete);
 }
 
 void ParamApplyOp::walkDefinitions(
@@ -363,7 +365,8 @@ void ReturnOp::getBranchTargets(
 LogicalResult ReturnOp::verify() {
   auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
   if (!func)
-    return emitOpError("expected to be nested inside a function");
+    return KGEN::Diag::emitError(this,
+                                 DiagID::err_expected_nested_inside_function);
   return checkOperandTypes(*this, func.getResultTypes());
 }
 
@@ -461,9 +464,9 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
 LogicalResult GeneratorOp::verify() {
   if (ArrayAttr argsArray = getLLVMArgMetadataArray();
       !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
-                       "arguments, got ")
-           << argsArray.size();
+    return KGEN::Diag::emitError(
+        this, DiagID::err_llvmargmetadataarray_size_not_equal_number,
+        argsArray.size());
   return success();
 }
 
@@ -566,9 +569,9 @@ LogicalResult FuncOp::verify() {
   }
   if (ArrayAttr argsArray = getLLVMArgMetadata();
       !argsArray.empty() && argsArray.size() != getNumArguments()) {
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
-                       "arguments, got ")
-           << argsArray.size();
+    return KGEN::Diag::emitError(
+        this, DiagID::err_llvmargmetadataarray_size_not_equal_number,
+        argsArray.size());
   }
   return success();
 }
@@ -711,7 +714,8 @@ static ParseResult parseStructInstanceSpec(OpAsmParser &p,
                                       metaTypeAttr, body)))
     return failure();
   if (!params.empty())
-    return p.emitError(startLoc, "struct.instance cannot be parameterized");
+    return p.emitError(
+        startLoc, diagMsg(DiagID::err_struct_instance_cannot_parameterized));
   return success();
 }
 
@@ -820,17 +824,14 @@ LogicalResult CallParamOp::verify() {
 
 LogicalResult ParamForOp::verify() {
   if (getNumOperands() != getNumResults()) {
-    return emitOpError("has ")
-           << getNumOperands() << " operands but " << getNumResults()
-           << " results; it should be the same";
+    return KGEN::Diag::emitError(this, DiagID::err_has, getNumOperands(),
+                                 getNumResults());
   }
   for (auto [i, argTy, resTy] :
        llvm::enumerate(getOperandTypes(), getResultTypes())) {
     if (argTy == resTy)
       continue;
-    return emitOpError("operand #")
-           << i << " has type " << argTy
-           << " but corresponding result has type " << resTy;
+    return KGEN::Diag::emitError(this, DiagID::err_operand_2, i, argTy, resTy);
   }
   return success();
 }
@@ -1019,7 +1020,8 @@ static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
   if (!inputParams.empty() || !resultParams.empty())
-    return p.emitError(bodyLoc, "staged closures cannot have parameters");
+    return p.emitError(bodyLoc,
+                       diagMsg(DiagID::err_staged_closures_cannot_parameters));
   resultType = signatureType;
   return success();
 }
@@ -1110,38 +1112,36 @@ static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
 LogicalResult CreateClosureOp::verify() {
   FuncType calleeSig = getCalleeType().getBody();
   if (getNumOperands() > calleeSig.getNumArguments()) {
-    return emitOpError("provided ")
-           << getNumOperands() << " operands but callee only has "
-           << calleeSig.getNumArguments() << " to bind";
+    return KGEN::Diag::emitError(this, DiagID::err_provided_2, getNumOperands(),
+                                 calleeSig.getNumArguments());
   }
   unsigned expectedArgs = calleeSig.getNumArguments() - getNumOperands();
   FuncType sig = getType().getBody();
   if (sig.getNumArguments() != expectedArgs) {
-    return emitOpError("result signature has ")
-           << sig.getNumArguments() << " arguments but expected "
-           << expectedArgs;
+    return KGEN::Diag::emitError(this, DiagID::err_result_signature,
+                                 sig.getNumArguments(), expectedArgs);
   }
 
   for (auto [i, type, argType] :
        llvm::enumerate(getOperandTypes(),
                        calleeSig.getArguments().take_front(getNumOperands()))) {
     if (type != argType) {
-      return emitOpError("operand #")
-             << i << " has type " << type
-             << " but callee argument type expected " << argType;
+      return KGEN::Diag::emitError(this, DiagID::err_operand_callee_type, i,
+                                   type, argType);
     }
   }
   for (auto [i, type, argType] :
        llvm::enumerate(sig.getArguments(),
                        calleeSig.getArguments().drop_front(getNumOperands()))) {
     if (type != argType) {
-      return emitOpError("result signature argument #")
-             << i << " type is " << argType << " but expected to be " << type;
+      return KGEN::Diag::emitError(this, DiagID::err_result_signature_argument,
+                                   i, argType, type);
     }
   }
 
   if (!getCaptures().empty() && !sig.isCapturing())
-    return emitOpError("has captures, so result signature must be 'capturing'");
+    return KGEN::Diag::emitError(
+        this, DiagID::err_captures_so_result_signature_capturing);
   return success();
 }
 
@@ -1160,19 +1160,20 @@ LogicalResult CreateRegStubOp::verify() {
   FuncType resSig = getType().getBody();
 
   if (calleeSig.isThrows() || resSig.isThrows())
-    return emitOpError("throwing function not supported");
+    return KGEN::Diag::emitError(this, DiagID::err_throwing_function_supported);
   for (Type ty : resSig.getResults())
     if (!isa<NoneType>(ty))
-      return emitOpError("result signature with output types not supported");
+      return KGEN::Diag::emitError(
+          this, DiagID::err_result_signature_output_types_supported);
 
   bool expectPromotedMemOutputs =
       resSig.hasMemoryOnlyResult() && !calleeSig.hasMemoryOnlyResult();
   unsigned expectedArgsCount =
       calleeSig.getNumArguments() + unsigned(expectPromotedMemOutputs);
   if (resSig.getNumArguments() != expectedArgsCount) {
-    return emitOpError("result signature has ")
-           << resSig.getNumArguments()
-           << " arguments, but the expected count is " << expectedArgsCount;
+    return KGEN::Diag::emitError(this,
+                                 DiagID::err_result_signature_expected_count,
+                                 resSig.getNumArguments(), expectedArgsCount);
   }
 
   for (unsigned i = 0, e = resSig.getNumArguments(); i < e; ++i) {
@@ -1183,9 +1184,8 @@ LogicalResult CreateRegStubOp::verify() {
 
     PointerType argPtrTy = dyn_cast<PointerType>(argTy);
     if (!argPtrTy || argPtrTy.getElementType() != calleeTy) {
-      return emitOpError("result signature argument #")
-             << i << " type is " << argTy
-             << " but callee signature argument is " << calleeTy;
+      return KGEN::Diag::emitError(
+          this, DiagID::err_result_signature_arg_callee, i, argTy, calleeTy);
     }
   }
 
@@ -1307,7 +1307,7 @@ static ParseResult parsePackCreateType(AsmParser &p, Type &resultType,
     return failure();
   auto type = dyn_cast<PackType>(resultType);
   if (!type)
-    return p.emitError(loc, "expected a pack type");
+    return p.emitError(loc, diagMsg(DiagID::err_expected_pack_type));
 
   auto variadic = type.getVariadicIfResolved();
   if (!variadic) {
@@ -1332,19 +1332,20 @@ static void printPackCreateType(OpAsmPrinter &p, Operation *op, Type resultType,
 LogicalResult PackCreateOp::verify() {
   VariadicAttr elementTypesAttr = getType().getVariadicIfResolved();
   if (!elementTypesAttr)
-    return emitOpError() << "cannot create pack with parametric element types";
+    return KGEN::Diag::emitError(
+        this, DiagID::err_cannot_create_pack_parametric_element);
   ArrayRef<TypedAttr> elementTypes = elementTypesAttr.getValues();
   if (elementTypes.size() != getNumOperands()) {
-    return emitOpError() << "expected " << elementTypes.size()
-                         << " operands, but got " << getNumOperands();
+    return KGEN::Diag::emitError(this, DiagID::err_expected_n_operands_but_got,
+                                 elementTypes.size(), getNumOperands());
   }
   for (auto [i, expected, provided] :
        llvm::enumerate(elementTypes, getOperandTypes())) {
     Type type = ParamType::get(expected);
     if (type == provided)
       continue;
-    return emitOpError() << "operand #" << i << " should have type " << type
-                         << " but got " << provided;
+    return KGEN::Diag::emitError(this, DiagID::err_operand_should_have_type, i,
+                                 type, provided);
   }
   return success();
 }
@@ -1373,11 +1374,11 @@ PackExtractOp::inferReturnTypes(MLIRContext *context,
 
   ValueRange operands = adaptor.getOperands();
   if (operands.size() != 1 || !isa<PackType>(adaptor.getPack().getType()))
-    return emitError("expected 1 operand");
+    return emitError(diagMsg(DiagID::err_expected_1_operand));
 
   auto indexAttr = dyn_cast_if_present<TypedAttr>(adaptor.getIndexAttr());
   if (!indexAttr || !indexAttr.getType().isIndex())
-    return emitError("expected an index attribute");
+    return emitError(diagMsg(DiagID::err_expected_index_attribute));
 
   auto packType = cast<PackType>(adaptor.getPack().getType());
   inferredReturnTypes.push_back(getPackFieldAtIndex(packType, indexAttr));
@@ -1398,15 +1399,15 @@ PackGEPOp::inferReturnTypes(MLIRContext *context, std::optional<Location> loc,
 
   ValueRange operands = adaptor.getOperands();
   if (operands.size() != 1 || !isa<PointerType>(adaptor.getPack().getType()))
-    return emitError("expected 1 operand");
+    return emitError(diagMsg(DiagID::err_expected_1_operand));
   auto packType = dyn_cast<PackType>(
       cast<PointerType>(adaptor.getPack().getType()).getElementType());
   if (!packType)
-    return emitError("expected pointer to pack type");
+    return emitError(diagMsg(DiagID::err_expected_pointer_pack_type));
 
   auto indexAttr = dyn_cast_if_present<TypedAttr>(adaptor.getIndexAttr());
   if (!indexAttr || !indexAttr.getType().isIndex())
-    return emitError("expected an index attribute");
+    return emitError(diagMsg(DiagID::err_expected_index_attribute));
 
   inferredReturnTypes.push_back(
       PointerType::get(getPackFieldAtIndex(packType, indexAttr)));
@@ -1477,8 +1478,8 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
                      [](Type type) { return isa<VariadicSplatType>(type); })) {
       if (elementTypes.size() != 1) {
         // TODO: Support multiple types within `!kgen.struct`.
-        return op->emitOpError(
-            "only single `!kgen.variadic_splat` type allowed");
+        return KGEN::Diag::emitError(
+            op, DiagID::err_only_single_kgen_variadic_splat_type);
       }
       // `!kgen.variadic_splat` type is not yet concretized, therefore we cannot
       // verify correctness of this operation
@@ -1488,8 +1489,8 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
     if (auto intAttr = dyn_cast_if_present<IntegerAttr>(indexAttr)) {
       size_t index = intAttr.getInt();
       if (index >= elementTypes.size())
-        return op->emitOpError("element index ")
-               << index << " out of bounds (>=" << elementTypes.size() << ")";
+        return KGEN::Diag::emitError(op, DiagID::err_element_index, index,
+                                     elementTypes.size());
     }
   }
 
@@ -1518,14 +1519,14 @@ LogicalResult StructExtractOp::inferReturnTypes(
 
   ValueRange operands = adaptor.getOperands();
   if (operands.size() != 1)
-    return emitError("expected 1 operand");
+    return emitError(diagMsg(DiagID::err_expected_1_operand));
   auto structType = dyn_cast<StructType>(operands.front().getType());
   if (!structType)
-    return emitError("expected struct operand");
+    return emitError(diagMsg(DiagID::err_expected_struct_operand));
 
   TypedAttr indexAttr = adaptor.getIndexAttr();
   if (!indexAttr)
-    return emitError("expected an index attribute");
+    return emitError(diagMsg(DiagID::err_expected_index_attribute));
 
   inferredReturnTypes.push_back(
       getStructFieldTypeAtIndex(structType, indexAttr));
@@ -1566,7 +1567,7 @@ LogicalResult StructReplaceOp::verify() {
 LogicalResult StructGEPOp::verify() {
   auto pointerType = dyn_cast<PointerType>(getContainer().getType());
   if (!pointerType)
-    return emitOpError("expected pointer operand");
+    return KGEN::Diag::emitError(this, DiagID::err_expected_pointer_operand);
 
   Type elementType = pointerType.getElementType();
 
@@ -1581,9 +1582,9 @@ LogicalResult StructGEPOp::verify() {
       // field 0 becomes an identity operation.
       if (getContainer().getType() == getType())
         return success();
-      return emitOpError("constant index requires pointer to concrete struct "
-                         "type, got ")
-             << elementType;
+      return KGEN::Diag::emitError(
+          this, DiagID::err_constant_index_requires_pointer_concrete,
+          elementType);
     }
 
     auto numElements = structType.getNumElements();
@@ -1594,23 +1595,22 @@ LogicalResult StructGEPOp::verify() {
 
     unsigned index = indexAttr.getInt();
     if (index >= *numElements)
-      return emitOpError("struct field index ")
-             << index << " is out of bounds for struct with " << *numElements
-             << " elements";
+      return KGEN::Diag::emitOpError(this, DiagID::err_struct_field_index,
+                                     index, *numElements);
 
     // Verify result type matches the element type at the index.
     Type expectedEltType = (*elementTypes)[index];
     if (getType().getElementType() != expectedEltType)
-      return emitOpError("result element type ")
-             << getType().getElementType()
-             << " does not match struct element type " << expectedEltType
-             << " at index " << index;
+      return KGEN::Diag::emitOpError(this, DiagID::err_result_element_type,
+                                     getType().getElementType(),
+                                     expectedEltType, index);
   } else {
     // Parametric index: allow both StructType and ParamType for generic
     // contexts.
     if (!isa<StructType>(elementType) && !isa<ParamType>(elementType))
-      return emitOpError("expected pointer to struct or parametric type, got ")
-             << elementType;
+      return KGEN::Diag::emitError(
+          this, DiagID::err_expected_pointer_struct_parametric_type,
+          elementType);
   }
 
   return success();
@@ -1766,9 +1766,9 @@ static LogicalResult verifyVariantIndex(Operation *op, VariantType type,
                                         unsigned index) {
   if (index < type.getNumTypes())
     return success();
-  return op->emitOpError("variant index ")
-         << index << " is out of bounds in range [0, " << type.getNumTypes()
-         << ")";
+  return KGEN::Diag::emitError(op,
+                               DiagID::err_variant_index_out_of_bounds_range,
+                               index, type.getNumTypes());
 }
 
 LogicalResult VariantCreateOp::verify() {
@@ -1777,9 +1777,8 @@ LogicalResult VariantCreateOp::verify() {
   Type elementType = getType().getType(getIndex());
   if (elementType == getOperand().getType())
     return success();
-  return emitOpError("variant element at index ")
-         << getIndex() << " expected type " << elementType
-         << " but operand has type " << getOperand().getType();
+  return KGEN::Diag::emitError(this, DiagID::err_variant_element_index,
+                               getIndex(), elementType, getOperand().getType());
 }
 
 static ParseResult parseVariantElementType(AsmParser &p, Type &type,
@@ -1817,9 +1816,8 @@ LogicalResult VariantGetOp::verify() {
   Type elementType = getVariant().getType().getType(getIndex());
   if (elementType == getType())
     return success();
-  return emitOpError("variant element at index ")
-         << getIndex() << " expected type " << elementType
-         << " but operand has type " << getType();
+  return KGEN::Diag::emitError(this, DiagID::err_variant_element_index,
+                               getIndex(), elementType, getType());
 }
 
 LogicalResult VariantGetOp::inferReturnTypes(MLIRContext *,
@@ -2013,34 +2011,35 @@ static void printClosureInitValue(OpAsmPrinter &p, Operation *op,
 
 LogicalResult ClosureInitOp::verify() {
   if (getCaptures().size() != getMoveOrCopyCaptureSymbols().size())
-    return emitOpError("expected symbols to match number of capture types");
+    return KGEN::Diag::emitError(
+        this, DiagID::err_expected_symbols_match_number_capture);
   for (Attribute symbol : getMoveOrCopyCaptureSymbols()) {
     if (!isa<MemSymbolTripleAttr, UnitAttr>(symbol))
-      return emitOpError(
-          "expected symbol constant attribute or unit attribute");
+      return KGEN::Diag::emitError(
+          this, DiagID::err_expected_symbol_constant_attribute_unit);
   }
   // If type is pointer it must be a pointer to a closure type and it cannot
   // be register passable.
   if (auto ptr = dyn_cast<PointerType>(getResult().getType())) {
     if (auto closureType = dyn_cast<ClosureType>((ptr.getElementType()))) {
       if (closureType.getClosureMemoryKind() == ClosureMemoryKind::TRIVIAL)
-        return emitOpError("expected escaping/nonescaping closure type if "
-                           "type is a pointer");
+        return KGEN::Diag::emitOpError(
+            this, DiagID::err_expected_escaping_nonescaping_closure_type);
       else
         return success();
     }
-    return emitOpError("expected closure type");
+    return KGEN::Diag::emitOpError(this, DiagID::err_expected_closure_type);
   }
 
   // if register passable, it must be a closure type.
   if (auto closureType = dyn_cast<ClosureType>(getResult().getType())) {
     if (closureType.getClosureMemoryKind() != ClosureMemoryKind::TRIVIAL)
-      return emitOpError(
-          "expected register passable closure type if type is not a pointer");
+      return KGEN::Diag::emitOpError(
+          this, DiagID::err_expected_register_passable_closure_type);
     else
       return success();
   }
-  return emitOpError("expected closure type");
+  return KGEN::Diag::emitOpError(this, DiagID::err_expected_closure_type);
 }
 
 /// The subprogram scope should represent the call lifted function.
