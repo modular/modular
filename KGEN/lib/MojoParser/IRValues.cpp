@@ -568,12 +568,12 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
     // TODO: This could get more aggressive, looking through implicit
     // conversions etc.
     emitter.emitError(get().callExpr->getLoc(),
-                      "cannot emit slice expression without a contextual type");
+                      Diag::DiagID::err_cannot_emit_slice_expression_without);
     return {};
   case Syntax::kListLiteral: {
     if (get().empty()) {
       emitter.emitError(get().callExpr->getLoc(),
-                        "cannot emit an empty list without a contextual type");
+                        Diag::DiagID::err_cannot_emit_empty_list_without);
       return {};
     }
 

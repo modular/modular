@@ -360,10 +360,12 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   if (allInvalid) {
     if (isErroneous())
       return {};
-    auto diag = getShared().emitError(
-                    getExprLoc(),
-                    "cannot form a reference to overloaded declaration of '")
-                << baseName << "'" << getExpr()->getRange();
+    auto diag =
+        getShared().emitError(
+            getExprLoc(),
+            Diag::DiagID::err_cannot_form_reference_overloaded_declaration,
+            baseName)
+        << getExpr()->getRange();
     for (auto &[candidate, eval] : evaluations) {
       diag.attachNote(candidate->getLoc())
           << "candidate not viable: " << eval.takeDiag();
@@ -705,10 +707,11 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedFunc.getImplicitConversion() ==
             ImplicitConversionKind::Deprecated) {
-      auto diag = emitter.emitWarning(getExprLoc(),
-                                      "deprecated implicit conversion from ")
-                  << operands[0].ir.getRValueTypeIfResolvable() << " to "
-                  << selfResultType << getExpr()->getRange();
+      auto diag =
+          emitter.emitWarning(
+              getExprLoc(), Diag::DiagID::err_deprecated_implicit_conversion,
+              operands[0].ir.getRValueTypeIfResolvable(), selfResultType)
+          << getExpr()->getRange();
       std::string resTypeStr = selfResultType.getAsString(&emitter.shared);
       diag.attachNote(getExprLoc())
           << "call '" << resTypeStr + "(...)' explicitly"
@@ -748,8 +751,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure && !isErroneous()) {
-    auto diag = getShared().emitError(getExprLoc(), "ambiguous call to '")
-                << baseName << "'" << getExpr()->getRange();
+    auto diag = getShared().emitError(
+                    getExprLoc(), Diag::DiagID::err_ambiguous_call, baseName)
+                << getExpr()->getRange();
     if (size_t minConversions =
             evaluations[0].second.getNumImplicitConversions() / 2) {
       diag << ", each candidate requires " << minConversions
@@ -922,10 +926,12 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
-  auto diag = getShared().emitError(
-                  getExprLoc(),
-                  "cannot form a reference to overloaded declaration of '")
-              << baseName << "'" << getExpr()->getRange();
+  auto diag =
+      getShared().emitError(
+          getExprLoc(),
+          Diag::DiagID::err_cannot_form_reference_overloaded_declaration,
+          baseName)
+      << getExpr()->getRange();
   diag.attachNote(getExprLoc()) << "did you mean to call it?";
 
   for (ASTDecl *candidate : fnDecls) {
@@ -1179,8 +1185,8 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
   // TODO: Need to emit a closure instance that partially applies the 'self'
   // argument here.
   auto loc = getExprLoc();
-  auto diag = emitter.emitError(loc, "cannot emit closure for method '")
-              << baseName << "'";
+  auto diag = emitter.emitError(
+      loc, Diag::DiagID::err_cannot_emit_closure_method, baseName);
   diag.attachNote(loc)
       << "computing member method closure is not yet supported";
   diag.attachNote(loc) << "did you forget '()'s?";

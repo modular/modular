@@ -20,6 +20,392 @@
 #endif
 
 //===----------------------------------------------------------------------===//
+// MojoParser — syntax, semantic analysis, and emission of Mojo source
+//===----------------------------------------------------------------------===//
+
+// Errors
+
+DIAG(err___comptime_assert_deprecated_use_comptime, Error, Parser,
+     "'__comptime_assert' is deprecated, use 'comptime {0}'")
+DIAG(err___del___method, Error, Parser,
+     "'__del__' must be a method")
+DIAG(err___init___method_return_self_type, Error, Parser,
+     "__init__ method must return Self type with 'out' argument")
+DIAG(err_add_parameters_nested_function_parent, Error, Parser,
+     "add parameters of nested function to parent function and capture them: parameters declared in nested functions are not supported yet")
+DIAG(err_align_requires_exactly_one_argument, Error, Parser,
+     "@align requires exactly one argument")
+DIAG(err_align_value_exceeds_maximum_alignment, Error, Parser,
+     "@align value exceeds maximum alignment (2^29)")
+DIAG(err_align_value_positive_power_2, Error, Parser,
+     "@align value must be a positive power of 2")
+DIAG(err_ambiguous_call, Error, Parser,
+     "ambiguous call to '{0}'")
+DIAG(err_ambiguous_captured_value, Error, Parser,
+     "ambiguous captured value: '{0}'")
+DIAG(err_ambiguous_import_both, Error, Parser,
+     "ambiguous import, both {0} and {1} exist in the file system.")
+DIAG(err_argument_type_list_elements_types, Error, Parser,
+     "argument type list elements must be types")
+DIAG(err_argument_type_specified, Error, Parser,
+     "argument type must be specified")
+DIAG(err_attribute_spec_requires_keyword_parameter, Error, Parser,
+     "attribute spec requires a keyword parameter")
+DIAG(err_can_convert, Error, Parser,
+     "can not convert {0} to {1}")
+DIAG(err_cannot_access, Error, Parser,
+     "cannot access {0}'{1}' directly; did you mean '{2}'?")
+DIAG(err_cannot_access_attribute_type, Error, Parser,
+     "cannot access attribute in type {0}")
+DIAG(err_cannot_access_comptime_member, Error, Parser,
+     "cannot access comptime member '{0}' with unbound parameter '{1}.{2}'")
+DIAG(err_cannot_access_instance_field_static, Error, Parser,
+     "cannot access instance field '{0}' directly; did you mean 'self.'?")
+DIAG(err_cannot_access_instance_field_without_instance, Error, Parser,
+     "cannot access instance field '{0}' without an instance of {1}")
+DIAG(err_cannot_bind_mlir_type, Error, Parser,
+     "cannot bind MLIR type {0} to trait {1}")
+DIAG(err_cannot_bind_non_trivial_value, Error, Parser,
+     "cannot bind non-trivial value to trivial variadic argument")
+DIAG(err_cannot_call_unresolved_expression, Error, Parser,
+     "cannot call this unresolved expression")
+DIAG(err_cannot_capture_by_move_read_only, Error, Parser,
+     "Cannot capture {0} by move because the value is read only")
+DIAG(err_cannot_capture_by_move_type_not_movable, Error, Parser,
+     "Cannot capture {0} by move because the type is not movable")
+DIAG(err_cannot_capture_by_mut_immutable, Error, Parser,
+     "Cannot capture {0} by mut because the value is immutable")
+DIAG(err_cannot_capture_not_copyable, Error, Parser,
+     "cannot capture {0} by copy because it is not copyable")
+DIAG(err_cannot_capture_not_destructable, Error, Parser,
+     "cannot capture {0} because it is not destructable")
+DIAG(err_cannot_capture_not_movable, Error, Parser,
+     "cannot capture {0} by move because it is not movable")
+DIAG(err_cannot_capture_not_register_passable, Error, Parser,
+     "cannot capture {0} by copy or move because it is not register passable and your closure is marked as register passable")
+DIAG(err_cannot_capture_value_trait_type, Error, Parser,
+     "cannot capture a value of trait type yet because existentials are not implemented")
+DIAG(err_cannot_construct_type, Error, Parser,
+     "cannot construct type '{0}'")
+DIAG(err_cannot_declare, Error, Parser,
+     "cannot declare '{0}' without a contextual type from its initializer")
+DIAG(err_cannot_declare_in_context, Error, Parser,
+     "cannot declare '{0}' in this context")
+DIAG(err_cannot_emit_closure_method, Error, Parser,
+     "cannot emit closure for method '{0}'")
+DIAG(err_cannot_emit_empty_list_without, Error, Parser,
+     "cannot emit an empty list without a contextual type")
+DIAG(err_cannot_emit_slice_expression_without, Error, Parser,
+     "cannot emit slice expression without a contextual type")
+DIAG(err_cannot_form_reference_overloaded_declaration, Error, Parser,
+     "cannot form a reference to overloaded declaration of '{0}'")
+DIAG(err_cannot_materialize_compile_time_value, Error, Parser,
+     "cannot materialize compile-time value of type {0} to a runtime value")
+DIAG(err_cannot_read_discard_pattern__, Error, Parser,
+     "cannot read from discard pattern '_'")
+DIAG(err_cannot_read_set_only_value, Error, Parser,
+     "cannot read from set-only value of type {0}")
+DIAG(err_cannot_reference_unknown_value, Error, Parser,
+     "cannot reference unknown value '{0}'")
+DIAG(err_cannot_resolve_comptime_value, Error, Parser,
+     "cannot resolve comptime value '{0}' used in '@__llvm_metadata'")
+DIAG(err_cannot_set_property, Error, Parser,
+     "cannot set property")
+DIAG(err_cannot_specify_slashslash_after_slash_marker, Error, Parser,
+     "cannot specify '//' marker after '/' marker in {0} list")
+DIAG(err_cannot_specify_slashslash_after_star_marker, Error, Parser,
+     "cannot specify '//' marker after '*' marker in {0} list")
+DIAG(err_cannot_specify_slash_after_star_marker, Error, Parser,
+     "cannot specify '/' marker after '*' marker in {0} list")
+DIAG(err_cannot_synthesize_lvalue, Error, Parser,
+     "cannot synthesize lvalue of {0}type {1}{2}")
+DIAG(err_cannot_transfer_out_immutable_reference, Error, Parser,
+     "cannot transfer out of immutable reference")
+DIAG(err_cannot_transfer_parameter_expression_did, Error, Parser,
+     "cannot transfer from a parameter expression; did you want to introduce a local 'var'?")
+DIAG(err_cannot_have_two_slashslash_markers, Error, Parser,
+     "cannot have two '//' markers in the same {0} list")
+DIAG(err_cannot_have_two_slash_markers, Error, Parser,
+     "cannot have two '/' markers in the same {0} list")
+DIAG(err_cannot_have_two_star_markers, Error, Parser,
+     "cannot have two '*' markers in the same {0} list")
+DIAG(err_cannot_unpack_value, Error, Parser,
+     "cannot unpack value of {0} of {1} element{2} into {3} value{4}")
+DIAG(err_cannot_unpack_value_type, Error, Parser,
+     "cannot unpack value of type {0} into {1} value{2}")
+DIAG(err_cannot_use_non_memory_value, Error, Parser,
+     "cannot use non-memory value")
+DIAG(err_cannot_use_operations_multiple_inferred, Error, Parser,
+     "cannot use operations with multiple inferred results (yet): {0}")
+DIAG(err_cant_access, Error, Parser,
+     "can't access '{0}' in non-parameter {1}")
+DIAG(err_cant_use_starred_expression_here, Error, Parser,
+     "can't use starred expression here")
+DIAG(err_comparison_result_types_chained_comparison, Error, Parser,
+     "comparison result types of chained comparison must match")
+DIAG(err_comprehensions_supported_compile_time, Error, Parser,
+     "comprehensions are not supported at compile time; move into a function and call it")
+DIAG(err_decorators_supported_statement, Error, Parser,
+     "decorators not supported on this statement")
+DIAG(err_defining_main_within_package_yet, Error, Parser,
+     "defining 'main' within a package is not yet supported")
+DIAG(err_deinit_arguments_variadic, Error, Parser,
+     "deinit arguments may not be variadic")
+DIAG(err_deinit_supported_function_types_use, Error, Parser,
+     "'deinit' is not supported in function types, use 'var' instead")
+DIAG(err_deprecated_accepts_either_warning_message, Error, Parser,
+     "@deprecated accepts either a warning message or a {0}")
+DIAG(err_deprecated_decorator_supported_declaration, Error, Parser,
+     "@deprecated decorator is not supported on this declaration")
+DIAG(err_deprecated_implicit_conversion, Error, Parser,
+     "deprecated implicit conversion from {0} to {1}")
+DIAG(err_deprecated_requires_warning_message, Error, Parser,
+     "@deprecated requires a warning message")
+DIAG(err_deprecated_specify_either_message, Error, Parser,
+     "deprecated must specify either a message or a {0}")
+DIAG(err_deprecated_stable_cannot_used_together, Error, Parser,
+     "@deprecated and @stable cannot be used together")
+DIAG(err_direct_access_trait_members_supported, Error, Parser,
+     "Direct access of trait members is not supported.")
+DIAG(err_dynamic_type_values_permitted_yet, Error, Parser,
+     "dynamic type values not permitted yet")
+DIAG(err_existentials_supported_yet, Error, Parser,
+     "existentials are not supported yet!")
+DIAG(err_expected_capture_convention_list, Error, Parser,
+     "expected a capture convention list")
+DIAG(err_expected_concrete_trait_second_argument, Error, Parser,
+     "expected a concrete trait for the second argument")
+DIAG(err_expected_identifier_initializer_list, Error, Parser,
+     "expected identifier in initializer list")
+DIAG(err_expected_identifier_target, Error, Parser,
+     "expected identifier for target in 'for'")
+DIAG(err_expected_main_function_no_arguments, Error, Parser,
+     "expected 'main' function to have no arguments")
+DIAG(err_expected_main_function_no_parameters, Error, Parser,
+     "expected 'main' function to have no parameters")
+DIAG(err_expected_main_function_return_none, Error, Parser,
+     "expected 'main' function to return 'None'")
+DIAG(err_expected_tuple_type_destructure_got, Error, Parser,
+     "expected a tuple type to destructure, got {0}")
+DIAG(err_expected_type_first_argument, Error, Parser,
+     "expected a type for the first argument")
+DIAG(err_explicit_destroy_cannot_used_trait, Error, Parser,
+     "@explicit_destroy cannot be used on a trait that conforms to ImplicitlyDestructible")
+DIAG(err_export_requires_1_2_arguments, Error, Parser,
+     "@export requires 1 or 2 arguments")
+DIAG(err_export_requires_string_specifying, Error, Parser,
+     "@export requires a string specifying the name of the exported symbol")
+DIAG(err_exported_main_function, Error, Parser,
+     "exported 'main' must be a function")
+DIAG(err_expression_already_evaluated_compile, Error, Parser,
+     "expression is already evaluated at compile time; remove 'comptime' keyword")
+DIAG(err_expression_does_designate_value_origin, Error, Parser,
+     "expression does not designate a value with an origin")
+DIAG(err_expression_does_live_memory_location, Error, Parser,
+     "expression does not live in a memory location, so {0}")
+DIAG(err_expression_mutable_assignment, Error, Parser,
+     "expression must be mutable in assignment")
+DIAG(err_expression_register_value, Error, Parser,
+     "expression is a register value, {0}")
+DIAG(err_failed_emit_constraint_expression, Error, Parser,
+     "failed to emit constraint expression")
+DIAG(err_failed_resolve_signature_function, Error, Parser,
+     "failed to resolve signature for function {0}")
+DIAG(err_function_cannot_register_passable_unless, Error, Parser,
+     "a function cannot be register passable unless it is unified")
+DIAG(err_function_multiple_out_arguments, Error, Parser,
+     "function may not have multiple 'out' arguments")
+DIAG(err_infer_capture_convention_captured_value, Error, Parser,
+     "Could not infer capture convention of the captured value {0}")
+DIAG(err_inferred_parameter_type, Error, Parser,
+     "inferred parameter of type {0} cannot depend on non-inferred parameter {1}")
+DIAG(err_inferred_parameters_defaults, Error, Parser,
+     "inferred parameters may not have defaults")
+DIAG(err_invalid_comptime_declaration_expected_identifier, Error, Parser,
+     "invalid comptime declaration: expected an identifier or '_'")
+DIAG(err_invalid_mlir_attribute, Error, Parser,
+     "invalid MLIR attribute: {0}")
+DIAG(err_invalid_mlir_type, Error, Parser,
+     "invalid MLIR type: {0}")
+DIAG(err_invalid_overloaded___del___method, Error, Parser,
+     "invalid overloaded '__del__' method")
+DIAG(err_main_can_only_exported_main, Error, Parser,
+     "'main' can only be exported as 'main'")
+DIAG(err_malformed_builtin__stubs___mlirtype, Error, Parser,
+     "malformed builtin._stubs.__MLIRType")
+DIAG(err_malformed_literal_type, Error, Parser,
+     "malformed Literal type")
+DIAG(err_malformed_variadiclist, Error, Parser,
+     "malformed VariadicListInMem")
+DIAG(err_malformed_variadicpack, Error, Parser,
+     "malformed VariadicPack")
+DIAG(err_star_marker_not_allowed_at_end, Error, Parser,
+     "'*' marker is not allowed at end of {0} list")
+DIAG(err_slashslash_marker_at_start_of_list, Error, Parser,
+     "'//' marker cannot be used at the start of the {0} list")
+DIAG(err_slash_marker_at_start_of_list, Error, Parser,
+     "'/' marker cannot be used at the start of the {0} list")
+DIAG(err_starstar_marker_must_be_at_end, Error, Parser,
+     "'**' marker must be at end of {0} list")
+DIAG(err_missing_end_function_signature, Error, Parser,
+     "missing ':' at end of function signature")
+DIAG(err_mlir_magic_expanded_empty_string, Error, Parser,
+     "mlir magic expanded to an empty string")
+DIAG(err_mlir_operation_region_region_reference, Error, Parser,
+     "MLIR operation region must be a region reference")
+DIAG(err_mlir_operators_only_support_positional, Error, Parser,
+     "MLIR operators only support positional arguments")
+DIAG(err_mlir_verification_error, Error, Parser,
+     "MLIR verification error: {0}")
+DIAG(err_non_implicitly_trivially_copyable_value, Error, Parser,
+     "non-implicitly trivially copyable value cannot be copied from a non-default address space")
+DIAG(err_non_owned_variadic_keyword_arguments, Error, Parser,
+     "non-owned variadic keyword arguments are not supported yet")
+DIAG(err_only_arguments_self_type_marked, Error, Parser,
+     "only arguments of Self type may be marked 'deinit'")
+DIAG(err_only_main_can_exported_main, Error, Parser,
+     "only 'main' can be exported as 'main'")
+DIAG(err_only_positional_operands_allowed_mlir, Error, Parser,
+     "only positional operands allowed in mlir magic")
+DIAG(err_only_struct_methods_deinit, Error, Parser,
+     "only struct methods may be 'deinit'")
+DIAG(err_only_variadic_arguments_types_can, Error, Parser,
+     "only variadic arguments' types can be unpacked")
+DIAG(err_only_variadics_can_unpacked, Error, Parser,
+     "only variadics can be unpacked")
+DIAG(err_operand_isnt_lit_ref_type, Error, Parser,
+     "operand isn't a '!lit.ref' type {0}")
+DIAG(err_operand_kgen_pointer_t_type, Error, Parser,
+     "operand must have '!kgen.pointer<T>' type, not {0}")
+DIAG(err_operation_already_attributes, Error, Parser,
+     "operation already has attributes")
+DIAG(err_operator_yet_supported, Error, Parser,
+     "operator not yet supported")
+DIAG(err_out_convention_variadic, Error, Parser,
+     "'out' convention may not be variadic")
+DIAG(err_pack_argument_type_list_reference, Error, Parser,
+     "pack argument type list must reference a variadic list")
+DIAG(err_parameters_always_passed_value, Error, Parser,
+     "parameters must always be passed by-value")
+DIAG(err_parameters_always_type, Error, Parser,
+     "parameters must always have a type")
+DIAG(err_parameters_cannot_out, Error, Parser,
+     "parameters cannot be 'out'")
+DIAG(err_parameters_variadic_packs, Error, Parser,
+     "parameters may not be variadic packs")
+DIAG(err_parametric_functions_used_arguments, Error, Parser,
+     "parametric functions may not be used as arguments; consider passing as a parameter instead")
+DIAG(err_reason_argument_string_literal, Error, Parser,
+     "'reason' argument must be a string literal")
+DIAG(err_redefinition_function, Error, Parser,
+     "redefinition of function '{0}'{1}")
+DIAG(err_reference_unknown_member, Error, Parser,
+     "reference to unknown member '{0}'")
+DIAG(err_reference_unknown_value, Error, Parser,
+     "reference to an unknown value: {0}")
+DIAG(err_self_type_available_context, Error, Parser,
+     "'Self' type is not available in this context")
+DIAG(err_self_type_only_used_inside, Error, Parser,
+     "'Self' type may only be used inside a struct, trait, or extension")
+DIAG(err_stable_decorator_supported_declaration, Error, Parser,
+     "@stable decorator is not supported on this declaration")
+DIAG(err_stable_member_cannot_declared_unstable, Error, Parser,
+     "@stable member cannot be declared in an unstable struct")
+DIAG(err_stable_member_cannot_declared_unstable_2, Error, Parser,
+     "@stable member cannot be declared in an unstable trait")
+DIAG(err_struct_field_ref_requires_compile_time_index, Error, Parser,
+     "struct_field_ref requires a compile-time index")
+DIAG(err_struct_field_ref_requires_compile_time_integer, Error, Parser,
+     "struct_field_ref requires a compile-time integer index")
+DIAG(err_struct_field_ref_requires_reference_struct, Error, Parser,
+     "struct_field_ref requires a reference to a struct")
+DIAG(err_struct_field_type_at_index_requires_compile_time_index, Error, Parser,
+     "struct_field_type_at_index requires a compile-time index")
+DIAG(err_struct_field_type_at_index_requires_type_argument, Error, Parser,
+     "struct_field_type_at_index requires a type argument")
+DIAG(err_todo_dynamic_generator_conversions_supported, Error, Parser,
+     "TODO: dynamic generator conversions not supported yet")
+DIAG(err_todo_function_type_conversions_between, Error, Parser,
+     "TODO: function type conversions between closures not supported yet")
+DIAG(err_todo_read_only_non_trivial, Error, Parser,
+     "TODO: read-only non-trivial register-passable arguments are not yet supported in async functions")
+DIAG(err_todo_unpack_emission_dict_literal, Error, Parser,
+     "TODO: unpack emission in dict literal not supported yet")
+DIAG(err_todo_variadic_isnt_supported_ref, Error, Parser,
+     "TODO: variadic isn't supported with 'ref' convention yet")
+DIAG(err_trait_method_results_default_implementation, Error, Parser,
+     "trait method has results but default implementation returns no value; did you mean '...'?")
+DIAG(err_trivial_types_method, Error, Parser,
+     "trivial types may not have a '{0}' method, they are always trivially destroyable")
+DIAG(err_unable_infer_result_type_mlir, Error, Parser,
+     "unable to infer result type from MLIR operation '{0}'")
+DIAG(err_unable_resolve_builtin_startup_module, Error, Parser,
+     "unable to resolve `Builtin.Startup` module when exporting 'main'")
+DIAG(err_unexpected_function_body_extern_function, Error, Parser,
+     "unexpected function body in extern function declaration, use `...`")
+DIAG(err_unified_effect_only_applicable_nested, Error, Parser,
+     "unified effect is only applicable on nested functions")
+DIAG(err_unknown__type_value, Error, Parser,
+     "unknown _type value")
+DIAG(err_unknown_function_effect, Error, Parser,
+     "unknown function effect '{0}', expected 'raises', 'capturing', or 'escaping'")
+DIAG(err_unnamed_cannot_follow_named, Error, Parser,
+     "unnamed {0} cannot follow named {0}")
+DIAG(err_unnamed_cannot_follow_slash_star, Error, Parser,
+     "unnamed {0} cannot follow '/' or '*'")
+DIAG(err_unnamed_must_be_positional_only, Error, Parser,
+     "unnamed {0} must be positional-only")
+DIAG(err_unqualified_access_struct_parameter, Error, Parser,
+     "unqualified access to struct parameter '{0}'; use 'Self.{0}' instead")
+DIAG(err_unrecognized_capture_convention, Error, Parser,
+     "Unrecognized capture convention")
+DIAG(err_unsupported_decorator_statement_2, Error, Parser,
+     "unsupported decorator on this statement")
+DIAG(err_use_declaration, Error, Parser,
+     "use of declaration '{0}' as a value isn't supported yet")
+DIAG(err_use_reference_symbol, Error, Parser,
+     "'use' must reference a symbol")
+DIAG(err_use_unknown_declaration, Error, Parser,
+     "use of unknown declaration '{0}'")
+DIAG(err_use_unregistered_mlir_operation, Error, Parser,
+     "use of unregistered MLIR operation '{0}'")
+DIAG(err_use_unstable_api, Error, Parser,
+     "use of unstable API '{0}'")
+DIAG(err_use_unstable_function, Error, Parser,
+     "use of unstable function '{0}'")
+DIAG(err_value_is_parameter_no_capture_convention, Error, Parser,
+     "value {0} is a parameter and does not need a capture convention")
+DIAG(err_variadic_arguments_defaults, Error, Parser,
+     "variadic arguments may not have defaults")
+DIAG(err_variadic_keyword_parameters_supported_yet, Error, Parser,
+     "variadic keyword parameters not supported yet")
+DIAG(err_where_clauses_can_only_used, Error, Parser,
+     "where clauses can only be used for compile time parameters")
+
+// Warnings
+
+DIAG(warn_alias_deprecated_use_comptime_instead, Warning, Parser,
+     "'alias' is deprecated, use 'comptime' instead")
+
+// Notes
+
+//===----------------------------------------------------------------------===//
+// MLIR Operations — op verification and lowering passes
+//===----------------------------------------------------------------------===//
+
+DIAG(err_cannot_convert_2, Error, MLIR,
+     "cannot convert {0} to trait {1}")
+
+//===----------------------------------------------------------------------===//
+// Trait/Conformance — trait declaration and conformance checks
+//===----------------------------------------------------------------------===//
+
+DIAG(err_trait_does_exist, Error, Trait,
+     "trait {0} has no entry named {1}")
+DIAG(err_trait_multiple_entries, Error, Trait,
+     "trait {0} has multiple entries named {1}")
+
+//===----------------------------------------------------------------------===//
 // CodeGen — code generation, lowering, and LLVM emission
 //===----------------------------------------------------------------------===//
 

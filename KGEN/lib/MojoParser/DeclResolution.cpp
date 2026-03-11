@@ -100,7 +100,7 @@ rejectDecorators(ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
     return;
 
   shared.emitError(decoratorExprs[0].first->getLoc(),
-                   "decorators not supported on this statement")
+                   Diag::DiagID::err_decorators_supported_statement)
       << SourceRange(decoratorExprs.front().first->getRangeStart(),
                      decoratorExprs.back().first->getRangeEnd());
 }
@@ -165,8 +165,8 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
   // be explicitly specified.
   if (auto declRef = dyn_cast<DeclRefNode>(expr);
       declRef && declRef->spelling == "deprecated") {
-    shared.emitError(expr->getLoc(), "@deprecated requires a warning message "
-                                     "or a replacement symbol (with 'use')")
+    shared.emitError(expr->getLoc(),
+                     Diag::DiagID::err_deprecated_requires_warning_message)
         << FixIt::insertAfterToken(expr->getRange().getEnd(),
                                    "(\"insert deprecation message here\")",
                                    shared.diags);
@@ -189,14 +189,15 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
   if (!stabilityInterface) {
     shared.emitError(
         expr->getLoc(),
-        "@deprecated decorator is not supported on this declaration");
+        Diag::DiagID::err_deprecated_decorator_supported_declaration);
     return success();
   }
 
   if (callNode->operands.size() != 1) {
-    shared.emitError(expr->getLoc(),
-                     "@deprecated accepts either a warning message or a "
-                     "replacement symbol (with 'use')");
+    shared.emitError(
+        expr->getLoc(),
+        Diag::DiagID::err_deprecated_accepts_either_warning_message,
+        "replacement symbol (with 'use')");
     return success();
   }
 
@@ -206,7 +207,7 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
     auto strExpr = dyn_cast<StringLiteralNode>(arg.expr);
     if (!strExpr) {
       shared.emitError(arg.expr->getLoc(),
-                       "'reason' argument must be a string literal");
+                       Diag::DiagID::err_reason_argument_string_literal);
       return success();
     }
 
@@ -219,7 +220,8 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
   else if (arg.isKeyword() && arg.name == "use") {
     auto target = dyn_cast<DeclRefNode>(arg.expr);
     if (!target) {
-      shared.emitError(arg.expr->getLoc(), "'use' must reference a symbol");
+      shared.emitError(arg.expr->getLoc(),
+                       Diag::DiagID::err_use_reference_symbol);
       return success();
     }
 
@@ -237,8 +239,9 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
 
     ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
     if (decls.empty()) {
-      shared.emitError(target->getLoc(), "cannot reference unknown value '")
-          << target->spelling << "'";
+      shared.emitError(target->getLoc(),
+                       Diag::DiagID::err_cannot_reference_unknown_value,
+                       target->spelling);
       return success();
     }
 
@@ -264,7 +267,7 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
     return success();
   } else {
     shared.emitError(expr->getLoc(),
-                     "deprecated must specify either a message or a "
+                     Diag::DiagID::err_deprecated_specify_either_message,
                      "symbol (with the 'use' argument)");
   }
 
@@ -280,7 +283,7 @@ LogicalResult Decorators::handleStable(ExprNode *expr, ASTDecl &decl) {
     if (!stabilityInterface) {
       shared.emitError(
           expr->getLoc(),
-          "@stable decorator is not supported on this declaration");
+          Diag::DiagID::err_stable_decorator_supported_declaration);
       return success();
     }
     // Check for @stable member in an unstable struct/trait - this is an error.
@@ -364,7 +367,7 @@ void Decorators::applySignatureDecorators(
 
   if (!bodyDecorators.empty() && signatureOnly) {
     shared.emitError(bodyDecorators.front()->getLoc(),
-                     "unsupported decorator on this statement")
+                     Diag::DiagID::err_unsupported_decorator_statement_2)
         << SourceRange(bodyDecorators.front()->getRangeStart(),
                        bodyDecorators.back()->getRangeEnd());
     return;
@@ -382,7 +385,7 @@ void Decorators::applySignatureDecorators(
                          ? decl.getLoc()
                          : decoratorExprs.front().first->getLoc();
     shared.emitError(errorLoc,
-                     "@deprecated and @stable cannot be used together");
+                     Diag::DiagID::err_deprecated_stable_cannot_used_together);
   }
 
   // Defer the rest of the decorators through the shared state.
@@ -486,13 +489,13 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
   // simply checking that the user didn't try to export it as something else.
   if (aliasName == kMainSymbolName) {
     if (unmangledName != kMainSymbolName)
-      shared.emitError(loc, "only 'main' can be exported as 'main'");
+      shared.emitError(loc, Diag::DiagID::err_only_main_can_exported_main);
     if (!isa<FnOp>(decl.getIfOperation()))
-      shared.emitError(loc, "exported 'main' must be a function");
+      shared.emitError(loc, Diag::DiagID::err_exported_main_function);
     return;
   }
   if (unmangledName == kMainSymbolName) {
-    shared.emitError(loc, "'main' can only be exported as 'main'");
+    shared.emitError(loc, Diag::DiagID::err_main_can_only_exported_main);
     return;
   }
 
@@ -513,7 +516,8 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
   auto &shared = decl.getShared();
   ArrayRef<Operand> operands = node.operands;
   if (operands.empty() || operands.size() > 2) {
-    shared.emitError(node.getLoc(), "@export requires 1 or 2 arguments");
+    shared.emitError(node.getLoc(),
+                     Diag::DiagID::err_export_requires_1_2_arguments);
     return;
   }
 
@@ -532,8 +536,7 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
       aliasName = strNode->getValue();
     } else {
       shared.emitError(node.getLoc(),
-                       "@export requires a string specifying the "
-                       "name of the exported symbol");
+                       Diag::DiagID::err_export_requires_string_specifying);
       return;
     }
   }
@@ -962,8 +965,8 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
             nameDecls.back()->getIfOperation())) {
       if (failed(shared.getDeclResolver().resolveBody(*nameDecls.back(),
                                                       funcDecl.getLoc()))) {
-        shared.emitError(funcDecl.getLoc(), "cannot resolve comptime value '")
-            << name << "' used in '@__llvm_metadata'";
+        shared.emitError(funcDecl.getLoc(),
+                         Diag::DiagID::err_cannot_resolve_comptime_value, name);
         return {};
       }
     }
@@ -1627,7 +1630,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (fnSignature.effects.isUnified()) {
     if (!funcOp->getParentOfType<FnOp>()) {
       p.emitError(funcOp.getLoc(),
-                  "unified effect is only applicable on nested functions");
+                  Diag::DiagID::err_unified_effect_only_applicable_nested);
       return failure();
     }
     if (captureSignature.captureAllByConvention.has_value()) {
@@ -1875,8 +1878,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
     // On redefinition this is an overload of the same name.
     if (errorMessage) {
-      auto diag = p.emitError(funcOp.getLoc(), "redefinition of function ")
-                  << baseName << errorMessage;
+      auto diag =
+          p.emitError(funcOp.getLoc(), Diag::DiagID::err_redefinition_function,
+                      baseName.getValue(), errorMessage);
       diag.attachNote(existing->getLoc()) << "previous definition here";
       decl.setErroneous();
     }
@@ -2004,13 +2008,13 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     return {};
   ASTDecl *varListStructDecl = varListType.getDecl(emitter.shared);
   if (!varListStructDecl) {
-    emitter.emitError(loc, "malformed VariadicList");
+    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
     return {};
   }
   auto varListStruct =
       dyn_cast_if_present<StructDeclOp>(varListStructDecl->getIfOperation());
   if (!varListStruct) {
-    emitter.emitError(loc, "malformed VariadicList");
+    emitter.emitError(loc, Diag::DiagID::err_malformed_variadiclist);
     return {};
   }
 
@@ -2140,8 +2144,8 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
         funcOp.isDefaultedTraitFn() && tok.is(Token::kw_pass)) {
       if (!ASTType(funcOp.getUserResultType()).isNoneType()) {
         InflightDiag diag = shared.emitError(
-            tok.getLoc(), "trait method has results but default implementation "
-                          "returns no value; did you mean '...'?");
+            tok.getLoc(),
+            Diag::DiagID::err_trait_method_results_default_implementation);
         diag.attachNote(funcOp.getLoc())
             << "in '" << funcOp.getDeclName().getValue() << "', declared here";
         diag.addFixIt(FixIt::replaceToken(tok.getLoc(), "..."));
@@ -2280,9 +2284,9 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   }
 
   if (funcOp.isExternal()) {
-    shared.emitError(decl.getLoc(),
-                     "unexpected function body in extern function "
-                     "declaration, use `...`");
+    shared.emitError(
+        decl.getLoc(),
+        Diag::DiagID::err_unexpected_function_body_extern_function);
     return success();
   }
 
@@ -2905,8 +2909,8 @@ static ParseResult parseOptionalInheritanceList(
       IREmitter constraintEmitter(declScope, EC_Requires);
       RValue propI1 = constraintEmitter.emitExprI1(constraintExpr, EC_Requires);
       if (!propI1) {
-        constraintEmitter.emitError(loc,
-                                    "failed to emit constraint expression");
+        constraintEmitter.emitError(
+            loc, Diag::DiagID::err_failed_emit_constraint_expression);
         return failure();
       }
       PValue propVal = propI1.getIfPValue();
@@ -3054,7 +3058,7 @@ static bool processAlignDecoratorHelper(ExprNode *alignExpr,
     // Validate: must be positive power of 2
     if (alignVal <= 0 || !llvm::isPowerOf2_64(alignVal)) {
       shared.emitError(alignExpr->getLoc(),
-                       "@align value must be a positive power of 2");
+                       Diag::DiagID::err_align_value_positive_power_2);
       return true;
     }
 
@@ -3063,7 +3067,7 @@ static bool processAlignDecoratorHelper(ExprNode *alignExpr,
     constexpr int64_t kMaxAlignment = 1LL << 29;
     if (alignVal > kMaxAlignment) {
       shared.emitError(alignExpr->getLoc(),
-                       "@align value exceeds maximum alignment (2^29)");
+                       Diag::DiagID::err_align_value_exceeds_maximum_alignment);
       return true;
     }
   }
@@ -3097,7 +3101,7 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
     // @align without parentheses is an error
     if (declRef->spelling == "align") {
       shared.emitError(decorator->getLoc(),
-                       "@align requires exactly one argument");
+                       Diag::DiagID::err_align_requires_exactly_one_argument);
       return success();
     }
     // We don't process @explicit_destroy here, we do it in resolveSignature.
@@ -3136,8 +3140,9 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
       // @align(N) - specify minimum alignment for the struct
       if (declRef->spelling == "align") {
         if (callNode->operands.size() != 1) {
-          shared.emitError(decorator->getLoc(),
-                           "@align requires exactly one argument");
+          shared.emitError(
+              decorator->getLoc(),
+              Diag::DiagID::err_align_requires_exactly_one_argument);
           return success();
         }
         processAlignDecoratorHelper(callNode->operands[0].expr, structOp,
@@ -3339,8 +3344,9 @@ lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   if (entries.empty())
     return {};
   if (entries.size() != 1) {
-    auto diag = shared.emitError(structDecl.getLoc(),
-                                 "invalid overloaded '__del__' method");
+    auto diag =
+        shared.emitError(structDecl.getLoc(),
+                         Diag::DiagID::err_invalid_overloaded___del___method);
     for (auto candidate : entries)
       diag.attachNote(candidate->getLoc()) << "candidate declared here";
     return {};
@@ -3348,7 +3354,7 @@ lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
   ASTDecl &delDecl = *entries[0];
   FnOp func = dyn_cast_or_null<FnOp>(delDecl.getIfOperation());
   if (!func) {
-    shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
+    shared.emitError(delDecl.getLoc(), Diag::DiagID::err___del___method);
     return {};
   }
   return {func.getBoundSymbolRef(shared.getEvaluationContext()),
@@ -4146,8 +4152,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (conformsToImplicitlyDestructible) {
     if (linearTypeErrorMsg) {
       shared.emitError(decl.getLoc(),
-                       "@explicit_destroy cannot be used on a trait that "
-                       "conforms to ImplicitlyDestructible");
+                       Diag::DiagID::err_explicit_destroy_cannot_used_trait);
       return failure();
     }
   } else {

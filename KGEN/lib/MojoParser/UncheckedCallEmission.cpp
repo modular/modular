@@ -376,9 +376,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     if (hasAddress(convention) ||
         ASTType(argVal.getType()).isTrivial(callExpr->getLoc(), emitter.shared))
       continue;
-    emitter.shared.emitError(
-        operand.expr->getLoc(),
-        "cannot bind non-trivial value to trivial variadic argument");
+    emitter.shared.emitError(operand.expr->getLoc(),
+                             Diag::DiagID::err_cannot_bind_non_trivial_value);
   }
 
   // If there are origins on anything, create a uniform representation and
@@ -816,8 +815,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
                                                       emitter.shared)) {
         emitter.emitError(
             expr->getLoc(),
-            "non-implicitly trivially copyable value cannot be copied from a "
-            "non-default address space")
+            Diag::DiagID::err_non_implicitly_trivially_copyable_value)
             << expr->getRange();
         return {};
       }
