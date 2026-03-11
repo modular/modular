@@ -32,7 +32,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import (
     WeightData,
@@ -45,7 +45,6 @@ from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
-    PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
@@ -572,7 +571,6 @@ class KimiK2_5Model(
             llm_config=config,
         )
         self.model_config = kimik2_5_config
-        config.use_subgraphs = False  # subgraphs assume to weights prefix, which leads to misplaced weights in a composite model
         self.nn_model = KimiK2_5(self.model_config)
         self.nn_model.load_state_dict(
             state_dict, weight_alignment=1, strict=True
@@ -732,34 +730,6 @@ class KimiK2_5Model(
             graph.output(*image_embeddings)
 
             return graph
-
-    def _unflatten_kv_inputs(
-        self,
-        kv_inputs_flat: Sequence[Value[Any]],
-        kv_params: KVCacheParamInterface | None = None,
-    ) -> list[PagedCacheValues]:
-        kv_params = kv_params or self.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
-        )
-        n_devices = kv_params.n_devices
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     def _build_language_graph(self, config: KimiK2_5TextConfig) -> Graph:
         """Build the language model graph for text generation with image embeddings."""

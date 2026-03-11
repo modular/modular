@@ -185,7 +185,7 @@ class KimiDecoder(DeepseekV3):
                 subgraph_layer.build_subgraph(
                     f"dist_transformer_block_{group_idx}",
                     subgraph_input_types,
-                    f"layers.{layer_group[0]}.",
+                    f"language_model.layers.{layer_group[0]}.",
                 )
             )
 
@@ -217,7 +217,7 @@ class KimiDecoder(DeepseekV3):
                                 else ()
                             ),
                             *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"layers.{idx}.",
+                            prefix=f"language_model.layers.{idx}.",
                         )
                     ]
                     break
