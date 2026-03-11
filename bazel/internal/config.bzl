@@ -3,7 +3,7 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@module_versions//:config.bzl", "DEFAULT_PYTHON_VERSION", "DEFAULT_PYTHON_VERSION_UNDERBAR")
 load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
-load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY")
+load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
 
 GPU_TEST_ENV = {
     "GPU_ENV_DO_NOT_USE": "$(GPU_CACHE_ENV)",
@@ -49,7 +49,6 @@ def python_version_tags(python_version):
             "no-clang-tidy",
             "no-compile-commands",
             "no-mypy",
-            ALLOW_UNUSED_TAG,  # TODO: Remove when we use non-default version targets in tests
         ])
     return tags
 
