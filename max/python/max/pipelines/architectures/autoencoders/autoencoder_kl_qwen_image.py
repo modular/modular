@@ -968,11 +968,11 @@ class AutoencoderKLQwenImageModel(ComponentModel):
 
     def encode(self, image) -> Buffer:
         result = self.encoder.execute(image)
-        return result[0] if isinstance(result, tuple) else result
+        return result[0] if isinstance(result, (list, tuple)) else result
 
     def decode(self, z) -> Buffer:
         result = self.model.execute(z)
-        return result[0] if isinstance(result, tuple) else result
+        return result[0] if isinstance(result, (list, tuple)) else result
 
     def __call__(self, z) -> Buffer:
         return self.decode(z)
