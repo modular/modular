@@ -878,7 +878,7 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
         Returns:
             Compiled decoder model callable.
         """
-        bn_stats = {}
+        latents_stats = {}
 
         for key, value in self.weights.items():
             if key in ("latents_mean", "latents_std"):
@@ -888,12 +888,12 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
                     if weight_data.dtype.is_float() and target_dtype.is_float():
                         weight_data = weight_data.astype(target_dtype)
                     # Non-float left as-is; running_mean/var are typically float.
-                bn_stats[key] = weight_data.data
+                latents_stats[key] = weight_data.data
 
-        bn_mean_data = bn_stats.get("latents_mean")
-        bn_std_data = bn_stats.get("latents_std")
+        latents_mean_data = latents_stats.get("latents_mean")
+        latents_std_data = latents_stats.get("latents_std")
 
-        if bn_mean_data is None or bn_std_data is None:
+        if latents_mean_data is None or latents_std_data is None:
             raise ValueError(
                 "Latents statistics (latents_mean, latents_std) not loaded. "
                 "Make sure the model weights contain 'latents_mean' and 'latents_std'."
@@ -901,8 +901,12 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
 
         super().load_model()
 
-        self.latents_mean = Tensor.from_dlpack(bn_mean_data).to(self.devices[0])
-        self.latents_std = Tensor.from_dlpack(bn_std_data).to(self.devices[0])
+        self.latents_mean = Tensor.from_dlpack(latents_mean_data).to(
+            self.devices[0]
+        )
+        self.latents_std = Tensor.from_dlpack(latents_std_data).to(
+            self.devices[0]
+        )
 
         return self.model
 
@@ -967,12 +971,12 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
     def bn(self) -> SimpleNamespace:
         """Property to access BatchNorm statistics, compatible with diffusers API.
 
-        Returns a SimpleNamespace with running_mean and running_var attributes
-        for compatibility with pipeline code that accesses self.vae.bn.running_mean.
+        Returns a SimpleNamespace with latents_mean and latents_std attributes
+        for compatibility with pipeline code that accesses self.vae.bn.latents_mean.
 
         Returns:
-            SimpleNamespace: Object containing running_mean and running_var attributes.
+            SimpleNamespace: Object containing latents_mean and latents_std attributes.
         """
         return SimpleNamespace(
-            running_mean=self.latents_mean, running_var=self.latents_std
+            latents_mean=self.latents_mean, latents_std=self.latents_std
         )
