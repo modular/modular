@@ -285,7 +285,7 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
 def config_to_flag(
     cls: type[BaseModel], prefix: str | None = None
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
-    options = []
+    options: list[tuple[str, Callable[..., Any]]] = []
     param_names: set[str] = set()
     help_text = {
         field_name: field_info.description
@@ -320,9 +320,10 @@ def config_to_flag(
             )
             param_names.add(new_name)
         else:
+            new_name = original_name
             new_option = create_click_option(help_text, _field, field_type)
             param_names.add(original_name)
-        options.append(new_option)
+        options.append((new_name, new_option))
 
     def apply_flags(func: Callable[_P, _R]) -> Callable[_P, _R]:
         @functools.wraps(func)
@@ -332,8 +333,12 @@ def config_to_flag(
                 kwargs = _strip_default_params(ctx, kwargs, param_names)  # type: ignore[assignment]
             return func(*args, **kwargs)
 
-        for option in reversed(options):
-            wrapped = option(wrapped)  # type: ignore[assignment]
+        existing = {p.name for p in getattr(wrapped, "__click_params__", [])}
+        for name, option in reversed(options):
+            if name in existing:
+                continue
+            wrapped = option(wrapped)
+            existing.add(name)
         return wrapped
 
     return apply_flags
