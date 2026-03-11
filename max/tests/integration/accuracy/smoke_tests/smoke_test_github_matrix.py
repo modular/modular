@@ -99,6 +99,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "unsloth/gpt-oss-20b-bf16__modulev3": DISABLE,  # TODO(MXF-121)
     "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
+    "nvidia/deepseek-v3.1-nvfp4__fp8kv": NON_XL | {"8xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}
