@@ -59,6 +59,7 @@ from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
     StandaloneSpeculativeDecodingPipeline,
+    UnifiedEAGLEPipeline,
 )
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
@@ -104,6 +105,7 @@ def get_pipeline_for_task(
     | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
     | type[StandaloneSpeculativeDecodingPipeline]
+    | type[UnifiedEAGLEPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[EAGLESpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
@@ -127,6 +129,13 @@ def get_pipeline_for_task(
             raise ValueError(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
+
+        # TODO: delete this temporary env var once things are less hacky
+        if os.getenv("MODULAR_USE_UNIFIED_EAGLE_PIPELINE"):
+            logger.warning(
+                "Using highly experimental UnifiedEAGLEPipeline. We really don't recommend using this."
+            )
+            return UnifiedEAGLEPipeline
 
         if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
