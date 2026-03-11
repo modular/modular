@@ -1779,6 +1779,28 @@ class VariadicConcatAttr(max._core.Attribute):
     @property
     def variadics(self) -> max._core.dialects.builtin.TypedAttr: ...
 
+class VariadicGetAttr(max._core.Attribute):
+    @overload
+    def __init__(
+        self,
+        type: max._core.Type,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type: max._core.Type,
+        variadic: max._core.dialects.builtin.TypedAttr,
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class VariadicReduceAttr(max._core.Attribute):
     """
     The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
