@@ -492,8 +492,21 @@ def main(argv: list[str] | None = None) -> int:
         d_mean = statistics.mean(diffusers_result.total_durations)
         m_mean = statistics.mean(max_result.total_durations)
         speedup = d_mean / m_mean if m_mean > 0 else float("inf")
+        per_iter_speedups = [
+            d / m if m > 0 else float("inf")
+            for d, m in zip(
+                diffusers_result.total_durations,
+                max_result.total_durations,
+                strict=True,
+            )
+        ]
+        min_speedup = min(per_iter_speedups)
+        max_speedup = max(per_iter_speedups)
         print()
-        print(f"  Speedup (MAX vs Diffusers): {speedup:.2f}x")
+        print("  Speedup (MAX vs Diffusers):")
+        print(f"    avg: {speedup:.2f}x")
+        print(f"    min: {min_speedup:.2f}x")
+        print(f"    max: {max_speedup:.2f}x")
 
     print()
     return 0
