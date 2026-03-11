@@ -193,6 +193,7 @@ LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
 bool VariadicReduceAttr::isConstant() const { return false; }
 bool VariadicZipAttr::isConstant() const { return false; }
 bool VariadicSizeAttr::isConstant() const { return false; }
+bool VariadicGetAttr::isConstant() const { return false; }
 bool VariadicTabulateAttr::isConstant() const { return false; }
 bool VariadicConcatAttr::isConstant() const { return false; }
 
@@ -367,6 +368,41 @@ TypedAttr VariadicSizeAttr::getChecked(
   if (failed(verify(emitError, type, variadic)))
     return {};
   return get(type, variadic);
+}
+
+LogicalResult
+VariadicGetAttr::verify(function_ref<InFlightDiagnostic()> emitError, Type type,
+                        TypedAttr variadic, TypedAttr index) {
+  auto variadicType = dyn_cast<VariadicType>(variadic.getType());
+  if (!variadicType)
+    return emitError()
+           << "expected a 'variadic' type for the variadic operand, "
+              "got: "
+           << variadic.getType();
+  if (type != variadicType.getElementType())
+    return emitError() << "type must match variadic element type, expected: "
+                       << variadicType.getElementType() << ", got: " << type;
+  if (!isa<IndexType>(index.getType()))
+    return emitError() << "expected 'index' type for the index, got: "
+                       << index.getType();
+  return success();
+}
+
+TypedAttr VariadicGetAttr::get(Type type, TypedAttr variadic, TypedAttr index) {
+  auto vaAttr = sugarDynCast<VariadicAttr>(variadic);
+  auto idxAttr = sugarDynCast<IntegerAttr>(index);
+  if (vaAttr && idxAttr && size_t(idxAttr.getInt()) < vaAttr.getValues().size())
+    return vaAttr.getValues()[size_t(idxAttr.getInt())];
+
+  return Base::get(type.getContext(), type, variadic, index);
+}
+
+TypedAttr VariadicGetAttr::getChecked(
+    function_ref<::mlir::InFlightDiagnostic()> emitError, Type type,
+    TypedAttr variadic, TypedAttr index) {
+  if (failed(verify(emitError, type, variadic, index)))
+    return {};
+  return get(type, variadic, index);
 }
 
 LogicalResult

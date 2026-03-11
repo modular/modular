@@ -256,6 +256,31 @@ def KGEN_VariadicSizeAttr : KGEN_ExprAttr<"VariadicSize", "variadic.size",
   let skipDefaultBuilders = 1;
 }
 
+def KGEN_VariadicGetAttr : KGEN_ExprAttr<"VariadicGet", "variadic.get",
+    [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "return the element at index of a variadic";
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$variadic,
+    "TypedAttr":$index
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+       "Type":$type, "TypedAttr":$variadic, "TypedAttr":$index), "",
+       "TypedAttr">,
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$variadic, "TypedAttr":$index),
+      [{
+      return get(type, variadic, index);
+    }], "TypedAttr">,
+  ];
+
+  let assemblyFormat = "`<` $variadic `,` $index `>`";
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+}
+
 def KGEN_VariadicConcatAttr : KGEN_ExprAttr<"VariadicConcat", "variadic.concat"> {
   let summary = "Concatenate a variadic of variadics.";
   let description = [{

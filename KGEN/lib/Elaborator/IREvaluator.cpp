@@ -159,8 +159,6 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
   if (auto compileAssemblyAttr = dyn_cast<CompileAssemblyAttr>(attr))
     return evaluateCompileAssemblyAttr(compileAssemblyAttr);
-  if (auto variadicSizeAttr = dyn_cast<VariadicSizeAttr>(attr))
-    return evaluateVariadicSizeAttr(variadicSizeAttr);
 
   if (auto castAttr = dyn_cast<POP::CastAttr>(attr)) {
     auto outType = cast<POP::SIMDType>(castAttr.getType());
@@ -365,23 +363,6 @@ void IREvaluator::withEvaluator(
 void IREvaluator::emitMaterializationError(const Twine &message) {
   // Use the ErrorTree-based emitError from IREvaluatorContext.
   IREvaluatorContext::emitError({*errorLoc, message.str()});
-}
-
-//===----------------------------------------------------------------------===//
-// Other Evaluators
-//===----------------------------------------------------------------------===//
-
-FailureOr<TypedAttr>
-IREvaluator::evaluateVariadicSizeAttr(VariadicSizeAttr attr) {
-  // If the inner variadic is a concrete VariadicAttr, return its size.
-  // This enables folding after nested attributes like StructFieldTypesAttr
-  // have been evaluated to concrete variadics.
-  auto vaAttr = sugarDynCast<VariadicAttr>(attr.getVariadic());
-  if (!vaAttr)
-    return failure();
-
-  return {cast<TypedAttr>(
-      Builder(attr.getContext()).getIndexAttr(vaAttr.getValues().size()))};
 }
 
 //===----------------------------------------------------------------------===//
