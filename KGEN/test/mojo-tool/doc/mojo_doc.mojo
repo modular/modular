@@ -379,12 +379,12 @@ fn logsoftmax[
     pass
 
 
-# CHECK: "signature": "tile_and_unswitch[workgroup_function: Static1DTileUnswitchUnitFunc, tile_size_list: VariadicParamList[Int]](offset: Int, upperbound: Int)",
+# CHECK: "signature": "tile_and_unswitch[workgroup_function: Static1DTileUnswitchUnitFunc, *tile_size_list: Int](offset: Int, upperbound: Int)",
 
 
 fn tile_and_unswitch[
     workgroup_function: Static1DTileUnswitchUnitFunc,
-    tile_size_list: VariadicParamList[Int],
+    *tile_size_list: Int,
 ](offset: Int, upperbound: Int):
     pass
 

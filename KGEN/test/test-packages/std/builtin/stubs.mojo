@@ -627,22 +627,15 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 
 @always_inline("builtin")
 fn _get_kgen_string[
-    string: StaticString, extra: VariadicParamList[StaticString]
+    string: StaticString, *extra: StaticString
 ]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<data_to_str,`,
         string,
         `,`,
-        extra.value,
+        extra,
         `> : !kgen.string`,
     ]
-
-
-@always_inline("builtin")
-fn _get_kgen_string[
-    string: StaticString, *extra: StaticString
-]() -> __mlir_type.`!kgen.string`:
-    return _get_kgen_string[string, extra]()
 
 
 @always_inline("nodebug")
@@ -884,16 +877,11 @@ trait ImplicitlyDestructible:
 # ===----------------------------------------------------------------------=== #
 
 
-struct VariadicParamList[type: TrivialRegisterPassable](
+struct VariadicParamList[type: TrivialRegisterPassable, //, *values: type](
     TrivialRegisterPassable
 ):
-    comptime _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
-
-    var value: Self._mlir_type
-
-    @implicit
-    fn __init__(out self, value: Self._mlir_type):
-        self.value = value
+    fn __init__(out self):
+        pass
 
     @always_inline
     fn __getitem__(self, idx: Int) -> Self.type:
