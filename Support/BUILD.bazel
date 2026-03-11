@@ -978,6 +978,17 @@ modular_cc_library(
     ],
 )
 
+modular_cc_library(
+    name = "Log",
+    testonly = True,
+    srcs = ["lib/Log.cpp"],
+    hdrs = ["include/Support/Log.h"],
+    deps = [
+        "@fmt",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),
