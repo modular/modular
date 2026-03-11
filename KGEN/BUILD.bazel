@@ -97,6 +97,7 @@ modular_cc_library(
     deps = [
         ":CODialectBytecodeIncGen",
         ":CODialectIncGen",
+        ":Diagnostics",
         ":KGENDialect",
         ":TransformUtils",
         "//Support:Base",
@@ -502,6 +503,7 @@ modular_cc_library(
     ]),
     hdrs = glob(["include/KGEN/MOGGPreElab/*.h"]),
     deps = [
+        ":Diagnostics",
         ":KGENDialect",
         ":LITDialect",
         ":MOGGPreElabIncGen",
@@ -518,6 +520,7 @@ modular_cc_library(
     ]),
     hdrs = glob(["include/KGEN/Interpreter/*.h"]),
     deps = [
+        ":Diagnostics",
         ":InterpreterAttrsIncGen",
         ":InterpreterDialectBytecodeIncGen",
         ":InterpreterDialectIncGen",
@@ -539,6 +542,7 @@ modular_cc_library(
     srcs = glob(["lib/HLCFDialect/*.cpp"]),
     hdrs = glob(["include/KGEN/HLCFDialect/*.h"]),
     deps = [
+        ":Diagnostics",
         ":HLCFAttrsIncGen",
         ":HLCFDialectIncGen",
         ":HLCFEnumsIncGen",
@@ -696,6 +700,7 @@ modular_cc_library(
     deps = [
         ":CODialect",
         ":CODialectIncGen",
+        ":Diagnostics",
         ":Interpreter",
         ":KGENDialect",
         ":LITAttrsIncGen",
@@ -813,6 +818,7 @@ modular_cc_library(
     deps = [
         ":CODialect",
         ":CODialectIncGen",
+        ":Diagnostics",
         ":Interpreter",
         ":KGENDialect",
         ":MemoryableTypeInterfaceIncGen",
@@ -860,6 +866,7 @@ modular_cc_library(
         ("//:modular_config_ci_build", "//:modular_config_release", "//:modular_config_production"): ["BUILD_TYPE=release"],
     }),
     deps = [
+        ":Diagnostics",
         ":HLCFDialect",
         ":Interpreter",
         ":KGENAttrInterfacesIncGen",
@@ -906,6 +913,7 @@ modular_cc_library(
     srcs = glob(["lib/Compiler/*.cpp"]),
     hdrs = glob(["include/KGEN/Compiler/*.h"]),
     deps = [
+        ":Diagnostics",
         ":ExecutionEngine.headers",
         ":JIT",
         ":KGENDialect",
@@ -1011,6 +1019,7 @@ modular_cc_library(
         "lib/LowerLIT/*.h",
     ]),
     deps = [
+        ":Diagnostics",
         ":KGENDialect",
         ":LITDialect",
         ":ToolCommon.headers",
@@ -1026,6 +1035,7 @@ modular_cc_library(
         "lib/KGENToLLVM/*.h",
     ]),
     deps = [
+        ":Diagnostics",
         ":HLCFDialectAnalysis",
         ":KGENDialect",
         ":ToolCommon",
@@ -1041,6 +1051,7 @@ modular_cc_library(
     srcs = glob(["lib/Transforms/*.cpp"]),
     deps = [
         ":CODialect",
+        ":Diagnostics",
         ":HLCFDialect",
         ":HLCFDialectAnalysis",
         ":KGENDialect",
@@ -1069,6 +1080,7 @@ modular_cc_library(
         "lib/Elaborator/*.h",
     ]),
     deps = [
+        ":Diagnostics",
         ":KGENDialect",
         ":LITDialect",
         ":ToolCommon.headers",
@@ -1161,6 +1173,19 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "Diagnostics",
+    srcs = ["lib/Diagnostics/DiagnosticRegistry.cpp"],
+    hdrs = glob([
+        "include/KGEN/Diagnostics/*.h",
+        "include/KGEN/Diagnostics/*.def",
+    ]),
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+modular_cc_library(
     name = "MojoParser",
     srcs = glob([
         "lib/MojoParser/*.cpp",
@@ -1173,6 +1198,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Compiler",
+        ":Diagnostics",
         ":DialectChecksum",
         ":ToolCommon",
     ],
@@ -1297,6 +1323,7 @@ modular_shared_library(
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
     includes = [],
     deps = [
+        ":Diagnostics",
         ":ExecutionEngine",
         ":KGENDialect",
         ":MojoLLDBPublicHeaders",

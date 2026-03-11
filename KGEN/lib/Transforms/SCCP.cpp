@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CODialect/COOps.h"
+#include "KGEN/Diagnostics/DiagnosticEmitter.h"
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -518,9 +519,8 @@ LogicalResult SCCPAnalysis::processRegion(
     llvm::SmallSet<Operation *, 4> &exitParentLoops,
     bool setBlockArgToEntryState) {
   if (!llvm::hasSingleElement(region)) {
-    return region.getParentOp()->emitError(
-        "'sccp' can only be run on operations with all single block "
-        "regions");
+    return Diag::emitError(region.getParentOp(),
+                           Diag::DiagID::err_sccp_can_only_run_operations);
   }
 
   Block &block = region.front();
