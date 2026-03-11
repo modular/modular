@@ -712,8 +712,8 @@ static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
       /*count=*/1, alignment, /*markedLifetimes=*/true);
 }
 
-static Value lowerOp(InitializedVarDeclOp op,
-                     InitializedVarDeclOpAdaptor adaptor, LITTypeLowerer &b) {
+static Value lowerOp(VarDeclInitOp op, VarDeclInitOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
   // Lower to pop.stack_allocation for N elements, then store each initializer.
   Type elementType = op.getType().getElementType();
   int64_t count = op.getNumInitializers();
@@ -1001,9 +1001,8 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
               RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
               RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
               RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp, RefPackExtractOp,
-              VarDeclOp, InitializedVarDeclOp, VarLifetimeStartOp,
-              VarLifetimeEndOp, MojoVersionMajorOp, MojoVersionMinorOp,
-              MojoVersionPatchOp>(
+              VarDeclOp, VarDeclInitOp, VarLifetimeStartOp, VarLifetimeEndOp,
+              MojoVersionMajorOp, MojoVersionMinorOp, MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });
