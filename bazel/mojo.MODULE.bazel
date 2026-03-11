@@ -6,7 +6,7 @@ BASE_URL = "https://whl.modular.com/nightly"
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
-    base_url = BASE_URL + "/mojo-compiler",
+    base_url = BASE_URL,
     use_prebuilt_packages = False,
     version = "0." + PACKAGE_VERSION,
 )
