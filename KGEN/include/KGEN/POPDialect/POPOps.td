@@ -2150,30 +2150,6 @@ def POP_VariadicSizeOp : POPOp<"variadic.size", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicLoadValuesOp
-//===----------------------------------------------------------------------===//
-
-def POP_VariadicLoadValuesOp : POPOp<"variadic.load.values", [Pure,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "given a variadic of value addresses, return the values";
-  let description = [{
-    The `pop.variadic.load.values` operation takes an operand of
-    `!kgen.variadic` type holding the addresses of values.  This returns a
-    variadic of the same size with the values loaded from the addresses.
-
-    This is a hack and only usable at comptime!
-    ```
-  }];
-
-  let arguments = (ins KGEN_VariadicType:$operand);
-  let results = (outs KGEN_VariadicType:$result);
-
-  let assemblyFormat = [{
-    $operand attr-dict `:` type($operand) `->` type($result)
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // AtomicCmpXchgOp
 //===----------------------------------------------------------------------===//
 

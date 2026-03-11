@@ -2076,26 +2076,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPVariadicLoadValues
-//===----------------------------------------------------------------------===//
-
-/// Lowers `pop.variadic.load.values` to a runtime error. This op is only
-/// supported at comptime; at runtime we emit llvm.trap so execution fails
-/// with a clear unsupported path.
-struct ConvertPOPVariadicLoadValues
-    : public ConvertPOPToLLVMPattern<VariadicLoadValuesOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(VariadicLoadValuesOp op, VariadicLoadValuesOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    return mlir::emitError(
-        op.getLoc(), "pop.variadic.load.values is not supported at runtime: "
-                     "DimList only works at comptime");
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPVariadicGet
 //===----------------------------------------------------------------------===//
 
@@ -3425,7 +3405,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPUnionUnwrap,
       ConvertPOPUnionWrap,
       ConvertPOPVariadicGet,
-      ConvertPOPVariadicLoadValues,
       ConvertPOPVariadicSize,
       ConvertPOPXOr,
       ConvertPOPSIMDReduceOr,
