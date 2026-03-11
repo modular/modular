@@ -55,6 +55,8 @@ class FluxModelInputs(PixelModelInputs):
     guidance_scale: float = 3.5
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
+    step_cache: bool = False
+    rdt: float = 0.05
 
     @property
     def do_true_cfg(self) -> bool:
@@ -443,33 +445,135 @@ class FluxPipeline(DiffusionPipeline):
 
         num_timesteps = int(model_inputs.sigmas.shape[0]) - 1
 
+        timesteps: np.ndarray = model_inputs.timesteps
+        num_timesteps = timesteps.shape[0]
+        timesteps_np = np.broadcast_to(
+            timesteps[:, None], (num_timesteps, batch_size)
+        )
+        timesteps_batched = Tensor.from_dlpack(timesteps_np).to(
+            self.transformer.devices[0]
+        )
+        # Step-cache runtime control.
+        step_cache_enabled = bool(model_inputs.step_cache)
+        prev_residual = None
+        prev_output = None
+        prev_neg_residual = None
+        prev_neg_output = None
+        cfg = self.transformer.config
+        dev = self.transformer.devices[0]
+        batch_size_int = int(prompt_embeds.shape[0])
+        image_seq_len = int(latents.shape[1])
+        inner_dim = cfg.num_attention_heads * cfg.attention_head_dim
+        out_dim = (
+            cfg.patch_size
+            * cfg.patch_size
+            * (cfg.out_channels or cfg.in_channels)
+        )
+        if step_cache_enabled:
+            self.transformer.use_step_cache_model()
+        else:
+            self.transformer.use_standard_model()
+        if step_cache_enabled:
+            step_cache_flag = Tensor.full(
+                [1],
+                True,
+                dtype=DType.bool,
+                device=dev,
+            )
+            rdt_tensor = Tensor.full(
+                [1],
+                model_inputs.rdt,
+                device=dev,
+                dtype=DType.float32,
+            )
+        if step_cache_enabled:
+            prev_residual = Tensor.zeros(
+                (batch_size_int, image_seq_len, inner_dim),
+                dtype=dtype,
+                device=dev,
+            )
+            prev_output = Tensor.zeros(
+                (batch_size_int, image_seq_len, out_dim),
+                dtype=dtype,
+                device=dev,
+            )
+            prev_neg_residual = Tensor.zeros(
+                (batch_size_int, image_seq_len, inner_dim),
+                dtype=dtype,
+                device=dev,
+            )
+            prev_neg_output = Tensor.zeros(
+                (batch_size_int, image_seq_len, out_dim),
+                dtype=dtype,
+                device=dev,
+            )
+        if not step_cache_enabled:
+            prev_output = None
+            prev_neg_output = None
+
         for i in range(num_timesteps):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 
-            noise_pred = self.transformer(
-                latents,
-                prompt_embeds,
-                pooled_prompt_embeds,
-                timestep,
-                latent_image_ids,
-                text_ids,
-                guidance,
-            )[0]
+            if step_cache_enabled:
+                noise_pred, new_residual = self.transformer(
+                    latents,
+                    prompt_embeds,
+                    pooled_prompt_embeds,
+                    timestep,
+                    latent_image_ids,
+                    text_ids,
+                    guidance,
+                    prev_residual,
+                    prev_output,
+                    step_cache_flag,
+                    rdt_tensor,
+                )
+            else:
+                noise_pred = self.transformer(
+                    latents,
+                    prompt_embeds,
+                    pooled_prompt_embeds,
+                    timestep,
+                    latent_image_ids,
+                    text_ids,
+                    guidance,
+                )[0]
+            if step_cache_enabled:
+                prev_residual = new_residual
+                prev_output = noise_pred
 
             if model_inputs.do_true_cfg:
                 assert negative_prompt_embeds is not None
                 assert negative_pooled_prompt_embeds is not None
                 assert negative_text_ids is not None
-                neg_noise_pred = self.transformer(
-                    latents,
-                    negative_prompt_embeds,
-                    negative_pooled_prompt_embeds,
-                    timestep,
-                    latent_image_ids,
-                    negative_text_ids,
-                    guidance,
-                )[0]
+                if step_cache_enabled:
+                    neg_noise_pred, new_neg_residual = self.transformer(
+                        latents,
+                        negative_prompt_embeds,
+                        negative_pooled_prompt_embeds,
+                        timestep,
+                        latent_image_ids,
+                        negative_text_ids,
+                        guidance,
+                        prev_neg_residual,
+                        prev_neg_output,
+                        step_cache_flag,
+                        rdt_tensor,
+                    )
+                else:
+                    neg_noise_pred = self.transformer(
+                        latents,
+                        negative_prompt_embeds,
+                        negative_pooled_prompt_embeds,
+                        timestep,
+                        latent_image_ids,
+                        negative_text_ids,
+                        guidance,
+                    )[0]
+                if step_cache_enabled:
+                    prev_neg_residual = new_neg_residual
+                    prev_neg_output = neg_noise_pred
 
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred
