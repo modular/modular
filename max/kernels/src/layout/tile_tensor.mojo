@@ -929,6 +929,30 @@ struct TileTensor[
         """
         return {self.ptr, layout_val}
 
+    @always_inline("nodebug")
+    fn transpose(
+        self,
+    ) -> TileTensor[
+        dtype=Self.dtype,
+        origin=Self.origin,
+        LayoutType=Layout[
+            Variadic.reverse[*Self.LayoutType._shape_types],
+            Variadic.reverse[*Self.LayoutType._stride_types],
+        ],
+        address_space=Self.address_space,
+        element_size=Self.element_size,
+    ]:
+        """Create a transposed view of the tensor.
+
+        Returns a new TileTensor sharing the same pointer but with the
+        layout dimensions reversed. For 2D tensors, this swaps rows and
+        columns. This is a zero-cost operation -- no data is moved.
+
+        Returns:
+            A TileTensor with transposed layout viewing the same memory.
+        """
+        return {self.ptr, self.layout.transpose()}
+
     # flatten_leading is defined as a standalone function below the
     # struct. As a method, Self.LayoutType._shape_types[i] in the return
     # type is symbolic and can't match value-level types. As a standalone

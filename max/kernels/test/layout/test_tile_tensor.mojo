@@ -853,3 +853,104 @@ fn test_linear_idx_type_recomputed_after_vectorize() raises:
     # Vectorized: shape [4,4], strides [64,4] -> cosize = (4-1)*64 + (4-1)*4 + 1 = 205
     assert_equal(type_of(vectorized).linear_idx_type, DType.int32)
     _ = vectorized
+
+
+fn test_transpose_2d() raises:
+    """Test transpose on a 2D tensor swaps rows and columns."""
+    var data = InlineArray[Int32, 12](uninitialized=True)
+    for i in range(12):
+        data[i] = Int32(i)
+
+    # 3x4 row-major:
+    # [0  1  2  3]
+    # [4  5  6  7]
+    # [8  9  10 11]
+    var tensor = TileTensor(data, row_major[3, 4]())
+    var trans = tensor.transpose()
+
+    # Transposed shape should be (4, 3)
+    assert_equal(trans.dim[0](), 4)
+    assert_equal(trans.dim[1](), 3)
+
+    # Transposed strides: original (4, 1) -> reversed (1, 4)
+    assert_equal(trans.layout.stride[0]().value(), 1)
+    assert_equal(trans.layout.stride[1]().value(), 4)
+
+    # Verify element access: trans[col, row] == tensor[row, col]
+    assert_equal(trans[0, 0], 0)
+    assert_equal(trans[1, 0], 1)
+    assert_equal(trans[2, 0], 2)
+    assert_equal(trans[3, 0], 3)
+    assert_equal(trans[0, 1], 4)
+    assert_equal(trans[0, 2], 8)
+    assert_equal(trans[3, 2], 11)
+
+
+fn test_transpose_is_view() raises:
+    """Test that transpose creates a view sharing memory with the original."""
+    var data = InlineArray[Int32, 6](uninitialized=True)
+    var tensor = TileTensor(data, row_major[2, 3]()).fill(0)
+
+    var trans = tensor.transpose()
+
+    # Modify through transposed view: trans[1, 0] -> tensor[0, 1]
+    trans[(Idx(1), Idx(0))] = 42
+    assert_equal(tensor[(Idx(0), Idx(1))], 42)
+
+    # Modify through original: tensor[1, 2] -> trans[2, 1]
+    tensor[(Idx(1), Idx(2))] = 99
+    assert_equal(trans[(Idx(2), Idx(1))], 99)
+
+
+fn test_transpose_square() raises:
+    """Test transpose on a square tensor."""
+    var data = InlineArray[Int32, 9](uninitialized=True)
+    for i in range(9):
+        data[i] = Int32(i)
+
+    # 3x3 row-major:
+    # [0 1 2]
+    # [3 4 5]
+    # [6 7 8]
+    var tensor = TileTensor(data, row_major[3, 3]())
+    var trans = tensor.transpose()
+
+    assert_equal(trans.dim[0](), 3)
+    assert_equal(trans.dim[1](), 3)
+
+    # Diagonal unchanged
+    assert_equal(trans[0, 0], 0)
+    assert_equal(trans[1, 1], 4)
+    assert_equal(trans[2, 2], 8)
+
+    # Off-diagonal swapped
+    assert_equal(trans[0, 1], 3)  # was tensor[1, 0]
+    assert_equal(trans[1, 0], 1)  # was tensor[0, 1]
+    assert_equal(trans[0, 2], 6)  # was tensor[2, 0]
+    assert_equal(trans[2, 0], 2)  # was tensor[0, 2]
+
+
+fn test_transpose_1d() raises:
+    """Test transpose on a 1D tensor (identity operation)."""
+    var data = InlineArray[Int32, 4](uninitialized=True)
+    for i in range(4):
+        data[i] = Int32(i * 10)
+
+    var tensor = TileTensor(data, row_major[4]())
+    var trans = tensor.transpose()
+
+    assert_equal(trans.dim[0](), 4)
+    assert_equal(trans.layout.stride[0]().value(), 1)
+
+    for i in range(4):
+        assert_equal(trans[(Idx(i),)], Int32(i * 10))
+
+
+fn test_transpose_preserves_element_count() raises:
+    """Test that transpose preserves the total number of elements."""
+    var data = InlineArray[Int32, 20](uninitialized=True)
+    var tensor = TileTensor(data, row_major[4, 5]()).fill(1)
+    var trans = tensor.transpose()
+
+    assert_equal(trans.num_elements(), tensor.num_elements())
+    assert_equal(trans.num_elements(), 20)
