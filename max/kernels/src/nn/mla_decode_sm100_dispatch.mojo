@@ -298,9 +298,11 @@ fn compute_mla_dispatch_scalars[
     q_max_seq_len: Int,
     sm_count: Int,
 ) -> Tuple[Int, Int, Int, Int]:
-    """Pure computation of the 4 MLA dispatch scalars (no I/O).
+    """Pure computation of the packed 4-value MLA dispatch metadata.
 
-    Returns ``(batch_size, q_max_seq_len, num_partitions, max_cache_valid_length)``.
+    Returns ``(batch_size, q_max_seq_len, num_partitions,
+    max_cache_valid_length)``. The raw cache length is kept only for packed
+    metadata compatibility.
     """
     var effective = max_cache_valid_length
 
@@ -320,11 +322,12 @@ struct MLADispatchScalarArgs[
     _is_cache_length_accurate: Bool = False,
     is_fp8_kv: Bool = False,
 ]:
-    """Pre-computed scalar dispatch args for MLA decode legacy (non-capturable) path.
+    """Pre-computed MLA decode args for the legacy (non-capturable) path.
 
-    Holds a GPU buffer containing
+    Owns a GPU buffer containing
     ``[batch_size, q_max_seq_len, num_partitions, max_cache_valid_length]``
-    and stores the host-side scalar values needed for dispatch.
+    and caches the host-side ``batch_size``/``q_max_seq_len`` pair needed by
+    ``mla_decode_sm100_dispatch``.
 
     Usage::
 
@@ -437,9 +440,10 @@ fn mla_decode_sm100_dispatch[
     comptime if not _is_cache_length_accurate:
         effective_max_cache_len += q_max_seq_len
 
-    var split_page_size = 64 if (
+    var use_small_split_pages = (
         effective_max_cache_len <= 512 and batch_size >= 32
-    ) else 128
+    )
+    var split_page_size = 64 if use_small_split_pages else 128
     comptime sm_count = ctx.default_device_info.sm_count
     comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
     var num_partitions = _compute_num_partitions[num_heads, _is_fp8_kv](
@@ -461,7 +465,9 @@ fn mla_decode_sm100_dispatch[
     # For example, bs=64/cl=256 gets 5 pages at page_size=64 (vs 3 at 128),
     # allowing np=2 with 2-3 pages per split instead of 1-2.
     # =========================================================================
-    if effective_max_cache_len <= 512 and batch_size >= 32:
+    @parameter
+    @always_inline
+    fn launch_impl[split_page_size_param: Int]() raises:
         _mla_decode_sm100_dispatch_impl[
             q_type=q_type,
             q_layout=q_layout,
@@ -477,7 +483,7 @@ fn mla_decode_sm100_dispatch[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding_warp_split_k=decoding_warp_split_k,
-            split_page_size=64,
+            split_page_size=split_page_size_param,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](
             q,
@@ -495,40 +501,11 @@ fn mla_decode_sm100_dispatch[
             ctx,
             q_scale_ptr,
         )
+
+    if use_small_split_pages:
+        launch_impl[64]()
     else:
-        _mla_decode_sm100_dispatch_impl[
-            q_type=q_type,
-            q_layout=q_layout,
-            k_t=k_t,
-            output_type=output_type,
-            output_layout=output_layout,
-            mask_t=mask_t,
-            valid_layout=valid_layout,
-            config=config,
-            depth=depth,
-            num_heads=num_heads,
-            group=group,
-            ragged=ragged,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-            split_page_size=128,
-            per_token_scale_rope_aware=per_token_scale_rope_aware,
-        ](
-            q,
-            k,
-            output,
-            scale,
-            valid_length,
-            mask,
-            scales_ptr,
-            scalar_args_buf,
-            batch_size,
-            q_max_seq_len,
-            num_partitions,
-            effective_max_cache_len,
-            ctx,
-            q_scale_ptr,
-        )
+        launch_impl[128]()
 
 
 # ------------------------------------------------------------------------------

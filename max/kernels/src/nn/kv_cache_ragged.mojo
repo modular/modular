@@ -3000,7 +3000,7 @@ fn _flare_mla_decode_kv_cache_ragged[
         scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
-        scalar_args_buf: Buffer containing scalar arguments for device graph capture.
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
         context: Pointer containing the runtime context for the target device.
         q_scale_ptr: Per-token Q scale pointer (float32 array, one per Q token).
             Default is null (sigma_Q = 1.0).

@@ -173,7 +173,7 @@ class AttentionDispatchMetadataScalars:
     device_buffer: Buffer | None = None
 
     def to_buffer(self) -> Buffer:
-        """Returns a CPU ``[4]`` int64 buffer with the packed metadata."""
+        """Returns a CPU ``[4]`` int64 buffer with packed dispatch metadata."""
         return Buffer.from_numpy(
             np.array(
                 [
