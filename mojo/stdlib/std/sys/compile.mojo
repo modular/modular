@@ -53,7 +53,7 @@ fn codegen_unreachable[cond: Bool, msg: StaticString, *extra: StaticString]():
     """
     __mlir_op.`kgen.codegen.reachable`[
         cond=(not cond).__mlir_i1__(),
-        message=_get_kgen_string[msg, extra](),
+        message=_get_kgen_string[msg, *extra](),
         _type=None,
     ]()
 

@@ -305,6 +305,15 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         values: The list of dimensions.
     """
 
+    comptime rank = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.variadic.size<`,
+            Self.values,
+            `> : index`,
+        ]
+    )
+    """The number of dimensions in the DimList."""
+
     @always_inline("nodebug")
     fn __init__(out self):
         """Creates a dimension list from the given list of values."""
@@ -317,24 +326,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         Returns:
             The number of elements in the DimList.
         """
-        return Self.rank()
-
-    # FIXME: Change to comptime decl to keek in parameter domain.
-    @always_inline("builtin")
-    @staticmethod
-    fn rank() -> Int:
-        """Gets the length of the DimList.
-
-        Returns:
-            The number of elements in the DimList.
-        """
-        return Int(
-            mlir_value=__mlir_attr[
-                `#kgen.variadic.size<`,
-                Self.values,
-                `> : index`,
-            ]
-        )
+        return Self.rank
 
     @always_inline("nodebug")
     fn get[i: Int](self) -> Int:
@@ -381,7 +373,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
     ) -> DimList[
         *Self.from_index_list[
             _get_row_major_dims[
-                DimList[*Self.values]().to_index_list[Self.rank()]()
+                DimList[*Self.values]().to_index_list[Self.rank]()
             ]()
         ]().values
     ]:
@@ -440,7 +432,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
             The product of all the dimensions.
         """
         var res = 1
-        comptime for i in range(Self.rank()):
+        comptime for i in range(Self.rank):
             if not Self.values[i]:
                 return Dim()
             var val = self.get[i]()
@@ -480,7 +472,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         Returns:
             True if all dimensions have a static value.
         """
-        return not self.contains[Self.rank()](Dim())
+        return not self.contains[Self.rank](Dim())
 
     @always_inline
     fn all_known[start: Int, end: Int](self) -> Bool:
@@ -514,11 +506,11 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         ```
         """
         assert (
-            Self.rank() == num_elements
+            Self.rank == num_elements
         ), "[DimList] mismatch in the number of elements"
         var index_list = IndexList[num_elements]()
 
-        comptime for idx, dim in enumerate(VariadicParamList(Self.values)):
+        comptime for idx, dim in enumerate(VariadicParamList[*Self.values]()):
             index_list[idx] = Int(dim)
 
         return index_list
@@ -595,10 +587,10 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
         Returns:
             True if the DimLists are the same.
         """
-        comptime if Self.rank() != rhs.rank():
+        comptime if Self.rank != rhs.rank:
             return False
 
-        comptime for i in range(Self.rank()):
+        comptime for i in range(Self.rank):
             if self.get[i]() != rhs.get[i]():
                 return False
 
@@ -613,7 +605,7 @@ struct DimList[*values: Dim](ImplicitlyCopyable, Sized, Writable):
 
         writer.write_string("[")
 
-        comptime for i in range(Self.rank()):
+        comptime for i in range(Self.rank):
             if i:
                 writer.write_string(", ")
             writer.write(self.values[i])

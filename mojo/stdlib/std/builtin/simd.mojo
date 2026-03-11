@@ -2398,8 +2398,8 @@ struct SIMD[dtype: DType, size: Int](
             mask
         ), "size of the mask must match the output SIMD size"
 
-        comptime tup = StaticTuple[Int, output_size](values=mask)
-
+        # FIXME: Support parameters on initializers better, removing __init__.
+        comptime tup = StaticTuple[Int, output_size].__init__[*mask]()
         return self._shuffle_list[output_size, tup](other)
 
     @always_inline("nodebug")

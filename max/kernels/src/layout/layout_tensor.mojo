@@ -4509,7 +4509,7 @@ struct LayoutTensor[
             processor optimizations.
         """
 
-        comptime shape = IntTuple(vector_shape)
+        comptime shape = IntTuple.__init__[*vector_shape]()
         comptime _origin = origin_of()  # FIXME: MOCO-1912
         var ret = self._vectorize_2[
             _origin,
