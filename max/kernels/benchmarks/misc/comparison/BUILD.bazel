@@ -32,7 +32,7 @@ modular_py_library(
     # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
     # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
     # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
-    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
+    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl-libs-base@4.4.1/site-packages/nvidia_cutlass_dsl/python_packages"],
     tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer, see import above
     deps = [
         blackwell_bench_wheel("flash-attn"),
