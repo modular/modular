@@ -32,9 +32,6 @@ from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 from std.utils import IndexList
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import Index
 
 comptime NWARMUP = 1
@@ -68,13 +65,13 @@ fn run_cublas[
     M: Int,
     N: Int,
     K: Int,
-    a: UnsafePointer[Scalar[dtype]],
-    b: UnsafePointer[Scalar[dtype]],
-    c: UnsafePointer[Scalar[dtype]],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    b: UnsafePointer[mut=False, Scalar[dtype], _],
+    c: UnsafePointer[mut=True, Scalar[dtype], _],
 ) raises:
-    var a_device = NDBuffer[dtype, 2](a, IndexList[2](M, K))
-    var b_device = NDBuffer[dtype, 2](b, IndexList[2](K, N))
-    var c_device_ref = NDBuffer[dtype, 2](c, IndexList[2](M, N))
+    var a_device = NDBuffer[rank=2, dtype](a, IndexList[2](M, K))
+    var b_device = NDBuffer[rank=2, dtype](b, IndexList[2](K, N))
+    var c_device_ref = NDBuffer[rank=2, dtype](c, IndexList[2](M, N))
 
     with vendor_blas.Handle() as handle:
 
@@ -127,8 +124,8 @@ fn gemm_kernel_1[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -219,7 +216,7 @@ fn run_gemm_kernel_1[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -242,8 +239,8 @@ fn gemm_kernel_2[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -334,7 +331,7 @@ fn run_gemm_kernel_2[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -359,8 +356,8 @@ fn gemm_kernel_3[
     BK: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -486,7 +483,7 @@ fn run_gemm_kernel_3[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -512,8 +509,8 @@ fn gemm_kernel_4[
     TM: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -657,7 +654,7 @@ fn run_gemm_kernel_4[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -684,8 +681,8 @@ fn gemm_kernel_5[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -824,7 +821,7 @@ fn run_gemm_kernel_5[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -851,8 +848,8 @@ fn gemm_kernel_6[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -1016,7 +1013,7 @@ fn run_gemm_kernel_6[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -1045,8 +1042,8 @@ fn matmul_kernel_tc[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[dtype, layout_a, MutAnyOrigin],
-    B: LayoutTensor[dtype, layout_b, MutAnyOrigin],
+    A: LayoutTensor[dtype, layout_a, ImmutAnyOrigin],
+    B: LayoutTensor[dtype, layout_b, ImmutAnyOrigin],
     C: LayoutTensor[dtype, layout_c, MutAnyOrigin],
 ):
     """
@@ -1089,8 +1086,7 @@ fn matmul_kernel_tc[
     var warp_id = get_warp_id()  # Warp ID within the block
 
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id // UInt(BN // WN)
-    warp_x = warp_id % UInt(BN // WN)
+    warp_y, warp_x = divmod(warp_id, UInt(BN // WN))
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
@@ -1243,7 +1239,7 @@ fn run_gemm_kernel_tc[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),

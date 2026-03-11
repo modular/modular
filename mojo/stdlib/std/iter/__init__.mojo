@@ -181,7 +181,11 @@ fn next[
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
+struct _Enumerate[InnerIteratorType: Iterator](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Iterator,
+):
     """An iterator that yields tuples of the index and the element of the
     original iterator.
     """
@@ -199,19 +203,19 @@ struct _Enumerate[InnerIteratorType: Iterator](Copyable, Iterable, Iterator):
         self._inner = iterator^
         self._count = start
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.InnerIteratorType, Copyable),
-            Parent=Self,
-            Element=Self.InnerIteratorType,
-            ParentConformsTo="Copyable",
-        ]()
+    fn __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
         self._inner = rebind_var[Self.InnerIteratorType](
             trait_downcast[Copyable](copy._inner).copy()
         )
         self._count = copy._count
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
         return self.copy()
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
@@ -262,7 +266,13 @@ fn enumerate[
 
 @fieldwise_init
 struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
-    Copyable, Iterable, Iterator
+    Copyable where conforms_to(IteratorTypeA, Copyable) and conforms_to(
+        IteratorTypeB, Copyable
+    ),
+    Iterable where conforms_to(IteratorTypeA, Copyable) and conforms_to(
+        IteratorTypeB, Copyable
+    ),
+    Iterator,
 ):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
@@ -274,22 +284,18 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     var _inner_a: Self.IteratorTypeA
     var _inner_b: Self.IteratorTypeB
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.IteratorTypeA, Copyable
+    ) and conforms_to(Self.IteratorTypeB, Copyable):
         return self.copy()
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeA,
-            ParentConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeB,
-            ParentConformsTo="Copyable",
-        ]()
+    fn __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.IteratorTypeA, Copyable) and conforms_to(
+        Self.IteratorTypeB, Copyable
+    ):
         self._inner_a = rebind_var[Self.IteratorTypeA](
             trait_downcast[Copyable](copy._inner_a).copy()
         )
@@ -331,7 +337,19 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
 @fieldwise_init
 struct _Zip3[
     IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
-](Copyable, Iterable, Iterator):
+](
+    Copyable where (
+        conforms_to(IteratorTypeA, Copyable)
+        and conforms_to(IteratorTypeB, Copyable)
+        and conforms_to(IteratorTypeC, Copyable)
+    ),
+    Iterable where (
+        conforms_to(IteratorTypeA, Copyable)
+        and conforms_to(IteratorTypeB, Copyable)
+        and conforms_to(IteratorTypeC, Copyable)
+    ),
+    Iterator,
+):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -345,28 +363,22 @@ struct _Zip3[
     var _inner_b: Self.IteratorTypeB
     var _inner_c: Self.IteratorTypeC
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where (
+        conforms_to(Self.IteratorTypeA, Copyable)
+        and conforms_to(Self.IteratorTypeB, Copyable)
+        and conforms_to(Self.IteratorTypeC, Copyable)
+    ):
         return self.copy()
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeA,
-            ParentConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeB,
-            ParentConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeC, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeC,
-            ParentConformsTo="Copyable",
-        ]()
+    fn __init__(
+        out self, *, copy: Self
+    ) where (
+        conforms_to(Self.IteratorTypeA, Copyable)
+        and conforms_to(Self.IteratorTypeB, Copyable)
+        and conforms_to(Self.IteratorTypeC, Copyable)
+    ):
         self._inner_a = rebind_var[Self.IteratorTypeA](
             trait_downcast[Copyable](copy._inner_a).copy()
         )
@@ -429,7 +441,21 @@ struct _Zip4[
     IteratorTypeB: Iterator,
     IteratorTypeC: Iterator,
     IteratorTypeD: Iterator,
-](Copyable, Iterable, Iterator):
+](
+    Copyable where (
+        conforms_to(IteratorTypeA, Copyable)
+        and conforms_to(IteratorTypeB, Copyable)
+        and conforms_to(IteratorTypeC, Copyable)
+        and conforms_to(IteratorTypeD, Copyable)
+    ),
+    Iterable where (
+        conforms_to(IteratorTypeA, Copyable)
+        and conforms_to(IteratorTypeB, Copyable)
+        and conforms_to(IteratorTypeC, Copyable)
+        and conforms_to(IteratorTypeD, Copyable)
+    ),
+    Iterator,
+):
     comptime Element = Tuple[
         Self.IteratorTypeA.Element,
         Self.IteratorTypeB.Element,
@@ -445,34 +471,24 @@ struct _Zip4[
     var _inner_c: Self.IteratorTypeC
     var _inner_d: Self.IteratorTypeD
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where (
+        conforms_to(Self.IteratorTypeA, Copyable)
+        and conforms_to(Self.IteratorTypeB, Copyable)
+        and conforms_to(Self.IteratorTypeC, Copyable)
+        and conforms_to(Self.IteratorTypeD, Copyable)
+    ):
         return self.copy()
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeA,
-            ParentConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeB,
-            ParentConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeC, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeC,
-            ParentConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeD, Copyable),
-            Parent=Self,
-            Element=Self.IteratorTypeD,
-            ParentConformsTo="Copyable",
-        ]()
+    fn __init__(
+        out self, *, copy: Self
+    ) where (
+        conforms_to(Self.IteratorTypeA, Copyable)
+        and conforms_to(Self.IteratorTypeB, Copyable)
+        and conforms_to(Self.IteratorTypeC, Copyable)
+        and conforms_to(Self.IteratorTypeD, Copyable)
+    ):
         self._inner_a = rebind_var[Self.IteratorTypeA](
             trait_downcast[Copyable](copy._inner_a).copy()
         )
@@ -680,7 +696,11 @@ struct _MapIterator[
     InnerIteratorType: Iterator,
     //,
     function: fn(var InnerIteratorType.Element) -> OutputType,
-](Copyable, Iterable, Iterator):
+](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Iterator,
+):
     comptime Element = Self.OutputType
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -688,18 +708,18 @@ struct _MapIterator[
 
     var _inner: Self.InnerIteratorType
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.InnerIteratorType, Copyable),
-            Parent=Self,
-            Element=Self.InnerIteratorType,
-            ParentConformsTo="Copyable",
-        ]()
+    fn __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
         self._inner = rebind_var[Self.InnerIteratorType](
             trait_downcast[Copyable](copy._inner).copy()
         )
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
         return self.copy()
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
@@ -762,7 +782,15 @@ fn map[
 
 
 @fieldwise_init
-struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
+struct _PeekableIterator[InnerIterator: Iterator](
+    Copyable where conforms_to(InnerIterator, Copyable) and conforms_to(
+        InnerIterator.Element, Copyable
+    ),
+    Iterable where conforms_to(InnerIterator, Copyable) and conforms_to(
+        InnerIterator.Element, Copyable
+    ),
+    Iterator,
+):
     comptime Element = Self.InnerIterator.Element
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -775,26 +803,23 @@ struct _PeekableIterator[InnerIterator: Iterator](Copyable, Iterable, Iterator):
         self._inner = inner^
         self._next = None
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.InnerIterator, Copyable),
-            Parent=Self,
-            Element=Self.InnerIterator,
-            ParentConformsTo="Copyable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.Element, Copyable),
-            Parent=Self,
-            Element=Self.Element,
-            ParentConformsTo="Copyable",
-        ]()
-
+    fn __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIterator, Copyable) and conforms_to(
+        Self.InnerIterator.Element, Copyable
+    ):
         self._inner = rebind_var[Self.InnerIterator](
             trait_downcast[Copyable](copy._inner).copy()
         )
+
+        comptime assert conforms_to(Self.Element, Copyable)
         self._next = copy._next.copy()
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIterator, Copyable
+    ) and conforms_to(Self.InnerIterator.Element, Copyable):
         return self.copy()
 
     fn __next__(mut self) raises StopIteration -> Self.Element:

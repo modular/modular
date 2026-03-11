@@ -1461,11 +1461,11 @@ fn _matmul_Qb_K[
         var task_n_count = block_range[1] * grain_size
 
         var a_packed_ptr = a_packed_base_ptr
-        var b_packed_ptr = b.ptr.bitcast[b_type]().as_unsafe_pointer()
+        var b_packed_ptr = b.ptr.bitcast[b_type]()
 
         for k_block in range(k_blocks):
             var bn_packed_ptr = b_packed_ptr + task_n_start
-            var cn_ptr = c.ptr.as_unsafe_pointer() + task_n_start
+            var cn_ptr = c.ptr + task_n_start
             var accumulate = k_block > 0
 
             # only run epilogue for the last iter of K loop

@@ -26,7 +26,10 @@ from std.random import NormalRandom, Random
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
-from tensor.managed_tensor_slice import ManagedTensorSlice
+from buffer.dimlist import DimList
+from tensor.managed_tensor_slice import (
+    ManagedTensorSlice,
+)
 from tensor.io_spec import FusedOutput
 from compiler_internal import StaticTensorSpec
 from MOGGKernelAPI.MOGGKernelAPI import Range
@@ -241,7 +244,7 @@ fn range_op[
     var stop = stop_ptr.load()
     var step = step_ptr.load()
 
-    comptime out_spec = StaticTensorSpec[dtype, 1].create_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, 1, ...].get_unknown()
     var output_tensor = ManagedTensorSlice[
         io_spec=FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))

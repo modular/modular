@@ -140,7 +140,9 @@ fn mha_sm100_dispatch[
     ](ctx)
     comptime assert BM == 256
     comptime SchedulerType = TransientScheduler[
-        UInt32(BM), UInt32(fa4_config.num_q_heads)
+        UInt32(BM),
+        UInt32(fa4_config.num_q_heads),
+        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
     ]
     var scheduler: SchedulerType = SchedulerType()
 

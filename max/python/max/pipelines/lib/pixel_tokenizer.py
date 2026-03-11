@@ -110,7 +110,6 @@ class PixelGenerationTokenizer(
         max_length: Maximum sequence length for the primary tokenizer.
         secondary_max_length: Maximum sequence length for the secondary tokenizer, if used.
         trust_remote_code: Whether to trust remote code from the model.
-        context_validators: Optional list of validators to run on PixelContext.
     """
 
     def __init__(
@@ -124,7 +123,6 @@ class PixelGenerationTokenizer(
         max_length: int | None = None,
         secondary_max_length: int | None = None,
         trust_remote_code: bool = False,
-        context_validators: list[Callable[[PixelContext], None]] | None = None,
         default_num_inference_steps: int = 50,
         **unused_kwargs,
     ) -> None:
@@ -173,10 +171,6 @@ class PixelGenerationTokenizer(
                 "- The model path is incorrect\n"
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
-
-        self._context_validators = (
-            context_validators if context_validators else []
-        )
 
         # Extract diffusers_config
         if not pipeline_config or not hasattr(
@@ -1189,8 +1183,5 @@ class PixelGenerationTokenizer(
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
             extra_params=extra_params,
         )
-
-        for validator in self._context_validators:
-            validator(context)
 
         return context

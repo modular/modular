@@ -58,10 +58,7 @@ from layout import (
     TileTensor,
 )
 from std.logger import Logger
-from std.memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
+from std.memory import stack_allocation
 from std.utils import IndexList
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
@@ -138,9 +135,9 @@ fn gemv_kernel[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type]],
-    a: UnsafePointer[Scalar[a_type]],
-    b: UnsafePointer[Scalar[b_type]],
+    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=False]],
+    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=False]],
     m: Int,
     n: Int,
     k: Int,
@@ -463,8 +460,7 @@ fn gemv_split_k[
     # Sum across warps' results in shared memory then output.
     # TODO: should be able to vectorize and maybe use larger tile_n.
     for ii in range(tid, tile_m * tile_n, num_threads):
-        var mid = ii // tile_n
-        var nid = ii % tile_n
+        var mid, nid = divmod(ii, tile_n)
         var val = Scalar[accum_type]()
         comptime ValType = type_of(val)
 
@@ -501,9 +497,9 @@ fn gevm_kernel[
     accum_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: UnsafePointer[Scalar[c_type]],
-    a: UnsafePointer[Scalar[a_type]],
-    b: UnsafePointer[Scalar[b_type]],
+    c: UnsafePointer[Scalar[c_type], AnyOrigin[mut=True]],
+    a: UnsafePointer[Scalar[a_type], AnyOrigin[mut=False]],
+    b: UnsafePointer[Scalar[b_type], AnyOrigin[mut=False]],
     m: Int,
     n: Int,
     k: Int,
@@ -771,7 +767,7 @@ fn gemv_gpu_dispatch[
                 var b_tensor_n_major = LayoutTensor[
                     b.type,
                     b_layout_template,
-                    MutAnyOrigin,
+                    b.origin,
                     address_space=aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
@@ -1019,9 +1015,9 @@ fn gemv[
     parallelize: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, c_type, 1, _, c_size],
-    a_buf: NDBuffer[mut=False, a_type, 2, _, a_shape],
-    b_buf: NDBuffer[mut=False, b_type, 1, _, b_size],
+    c_buf: NDBuffer[mut=True, rank=1, c_type, _, c_size],
+    a_buf: NDBuffer[mut=False, rank=2, a_type, _, a_shape],
+    b_buf: NDBuffer[mut=False, rank=1, b_type, _, b_size],
 ) raises:
     comptime simd_width = simd_width_of[c_type]()
 
@@ -1076,9 +1072,9 @@ fn naive_gemv[
     b_size: Dim,
     dtype: DType,
 ](
-    c_buf: NDBuffer[mut=True, dtype, 1, _, c_size],
-    a_buf: NDBuffer[dtype, 2, _, a_shape],
-    b_buf: NDBuffer[dtype, 1, _, b_size],
+    c_buf: NDBuffer[mut=True, rank=1, dtype, _, c_size],
+    a_buf: NDBuffer[rank=2, dtype, _, a_shape],
+    b_buf: NDBuffer[rank=1, dtype, _, b_size],
 ):
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()

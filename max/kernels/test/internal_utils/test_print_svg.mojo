@@ -33,7 +33,7 @@ fn test_svg_nvidia_shape() raises:
     for i in range(32):
         tensor_list.append(
             tensor.vectorize[1, 2]()
-            .distribute[Layout.row_major(8, 4)](UInt(i))
+            .distribute[Layout.row_major(8, 4)](i)
             .get_immutable()
         )
 

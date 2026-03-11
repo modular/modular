@@ -668,11 +668,8 @@ class TextBatchConstructor:
         """Resets a request and returns it to the request queue"""
 
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
-        if self.kv_cache is not None:
-            for replica_idx in range(self.num_replicas):
-                if self.kv_cache.contains(context.request_id, replica_idx):
-                    self.kv_cache.release(context.request_id, replica_idx)
-                    break
+        if self.kv_cache.contains(context.request_id, replica_idx):
+            self.kv_cache.release(context.request_id, replica_idx)
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)
         # For regular pipelines, release() is a no-op

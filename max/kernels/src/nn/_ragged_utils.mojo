@@ -55,7 +55,7 @@ fn get_batch_from_row_offsets(
     """
     comptime assert row_offsets.flat_rank == 1
 
-    var row_offsets_size = row_offsets.numel()
+    var row_offsets_size = row_offsets.num_elements()
 
     assert tok_idx >= 0 and tok_idx < Int(
         row_offsets[row_offsets_size - 1]
@@ -82,7 +82,7 @@ fn get_batch_and_token_idx_from_row_offsets(
     """
     comptime assert row_offsets.flat_rank == 1
 
-    var row_offsets_size = row_offsets.numel()
+    var row_offsets_size = row_offsets.num_elements()
 
     assert tok_idx >= 0 and tok_idx < Int(
         row_offsets[row_offsets_size - 1]

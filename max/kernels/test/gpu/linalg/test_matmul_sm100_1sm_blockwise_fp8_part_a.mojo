@@ -21,9 +21,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -135,61 +132,57 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         k.value, BLOCK_SCALE_K
     )
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_size
-    )
-    var a_scales_host = NDBuffer[scales_type, 2, _, static_a_scales_shape](
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
+    var a_scales_host = NDBuffer[rank=2, scales_type, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_size
-    )
-    var b_scales_host = NDBuffer[scales_type, 2, _, static_b_scales_shape](
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
+    var b_scales_host = NDBuffer[rank=2, scales_type, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var a_scales_device_nd = NDBuffer[scales_type, 2, _, static_a_scales_shape](
-        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
+    var a_scales_device_nd = NDBuffer[
+        rank=2, scales_type, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-    var b_scales_device_nd = NDBuffer[scales_type, 2, _, static_b_scales_shape](
-        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
+    var b_scales_device_nd = NDBuffer[
+        rank=2, scales_type, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     c_host.zero()
     c_host_ref.zero()

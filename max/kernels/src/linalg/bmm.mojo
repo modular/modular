@@ -53,16 +53,13 @@ from layout.coord import (
     coord_to_index_list,
 )
 from std.logger import Logger
-from std.memory import LegacyUnsafePointer, memset_zero
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.gpu.host.info import B200, H100
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
-
+from std.memory import memset_zero
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     use_apple_accelerate_lib,
@@ -126,8 +123,8 @@ fn _get_batch_dims[
 fn _reshape_nd_buffer_with_batch_to_3d(
     buffer: NDBuffer[...],
 ) -> NDBuffer[
+    rank=3,
     buffer.type,
-    3,
     buffer.origin,
     DimList(
         Dim(),
@@ -155,8 +152,8 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     )
 
     return NDBuffer[
+        rank=3,
         buffer.type,
-        3,
         buffer.origin,
         static_shape,
         address_space=buffer.address_space,
@@ -310,7 +307,7 @@ fn _reshape_tile_tensor_with_batch_to_3d(
 fn _reshape_nd_buffer_with_batch_to_2d(
     buffer: NDBuffer,
 ) -> NDBuffer[
-    buffer.type, 2, buffer.origin, address_space=buffer.address_space
+    rank=2, buffer.type, buffer.origin, address_space=buffer.address_space
 ]:
     comptime rank = buffer.rank
     comptime assert rank >= 2, "expecting at least rank-2 NDBuffer"
@@ -322,7 +319,7 @@ fn _reshape_nd_buffer_with_batch_to_2d(
 
     var matrix_shape = IndexList[2](batch_size, buffer.dim[rank - 1]())
 
-    return NDBuffer[buffer.type, 2, address_space=buffer.address_space](
+    return NDBuffer[rank=2, buffer.type, address_space=buffer.address_space](
         buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
     )
 
@@ -335,9 +332,9 @@ fn _small_batched_matmul[
     c_type: DType,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, ...],
-    a_buf: NDBuffer[a_type, rank, ...],
-    b_buf: NDBuffer[b_type, rank, ...],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, ...],
+    a_buf: NDBuffer[rank=rank, a_type, ...],
+    b_buf: NDBuffer[rank=rank, b_type, ...],
 ) raises:
     comptime simd_width = simd_width_of[c_type]()
 
@@ -357,8 +354,12 @@ fn _small_batched_matmul[
             # each trailing batch dimension.
             var indices = _get_batch_dims[rank](batch, c_buf.get_shape())
 
-            var a_view = NDBuffer[a_type, 1](a_buf.data + batch * K, Index(K))
-            var b_view = NDBuffer[b_type, 1](b_buf.data + batch * K, Index(K))
+            var a_view = NDBuffer[rank=1, a_type](
+                a_buf.data + batch * K, Index(K)
+            )
+            var b_view = NDBuffer[rank=1, b_type](
+                b_buf.data + batch * K, Index(K)
+            )
 
             @always_inline
             @__copy_capture(a_view, b_view)
@@ -469,9 +470,9 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
-    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
+    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
+    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -533,9 +534,9 @@ fn _batched_matmul_cpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, ...],
-    a_buf: NDBuffer[a_type, rank, ...],
-    b_buf: NDBuffer[b_type, rank, ...],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, ...],
+    a_buf: NDBuffer[rank=rank, a_type, ...],
+    b_buf: NDBuffer[rank=rank, b_type, ...],
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
@@ -608,8 +609,7 @@ fn _batched_matmul_cpu[
         var b_stride_between_batches = b.size() // b.dim[0]()
         var c_stride_between_batches = c.size() // c.dim[0]()
 
-        var batch_task_id = task_id // num_tasks_matmul
-        var matmul_task_id = task_id % num_tasks_matmul
+        var batch_task_id, matmul_task_id = divmod(task_id, num_tasks_matmul)
 
         var num_batches = c.dim[0]()
         # Set the granularity to 1 to divide the batches among tasks
@@ -624,11 +624,11 @@ fn _batched_matmul_cpu[
 
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
-            var c_view = NDBuffer[c_type, 2](
+            var c_view = NDBuffer[rank=2, c_type](
                 c.data + batch * c_stride_between_batches,
                 IndexList[2](c.dim[1](), c.dim[2]()),
             )
-            var a_view = NDBuffer[a_type, 2, MutAnyOrigin](
+            var a_view = NDBuffer[rank=2, a_type, a.origin, ...](
                 a.data + batch * a_stride_between_batches,
                 IndexList[2](a.dim[1](), a.dim[2]()),
             )
@@ -639,19 +639,8 @@ fn _batched_matmul_cpu[
             comptime alignment = align_of[SIMD[c_type, simd_size]]()
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
-            var a_packed_ptr = UnsafePointer[Scalar[a_type]]()
-            if use_i8mm:
-                a_packed_ptr = UnsafePointer[Scalar[a_type]].alloc(
-                    mh * kh, alignment=alignment
-                )
-            var a_packed = NDBuffer[a_type, 2](
-                a_packed_ptr, IndexList[2](mh, kh)
-            )
 
-            if use_i8mm:
-                packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
-
-            var b_view = NDBuffer[b_type, 2](
+            var b_view = NDBuffer[rank=2, b_type](
                 b.data + batch * b_stride_between_batches,
                 IndexList[2](b.dim[1](), b.dim[2]()),
             )
@@ -683,22 +672,52 @@ fn _batched_matmul_cpu[
             ):
                 return
 
-            _submatmul_sequential_sync[
-                config,
-                transpose_b,
-                b_packed=False,
-                elementwise_lambda_fn=Optional[
-                    matmul_elementwise_epilogue_type
-                ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
-                saturated_vnni=saturated_vnni,
-            ](
-                c_view,
-                a_packed if use_i8mm else a_view,
-                b_view,
-                GemmShape(sub_matmul_config.shape),
-                GemmShape(sub_matmul_config.offset),
-            )
-            a_packed_ptr.free()
+            comptime if use_i8mm:
+                a_packed_ptr = alloc[Scalar[a_type]](
+                    mh * kh, alignment=alignment
+                )
+                var a_packed = NDBuffer[rank=2, a_type](
+                    a_packed_ptr,
+                    IndexList[2](mh, kh),
+                )
+                packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
+
+                _submatmul_sequential_sync[
+                    config,
+                    transpose_b,
+                    b_packed=False,
+                    elementwise_lambda_fn=Optional[
+                        matmul_elementwise_epilogue_type
+                    ](
+                        elementwise_lambda_2d
+                    ) if elementwise_epilogue_fn else None,
+                    saturated_vnni=saturated_vnni,
+                ](
+                    c_view,
+                    a_packed,
+                    b_view,
+                    GemmShape(sub_matmul_config.shape),
+                    GemmShape(sub_matmul_config.offset),
+                )
+                a_packed_ptr.free()
+            else:
+                _submatmul_sequential_sync[
+                    config,
+                    transpose_b,
+                    b_packed=False,
+                    elementwise_lambda_fn=Optional[
+                        matmul_elementwise_epilogue_type
+                    ](
+                        elementwise_lambda_2d
+                    ) if elementwise_epilogue_fn else None,
+                    saturated_vnni=saturated_vnni,
+                ](
+                    c_view,
+                    a_view,
+                    b_view,
+                    GemmShape(sub_matmul_config.shape),
+                    GemmShape(sub_matmul_config.offset),
+                )
             _ = batch_coords
 
     sync_parallelize[task_func](num_tasks)
@@ -1118,9 +1137,9 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
-    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
+    c_buf: NDBuffer[mut=True, rank=rank, c_type, _, _, _],
+    a_buf: NDBuffer[mut=False, rank=rank, a_type, _, _, _],
+    b_buf: NDBuffer[mut=False, rank=rank, b_type, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1158,8 +1177,8 @@ fn batched_matmul_shape[
     b_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    a_buff: NDBuffer[a_type, rank, ...],
-    b_buff: NDBuffer[b_type, rank, ...],
+    a_buff: NDBuffer[rank=rank, a_type, ...],
+    b_buff: NDBuffer[rank=rank, b_type, ...],
 ) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
@@ -1266,7 +1285,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         * UInt(b_scales_tensor.dim(2))
     )
 
-    var c = LayoutTensor[c_type, c_2d_layout, MutAnyOrigin](
+    var c = LayoutTensor[c_type, c_2d_layout](
         c_tensor.ptr_at_offset(Index(block_idx.z, 0, 0)),
         RuntimeLayout[c_2d_layout](
             Index(c_tensor.dim(1), c_tensor.dim(2)),
@@ -1274,9 +1293,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         ),
     )
 
-    var b_scales = LayoutTensor[
-        b_scales_type, b_scales_2d_layout, MutAnyOrigin
-    ](
+    var b_scales = LayoutTensor[b_scales_type, b_scales_2d_layout](
         b_scales_ptr,
         RuntimeLayout[b_scales_2d_layout].row_major(
             IndexList[2](b_scales_tensor.dim(1), b_scales_tensor.dim(2)),
@@ -1557,26 +1574,26 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
 
     for batch in range(B):
         # Create 2D LayoutTensor views
-        var c_view = LayoutTensor[c_type, c_layout_2d, MutAnyOrigin](
+        var c_view = LayoutTensor[c_type, c_layout_2d, c.origin](
             c.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[c_layout_2d](
                 Index(M, N), Index(c.stride(1), c.stride(2))
             ),
         )
-        var a_view = LayoutTensor[a_type, a_layout_2d, MutAnyOrigin](
+        var a_view = LayoutTensor[a_type, a_layout_2d, a.origin](
             a.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[a_layout_2d](
                 Index(M, K), Index(a.stride(1), a.stride(2))
             ),
         )
-        var b_view = LayoutTensor[b_type, b_layout_2d, MutAnyOrigin](
+        var b_view = LayoutTensor[b_type, b_layout_2d, b.origin](
             b.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[b_layout_2d](
                 Index(N, K), Index(b.stride(1), b.stride(2))
             ),
         )
         var a_scales_view = LayoutTensor[
-            a_scales_type, a_scales_layout_2d, MutAnyOrigin
+            a_scales_type, a_scales_layout_2d, a_scales.origin
         ](
             a_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[a_scales_layout_2d](
@@ -1587,7 +1604,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
         var b_scales_view = LayoutTensor[
             b_scales_type,
             b_scales_layout_2d,
-            MutAnyOrigin,
+            b_scales.origin,
         ](
             b_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[b_scales_layout_2d](

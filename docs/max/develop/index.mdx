@@ -44,7 +44,7 @@ The expected output is:
 Tensor([1 0 3 0 5], dtype=DType.float32, device=Device(type=cpu,id=0))
 ```
 
-When you run this code, [`Tensor(data)`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) creates a tensor and [`F.relu()`](/max/api/python/experimental/functional#max.experimental.functional.relu)
+When you run this code, [`Tensor(data)`](/max/api/python/generated/max.experimental.tensor.Tensor) creates a tensor and [`F.relu()`](/max/api/python/experimental.functional#max.experimental.functional.relu)
 performs the ReLU activation. The `print(y)` statement triggers execution. MAX compiles
 and runs the operations, then displays the result.
 
@@ -98,6 +98,20 @@ control over graph structure, data flow, and device placement. Eager-style
 execution lets you write natural Python code while MAX handles graph building
 and optimization automatically.
 
+:::note
+
+MAX provides two module APIs, one for each programming pattern:
+
+- [`max.nn.Module`](/max/api/python/nn/layer#max.nn.layer.Module): works
+  directly inside `with Graph(...)` and is the right choice for existing
+  pipeline code.
+- [`max.experimental.nn.Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module):
+  uses a `forward()` method and [`compile()`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module.compile)
+  to build the same MAX graph automatically. You can't use it directly inside
+  a `with Graph(...)` block.
+
+:::
+
 ## Use standard Python operators
 
 You can perform arithmetic operations using Python operators on tensors:
@@ -135,8 +149,8 @@ print(f"Square root: {y}")
 print(f"Softmax: {z}")
 ```
 
-The [`max.experimental.functional`](/max/api/python/experimental/functional) module (typically imported as `F`) provides
-operations like [`relu()`](/max/api/python/experimental/functional#max.experimental.functional.relu), [`softmax()`](/max/api/python/experimental/functional#max.experimental.functional.softmax), [`sqrt()`](/max/api/python/experimental/functional#max.experimental.functional.sqrt), and many more.
+The [`max.experimental.functional`](/max/api/python/experimental.functional) module (typically imported as `F`) provides
+operations like [`relu()`](/max/api/python/experimental.functional#max.experimental.functional.relu), [`softmax()`](/max/api/python/experimental.functional#max.experimental.functional.softmax), [`sqrt()`](/max/api/python/experimental.functional#max.experimental.functional.sqrt), and many more.
 
 {/* For more information, see [Basic operations](/max/develop/basic-ops). */}
 
@@ -239,13 +253,13 @@ Execution happens automatically when an operation requires concrete values:
 
 - **Printing tensors**: `print(x)` needs real values to display them. MAX
   compiles and executes the graph to produce those values.
-- **Accessing scalar values**: [`x.item()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.item) must return a concrete Python number
+- **Accessing scalar values**: [`x.item()`](/max/api/python/generated/max.experimental.tensor.Tensor#max.experimental.tensor.Tensor.item) must return a concrete Python number
   (like `3.14`) rather than a symbolic operation, which triggers execution.
 - **Indexing tensors**: `x[0]` needs to extract the actual value at that
   position.
 - **Converting to other formats**: Passing a MAX `Tensor` to `np.from_dlpack(x)`
   requires a real memory buffer for `x`, which forces execution.
-- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an [`nn.Module`](/max/api/python/experimental/nn/module#max.experimental.nn.module.Module) executes the
+- **Module forward passes**: Calling `module(x)` or `module.forward(x)` on an [`nn.Module`](/max/api/python/generated/max.experimental.nn.Module) executes the
   graph to produce the output.
 
 This all happens automatically and transparently behind the scenes. MAX detects

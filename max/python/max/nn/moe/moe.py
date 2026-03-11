@@ -137,7 +137,34 @@ class MoEGate(Module):
 
 
 class MoE(Module, Shardable):
-    """Implementation of Mixture of Experts (MoE)."""
+    """Implementation of Mixture of Experts (MoE).
+
+    Args:
+        devices: The list of devices to use for the MoE.
+        hidden_dim: The dimension of the hidden state.
+        num_experts: The number of experts.
+        num_experts_per_token: The number of experts per token.
+        moe_dim: The intermediate dimension of each expert.
+        gate_cls: The model-specific gate implementation. Defaults to
+            :class:`MoEGate`.
+        mlp_cls: The MLP class to use for experts. Defaults to
+            :class:`MLP`.
+        has_shared_experts: Whether to use shared experts. Defaults to
+            ``False``.
+        shared_experts_dim: The dimension of the shared experts.
+            Defaults to ``0``.
+        ep_size: The expert parallelism size. Defaults to ``1``.
+        dtype: The data type of the MoE. Defaults to
+            ``DType.bfloat16``.
+        apply_router_weight_first: Whether to apply the router weight
+            first. Defaults to ``False``.
+        ep_batch_manager: The expert parallel batch manager. Defaults to
+            ``None``.
+        float8_config: The FP8 quantization configuration. Defaults to
+            ``None``.
+        is_sharding: Whether the constructor is being called during
+            sharding. Defaults to ``False``.
+    """
 
     _ep_batch_manager: EPBatchManager | None = None
     """The expert parallel batch manager."""
@@ -175,20 +202,6 @@ class MoE(Module, Shardable):
         float8_config: Float8Config | None = None,
         is_sharding: bool = False,
     ):
-        """Args:
-        devices: List of devices to use for the MoE.
-        hidden_dim: The dimension of the hidden state.
-        num_experts: The number of experts.
-        num_experts_per_token: The number of experts per token.
-        moe_dim: The intermediate dimension of each expert.
-        gate_cls: The model specific gate implementation.
-        has_shared_experts: Whether to use shared experts.
-        shared_experts_dim: The dimension of the shared experts.
-        ep_size: The expert parallelism size.
-        dtype: The data type of the MoE.
-        apply_router_weight_first: Whether to apply the router weight first.
-        ep_batch_manager: The expert parallel batch manager.
-        """
         super().__init__()
         self.devices = devices
         self.hidden_dim = hidden_dim

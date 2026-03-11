@@ -509,7 +509,7 @@ class Graph:
         if self._has_chain_input:
             chain_count = 1 + len(self.device_chains)
         if body_args and chain_count:
-            body_args = body_args[:-chain_count]
+            body_args = body_args[:-chain_count]  # type: ignore
 
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg)) for arg in body_args
@@ -941,11 +941,16 @@ class Graph:
         with self._block(block), _location():
             expected_output_types = expected_output_types or []
 
-            results = block_fn() or []
+            results = block_fn()
+            if results is None:
+                results = []
 
             results = (
                 list(results) if isinstance(results, Iterable) else [results]
             )
+            results = [
+                r if isinstance(r, Value) else TensorValue(r) for r in results
+            ]
             result_types = [result.type for result in results]
             if result_types != expected_output_types:
                 raise TypeError(

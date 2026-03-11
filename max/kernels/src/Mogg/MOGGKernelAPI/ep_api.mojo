@@ -181,7 +181,9 @@ struct Struct_ep_init:
         # Calculate buffer sizes for combine phase
         # Combine messages only contain the processed token
         comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
-        comptime combine_send_size = n_experts * max_token_per_rank * combine_msg_size
+        comptime combine_send_size = max_token_per_rank * combine_msg_size * min(
+            n_experts, n_gpus_per_node * n_nodes * top_k
+        )
         comptime combine_recv_size = top_k * max_token_per_rank * combine_msg_size
 
         # Initialize atomic counters to zero for synchronization
@@ -252,9 +254,10 @@ struct Struct_ep_init:
                 n_experts
             ).take_ptr()
 
-            combine_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
-                combine_send_size
-            ).take_ptr()
+            # When all the devices are on the same node, we skip the combine
+            # send buffer and directly send tokens to each device's recv buffer.
+            # Hence, we don't need to allocate the combine send buffer.
+            combine_send_p = UnsafePointer[UInt8, MutAnyOrigin]()
             combine_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
                 combine_recv_size
             ).take_ptr()

@@ -59,9 +59,9 @@ fn matmul_dispatch_sm90[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     comptime is_AB_fp8 = a_type == b_type == DType.float8_e4m3fn
@@ -130,8 +130,9 @@ fn matmul_dispatch_sm90[
     comptime if _vendor_blas_fallback_disabled():
         if _dispatch():
             return DISPATCH_HIT
-        else:
-            raise Error("Mojo SM90 matmul dispatch failed.")
+        # On any miss (unsupported config or no tuning for this shape), return
+        # DISPATCH_MISS so the caller can fall back to vendor BLAS or other paths.
+        return DISPATCH_MISS
 
     return _dispatch()
 
@@ -504,9 +505,9 @@ fn matmul_dispatch_sm90_fp8[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     comptime static_N = c.shape.get[1]()
@@ -551,9 +552,9 @@ fn matmul_dispatch_sm90_fp8[
             grid_shape=Index(128, 1),
             schedule=MatmulSchedule.DS_SCHEDULER,
         ](
-            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
             ctx,
         )
         return DISPATCH_HIT
@@ -578,9 +579,9 @@ fn matmul_dispatch_sm90_fp8[
             schedule=entry.schedule,
             grid_shape=entry.grid_shape,
         ](
-            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
             ctx,
         )
 
@@ -671,9 +672,9 @@ fn matmul_dispatch_sm90_fp8[
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=config,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -697,9 +698,9 @@ fn matmul_dispatch_sm90_fp8[
                     schedule=MatmulSchedule.DS_SCHEDULER,
                     grid_shape=Index(H100.sm_count, 1),
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -726,9 +727,9 @@ fn matmul_dispatch_sm90_fp8[
                     schedule=MatmulSchedule.DS_SCHEDULER,
                     grid_shape=Index(H100.sm_count, 1),
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -2151,9 +2152,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, c_type, _, _],
+    a: NDBuffer[rank=2, a_type, _, _],
+    b: NDBuffer[rank=2, b_type, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
     comptime size_factor = 2 if a_type == DType.float32 else 1
@@ -2211,9 +2212,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                 schedule=SCHEDULE_TYPE,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -2259,9 +2260,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                     schedule=SCHEDULE_TYPE,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -2291,9 +2292,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     splits=SPLITS,
                     raster_order=RasterOrder.AlongM,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -2357,9 +2358,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 schedule=entry.schedule,
                 grid_shape=entry.grid_shape,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
         else:
@@ -2373,9 +2374,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 splits=entry.splits.value(),
                 raster_order=entry.raster_order.value(),
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
 
@@ -2511,9 +2512,15 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
-                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
+                                c
+                            ),
+                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
+                                a
+                            ),
+                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
+                                b
+                            ),
                             ctx,
                         )
                         return DISPATCH_HIT
@@ -2540,9 +2547,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
 
@@ -2570,9 +2577,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
 
@@ -2603,9 +2610,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
 
@@ -2633,9 +2640,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
 
@@ -2663,9 +2670,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     # swapAB = True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
 
@@ -2693,9 +2700,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
 
@@ -2723,9 +2730,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
 
@@ -2752,9 +2759,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -2780,9 +2787,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -2808,9 +2815,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -2833,9 +2840,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule=MatmulSchedule.NONE,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -2916,9 +2923,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -2940,9 +2947,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -2966,9 +2973,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 grid_shape=Index(4, H100.sm_count // 4),
                 schedule=MatmulSchedule.TILE2D,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -2992,9 +2999,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 config=M4096_N8192_K2048_config,
                 schedule=MatmulSchedule.TILE2D,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3018,9 +3025,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3044,9 +3051,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 grid_shape=Index(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3070,9 +3077,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 config=M4096_N14336_K8192_config,
                 schedule=MatmulSchedule.TILE2D,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3096,9 +3103,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3120,9 +3127,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3146,9 +3153,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 grid_shape=Index(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3175,9 +3182,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 config=M4096_N8192_K7168_config,
                 schedule=MatmulSchedule.TILE2D,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
             return DISPATCH_HIT
@@ -3206,9 +3213,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 config=M512_N3840_K15360_config,
                 schedule=MatmulSchedule.NONE,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                 ctx,
             )
 
@@ -3245,9 +3252,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     config=default_bf16_config,
                     schedule=MatmulSchedule.NONE,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -3282,9 +3289,15 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
-                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
+                                c
+                            ),
+                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
+                                a
+                            ),
+                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
+                                b
+                            ),
                             ctx,
                         )
                         return DISPATCH_HIT
@@ -3321,9 +3334,15 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
-                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
+                                c
+                            ),
+                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
+                                a
+                            ),
+                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
+                                b
+                            ),
                             ctx,
                         )
                         return DISPATCH_HIT
@@ -3357,9 +3376,15 @@ fn matmul_dispatch_sm90_bf16_fp32[
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
                         ](
-                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](
+                                c
+                            ),
+                            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](
+                                a
+                            ),
+                            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](
+                                b
+                            ),
                             ctx,
                         )
                         return DISPATCH_HIT
@@ -3422,9 +3447,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     config=base_config,
                     schedule=MatmulSchedule.NONE,
                 ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+                    rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+                    rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
                     ctx,
                 )
                 return DISPATCH_HIT
@@ -3448,9 +3473,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
             config=default_bf16_config,
             schedule=MatmulSchedule.NONE,
         ](
-            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+            rebind[NDBuffer[rank=2, c_type, c.origin, c.shape]](c),
+            rebind[NDBuffer[rank=2, a_type, a.origin, a.shape]](a),
+            rebind[NDBuffer[rank=2, b_type, b.origin, b.shape]](b),
             ctx,
         )
         return DISPATCH_HIT

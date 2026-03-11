@@ -1,8 +1,16 @@
+import ast
+import importlib
+import inspect
+import logging
+import os
+
 from docutils import nodes, utils
+
+logger = logging.getLogger(__name__)
 
 # -- Project information -----------------------------------------------------
 
-project = "MAX Engine Python APIs"
+project = "MAX Python API"
 copyright = "2023, Modular Inc"
 author = "Modular"
 
@@ -17,10 +25,20 @@ exclude_patterns = []
 # The suffix of source filenames.
 source_suffix = ".rst"
 
-extensions = ["sphinx.ext.autodoc",
-              "sphinx.ext.napoleon",
-              "sphinx.ext.intersphinx",
-              "sphinx_markdown_builder",]
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.linkcode",
+    "sphinx_markdown_builder",
+]
+
+# -- Autosummary settings ----------------------------------------------------
+# Enable automatic stub generation for autosummary
+autosummary_generate = True
+autosummary_generate_overwrite = True
+autosummary_imported_members = True
 
 markdown_anchor_signatures_docusaurus = True
 markdown_first_heading_level = 2
@@ -41,22 +59,41 @@ autodoc_type_aliases = {
 
 # Show argument type hints in the parameters description only, because a lot
 # of type names can't be resolved and they make the signatures a mess.
+# NOTE: Overloaded functions still show type hints in the signatures,
+# because the types might be the only detail that distinguishes each function.
 autodoc_typehints = "description"
 
-# Suppress warnings for ambiguous cross-references
-# This allows multiple classes with the same name in different modules
-suppress_warnings = ['ref.python']
+# -- Autodoc default options -------------------------------------------------
+autodoc_default_options = {
+    'member-order': 'alphabetical',
+    'undoc-members': True,
+    'exclude-members': '__weakref__',
+    'show-inheritance': True,
+}
+
+# Suppress warnings for ambiguous cross-references, autodoc, and autosummary issues
+# This allows multiple classes with the same name in different modules,
+# suppresses warnings about missing attributes in :members: option,
+# and suppresses warnings about stub files not found during recursive generation
+suppress_warnings = [
+    'ref.python',
+    'autodoc',
+    'autodoc.import_object',
+    'autosummary',
+    'autosummary.import_cycle',
+    'toctree',
+]
 
 napoleon_custom_sections = [("Configuration", "params_style")]
 
 # Link to other libraries for API links such as "pathlib.Path"
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/", None),
-    "numpy": ("https://numpy.org/doc/stable/", None)
+    "python": ("https://docs.python.org/", "../PYTHON_OBJECTS_INV"),
+    "numpy": ("https://numpy.org/doc/stable/", "../NUMPY_OBJECTS_INV")
 }
 
-# templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+templates_path = ["_templates", "sphinx_doc_inputs/_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "_templates"]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -94,13 +131,435 @@ def code_link_role(name, rawtext, text, lineno, inliner, options={}, content=[])
     reference_node += code_node
     return [reference_node], []
 
+_GITHUB_BASE = "https://github.com/modular/modular/blob/main"
+
+
+def _source_url(source_file, lineno, end_lineno):
+    """Build a GitHub URL from an absolute source path and line range.
+
+    Returns ``None`` when *source_file* is outside the ``max/python/``
+    tree (e.g. a method inherited from a third-party library like
+    Pydantic), so the caller can fall back to a module-level URL.
+    """
+    marker = "max/python/"
+    idx = source_file.find(marker)
+    if idx == -1:
+        return None
+    rel_path = source_file[idx:]
+    return f"{_GITHUB_BASE}/{rel_path}#L{lineno}-L{end_lineno}"
+
+
+def _resolve_relative_import(module_name, from_module, level, is_package):
+    """Resolve a relative import to an absolute module name.
+
+    For example, in package ``max.engine``, ``from .api import X`` (level=1,
+    from_module='api') resolves to ``max.engine.api``.
+
+    Args:
+        module_name: Fully-qualified name of the module containing the import.
+        from_module: The ``module`` field of the ``ImportFrom`` AST node
+            (e.g. ``'api'`` for ``from .api import X``), or ``None`` for
+            bare ``from . import X`` statements.
+        level: Number of leading dots (1 = current package, 2 = parent, …).
+        is_package: Whether *module_name* is a package (``__init__.py``).
+            Packages treat level-1 as "self"; plain modules treat it as
+            "parent".
+    """
+    if level == 0:
+        return from_module
+    parts = module_name.split(".")
+    # Plain modules live *inside* their parent package, so strip the
+    # module name first to get the package, then climb (level - 1) more.
+    if not is_package:
+        parts = parts[:-1]
+    up = level - 1
+    if up > len(parts):
+        return None
+    base = ".".join(parts[: len(parts) - up]) if up else ".".join(parts)
+    return f"{base}.{from_module}" if from_module else base
+
+
+def _search_ast_nodes(body, parts):
+    """Recursively search a list of AST statement nodes for a symbol definition.
+
+    Args:
+        body: A list of AST nodes (e.g. ``tree.body`` or ``class_node.body``).
+        parts: Dotted name split into components (e.g. ``['Class', 'attr']``).
+
+    Returns:
+        ``(lineno, end_lineno)`` or ``None``.
+    """
+    name, *rest = parts
+    for node in body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == name:
+                if rest:
+                    return _search_ast_nodes(node.body, rest)
+                return node.lineno, node.end_lineno or node.lineno
+        elif not rest:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == name:
+                        return node.lineno, node.end_lineno or node.lineno
+            elif isinstance(node, ast.AnnAssign):
+                if isinstance(node.target, ast.Name) and node.target.id == name:
+                    return node.lineno, node.end_lineno or node.lineno
+    return None
+
+
+def _find_pyi_stub(module_name):
+    """Find a ``.pyi`` stub file for a C-extension module.
+
+    Derives the expected stub path from the root package's ``__path__``
+    (which is reliable for normal Python packages) combined with the
+    remaining dotted components of *module_name*.  This avoids depending
+    on the C-extension's own ``__path__``, which nanobind sets to the
+    directory containing the ``.so`` file — one level too high.
+
+    Falls back to heuristics based on ``__file__`` and ``__path__`` of
+    the immediate parent and the module itself when the root-based
+    strategy does not find a match.
+
+    Returns:
+        Absolute path to the ``.pyi`` file, or ``None``.
+    """
+    # --- Strategy 1: derive path from root package --------------------
+    # For "max._core.driver" the root is "max" (a proper Python package
+    # whose __path__ is trustworthy) and the remainder is "_core/driver".
+    root_name = module_name.split(".")[0]
+    try:
+        root_pkg = importlib.import_module(root_name)
+    except Exception:
+        root_pkg = None
+
+    if root_pkg and "." in module_name:
+        rest = module_name[len(root_name) + 1:]      # e.g. "_core.driver"
+        rel_path = rest.replace(".", os.sep)           # e.g. "_core/driver"
+        for base in getattr(root_pkg, "__path__", []):
+            pyi = os.path.join(base, rel_path + ".pyi")
+            if os.path.isfile(pyi):
+                return pyi
+            pyi = os.path.join(base, rel_path, "__init__.pyi")
+            if os.path.isfile(pyi):
+                return pyi
+
+    # --- Strategy 2: parent __file__ heuristic ------------------------
+    # For single-file extensions (e.g. _core.cpython-313-darwin.so),
+    # derive a sibling stub directory from __file__.
+    parts = module_name.rsplit(".", 1)
+    if len(parts) == 2:
+        parent_name, child_name = parts
+        try:
+            parent = importlib.import_module(parent_name)
+        except Exception:
+            parent = None
+
+        if parent:
+            parent_file = getattr(parent, "__file__", None)
+            if parent_file:
+                parent_dir = os.path.dirname(parent_file)
+                stem = parent_name.rsplit(".", 1)[-1]
+                pyi = os.path.join(parent_dir, stem, child_name + ".pyi")
+                if os.path.isfile(pyi):
+                    return pyi
+
+    # --- Strategy 3: module's own __path__ / __file__ -----------------
+    try:
+        mod = importlib.import_module(module_name)
+    except Exception:
+        return None
+    for search_path in getattr(mod, "__path__", []):
+        pyi = os.path.join(search_path, "__init__.pyi")
+        if os.path.isfile(pyi):
+            return pyi
+
+    mod_file = getattr(mod, "__file__", None)
+    if mod_file:
+        mod_dir = os.path.dirname(mod_file)
+        stem = module_name.rsplit(".", 1)[-1]
+        pyi = os.path.join(mod_dir, stem, "__init__.pyi")
+        if os.path.isfile(pyi):
+            return pyi
+
+    return None
+
+
+def _resolve_via_ast(module_name, fullname, _depth=0):
+    """Locate a symbol's source via AST when inspect-based resolution fails.
+
+    Handles type aliases, constants, class attributes, and symbols
+    re-exported through chains of ``__init__.py`` files.
+
+    Returns:
+        ``(file_path, lineno, end_lineno)`` or ``None``.
+    """
+    if _depth > 5:
+        return None
+
+    try:
+        mod = importlib.import_module(module_name)
+    except Exception:
+        return None
+
+    mod_file = getattr(mod, "__file__", None)
+    if not mod_file or not mod_file.endswith((".py", ".pyi")):
+        mod_file = _find_pyi_stub(module_name)
+    if not mod_file:
+        return None
+
+    is_package = hasattr(mod, "__path__")
+    if mod_file.endswith("__init__.pyi"):
+        is_package = True
+    parts = fullname.split(".")
+
+    try:
+        with open(mod_file) as f:
+            tree = ast.parse(f.read())
+    except Exception:
+        return None
+
+    # Try finding the symbol directly in the module's source
+    result = _search_ast_nodes(tree.body, parts)
+    if result:
+        return mod_file, result[0], result[1]
+
+    # For re-exports, follow the import chain to the defining module
+    top_name = parts[0]
+    for node in ast.iter_child_nodes(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            if (alias.asname or alias.name) != top_name:
+                continue
+            resolved = _resolve_relative_import(
+                module_name, node.module, node.level, is_package
+            )
+            if not resolved:
+                continue
+            # Recurse into the resolved module to handle multi-level re-exports
+            new_fullname = ".".join([alias.name] + parts[1:])
+            result = _resolve_via_ast(resolved, new_fullname, _depth + 1)
+            if result:
+                return result
+
+    return None
+
+
+
+def linkcode_resolve(domain, info):
+    """Resolve a Python object to a GitHub source URL with line range.
+
+    Called by ``sphinx.ext.linkcode`` for every documented API member. Uses a
+    three-phase strategy:
+
+    1. **Inspect** -- import the module, walk to the object via ``getattr``,
+       and use ``inspect.getsourcelines`` to get the file and line range.
+       Handles descriptors (property/classmethod/staticmethod) and decorated
+       functions.
+    2. **AST fallback** -- if inspect fails (type aliases, constants, class
+       attributes, or C-extension symbols re-exported from ``__init__.py``),
+       parse the source with ``ast`` and search for the definition, following
+       import chains through re-export layers.
+    3. **Stub fallback** -- if the AST chain reaches a C-extension module,
+       parse its ``.pyi`` stub file to locate the symbol definition.
+    """
+    if domain != 'py':
+        return None
+
+    module_name = info.get("module", "")
+    fullname = info.get("fullname", "")
+    if not module_name:
+        return None
+
+    fallback = f"{_GITHUB_BASE}/max/python/{module_name.replace('.', '/')}.py"
+
+    try:
+        mod = importlib.import_module(module_name)
+        if hasattr(mod, "__file__") and mod.__file__:
+            marker = "max/python/"
+            idx = mod.__file__.find(marker)
+            if idx != -1:
+                fallback = f"{_GITHUB_BASE}/{mod.__file__[idx:]}"
+        obj = mod
+        for part in fullname.split("."):
+            obj = getattr(obj, part, None)
+            if obj is None:
+                break
+
+        if obj is not None:
+            if isinstance(obj, property):
+                obj = obj.fget
+            elif isinstance(obj, (classmethod, staticmethod)):
+                obj = obj.__func__
+            obj = inspect.unwrap(obj)
+            source_file = inspect.getfile(obj)
+            source_lines, lineno = inspect.getsourcelines(obj)
+            end_lineno = lineno + len(source_lines) - 1
+            url = _source_url(source_file, lineno, end_lineno)
+            if url:
+                return url
+    except Exception:
+        logger.debug(
+            "linkcode: could not resolve source for %s.%s",
+            module_name,
+            fullname,
+            exc_info=True,
+        )
+
+    ast_result = _resolve_via_ast(module_name, fullname)
+    if ast_result:
+        url = _source_url(*ast_result)
+        if url:
+            return url
+
+    return fallback
+
+class SuppressionFilter:
+    """Filter that suppresses specific warning patterns that we can't fix."""
+    SUPPRESSED_PATTERNS = [
+        # Autodoc warnings about missing attributes (nanobind introspection issues)
+        'missing attribute mentioned in :members:',
+        # Duplicate object descriptions are expected when documenting both
+        # modules and their exported classes separately
+        'duplicate object description',
+        # Sphinx markdown builder issues with complex stdlib docstring signatures
+        # (e.g., collections.abc.Mapping.get has optional parameters that the
+        # markdown builder can't render)
+        'unknown node type',
+        # RST parse errors in third-party or internal docstrings containing
+        # *args/**kwargs patterns that look like emphasis to the parser
+        'Inline emphasis start-string without end-string',
+        'Inline strong start-string without end-string',
+        # Autosummary toctree references to generated stubs that may not have
+        # titles recognized by the markdown builder
+        "doesn't have a title",
+    ]
+
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+        except Exception:
+            message = str(getattr(record, 'msg', ''))
+
+        for pattern in self.SUPPRESSED_PATTERNS:
+            if pattern in message:
+                return False  # Suppress this log record entirely
+        return True
+
+
 def setup(app):
-    import inspect
     from sphinx.util import inspect as sphinx_inspect
+
+    # Monkey-patch autosummary to respect __all__ when defined
+    # This allows packages to use autosummary_imported_members=True
+    # while modules with __all__ only document their explicit exports
+    from sphinx.ext.autosummary import generate
+    original_get_members = generate._get_members
+
+    def patched_get_members(*args, **kwargs):
+        # Call original to get (public_items, public_names)
+        items, public = original_get_members(*args, **kwargs)
+        # obj is the second positional argument
+        obj = args[1] if len(args) > 1 else None
+        # If the module has __all__, filter to only those names
+        if obj is not None and hasattr(obj, '__all__'):
+            all_names = set(obj.__all__)
+            items = [name for name in items if name in all_names]
+            public = [name for name in public if name in all_names]
+        return items, public
+
+    generate._get_members = patched_get_members
+
+    # Add our suppression filter to ALL handlers on ALL loggers
+    suppression_filter = SuppressionFilter()
+
+    # Add to root logger
+    for handler in logging.root.handlers:
+        handler.addFilter(suppression_filter)
+
+    # Add to all existing loggers
+    for name in logging.Logger.manager.loggerDict:
+        logger = logging.getLogger(name)
+        for handler in logger.handlers:
+            handler.addFilter(suppression_filter)
+        # Also add directly to the logger
+        logger.addFilter(suppression_filter)
+
+    # Add to sphinx logger specifically
+    sphinx_logger = logging.getLogger('sphinx')
+    sphinx_logger.addFilter(suppression_filter)
+    for handler in sphinx_logger.handlers:
+        handler.addFilter(suppression_filter)
+
+    def skip_imported_for_modules(app, what, name, obj, skip, options):
+        """Skip imported members for regular modules, but keep them for packages.
+
+        This allows __init__.py files to document their public API (imported members)
+        while regular .py files only document what they define.
+        """
+        if skip:
+            return skip
+
+        # finfo is monkey-patched onto DType (DType.finfo = finfo in
+        # dtype_extension.py) so autodoc discovers it as a DType member.
+        # We use autosummary, so this is how we exclude it from the DType doc.
+        if what == "class" and name == "finfo" and inspect.isclass(obj):
+            return True
+
+        # Get the module being documented
+        modname = getattr(options, 'module', None) or options.get('module', '')
+        if not modname:
+            return skip
+
+        # Check if this is a package (__init__.py) or a regular module
+        # Packages have __file__ ending in __init__.py
+        try:
+            import sys
+            mod = sys.modules.get(modname)
+            if mod is None:
+                return skip
+
+            mod_file = getattr(mod, '__file__', '') or ''
+            is_package = mod_file.endswith('__init__.py')
+
+            if is_package:
+                # For packages, include imported members from our codebase
+                # but skip stdlib/third-party imports
+                obj_module = getattr(obj, '__module__', '')
+                if obj_module and not obj_module.startswith('max.'):
+                    return True  # Skip non-max imports
+            else:
+                # For regular modules, only document members defined in this module
+                obj_module = getattr(obj, '__module__', '')
+                if obj_module and obj_module != modname:
+                    return True  # Skip imported members
+        except Exception:
+            pass
+
+        return skip
+
+    def resolve_type_alias_references(app, env, node, contnode):
+        """Fall back to :obj: when a :class: cross-reference fails to resolve.
+
+        Autodoc emits :class: references for all type annotations, but type
+        aliases documented with ``.. py:data::`` are only registered as
+        ``py:data`` targets.  Re-trying with :obj: (which matches any Python
+        domain object type) lets those references resolve without forcing us
+        to mis-label type aliases as classes in the RST source.
+        """
+        if node.get('refdomain') == 'py' and node.get('reftype') == 'class':
+            return app.env.get_domain('py').resolve_xref(
+                env, node.get('refdoc'), app.builder,
+                'obj', node.get('reftarget'), node, contnode,
+            )
+        return None
 
     app.connect("autodoc-process-docstring", process_links)
     app.connect("autodoc-process-signature", process_signature)
+    app.connect("autodoc-skip-member", skip_imported_for_modules)
+    app.connect("missing-reference", resolve_type_alias_references)
     app.add_role('code_link', code_link_role)
+
 
     # Sphinx inspects all objects in the module and tries to resolve their type
     # (attribute, function, class, module, etc.) by using its own functions in

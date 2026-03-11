@@ -455,6 +455,6 @@ embeddings = ops.add(token_embeds, pos_embeds)
 
 For the latest updates and additional operations, refer to:
 
-- MAX Python API docs: <https://docs.modular.com/max/api/python/>
+- MAX Python API docs: <https://docs.modular.com/max/api/python>
 - MAX Graph Operations: <https://docs.modular.com/max/graph/ops/>
-- MAX Neural Network Layers: <https://docs.modular.com/max/api/python/nn/>
+- MAX Neural Network Layers: <https://docs.modular.com/max/api/python/nn>

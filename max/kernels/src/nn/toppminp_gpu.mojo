@@ -743,7 +743,7 @@ fn _topp_minp_sampling_gpu[
         var val = input_logits.ptr.load[width=_simd_width](idx)
         return val / temperature
 
-    var input_size = input_logits.numel()
+    var input_size = input_logits.num_elements()
     # TODO: Should softmax be done in-place without needing this other buffer?
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = TileTensor(

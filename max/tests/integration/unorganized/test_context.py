@@ -704,6 +704,24 @@ def test_text_context_update_with_future_token() -> None:
     assert context.status == GenerationStatus.END_OF_SEQUENCE
 
 
+def test_text_context_update_with_preemption_and_future_token() -> None:
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_token_ids=set([42]),
+    )
+    assert context.tokens.generated_length == 0
+
+    context.update_with_future_token()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, FUTURE_TOKEN]
+    assert context.tokens.generated_length == 1
+
+    # Notice that the future token is deleted when the context is reset.
+    context.reset()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4]
+    assert context.tokens.generated_length == 0
+
+
 def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
         max_length=50,

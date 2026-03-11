@@ -125,6 +125,8 @@ def run_text_generation(
     gpu_memory_utilization: float = 0.9,
     max_batch_size: int | None = None,
     tensor_parallel_size: int = 1,
+    extra_kwargs: dict[str, Any] | None = None,
+    mm_data_key: str = "image",
 ) -> list[dict[str, Any]]:
     """Run text generation using vLLM.
 
@@ -172,34 +174,58 @@ def run_text_generation(
     # Initialize vLLM
     # We set gpu_memory_utilization explicitly to avoid OOM if the runner
     # has some overhead, though vLLM usually dominates.
-    llm: Any = LLM(
-        model=model_path,
-        dtype=dtype,  # type: ignore[arg-type, unused-ignore]
-        quantization=quantization,  # type: ignore[arg-type, unused-ignore]
-        trust_remote_code=trust_remote_code,
-        gpu_memory_utilization=gpu_memory_utilization,
-        max_num_seqs=max_num_seqs,
+    llm_kwargs: dict[str, Any] = {
+        "model": model_path,
+        "dtype": dtype,
+        "quantization": quantization,
+        "trust_remote_code": trust_remote_code,
+        "gpu_memory_utilization": gpu_memory_utilization,
+        "max_num_seqs": max_num_seqs,
         # Default max_logprobs is 20. We increase this to support full logits
         # retrieval. 262144 covers large vocabs (e.g. Qwen2.5 is ~152k).
-        max_logprobs=262144,
+        "max_logprobs": 262144,
         # Force eager mode for stability.
-        enforce_eager=True,
+        "enforce_eager": True,
         # Avoid vLLM custom all-reduce path for stability.
-        disable_custom_all_reduce=True,
+        "disable_custom_all_reduce": True,
         # Tensor parallelism for multi-GPU models
-        tensor_parallel_size=tensor_parallel_size,
-    )
+        "tensor_parallel_size": tensor_parallel_size,
+    }
+    # Allow oracles to pass model-specific kwargs (e.g. mm_encoder_tp_mode,
+    # limit_mm_per_prompt). Intentionally overrides defaults if keys collide.
+    if extra_kwargs:
+        llm_kwargs.update(extra_kwargs)
+
+    llm: Any = LLM(**llm_kwargs)
 
     tokenizer = llm.get_tokenizer()
     vocab_size = _resolve_vocab_size(
         llm=llm, tokenizer=tokenizer, model_path=model_path
     )
 
-    prompts = []
+    prompts: list[str | dict[str, Any]] = []
     sampling_params_list = []
 
     for request in textgen_requests:
-        prompts.append(request.prompt)
+        if request.is_multimodal and request.images:
+            # Lazy import — only needed for multimodal requests.
+            from test_common.storage import load_image
+
+            pil_images = [load_image(img) for img in request.images]
+            if mm_data_key == "vision_chunk":
+                mm_items: Any = [
+                    {"type": "image", "image": img} for img in pil_images
+                ]
+            else:
+                mm_items = pil_images
+            prompts.append(
+                {
+                    "prompt": request.prompt,
+                    "multi_modal_data": {mm_data_key: mm_items},
+                }
+            )
+        else:
+            prompts.append(request.prompt)
 
         # We use logprobs=vocab_size to get the full distribution. This is the
         # closest approximation to logits we can get via the vLLM API.

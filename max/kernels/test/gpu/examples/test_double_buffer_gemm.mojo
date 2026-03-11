@@ -74,12 +74,10 @@ fn sgemm_double_buffer[
     comptime num_warps_n = (BN // WN)
 
     var tid = thread_idx.x
-    var warp_id = tid // UInt(WARP_SIZE)
-    var lane_id = tid % UInt(WARP_SIZE)
+    var warp_id, lane_id = divmod(tid, UInt(WARP_SIZE))
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % UInt(num_warps_n)
-    var warp_y = warp_id // UInt(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # Warp shape in 2D.
     comptime warp_dim_x = WN // TN

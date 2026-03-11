@@ -138,6 +138,10 @@ This version is still a work in progress.
    conform to `RegisterPassable` trait instead.
    The decorator will be removed after next release.
 
+- `LegacyUnsafePointer` is now deprecated, use `UnsafePointer` instead.
+  Check the doc strings at `unsafe_pointer.mojo` for guidance on migration.
+  `LegacyUnsafePointer` will be removed after next release.
+
 - Mojo now supports more flexible default arguments and parameters, which can
   mismatch on declared type when their types are parametric.  This allows
   inferring parameters from these when they are used as a default value, for
@@ -205,9 +209,9 @@ This version is still a work in progress.
   ```
 
 - `def` functions now allows a `raises` specifier, and support typed errors.
-  `def` will soon *require* an exception specifier to throw, so we strongly
-  recommend changing `def` functions to have an explicit `raises` keyword. To
-  help with migration, the Mojo compiler now produces a warning for `def`
+  `def` will soon *require* an exception specifier to throw, so you must
+  change `def` functions to have an explicit `raises` keyword. To
+  help with migration, the Mojo compiler now produces an error for `def`
   functions that lack a `raises` specifier.
 
   ```mojo
@@ -215,7 +219,7 @@ This version is still a work in progress.
   def foo():        # implicitly raises Error.
   def bar() raises: # was invalid
   # Current behavior
-  def bar():        # Still implicitly raises Error (not recommended; warns)
+  def bar():        # Is now an error - use explicit 'raises'.
   def bar() raises: # Explicit raises Error (recommended)
   # Near future behavior
   def bar():        # Does not raise.
@@ -338,12 +342,14 @@ This version is still a work in progress.
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
-  - `Dict`: `Writable`
-  - `InlineArray`: `Writable`
+  - `Deque`: `Equatable`, `Hashable`, `Writable`
+  - `Dict`: `Writable`, `Equatable`, `Hashable`
+  - `InlineArray`: `Copyable`, `Equatable`, `Hashable`, `Writable`
+  - `LinkedList`: `Equatable`, `Hashable`, `Writable`
   - `List`: `Equatable`, `Writable`
-  - `Optional`: `Writable`
-  - `Set`: `Writable`
-  - `Tuple`: `Writable`
+  - `Optional`: `Writable`, `Copyable`, `ImplicitlyCopyable`
+  - `Set`: `Copyable`, `Comparable`, `Equatable`, `Hashable`, `Writable`
+  - `Tuple`: `Copyable`, `ImplicitlyCopyable`, `Writable`
   - `Variant`: `Writable`
 
 - `lane_group_sum()`, `lane_group_max()`, and `lane_group_min()` in
@@ -378,6 +384,12 @@ This version is still a work in progress.
   format string is flattened at compile time into NUL-terminated literal
   segments, producing considerably smaller static data and faster runtime than
   the previous struct-based precompiled entries.
+
+- Added `comb(n, k)` and `perm(n, k)` to `std.math`, matching Python's
+  `math.comb()` and `math.perm()`. `comb(n, k)` computes the binomial
+  coefficient C(n, k) without computing full factorials, returning 0 when
+  `k > n`. `perm(n, k)` computes permutations P(n, k); omitting `k` (default
+  `-1`) returns `n!`.
 
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
@@ -720,7 +732,21 @@ This version is still a work in progress.
   Multiple kernels generated from the same function are disambiguated with a
   numeric suffix (e.g. `<out>_<kernelfn>_1.ptx`).
 
+- `mojo doc` is now more consistent with Python in its treatment of private
+  members. Any member name starting with an underscore (`_`) is treated as
+  private unless it is a "dunder" member (starting and ending with
+  double-underscores). In practice this means that members that start but don't
+  end with double underscores (`__example()`) are now treated as private. Dunder
+  methods that start with `__mlir` are now treated as public unless marked with
+  the `@doc_private` decorator.
+
 ## ❌ Removed
+
+- The `.🔥` (flame) and `📦` (package) emoji file extensions are no longer
+  supported. Use `.mojo` for all Mojo source files and `__init__.mojo` for
+  package initialization files. The emoji extensions were removed
+  to simplify the tooling and improve compatibility across different
+  systems and editors.
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
   for `__moveinit__`/`__del__` arguments as appropriate.

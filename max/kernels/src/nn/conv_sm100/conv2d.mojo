@@ -80,9 +80,9 @@ fn conv2d_fprop[
     ] = None,
     register_based_epilogue: Bool = True,
 ](
-    output: NDBuffer[out_type, 4, _],  # NHWC
-    activation: NDBuffer[act_type, 4, _],  # NHWC
-    filter: NDBuffer[filter_type, 4, _],  # KRSC (out_ch, R, S, in_ch)
+    output: NDBuffer[rank=4, out_type, _],  # NHWC
+    activation: NDBuffer[rank=4, act_type, _],  # NHWC
+    filter: NDBuffer[rank=4, filter_type, _],  # KRSC (out_ch, R, S, in_ch)
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
 ) raises:
@@ -345,10 +345,10 @@ fn conv2d_fprop_with_residual[
     register_based_epilogue: Bool = True,
     has_residual: Bool = False,
 ](
-    output: NDBuffer[out_type, 4, _],  # NHWC - D = Conv(A,B) + beta*C
-    activation: NDBuffer[act_type, 4, _],  # NHWC - A
-    filter: NDBuffer[filter_type, 4, _],  # KRSC - B
-    source: NDBuffer[out_type, 4, _],  # NHWC - C (residual input)
+    output: NDBuffer[rank=4, out_type, _],  # NHWC - D = Conv(A,B) + beta*C
+    activation: NDBuffer[rank=4, act_type, _],  # NHWC - A
+    filter: NDBuffer[rank=4, filter_type, _],  # KRSC - B
+    source: NDBuffer[rank=4, out_type, _],  # NHWC - C (residual input)
     beta: Float32,  # Residual scale factor
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
@@ -599,8 +599,8 @@ fn conv2d_fprop_with_residual[
 fn im2col[
     dtype: DType,
 ](
-    output: NDBuffer[mut=True, dtype, 2, ...],  # [M, K] output
-    activation: NDBuffer[dtype, 4, ...],  # [N, H, W, C] input
+    output: NDBuffer[mut=True, rank=2, dtype, ...],  # [M, K] output
+    activation: NDBuffer[rank=4, dtype, ...],  # [N, H, W, C] input
     problem: Conv2dProblemShape,
 ):
     """Explicit im2col transformation for convolution.

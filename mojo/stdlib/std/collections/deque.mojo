@@ -23,8 +23,8 @@ from std.collections import Deque
 
 
 from std.bit import next_power_of_two
-from std.builtin.constrained import _constrained_conforms_to
 import std.format._utils as fmt
+from std.hashlib import Hasher
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -34,9 +34,11 @@ import std.format._utils as fmt
 struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
+    Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(ElementType, Writable),
 ):
     """Implements a double-ended queue.
 
@@ -271,14 +273,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             for element in orig:
                 self.append(element.copy())
 
-    fn __eq__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], other: Deque[T]) -> Bool:
+    fn __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if two deques are equal.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -292,35 +290,31 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset_self = self._physical_index(self._head + i)
             offset_other = other._physical_index(other._head + i)
-            if (self._data + offset_self)[] != (other._data + offset_other)[]:
+            ref lhs = trait_downcast[Equatable]((self._data + offset_self)[])
+            ref rhs = trait_downcast[Equatable]((other._data + offset_other)[])
+            if lhs != rhs:
                 return False
         return True
 
-    fn __ne__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], other: Deque[T]) -> Bool:
-        """Checks if two deques are not equal.
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Updates hasher with the hash of each element in the deque.
 
         Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
+            H: The hasher type.
 
         Args:
-            other: The deque to compare with.
-
-        Returns:
-            `True` if the deques are not equal, `False` otherwise.
+            hasher: The hasher instance.
         """
-        return not (self == other)
+        for i in range(len(self)):
+            var offset = self._physical_index(self._head + i)
+            trait_downcast[Hashable]((self._data + offset)[]).__hash__(hasher)
 
-    fn __contains__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], value: T) -> Bool:
+    fn __contains__(
+        self, value: Self.ElementType
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Verify if a given value is present in the deque.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             value: The value to find.
@@ -328,9 +322,11 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             True if the value is contained in the deque, False otherwise.
         """
+        ref rhs = trait_downcast[Equatable](value)
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 return True
         return False
 
@@ -403,9 +399,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
     fn _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.ElementType, Writable
+    ):
         var iterator = self.__iter__()
 
         @parameter
@@ -416,11 +412,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes `my_deque.__str__()` to a `Writer`.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -428,11 +423,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes the repr representation of this deque to a `Writer`.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -448,7 +442,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of a `Deque`.
 
         Returns:
@@ -460,7 +454,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Returns a string representation of a `Deque`.
 
         Returns:
@@ -522,12 +516,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = 0
 
-    fn count[T: Equatable & Copyable, //](self: Deque[T], value: T) -> Int:
+    fn count(
+        self, value: Self.ElementType
+    ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Counts the number of occurrences of a `value` in the deque.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             value: The value to count.
@@ -535,10 +527,12 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             The number of occurrences of the value in the deque.
         """
+        ref rhs = trait_downcast[Equatable](value)
         count = 0
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 count += 1
         return count
 
@@ -613,20 +607,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         values_data.free()
 
-    fn index[
-        T: Equatable & Copyable, //
-    ](
-        self: Deque[T],
-        value: T,
+    fn index(
+        self,
+        value: Self.ElementType,
         start: Int = 0,
         stop: Optional[Int] = None,
-    ) raises -> Int:
+    ) raises -> Int where conforms_to(Self.ElementType, Equatable):
         """Returns the index of the first occurrence of a `value` in a deque
         restricted by the range given the `start` and `stop` bounds.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the `Equatable` trait.
 
         Args:
             value: The value to search for.
@@ -656,9 +644,11 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         start_normalized = max(min(start_normalized, len(self)), 0)
         stop_normalized = max(min(stop_normalized, len(self)), 0)
 
+        ref rhs = trait_downcast[Equatable](value)
         for idx in range(start_normalized, stop_normalized):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 return idx
         raise "ValueError: Given element is not in deque"
 
@@ -707,12 +697,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn remove[T: Equatable & Copyable, //](mut self: Deque[T], value: T) raises:
+    fn remove(
+        mut self, value: Self.ElementType
+    ) raises where conforms_to(Self.ElementType, Equatable):
         """Removes the first occurrence of the `value`.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the `Equatable` trait.
 
         Args:
             value: The value to remove.
@@ -720,10 +708,12 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Raises:
             ValueError: If the value is not found in the deque.
         """
+        ref rhs = trait_downcast[Equatable](value)
         deque_len = len(self)
         for idx in range(deque_len):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 (self._data + offset).destroy_pointee()
 
                 if idx < deque_len // 2:

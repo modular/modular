@@ -26,7 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
+from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -344,9 +344,13 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 pipeline_config.runtime.max_batch_input_tokens
             )
 
-            # Calculate the maximum number of tokens a rank may receive during all-to-all routing.
-            max_recv_tokens_per_rank = (
-                max_input_len_per_rank * huggingface_config.n_routed_experts
+            # Calculate the maximum number of tokens a rank may receive during
+            # all-to-all routing. Each token selects top_k experts, and in the
+            # worst case all selections land on one rank.
+            max_recv_tokens_per_rank = max_input_len_per_rank * min(
+                huggingface_config.n_routed_experts,
+                pipeline_config.runtime.ep_size
+                * huggingface_config.num_experts_per_tok,
             )
 
             # The maximal activation memory usage happens at the second
@@ -380,6 +384,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         ep_buffer_memory = 0
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
+            n_nodes = pipeline_config.runtime.ep_size // n_gpus_per_node
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
@@ -387,11 +392,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 combine_dtype=DType.bfloat16,
                 max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,
+                n_nodes=n_nodes,
+                n_gpus_per_node=n_gpus_per_node,
                 top_k=huggingface_config.num_experts_per_tok,
             )
-            ep_buffer_memory = (
-                per_device_ep_memory * NUM_GROUPS * n_gpus_per_node
-            )
+            ep_buffer_memory = per_device_ep_memory * n_gpus_per_node
 
             logger.info(
                 "Estimated EP SHMEM buffer memory: "

@@ -17,16 +17,12 @@ from std.gpu import block_idx
 from std.gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from std.utils.index import Index, IndexList
 
 
 fn test_kernel[
     swizzle: Bool, shape: DimList
-](group_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin, shape]):
+](group_offsets: NDBuffer[rank=1, DType.uint32, MutAnyOrigin, shape]):
     var offset_tensor = from_ndbuffer_row_major(group_offsets)
     scheduler = TileScheduler[
         static_MN=20,
@@ -47,9 +43,7 @@ def test(ctx: DeviceContext) raises:
     comptime offset_shape = DimList(group_len + 1)
 
     # Host allocation
-    var host_group_offsets_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        group_len + 1
-    )
+    var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)
     host_group_offsets_ptr[0] = 0
     host_group_offsets_ptr[1] = 18
     host_group_offsets_ptr[2] = 24
@@ -59,7 +53,7 @@ def test(ctx: DeviceContext) raises:
     var dev_group_offsets_buffer = ctx.enqueue_create_buffer[DType.uint32](
         group_len + 1
     )
-    var dev_group_offsets = NDBuffer[DType.uint32, 1, _, offset_shape](
+    var dev_group_offsets = NDBuffer[rank=1, DType.uint32, _, offset_shape](
         dev_group_offsets_buffer.unsafe_ptr(),
         IndexList[1](group_len + 1),
     )

@@ -19,8 +19,8 @@ By using the MAX Python API, you can create optimized machine learning models
 that run faster and more efficiently on modern hardware.
 
 In this tutorial, you'll build a graph using the Python
-[`Graph`](/max/api/python/graph/Graph) API with an [`ops`
-function](/max/api/python/graph/ops).
+[`Graph`](/max/api/python/generated/max.graph.Graph) API with an [`ops`
+function](/max/api/python/graph.ops).
 
 To do this, you will complete the following steps:
 
@@ -139,7 +139,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 ```
 
 To create a computational graph, use the
-[`Graph()`](/max/api/python/graph/Graph) class from the MAX Python API. When
+[`Graph()`](/max/api/python/generated/max.graph.Graph) class from the MAX Python API. When
 initializing, specify a name for the graph and define the types of inputs it
 will accept.
 
@@ -158,19 +158,19 @@ def add_tensors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 ```
 
 Inside the context manager, access the graph's inputs using the
-[`inputs`](/max/api/python/graph/Graph#max.graph.Graph.inputs) property. This
+[`inputs`](/max/api/python/generated/max.graph.Graph#max.graph.Graph.inputs) property. This
 returns a symbolic tensor representing the input arguments.
 
 The symbolic tensor is a placeholder that represents the shape and type of data
 that will flow through the graph during the execution, rather than containing
 the actual numeric values like in eager execution.
 
-Then use the [`add()`](/max/api/python/graph/ops#max.graph.ops.add) function
-from the [`ops`](/max/api/python/graph/ops) package to add the two input
+Then use the [`add()`](/max/api/python/graph.ops#max.graph.ops.add) function
+from the [`ops`](/max/api/python/graph.ops) package to add the two input
 tensors. This creates a new symbolic tensor representing the sum.
 
 Finally, set the output of the graph using the
-[`output()`](/max/api/python/graph/Graph#max.graph.Graph.output) method. This
+[`output()`](/max/api/python/generated/max.graph.Graph#max.graph.Graph.output) method. This
 specifies which tensors should be returned when the graph is executed.
 
 Now, add a `print()` function to the graph to see what's created.
@@ -195,7 +195,7 @@ operate. This involves creating an inference session and loading our graph into
 it.
 
 Create an
-[`InferenceSession()`](/max/api/python/engine#max.engine.InferenceSession)
+[`InferenceSession()`](/max/api/python/generated/max.engine.InferenceSession)
 instance that loads and runs the graph inside the `add_tensors()` function.
 
 ```python
@@ -230,7 +230,7 @@ and should only be used when debugging compilation errors.
 To ensure our model is set up correctly, let's examine its input requirements.
 
 Print the graph's input metadata by using the
-[`input_metadata`](/max/api/python/engine#max.engine.Model.input_metadata)
+[`input_metadata`](/max/api/python/generated/max.engine.Model#max.engine.Model.input_metadata)
 property.
 
 ```python
@@ -258,7 +258,7 @@ Next, let's execute the graph.
 To give the model something to add, create two inputs of a shape and a data type
 that match our graph's input requirements.
 Then pass the inputs to the
-[`execute()`](/max/api/python/engine#max.engine.Model.execute) function:
+[`execute()`](/max/api/python/generated/max.engine.Model#max.engine.Model.execute) function:
 
 ```python
 def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
@@ -273,9 +273,9 @@ def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, any]:
     return result
 ```
 
-Notice that the [`execute()`](/max/api/python/engine#max.engine.Model.execute)
+Notice that the [`execute()`](/max/api/python/generated/max.engine.Model#max.engine.Model.execute)
 function returns a list of outputs. We know we want the first element and must
-assert that the type is [`Buffer`](/max/api/python/driver#max.driver.Buffer) so
+assert that the type is [`Buffer`](/max/api/python/generated/max.driver.Buffer) so
 we can convert it to a NumPy array.
 
 

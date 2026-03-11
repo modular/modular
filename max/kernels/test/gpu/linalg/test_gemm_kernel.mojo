@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, isclose
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import argv
 
 from buffer import DimList, NDBuffer
@@ -176,10 +173,10 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime N = 1024
     comptime K = 128
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -195,13 +192,13 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(M, K)](
+    var mat_a = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList(M, K)](
         a_device.unsafe_ptr(), dynamic_shape=Index(M, K)
     )
-    var mat_b = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(K, M)](
+    var mat_b = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList(K, M)](
         b_device.unsafe_ptr(), dynamic_shape=Index(K, M)
     )
-    var mat_c = NDBuffer[DType.float32, 2, MutAnyOrigin, DimList(M, N)](
+    var mat_c = NDBuffer[rank=2, DType.float32, MutAnyOrigin, DimList(M, N)](
         c_device.unsafe_ptr(), dynamic_shape=Index(M, N)
     )
 

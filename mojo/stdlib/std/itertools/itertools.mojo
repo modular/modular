@@ -107,6 +107,8 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
             Element=Self.IteratorTypeA,
             ParentConformsTo="Copyable",
         ]()
+        comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
+
         self._inner_a = rebind_var[Self.IteratorTypeA](
             trait_downcast[Copyable](copy._inner_a).copy()
         )
@@ -606,7 +608,11 @@ struct _TakeWhileIterator[
     InnerIteratorType: Iterator,
     //,
     predicate: fn(InnerIteratorType.Element) -> Bool,
-](Copyable, Iterable, Iterator):
+](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Iterator,
+):
     """Iterator that yields elements while predicate returns True.
 
     Parameters:
@@ -632,20 +638,20 @@ struct _TakeWhileIterator[
         self._inner = inner^
         self._exhausted = False
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.InnerIteratorType, Copyable),
-            Parent=Self,
-            Element=Self.InnerIteratorType,
-            ParentConformsTo="Copyable",
-        ]()
+    fn __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
         self._inner = rebind_var[Self.InnerIteratorType](
             trait_downcast[Copyable](copy._inner).copy()
         )
         self._exhausted = copy._exhausted
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
         return self.copy()
 
     @always_inline
@@ -726,7 +732,11 @@ struct _DropWhileIterator[
     InnerIteratorType: Iterator,
     //,
     predicate: fn(InnerIteratorType.Element) -> Bool,
-](Copyable, Iterable, Iterator):
+](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Iterator,
+):
     """Iterator that drops elements while predicate returns True, then yields rest.
 
     Parameters:
@@ -752,20 +762,20 @@ struct _DropWhileIterator[
         self._inner = inner^
         self._dropping = True
 
-    fn __init__(out self, *, copy: Self):
-        _constrained_conforms_to[
-            conforms_to(Self.InnerIteratorType, Copyable),
-            Parent=Self,
-            Element=Self.InnerIteratorType,
-            ParentConformsTo="Copyable",
-        ]()
+    fn __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
         self._inner = rebind_var[Self.InnerIteratorType](
             trait_downcast[Copyable](copy._inner).copy()
         )
         self._dropping = copy._dropping
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    fn __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
         return self.copy()
 
     @always_inline

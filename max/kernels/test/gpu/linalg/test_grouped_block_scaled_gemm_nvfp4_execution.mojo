@@ -31,10 +31,7 @@ from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
+from std.memory import bitcast
 from internal_utils import assert_almost_equal
 from std.random import rand, random_ui64, seed
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -90,30 +87,30 @@ fn launch_grouped_gemm_with_templates[
     total_tiles: Int,
     k_array_val: Int,
     k_sf_val: Int,
-    a_ptr: UnsafePointer[Scalar[a_type]],
-    b_ptr: UnsafePointer[Scalar[b_type]],
-    c_ptr: UnsafePointer[Scalar[c_type]],
-    sfa_ptr: UnsafePointer[Scalar[scales_dtype]],
-    sfb_ptr: UnsafePointer[Scalar[scales_dtype]],
+    a_ptr: UnsafePointer[Scalar[a_type], ...],
+    b_ptr: UnsafePointer[Scalar[b_type], ...],
+    c_ptr: UnsafePointer[Scalar[c_type], ...],
+    sfa_ptr: UnsafePointer[Scalar[scales_dtype], ...],
+    sfb_ptr: UnsafePointer[Scalar[scales_dtype], ...],
     ctx: DeviceContext,
 ) raises:
     """Create template TileTensors and launch grouped block-scaled GEMM."""
     # 3D template tensors with batch=1
     comptime static_a_3d_shape = DimList(1, m.dim, k_array_dim)
-    var a_nd = NDBuffer[a_type, 3, _, static_a_3d_shape](
+    var a_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
         a_ptr, IndexList[3](1, m.value, k_array_val)
     )
     comptime static_b_3d_shape = DimList(
         1, n.dim, k_array_dim
     ) if transpose_b else DimList(1, k_array_dim, n.dim)
-    var b_nd = NDBuffer[b_type, 3, _, static_b_3d_shape](
+    var b_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
         b_ptr,
         IndexList[3](1, n.value, k_array_val) if transpose_b else IndexList[3](
             1, k_array_val, n.value
         ),
     )
     comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
-    var c_nd = NDBuffer[c_type, 3, _, static_c_3d_shape](
+    var c_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
         c_ptr, IndexList[3](1, m.value, n.value)
     )
 
@@ -125,7 +122,7 @@ fn launch_grouped_gemm_with_templates[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfa_nd = NDBuffer[scales_dtype, 5, _, static_sfa_shape](
+    var sfa_nd = NDBuffer[rank=5, scales_dtype, _, static_sfa_shape](
         sfa_ptr,
         IndexList[5](
             1,
@@ -142,7 +139,7 @@ fn launch_grouped_gemm_with_templates[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var sfb_nd = NDBuffer[scales_dtype, 5, _, static_sfb_shape](
+    var sfb_nd = NDBuffer[rank=5, scales_dtype, _, static_sfb_shape](
         sfb_ptr,
         IndexList[5](
             1,
@@ -230,8 +227,8 @@ fn test_grouped_kernel_nvfp4_single_group[
     var c_size = m.value * n.value
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
@@ -245,19 +242,19 @@ fn test_grouped_kernel_nvfp4_single_group[
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -307,24 +304,20 @@ fn test_grouped_kernel_nvfp4_single_group[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_total
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_total
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
     var a_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_a_scales_shape
+        rank=5, scales_dtype, _, static_a_scales_shape
     ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
     var b_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_b_scales_shape
+        rank=5, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     # Create LayoutTensors for cuBLAS reference
@@ -375,7 +368,7 @@ fn test_grouped_kernel_nvfp4_single_group[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
-    var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
+    var problem_sizes_host = alloc[Int32](max_groups * 4)
     problem_sizes_host[0] = Int32(m.value)  # M
     problem_sizes_host[1] = Int32(n.value)  # N
     problem_sizes_host[2] = Int32(
@@ -412,11 +405,11 @@ fn test_grouped_kernel_nvfp4_single_group[
     print("  Computed total_tiles on host:", total_tiles)
 
     # Pointer arrays: (max_groups, 1)
-    var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var b_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var c_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfa_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfb_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
+    var a_ptrs_host = alloc[UInt64](max_groups)
+    var b_ptrs_host = alloc[UInt64](max_groups)
+    var c_ptrs_host = alloc[UInt64](max_groups)
+    var sfa_ptrs_host = alloc[UInt64](max_groups)
+    var sfb_ptrs_host = alloc[UInt64](max_groups)
 
     a_ptrs_host[0] = UInt64(Int(a_device.unsafe_ptr()))
     b_ptrs_host[0] = UInt64(Int(b_device.unsafe_ptr()))
@@ -646,8 +639,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
     )
 
     # ========== Group 0 allocations ==========
-    var a0_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b0_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var a0_host = alloc[Scalar[a_type]](a_size)
+    var b0_host = alloc[Scalar[b_type]](b_size)
     var c0_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
@@ -660,8 +653,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
         ctx,
     )
     var c0_ref_host = c0_ref_host_managed.tensor[update=False]().ptr
-    var sfa0_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
-    var sfb0_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
+    var sfa0_host = alloc[Scalar[scales_dtype]](a_scales_total)
+    var sfb0_host = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a0_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b0_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -671,8 +664,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
     var sfb0_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_total)
 
     # ========== Group 1 allocations ==========
-    var a1_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b1_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
+    var a1_host = alloc[Scalar[a_type]](a_size)
+    var b1_host = alloc[Scalar[b_type]](b_size)
     var c1_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
@@ -685,8 +678,8 @@ fn test_grouped_kernel_nvfp4_multi_group[
         ctx,
     )
     var c1_ref_host = c1_ref_host_managed.tensor[update=False]().ptr
-    var sfa1_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
-    var sfb1_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
+    var sfa1_host = alloc[Scalar[scales_dtype]](a_scales_total)
+    var sfb1_host = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a1_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b1_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -736,35 +729,35 @@ fn test_grouped_kernel_nvfp4_multi_group[
     ctx.synchronize()
 
     # Create NDBuffers for cuBLAS
-    var a0_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a0_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a0_device.unsafe_ptr(), dynamic_a_shape
     )
-    var b0_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b0_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b0_device.unsafe_ptr(), dynamic_b_shape
     )
-    var c0_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c0_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c0_ref_device.unsafe_ptr(), dynamic_c_shape
     )
-    var sfa0_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
+    var sfa0_nd = NDBuffer[rank=5, scales_dtype, _, static_a_scales_shape](
         sfa0_device.unsafe_ptr(), dynamic_a_scales_shape
     )
-    var sfb0_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
+    var sfb0_nd = NDBuffer[rank=5, scales_dtype, _, static_b_scales_shape](
         sfb0_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
-    var a1_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a1_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a1_device.unsafe_ptr(), dynamic_a_shape
     )
-    var b1_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b1_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b1_device.unsafe_ptr(), dynamic_b_shape
     )
-    var c1_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c1_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c1_ref_device.unsafe_ptr(), dynamic_c_shape
     )
-    var sfa1_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
+    var sfa1_nd = NDBuffer[rank=5, scales_dtype, _, static_a_scales_shape](
         sfa1_device.unsafe_ptr(), dynamic_a_scales_shape
     )
-    var sfb1_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
+    var sfb1_nd = NDBuffer[rank=5, scales_dtype, _, static_b_scales_shape](
         sfb1_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
@@ -811,7 +804,7 @@ fn test_grouped_kernel_nvfp4_multi_group[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes: both groups have same size
-    var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
+    var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
         problem_sizes_host[g * 4 + 0] = Int32(m.value)
         problem_sizes_host[g * 4 + 1] = Int32(n.value)
@@ -824,11 +817,11 @@ fn test_grouped_kernel_nvfp4_multi_group[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     # Pointer arrays - DIFFERENT pointers per group
-    var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var b_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var c_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfa_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfb_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
+    var a_ptrs_host = alloc[UInt64](max_groups)
+    var b_ptrs_host = alloc[UInt64](max_groups)
+    var c_ptrs_host = alloc[UInt64](max_groups)
+    var sfa_ptrs_host = alloc[UInt64](max_groups)
+    var sfb_ptrs_host = alloc[UInt64](max_groups)
 
     # Group 0 pointers
     a_ptrs_host[0] = UInt64(Int(a0_device.unsafe_ptr()))

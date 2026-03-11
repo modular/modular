@@ -39,11 +39,7 @@ comptime LICENSE_TO_ADD = """# ===----------------------------------------------
 
 
 fn is_ignored_file(filename: StringSlice) -> Bool:
-    if not (
-        filename.endswith(".py")
-        or filename.endswith(".mojo")
-        or filename.endswith(".🔥")
-    ):
+    if not (filename.endswith(".py") or filename.endswith(".mojo")):
         return True
 
     # Generated files

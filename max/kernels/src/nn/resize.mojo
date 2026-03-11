@@ -316,7 +316,9 @@ fn _resize[
     ) == rebind[IndexList[input.rank]](
         coord_to_index_list(output.layout.shape_coord())
     ):
-        return memcpy(dest=output.ptr, src=input.ptr, count=input.numel())
+        return memcpy(
+            dest=output.ptr, src=input.ptr, count=input.num_elements()
+        )
     var scales = StaticTuple[Float32, input.rank]()
     var resize_dims = List[Int](capacity=input.rank)
     var tmp_dims = IndexList[input.rank](0)
@@ -361,7 +363,7 @@ fn _resize[
         var in_buf = TileTensor(in_ptr, row_major(Coord(in_shape)))
         var out_buf = TileTensor(out_ptr, row_major(Coord(out_shape)))
 
-        var num_rows = out_buf.numel() // out_shape[resize_dim]
+        var num_rows = out_buf.num_elements() // out_shape[resize_dim]
         for row_idx in range(num_rows):
             var coords = _get_nd_indices_from_flat_index(
                 row_idx, out_shape, resize_dim

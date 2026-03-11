@@ -24,7 +24,7 @@ from std.gpu import (
     barrier,
     block_idx,
     grid_dim,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -140,8 +140,7 @@ fn multistage_dual_mma[
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % UInt32(num_warps_n)
-    var warp_y = warp_id // UInt32(num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
     var a_iter = a_iter_arg
     var b0_iter = b0_iter_arg
@@ -694,10 +693,10 @@ fn multistage_dual_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
@@ -722,8 +721,7 @@ fn multistage_dual_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
@@ -764,8 +762,7 @@ fn multistage_dual_gemm_kernel[
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
                 comptime alignment = align_of[SIMD[c_type, 2]]()
-                var m = (Int(thread_offset) + dst_idx) // Int(N)
-                var n = (Int(thread_offset) + dst_idx) % Int(N)
+                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
                 if m < Int(M) and n < Int(N):
                     var vec = (c_reg_frag.ptr + src_idx).load[
                         width=2, alignment=align_of[SIMD[c_type, 2]]()
@@ -863,10 +860,10 @@ fn multistage_dual_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_k_partitions: Int = 1,
 ](
-    c: NDBuffer[c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b0: NDBuffer[b_type, 2, _, b_shape],
-    b1: NDBuffer[b_type, 2, _, b_shape],
+    c: NDBuffer[rank=2, c_type, _, c_shape],
+    a: NDBuffer[rank=2, a_type, _, a_shape],
+    b0: NDBuffer[rank=2, b_type, _, b_shape],
+    b1: NDBuffer[rank=2, b_type, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var tensor_c = TileTensor(c).to_layout_tensor()
@@ -950,10 +947,10 @@ fn dual_gemm[
     config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
@@ -995,10 +992,10 @@ fn dual_gemm[
                 config=kernels.tuning_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -1010,10 +1007,10 @@ fn dual_gemm[
                 config=config.value(),
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -1045,10 +1042,14 @@ fn dual_gemm[
                         config=M128_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1068,10 +1069,14 @@ fn dual_gemm[
                         config=M256_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1091,10 +1096,14 @@ fn dual_gemm[
                         config=M512_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1114,10 +1123,14 @@ fn dual_gemm[
                         config=M1606_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1137,10 +1150,14 @@ fn dual_gemm[
                         config=M2048_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+                        rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+                        rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+                        rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](
+                            b0
+                        ),
+                        rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](
+                            b1
+                        ),
                         ctx,
                     )
                     return
@@ -1152,10 +1169,10 @@ fn dual_gemm[
             ),
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](
-            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-            rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
-            rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
+            rebind[NDBuffer[rank=2, c_type, c.origin, c_shape]](c),
+            rebind[NDBuffer[rank=2, a_type, a.origin, a_shape]](a),
+            rebind[NDBuffer[rank=2, b_type, b0.origin, b_shape]](b0),
+            rebind[NDBuffer[rank=2, b_type, b1.origin, b_shape]](b1),
             ctx,
         )
         return
@@ -1193,10 +1210,10 @@ fn dual_gemv_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, MutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, MutAnyOrigin, b_shape],
 ):
     var m = UInt(c.dim(0))
     var n = UInt(b0.dim(0))
@@ -1285,8 +1302,7 @@ fn dual_gemv_kernel[
 
     # Sum across warps' results in shared memory and apply the binary op.
     for ii in range(tid, tile_m * tile_n_per_B, num_threads):
-        var mid = ii // tile_n_per_B
-        var nid = ii % tile_n_per_B
+        var mid, nid = divmod(ii, tile_n_per_B)
         var val0 = Scalar[s_type]()
         var val1 = Scalar[s_type]()
 
@@ -1319,10 +1335,10 @@ fn dual_gemv[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[rank=2, b_type, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -1368,10 +1384,10 @@ fn dual_gemv[
 fn swishGLU[
     target: StaticString = "cpu",
 ](
-    a: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    b0: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    b1: NDBuffer[_, 2, ImmutAnyOrigin, _],
-    c: NDBuffer[_, 2, MutAnyOrigin, _],
+    a: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    b0: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    b1: NDBuffer[rank=2, _, ImmutAnyOrigin, _],
+    c: NDBuffer[rank=2, _, MutAnyOrigin, _],
     ctx: DeviceContextPtr,
 ) raises:
     """

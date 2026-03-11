@@ -21,9 +21,6 @@ from std.sys.info import CompilationTarget, is_amd_gpu, is_apple_gpu
 from buffer import NDBuffer
 from std.gpu.host import DeviceContext
 from std.gpu.intrinsics import lop
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.memory.unsafe import bitcast
 from std.testing import assert_equal
 
@@ -65,14 +62,14 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
 
 fn call_int4tobf16[
     no_lop: Bool
-](i4: Int32, out_ptr: UnsafePointer[BFloat16],):
+](i4: Int32, out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],):
     var v = int4tobf16[no_lop](i4)
     out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
     var out_host = NDBuffer[
-        DType.bfloat16, 1, MutAnyOrigin, 8
+        rank=1, DType.bfloat16, MutAnyOrigin, 8
     ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 

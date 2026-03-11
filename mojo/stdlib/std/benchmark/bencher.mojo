@@ -1385,10 +1385,10 @@ struct Bencher(RegisterPassable):
             f: The closure to benchmark.
         """
 
-        var start = time.perf_counter_ns()
+        var start = std.time.perf_counter_ns()
         for _ in range(self.num_iters):
             f()
-        var stop = time.perf_counter_ns()
+        var stop = std.time.perf_counter_ns()
         self.elapsed = Int(stop - start)
 
     fn iter_preproc[
@@ -1405,9 +1405,9 @@ struct Bencher(RegisterPassable):
 
         for _ in range(self.num_iters):
             preproc_fn()
-            var start = time.perf_counter_ns()
+            var start = std.time.perf_counter_ns()
             iter_fn()
-            var stop = time.perf_counter_ns()
+            var stop = std.time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
     fn iter_custom[iter_fn: fn(Int) raises capturing[_] -> Int](mut self):
@@ -1489,8 +1489,8 @@ struct Bencher(RegisterPassable):
             If the operation fails.
         """
 
-        var start = time.perf_counter_ns()
+        var start = std.time.perf_counter_ns()
         for _ in range(self.num_iters):
             iter_fn()
-        var stop = time.perf_counter_ns()
+        var stop = std.time.perf_counter_ns()
         self.elapsed = Int(stop - start)

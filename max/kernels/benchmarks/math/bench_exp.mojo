@@ -39,7 +39,10 @@ fn apply[
         dtype, width
     ],
     dtype: DType,
-](input: NDBuffer[dtype, 1, ...], output: NDBuffer[mut=True, dtype, 1, ...]):
+](
+    input: NDBuffer[rank=1, dtype, ...],
+    output: NDBuffer[mut=True, rank=1, dtype, ...],
+):
     fn _func[width: Int](idx: Int) unified {mut}:
         output.store((idx,), func(input.load[width=width](idx)))
 
@@ -76,8 +79,8 @@ def bench_unary[
         @parameter
         fn iter_fn():
             apply[func](
-                NDBuffer[dtype, 1](input_ptr, IndexList[1](size)),
-                NDBuffer[dtype, 1](output_ptr, IndexList[1](size)),
+                NDBuffer[rank=1, dtype](input_ptr, IndexList[1](size)),
+                NDBuffer[rank=1, dtype](output_ptr, IndexList[1](size)),
             )
             keep(output_ptr)
 
@@ -389,7 +392,7 @@ def accuracy_test() raises:
     comptime delta_range = delta_max - delta_min + 1
 
     var deltas = NDBuffer[
-        DType.int32, 1, MutAnyOrigin, delta_range
+        rank=1, DType.int32, MutAnyOrigin, delta_range
     ].stack_allocation()
     deltas.zero()
 

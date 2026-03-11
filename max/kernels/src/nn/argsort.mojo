@@ -57,7 +57,7 @@ fn _argsort_cpu[
 
     elementwise[
         fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
-    ](indices.numel())
+    ](indices.num_elements())
 
     @parameter
     fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
@@ -70,7 +70,7 @@ fn _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.numel())
+        ](ptr=indices.ptr, length=indices.num_elements())
     )
 
 
@@ -115,7 +115,7 @@ fn _argsort_gpu_impl[
     comptime assert input.flat_rank == 1
     comptime assert indices.flat_rank == 1
     # Create a device buffer to store a copy of the input data
-    var n = indices.numel()
+    var n = indices.num_elements()
 
     assert n.is_power_of_two(), "n must be a power of two"
 
@@ -209,7 +209,7 @@ fn _argsort_gpu[
     comptime assert indices.flat_rank == 1
     comptime assert input.flat_rank == 1
     # Create a device buffer to store a copy of the input data
-    var n = indices.numel()
+    var n = indices.num_elements()
 
     if n.is_power_of_two():
         # Initialize indices with iota.
@@ -321,7 +321,7 @@ fn _validate_argsort(input: TileTensor, output: TileTensor) raises:
         Error if buffers don't meet requirements for argsort.
     """
 
-    if output.numel() != input.numel():
+    if output.num_elements() != input.num_elements():
         raise "output and input must have the same length"
 
 

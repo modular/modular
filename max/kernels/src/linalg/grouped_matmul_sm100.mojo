@@ -13,11 +13,8 @@
 
 from std.collections import Optional
 from std.math import align_up, ceildiv
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
-
 from std.bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -64,7 +61,6 @@ from layout import (
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import blocked_product
-from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_tuple import idx2crd, crd2idx
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -142,37 +138,29 @@ fn load_AB[
     b_tile_rank: Int,
     b_tile_shape: IndexList[b_tile_rank],
     b_desc_shape: IndexList[b_tile_rank],
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     num_pipeline_stages: UInt,
     /,
     *,
+    a_smem_layout: Layout,
+    b_smem_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    a_smem: LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    a_smem_base: UnsafePointer[
+        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    b_smem: LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    b_smem_base: UnsafePointer[
+        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -215,8 +203,23 @@ fn load_AB[
         + Int(work_tile_coord[1])
     )
 
-    var a_smem_tile = a_smem.next(stage)[]
-    var b_smem_tile = b_smem.next(stage)[]
+    comptime a_smem_tile_size = a_smem_layout.size()
+    comptime b_smem_tile_size = b_smem_layout.size()
+
+    var a_smem_tile = LayoutTensor[
+        a_type,
+        a_smem_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ](a_smem_base + Int(stage) * a_smem_tile_size)
+    var b_smem_tile = LayoutTensor[
+        b_type,
+        b_smem_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ](b_smem_base + Int(stage) * b_smem_tile_size)
 
     var a_smem_slice = type_of(a_smem_tile)(
         a_smem_tile.ptr + peer_cta_coord[2] * UInt(a_tma_load_size)
@@ -250,39 +253,31 @@ fn consumer_main_loop[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     a_swizzle: TensorMapSwizzle,
     b_swizzle: TensorMapSwizzle,
     transpose_b: Bool,
     pipeline_stages: Int,
     /,
     *,
+    a_smem_layout: Layout,
+    b_smem_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
 ](
     tmem_addr: UInt32,
-    a_smem_iter: LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    a_smem_base: UnsafePointer[
+        Scalar[a_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    b_smem_iter: LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    b_smem_base: UnsafePointer[
+        Scalar[b_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -306,8 +301,23 @@ fn consumer_main_loop[
 
     tma_mbar[stage].wait(phase)
 
-    var a_smem_tile = a_smem_iter.next(stage)[]
-    var b_smem_tile = b_smem_iter.next(stage)[]
+    comptime a_smem_tile_size = a_smem_layout.size()
+    comptime b_smem_tile_size = b_smem_layout.size()
+
+    var a_smem_tile = LayoutTensor[
+        a_type,
+        a_smem_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ](a_smem_base + Int(stage) * a_smem_tile_size)
+    var b_smem_tile = LayoutTensor[
+        b_type,
+        b_smem_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ](b_smem_base + Int(stage) * b_smem_tile_size)
     if elect_one_sync():
         mma_op.mma(
             a_smem_tile,
@@ -387,7 +397,6 @@ fn stsm_helper[
 @always_inline
 fn multi_stage_store_C[
     c_type: DType,
-    c_smem_layout: Layout,
     c_tile_rank: Int,
     c_tile_shape: IndexList[c_tile_rank],
     c_tensor_layout: Layout,
@@ -395,6 +404,7 @@ fn multi_stage_store_C[
     num_accum_pipeline_stages: Int,
     /,
     *,
+    c_smem_layout: Layout,
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -405,21 +415,17 @@ fn multi_stage_store_C[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     transpose_c: Bool = False,
 ](
-    c_iter: LayoutTensorIter[
-        c_type,
-        c_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
+    c_smem_base: UnsafePointer[
+        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     c_tma_op: TMATensorTile[c_type, c_tile_rank, c_tile_shape, c_desc_shape],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -513,7 +519,14 @@ fn multi_stage_store_C[
             umma_arrive_leader_cta(accum_empty_mbar + index)
 
         # Assume double-buffer for shared memory packing
-        var c_smem_tile = c_iter.next(stage % 2)[]
+        comptime c_smem_tile_size = c_smem_layout.size()
+        var c_smem_tile = LayoutTensor[
+            c_type,
+            c_smem_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+        ](c_smem_base + (stage % 2) * c_smem_tile_size)
 
         comptime if transpose_c:
             # if stage_contiguous_size is 128, we need to split the shared memory
@@ -773,9 +786,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 ](
     num_active_experts: Int,
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    b_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
     c_tma_op: TMATensorTile[
         c_type, c_tile_rank, c_tile_shape_param, c_desc_shape
     ],
@@ -850,36 +863,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
     var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
-
-    var a_smem = LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](
-        a_smem_base,
-        a_smem_size,
-    )
-
-    var b_smem = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](
-        b_smem_base,
-        b_smem_size,
-    )
-
-    var c_smem_iter = LayoutTensorIter[
-        c_type,
-        Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-        alignment=128,
-    ](c_smem_base, c_smem_size)
 
     var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
 
@@ -1012,6 +995,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             # DO TMA LOAD
             for i in range(num_iters):
                 load_AB[
+                    a_smem_layout=a_smem_layout,
+                    b_smem_layout=b_smem_layout,
                     block_tile_shape=block_tile_shape,
                     mma_shape=mma_shape,
                     cta_group=cta_group,
@@ -1019,8 +1004,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     expert_ids,
                     a_tma_op,
                     b_tma_op,
-                    a_smem,
-                    b_smem,
+                    a_smem_base,
+                    b_smem_base,
                     mma_mbar,
                     tma_mbar,
                     producer_phase,
@@ -1071,6 +1056,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
                 for i in range(num_iters):
                     consumer_main_loop[
+                        a_smem_layout=a_smem_layout,
+                        b_smem_layout=b_smem_layout,
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
@@ -1079,8 +1066,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         ),
                     ](
                         tmem_offset,
-                        a_smem,
-                        b_smem,
+                        a_smem_base,
+                        b_smem_base,
                         mma_mbar,
                         tma_mbar,
                         consumer_phase,
@@ -1135,6 +1122,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
             multi_stage_store_C[
+                c_smem_layout=Layout.row_major(
+                    output_tile_shape[0], output_tile_shape[1]
+                ),
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
@@ -1145,7 +1135,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 transpose_c=transpose_c,
             ](
-                c_smem_iter,
+                c_smem_base,
                 c_tma_op,
                 c,
                 accum_pipeline_consumer_state,
@@ -1189,12 +1179,12 @@ fn grouped_matmul_sm100_persistent[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    c: NDBuffer[rank=2, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1206,7 +1196,6 @@ fn grouped_matmul_sm100_persistent[
     a_tensor = LayoutTensor[
         b_type,
         Layout.row_major(num_experts * M, K),
-        MutAnyOrigin,
         address_space=AddressSpace.GENERIC,
     ](b.data)
 
@@ -1263,9 +1252,9 @@ fn _grouped_matmul_sm100_persistent[
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     b_device: LayoutTensor[b_type, b_layout, ...],
-    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    b_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

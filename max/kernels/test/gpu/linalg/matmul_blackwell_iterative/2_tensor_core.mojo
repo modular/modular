@@ -12,19 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import lane_id as get_lane_id, warp_id
+from std.gpu import warp_id, block_idx, lane_id_int as lane_id, thread_idx
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
@@ -118,7 +114,11 @@ fn kernel_3[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -518,9 +518,9 @@ def test_kernel_2[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)

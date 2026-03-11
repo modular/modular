@@ -32,8 +32,6 @@ from std.sys.intrinsics import (
 from buffer.dimlist import Dim, DimList
 from std.builtin.device_passable import DevicePassable
 from std.memory import (
-    # Keep LegacyOpaquePointer for DevicePassable trait compatibility
-    LegacyOpaquePointer,
     memset_zero,
     stack_allocation,
 )
@@ -219,9 +217,9 @@ fn _compute_ndbuffer_stride[
 @fieldwise_init
 struct NDBuffer[
     mut: Bool,
+    rank: Int,
     //,
     dtype: DType,
-    rank: Int,
     origin: Origin[mut=mut],
     shape: DimList = DimList.create_unknown[rank](),
     strides: DimList = DimList.create_unknown[rank](),
@@ -244,8 +242,8 @@ struct NDBuffer[
 
     Parameters:
         mut: The inferred mutability.
-        dtype: The element dtype of the buffer.
         rank: The rank of the buffer.
+        dtype: The element dtype of the buffer.
         origin: The origin of the memory being addressed.
         shape: The static size (if known) of the buffer.
         strides: The strides (if known) of the buffer.
@@ -306,7 +304,7 @@ struct NDBuffer[
         ](), "dimensions must all be known"
 
         self.data = ptr
-        self.dynamic_shape = comptime (Self.shape.into_index_list[Self.rank]())
+        self.dynamic_shape = comptime (Self.shape.to_index_list[Self.rank]())
 
         self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
             self.dynamic_shape
@@ -317,8 +315,8 @@ struct NDBuffer[
     fn __init__(
         other: NDBuffer[mut=True, ...],
         out self: NDBuffer[
+            rank=other.rank,
             other.dtype,
-            other.rank,
             ImmutOrigin(other.origin),
             other.shape,
             other.strides,
@@ -341,8 +339,8 @@ struct NDBuffer[
     fn __init__(
         other: NDBuffer,
         out self: NDBuffer[
+            rank=other.rank,
             other.dtype,
-            other.rank,
             other.origin,
             other.shape,
         ],
@@ -480,8 +478,8 @@ struct NDBuffer[
         self = Self(ptr, IndexList[Self.rank](one_d_size))
 
     comptime OriginCastType[target_origin: Origin] = NDBuffer[
+        rank=Self.rank,
         Self.dtype,
-        Self.rank,
         target_origin,
         Self.shape,
         Self.strides,
@@ -752,8 +750,8 @@ struct NDBuffer[
     fn tile[
         *tile_sizes: Dim
     ](self, tile_coords: IndexList[Self.rank, ...]) -> NDBuffer[
+        rank=Self.rank,
         Self.dtype,
-        Self.rank,
         Self.origin,
         DimList(tile_sizes),
         address_space=Self.address_space,
@@ -799,8 +797,8 @@ struct NDBuffer[
         # which tells us the tile has a stride of the original buffer stride and
         # offset = dot(((m * tile_m), (n * tile_n)), stride).
         var tile = NDBuffer[
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             Self.origin,
             DimList(tile_sizes),
             address_space=Self.address_space,
@@ -914,8 +912,8 @@ struct NDBuffer[
     fn __setitem__(
         self: NDBuffer[
             mut=True,
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             _,
             shape=Self.shape,
             strides=Self.strides,
@@ -938,8 +936,8 @@ struct NDBuffer[
     fn __setitem__(
         self: NDBuffer[
             mut=True,
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             _,
             shape=Self.shape,
             strides=Self.strides,
@@ -968,8 +966,8 @@ struct NDBuffer[
     ](
         self: NDBuffer[
             mut=True,
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             _,
             shape=Self.shape,
             strides=Self.strides,
@@ -1006,8 +1004,8 @@ struct NDBuffer[
     ](
         self: NDBuffer[
             mut=True,
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             _,
             shape=Self.shape,
             strides=Self.strides,
@@ -1112,8 +1110,8 @@ struct NDBuffer[
     fn flatten(
         self,
         out result: NDBuffer[
+            rank=1,
             Self.dtype,
-            1,
             Self.origin,
             Self.shape.product(),
             address_space=Self.address_space,
@@ -1134,8 +1132,8 @@ struct NDBuffer[
     fn make_dims_unknown(
         self,
         out result: NDBuffer[
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             address_space=Self.address_space,
             origin=Self.origin,
         ],
@@ -1177,8 +1175,8 @@ struct NDBuffer[
     ](
         self: NDBuffer[
             mut=True,
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             _,
             shape=Self.shape,
             strides=Self.strides,
@@ -1231,8 +1229,8 @@ struct NDBuffer[
     fn fill(
         self: NDBuffer[
             mut=True,
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             _,
             shape=Self.shape,
             strides=Self.strides,

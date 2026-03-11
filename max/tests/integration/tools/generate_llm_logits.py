@@ -26,6 +26,7 @@ from typing import Any, get_args
 # 3rd-party
 import click
 import torch
+import transformers
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
@@ -51,6 +52,9 @@ from test_common import (
 )
 from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
+
+# This version is detached from the one pulled from rules_pycross, assert that the override is working.
+assert transformers.__version__ == "4.57.6"
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from

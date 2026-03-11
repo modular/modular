@@ -61,8 +61,8 @@ fn broadcast_multimem_kernel[
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     root: Int,
@@ -170,8 +170,8 @@ fn broadcast_pull_1stage_kernel[
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
 ):
@@ -230,7 +230,7 @@ fn broadcast_pull_2stage_kernel[
     BLOCK_SIZE: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    result: NDBuffer[dtype, rank, MutAnyOrigin],
+    result: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     root_input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
@@ -454,8 +454,8 @@ fn broadcast[
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
@@ -554,8 +554,8 @@ fn broadcast_2stage[
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffer: NDBuffer[rank=rank, dtype, ImmutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,

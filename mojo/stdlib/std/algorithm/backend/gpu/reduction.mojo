@@ -1,0 +1,855 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from std.math import align_up
+
+from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from std.gpu.host import DeviceContext
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    grid_dim,
+    global_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
+    PDLLevel,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    AddressSpace,
+)
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.primitives import warp
+from std.gpu.primitives.grid_controls import (
+    pdl_launch_attributes,
+)  # @doc_private
+from std.memory import stack_allocation
+
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
+from std.sys import get_defined_int
+from std.sys.info import simd_width_of
+
+
+@always_inline
+fn block_reduce[
+    BLOCK_SIZE: Int,
+    reduce_fn: fn[dtype: DType, width: Int](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing[_] -> SIMD[dtype, width],
+    dtype: DType,
+    simd_width: Int,
+](val: SIMD[dtype, simd_width], init: Scalar[dtype]) -> Scalar[dtype]:
+    """Performs a block-level reduction of a single SIMD value across all
+    threads in a GPU thread block using warp-level primitives and shared memory.
+
+    Parameters:
+        BLOCK_SIZE: The number of threads per block.
+        reduce_fn: The binary reduction function.
+        dtype: The data type of the elements.
+        simd_width: The SIMD vector width.
+
+    Args:
+        val: The per-thread SIMD value to reduce.
+        init: The identity value for the reduction.
+
+    Returns:
+        The reduced scalar result (valid on thread 0).
+    """
+    comptime num_reductions = 1
+
+    @always_inline
+    @parameter
+    fn reduce_wrapper[
+        dtype: DType, width: Int, reduction_idx: Int
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction index"
+        return reduce_fn(lhs, rhs)
+
+    var val_tup = StaticTuple[SIMD[dtype, simd_width], num_reductions](val)
+    var init_tup = StaticTuple[Scalar[dtype], num_reductions](init)
+
+    return block_reduce[
+        BLOCK_SIZE,
+        num_reductions,
+        reduce_wrapper,
+        dtype,
+        simd_width,
+    ](val_tup, init_tup)[0]
+
+
+@always_inline
+fn block_reduce[
+    BLOCK_SIZE: Int,
+    num_reductions: Int,
+    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing[_] -> SIMD[dtype, width],
+    dtype: DType,
+    simd_width: Int,
+](
+    val: StaticTuple[SIMD[dtype, simd_width], num_reductions],
+    init: StaticTuple[Scalar[dtype], num_reductions],
+) -> StaticTuple[Scalar[dtype], num_reductions]:
+    """Performs a block-level reduction of multiple fused SIMD values across all
+    threads in a GPU thread block using warp shuffles and shared memory.
+
+    Parameters:
+        BLOCK_SIZE: The number of threads per block.
+        num_reductions: The number of fused reductions to perform.
+        reduce_fn: The binary reduction function, parameterized by reduction
+          index.
+        dtype: The data type of the elements.
+        simd_width: The SIMD vector width.
+
+    Args:
+        val: The per-thread SIMD values to reduce, one per reduction.
+        init: The identity values for each reduction.
+
+    Returns:
+        The reduced scalar results (valid on thread 0).
+    """
+    comptime assert (
+        BLOCK_SIZE % WARP_SIZE == 0
+    ), "block size must be a multiple of the warp size"
+
+    @always_inline
+    @parameter
+    fn do_warp_reduce(
+        val: StaticTuple[SIMD[dtype, simd_width], num_reductions]
+    ) -> StaticTuple[SIMD[dtype, simd_width], num_reductions]:
+        var result = StaticTuple[SIMD[dtype, simd_width], num_reductions]()
+
+        comptime for i in range(num_reductions):
+
+            @always_inline
+            @parameter
+            fn reduce_wrapper[
+                dtype: DType, width: Int
+            ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+                dtype, width
+            ]:
+                return reduce_fn[dtype, width, i](lhs, rhs)
+
+            result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](val[i])
+
+        return result
+
+    var shared = stack_allocation[
+        (BLOCK_SIZE // WARP_SIZE) * num_reductions * simd_width,
+        dtype,
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    var warp = warp_id()
+
+    var warp_accum = do_warp_reduce(val)
+
+    if lane_id() == 0:
+        comptime for i in range(num_reductions):
+            # bank conflict for sub 4 byte data elems
+            shared.store(
+                (Int(warp) * num_reductions + i) * simd_width,
+                warp_accum[i],
+            )
+
+    barrier()
+
+    var last_accum = StaticTuple[SIMD[dtype, simd_width], num_reductions]()
+
+    if thread_idx.x < (block_dim.x // UInt(WARP_SIZE)):
+        comptime for i in range(num_reductions):
+            last_accum[i] = shared.load[width=simd_width](
+                (num_reductions * Int(lane_id()) + i) * simd_width
+            )
+    else:
+        comptime for i in range(num_reductions):
+            last_accum[i] = init[i]
+
+    var result_packed = do_warp_reduce(last_accum)
+    var result = StaticTuple[Scalar[dtype], num_reductions]()
+
+    comptime for i in range(num_reductions):
+        result[i] = result_packed[i].reduce[
+            reduce_fn[dtype, reduction_idx=i, ...]
+        ]()
+
+    return result
+
+
+@always_inline
+fn row_reduce[
+    BLOCK_SIZE: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    reduce_fn: fn[dtype: DType, width: Int](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing[_] -> SIMD[dtype, width],
+    dtype: DType,
+    simd_width: Int,
+    rank: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    mut row_coords: IndexList[rank],
+    axis: Int,
+    init: Scalar[dtype],
+    row_size: Int,
+) -> Scalar[accum_type]:
+    """Reduces a single row along the given axis using block-level cooperative
+    reduction. Delegates to the multi-reduction `row_reduce` overload with
+    `num_reductions=1`.
+
+    Parameters:
+        BLOCK_SIZE: The number of threads per block.
+        input_fn: The lambda to load input elements.
+        reduce_fn: The binary reduction function.
+        dtype: The data type of the input elements.
+        simd_width: The SIMD vector width.
+        rank: The tensor rank.
+        accum_type: The accumulator data type (defaults to widened type).
+
+    Args:
+        row_coords: The ND coordinates identifying the row.
+        axis: The axis along which to reduce.
+        init: The identity value for the reduction.
+        row_size: The number of elements in the row.
+
+    Returns:
+        The reduced scalar result for the row.
+    """
+    comptime num_reductions = 1
+
+    @always_inline
+    @parameter
+    fn reduce_wrapper[
+        dtype: DType, width: Int, reduction_idx: Int
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            reduction_idx < num_reductions
+        ), "invalid reduction index"
+        return reduce_fn(lhs, rhs)
+
+    var init_tup = StaticTuple[Scalar[dtype], num_reductions](init)
+
+    return row_reduce[
+        BLOCK_SIZE,
+        num_reductions,
+        input_fn,
+        reduce_wrapper,
+        dtype,
+        simd_width,
+        rank,
+        accum_type=accum_type,
+    ](row_coords, axis, init_tup, row_size)[0]
+
+
+@always_inline
+fn row_reduce[
+    BLOCK_SIZE: Int,
+    num_reductions: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    reduce_fn: fn[dtype: DType, width: Int, reduction_idx: Int](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing[_] -> SIMD[dtype, width],
+    dtype: DType,
+    simd_width: Int,
+    rank: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    mut row_coords: IndexList[rank],
+    axis: Int,
+    init: StaticTuple[Scalar[dtype], num_reductions],
+    row_size: Int,
+) -> StaticTuple[Scalar[accum_type], num_reductions]:
+    """Reduces a row along the given axis with multiple fused reductions using
+    cooperative SIMD-width reads across threads, a `block_reduce`, and scalar
+    tail handling.
+
+    Parameters:
+        BLOCK_SIZE: The number of threads per block.
+        num_reductions: The number of fused reductions to perform.
+        input_fn: The lambda to load input elements.
+        reduce_fn: The binary reduction function parameterized by reduction
+          index.
+        dtype: The data type of the input elements.
+        simd_width: The SIMD vector width.
+        rank: The tensor rank.
+        accum_type: The accumulator data type (defaults to widened type).
+
+    Args:
+        row_coords: The ND coordinates identifying the row.
+        axis: The axis along which to reduce.
+        init: The identity values for each reduction.
+        row_size: The number of elements in the row.
+
+    Returns:
+        The reduced scalar results, one per fused reduction.
+    """
+    var num_tail_values = row_size % simd_width
+    var rounded_row_size = row_size - num_tail_values
+    var row_size_padded = align_up(row_size // simd_width, BLOCK_SIZE)
+
+    var accum = StaticTuple[SIMD[accum_type, simd_width], num_reductions]()
+    var init_cast = StaticTuple[Scalar[accum_type], num_reductions]()
+
+    comptime for i in range(num_reductions):
+        init_cast[i] = init[i].cast[accum_type]()
+        accum[i] = init_cast[i]
+
+    var tid: UInt = thread_idx.x
+    for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
+        var idx_in_padded_row = (tid + UInt(offset_in_row)) * UInt(simd_width)
+
+        if idx_in_padded_row >= UInt(rounded_row_size):
+            break
+
+        row_coords[axis] = Int(idx_in_padded_row)
+        var val = input_fn[dtype, simd_width, rank](row_coords).cast[
+            accum_type
+        ]()
+
+        comptime for i in range(num_reductions):
+            accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
+
+    var scalar_accum = block_reduce[
+        BLOCK_SIZE,
+        num_reductions,
+        reduce_fn,
+        accum_type,
+        simd_width,
+    ](accum, init_cast)
+
+    # handle trailing values
+    for idx_in_padded_row in range(rounded_row_size, row_size):
+        row_coords[axis] = idx_in_padded_row
+        var val = input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
+
+        comptime for i in range(num_reductions):
+            scalar_accum[i] = reduce_fn[accum_type, 1, i](val, scalar_accum[i])
+
+    return scalar_accum
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
+)
+fn reduce_kernel[
+    rank: Int,
+    axis: Int,
+    num_reductions: Int,
+    BLOCK_SIZE: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    dtype: DType,
+    simd_width: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
+    """GPU kernel that reduces rows along a given axis. Each block reduces one
+    row at a time using `row_reduce` and writes the result via `output_fn`.
+    Uses a grid-stride loop to handle more rows than blocks.
+
+    Parameters:
+        rank: The tensor rank.
+        axis: The axis along which to reduce.
+        num_reductions: The number of fused reductions to perform.
+        BLOCK_SIZE: The number of threads per block.
+        input_fn: The lambda to load input elements.
+        output_fn: The lambda to store output elements.
+        reduce_fn: The binary reduction function.
+        dtype: The data type of the elements.
+        simd_width: The SIMD vector width.
+        accum_type: The accumulator data type.
+
+    Args:
+        shape: The shape of the input tensor.
+        init: The identity values for each reduction.
+    """
+    var row_size = shape[axis]
+    var num_rows = shape.flattened_length() // row_size
+
+    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
+    comptime if PDLLevel() > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    # grid stride loop over rows
+    # each block reduces a row, which requires no partial reductions
+    for row_idx in range(block_idx.x, UInt(num_rows), grid_dim.x):
+        var row_coords = _get_nd_indices_from_flat_index(
+            Int(row_idx), shape, axis
+        )
+
+        var row_accum = row_reduce[
+            BLOCK_SIZE,
+            num_reductions,
+            input_fn,
+            reduce_fn,
+            dtype,
+            simd_width,
+            rank,
+            accum_type=accum_type,
+        ](row_coords, axis, init, row_size)
+
+        if thread_idx.x == 0:
+            var row_accum_cast = StaticTuple[Scalar[dtype], num_reductions]()
+
+            comptime for i in range(num_reductions):
+                row_accum_cast[i] = row_accum[i].cast[dtype]()
+
+            row_coords[axis] = 0
+            output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+
+    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
+)
+fn small_reduce_kernel[
+    rank: Int,
+    axis: Int,
+    num_reductions: Int,
+    BLOCK_SIZE: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    dtype: DType,
+    simd_width: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
+    """GPU kernel optimized for rows smaller than the warp size. Each warp
+    reduces an entire row independently, allowing multiple rows to be reduced
+    per block without shared-memory synchronization.
+
+    Parameters:
+        rank: The tensor rank.
+        axis: The axis along which to reduce.
+        num_reductions: The number of fused reductions to perform.
+        BLOCK_SIZE: The number of threads per block.
+        input_fn: The lambda to load input elements.
+        output_fn: The lambda to store output elements.
+        reduce_fn: The binary reduction function.
+        dtype: The data type of the elements.
+        simd_width: The SIMD vector width.
+        accum_type: The accumulator data type.
+
+    Args:
+        shape: The shape of the input tensor.
+        init: The identity values for each reduction.
+    """
+    var row_size = shape[axis]
+    var num_rows = shape.flattened_length() // row_size
+
+    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
+    comptime if PDLLevel() > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    comptime warps_per_block = BLOCK_SIZE // WARP_SIZE
+
+    # grid stride loop over rows
+    # each block reduces as many rows as warps,
+    # No need to partial reduction because this is the degenerated case of
+    # rows smaller than warp size
+    #
+    for row_idx in range(
+        block_idx.x * UInt(warps_per_block),
+        UInt(num_rows),
+        grid_dim.x * UInt(warps_per_block),
+    ):
+        var row_coords = _get_nd_indices_from_flat_index(
+            Int(row_idx) + Int(warp_id()), shape, axis
+        )
+
+        # One row per warp, warp collectively reads from global
+        if warp_id() < UInt(warps_per_block):
+            var val = InlineArray[SIMD[accum_type, simd_width], num_reductions](
+                fill=0
+            )
+
+            comptime for i in range(num_reductions):
+                val[i] = init[i].cast[accum_type]()
+
+            if lane_id() < UInt(row_size):
+                row_coords[axis] = Int(lane_id())
+                var t = input_fn[dtype, simd_width, rank](row_coords).cast[
+                    accum_type
+                ]()
+
+                val = type_of(val)(fill=t)
+            else:
+                comptime for i in range(num_reductions):
+                    val[i] = init[i].cast[accum_type]()
+
+            var result = InlineArray[
+                SIMD[accum_type, simd_width], num_reductions
+            ](fill=0)
+
+            comptime for i in range(num_reductions):
+
+                @always_inline
+                @parameter
+                fn reduce_wrapper[
+                    dtype: DType, width: Int
+                ](
+                    x: SIMD[dtype, width], y: SIMD[dtype, width]
+                ) capturing -> SIMD[dtype, width]:
+                    return reduce_fn[dtype, width, i](x, y)
+
+                result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](
+                    val[i]
+                )
+
+            if lane_id() == 0:
+                var row_accum_cast = StaticTuple[
+                    Scalar[dtype], num_reductions
+                ]()
+
+                comptime for i in range(num_reductions):
+                    row_accum_cast[i] = result[i][0].cast[dtype]()
+
+                row_coords[axis] = 0
+                output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+
+    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
+)
+fn saturated_reduce_kernel[
+    rank: Int,
+    axis: Int,
+    num_reductions: Int,
+    BLOCK_SIZE: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    dtype: DType,
+    simd_width: Int,
+    accum_type: DType = get_accum_type[dtype](),
+](shape: IndexList[rank], init: StaticTuple[Scalar[dtype], num_reductions],):
+    """GPU kernel for reductions when the device is saturated with enough rows.
+    Each thread independently reduces an entire row using SIMD packing,
+    avoiding shared-memory synchronization entirely. Used when reducing along
+    a non-contiguous axis.
+
+    Parameters:
+        rank: The tensor rank.
+        axis: The axis along which to reduce.
+        num_reductions: The number of fused reductions to perform.
+        BLOCK_SIZE: The number of threads per block.
+        input_fn: The lambda to load input elements.
+        output_fn: The lambda to store output elements.
+        reduce_fn: The binary reduction function.
+        dtype: The data type of the elements.
+        simd_width: The SIMD vector width.
+        accum_type: The accumulator data type.
+
+    Args:
+        shape: The shape of the input tensor.
+        init: The identity values for each reduction.
+    """
+    var row_size = shape[axis]
+    var num_rows = shape.flattened_length() // row_size
+
+    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        launch_dependent_grids()
+
+    comptime if PDLLevel() > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    var global_dim_x = grid_dim.x * block_dim.x
+    # Loop over rows
+    for row_idx in range(
+        global_idx.x * UInt(simd_width),
+        UInt(num_rows),
+        global_dim_x * UInt(simd_width),
+    ):
+        # Reduce the whole row
+        var row_coords = _get_nd_indices_from_flat_index(
+            Int(row_idx), shape, axis
+        )
+
+        # Declare & initialize registers
+        var val = InlineArray[SIMD[accum_type, simd_width], num_reductions](
+            uninitialized=True
+        )
+
+        comptime for i in range(num_reductions):
+            val[i] = init[i].cast[accum_type]()
+
+        # Load data & reduce
+        for val_idx in range(row_size):
+            row_coords[axis] = val_idx
+            var t = input_fn[dtype, simd_width, rank](row_coords).cast[
+                accum_type
+            ]()
+
+            comptime for i in range(num_reductions):
+                val[i] = reduce_fn[reduction_idx=i](val[i], t)
+
+        # Cast to output type
+        var row_accum_cast = StaticTuple[
+            SIMD[dtype, simd_width], num_reductions
+        ]()
+
+        comptime for i in range(num_reductions):
+            row_accum_cast[i] = rebind[SIMD[dtype, simd_width]](
+                val[i].cast[dtype]()
+            )
+
+        # Write output
+        row_coords[axis] = 0
+        output_fn[dtype, simd_width, rank](row_coords, row_accum_cast)
+
+    comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        launch_dependent_grids()
+
+
+fn reduce_launch[
+    num_reductions: Int,
+    input_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing[_] -> None,
+    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    rank: Int,
+    dtype: DType,
+](
+    shape: IndexList[rank],
+    axis: Int,
+    init: StaticTuple[Scalar[dtype], num_reductions],
+    ctx: DeviceContext,
+) raises:
+    """Selects and launches the appropriate GPU reduction kernel based on the
+    tensor shape, axis, and device saturation level. Dispatches to
+    `saturated_reduce_kernel` for non-contiguous axes with enough rows,
+    `small_reduce_kernel` for rows smaller than the warp size, or
+    `reduce_kernel` otherwise.
+
+    Parameters:
+        num_reductions: The number of fused reductions to perform.
+        input_fn: The lambda to load input elements.
+        output_fn: The lambda to store output elements.
+        reduce_fn: The binary reduction function.
+        rank: The tensor rank.
+        dtype: The data type of the elements.
+
+    Args:
+        shape: The shape of the input tensor.
+        axis: The axis along which to reduce.
+        init: The identity values for each reduction.
+        ctx: The device context for GPU execution.
+
+    Raises:
+        If the GPU kernel launch fails.
+    """
+    comptime register_width = 32
+    comptime sm_count = ctx.default_device_info.sm_count
+
+    comptime packing_factor = 1
+
+    var num_rows = shape.flattened_length() // shape[axis] // packing_factor
+    comptime sm_overprovision_factor = 32  # tunable
+    var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+
+    # Do not launch gpu kernels with grid_dim = 0
+    if num_blocks == 0:
+        return
+
+    # 256 is a proxy for BLOCK_SIZE, because having BLOCK_SIZE affect kernel
+    # selection is likely to confound autotuning.
+    comptime num_persistent_threads = 256 * sm_count
+    var saturated: Bool = num_rows >= num_persistent_threads
+
+    # This assumes row-major layout:
+    var reduce_contig_dim: Bool = axis == rank - 1
+
+    # If we have enough work to saturate the device, have each thread handle a
+    # separate output value (i.e. a whole row), unless we are reducing the
+    # contiguous (stride 1) dimension, in which case original approach coalesces
+    # memory better.
+    if saturated and not reduce_contig_dim:
+        # If we are sufficiently above the saturation threshold, use SIMD to give
+        # each thread multiple values per iter
+
+        # TODO: a shape which *only just* saturates the device might be
+        # more performant without SIMD, but the dispatch is more complicated
+        comptime simd_packing_factor = simd_width_of[dtype, get_gpu_target()]()
+        comptime BLOCK_SIZE = get_defined_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
+
+        comptime for ax in range(rank):
+            if axis == ax:
+                comptime kernel = saturated_reduce_kernel[
+                    rank,
+                    ax,
+                    num_reductions,
+                    BLOCK_SIZE,
+                    input_fn,
+                    output_fn,
+                    reduce_fn,
+                    dtype,
+                    simd_packing_factor,
+                ]
+                ctx.enqueue_function[kernel, kernel](
+                    shape,
+                    init,
+                    grid_dim=num_blocks,
+                    block_dim=BLOCK_SIZE,
+                    attributes=pdl_launch_attributes(),
+                )
+
+    # When the row size is smaller than the warp so we can use
+    # multiple warps within a block to reduce rows and save shared memory sync
+    else:
+        comptime BLOCK_SIZE = get_defined_int[
+            "MOJO_REDUCTION_BLOCK_SIZE", 128
+        ]()
+        if shape[axis] < WARP_SIZE:
+            comptime for ax in range(rank):
+                if axis == ax:
+                    comptime kernel = small_reduce_kernel[
+                        rank,
+                        ax,
+                        num_reductions,
+                        BLOCK_SIZE,
+                        input_fn,
+                        output_fn,
+                        reduce_fn,
+                        dtype,
+                        packing_factor,
+                    ]
+                    ctx.enqueue_function[kernel, kernel](
+                        shape,
+                        init,
+                        grid_dim=num_blocks,
+                        block_dim=BLOCK_SIZE,
+                        attributes=pdl_launch_attributes(),
+                    )
+        else:
+            comptime for ax in range(rank):
+                if axis == ax:
+                    comptime kernel = reduce_kernel[
+                        rank,
+                        ax,
+                        num_reductions,
+                        BLOCK_SIZE,
+                        input_fn,
+                        output_fn,
+                        reduce_fn,
+                        dtype,
+                        packing_factor,
+                    ]
+                    ctx.enqueue_function[kernel, kernel](
+                        shape,
+                        init,
+                        grid_dim=num_blocks,
+                        block_dim=BLOCK_SIZE,
+                        attributes=pdl_launch_attributes(),
+                    )
+
+
+@always_inline
+fn _reduce_generator_gpu[
+    num_reductions: Int,
+    init_type: DType,
+    input_0_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank]
+    ) capturing[_] -> SIMD[dtype, width],
+    output_0_fn: fn[dtype: DType, width: Int, rank: Int](
+        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    ) capturing[_] -> None,
+    reduce_function: fn[ty: DType, width: Int, reduction_idx: Int](
+        SIMD[ty, width], SIMD[ty, width]
+    ) capturing[_] -> SIMD[ty, width],
+    /,
+    single_thread_blocking_override: Bool = False,
+](
+    shape: IndexList[_, element_type=DType.int64],
+    init: StaticTuple[Scalar[init_type], num_reductions],
+    reduce_dim: Int,
+    ctx: DeviceContext,
+) raises:
+    """Reduce the given tensor using the given reduction function on GPU. The
+    num_reductions parameter enables callers to execute fused reductions. The
+    reduce_0_fn and output_0_fn should be implemented in a way which routes
+    between the fused reduction methods using their reduction_idx parameter.
+
+    Parameters:
+        num_reductions: The number of fused reductions to perform.
+        init_type: The initial accumulator value for each reduction.
+        input_0_fn: The lambda to use to access the incoming tensor.
+        output_0_fn: The lambda to use to storing to the output tensor.
+        reduce_function: The lambda implementing the reduction.
+        single_thread_blocking_override: If True, then reduction is run
+          synchronously using a single thread.
+
+    Args:
+        shape: The shape of the tensor we are reducing.
+        init: The value to start the reduction from.
+        reduce_dim: The dimension we are reducing.
+        ctx: The pointer to DeviceContext.
+
+    Raises:
+        If the GPU kernel launch fails.
+    """
+
+    var reduce_dim_normalized = (
+        len(shape) + reduce_dim
+    ) if reduce_dim < 0 else reduce_dim
+
+    reduce_launch[
+        num_reductions,
+        input_0_fn,
+        output_0_fn,
+        reduce_function,
+        shape.size,
+        init_type,
+    ](shape, reduce_dim_normalized, init, ctx)

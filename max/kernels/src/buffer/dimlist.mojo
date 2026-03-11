@@ -134,6 +134,7 @@ struct Dim(
             return False
         return self.get() % alignment == 0
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -285,6 +286,16 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
+fn _get_row_major_dims[shape: IndexList]() -> IndexList[shape.size]:
+    """Get the dimensions in row-major order, propagating unknown."""
+    var result = IndexList[shape.size]()
+    var offset = Dim(1)
+    comptime for i in reversed(range(shape.size)):
+        result[i] = offset.get()
+        offset *= Dim(shape[i])
+    return result
+
+
 struct DimList(ImplicitlyCopyable, Sized, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
@@ -292,6 +303,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
     var value: VariadicParamList[Dim]
     """The underlying storage for the list of dimensions."""
 
+    @always_inline("nodebug")
     fn __init__(out self, *, copy: Self):
         """Creates a dimension list from the given list of values.
 
@@ -432,6 +444,23 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         comptime assert i >= 0, "index must be positive"
         return self.value[i].__bool__()
 
+    # FIXME: This should become a normal method when DimList is upgraded.
+    @always_inline
+    @staticmethod
+    fn get_row_major_strides[shape: DimList]() -> Self:
+        """Interpret the current index list as a shape, and return the strides
+        to traverse such a shape in row-major order.
+
+        Parameters:
+            shape: The shape to compute the strides for.
+
+        Returns:
+            The strides to traverse the index list in row-major order.
+        """
+        return Self.from_index_list[
+            _get_row_major_dims[shape.to_index_list[len(shape)]()]()
+        ]()
+
     @always_inline
     fn product[length: Int](self) -> Dim:
         """Computes the product of the first `length` dimensions in the list.
@@ -540,7 +569,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         return not self._contains_impl[start, end](Dim())
 
     @always_inline
-    fn into_index_list[rank: Int](self) -> IndexList[rank]:
+    fn to_index_list[rank: Int](self) -> IndexList[rank]:
         """Copy the DimList values into an `IndexList`, providing the rank.
 
         Parameters:
@@ -553,7 +582,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
         from buffer import DimList
 
         comptime dim_list = DimList(2, 4)
-        var index_list = comptime(dim_list.into_index_list[rank=2]())
+        var index_list = comptime(dim_list.to_index_list[rank=2]())
         ```
         """
         var num_elements = len(self)
@@ -567,6 +596,23 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
 
         return index_list
 
+    @always_inline("nodebug")
+    @staticmethod
+    fn from_index_list[rank: Int, //, value: IndexList[rank]]() -> Self:
+        """Creates a dimension list from the given index list.
+
+        Parameters:
+            rank: The rank of the index list.
+            value: The index list to create a dimension list from.
+
+        Returns:
+            A dimension list with the same dimensions as the index list.
+        """
+        comptime transform[idx: Int]: Dim = Dim() if value[idx] < 0 else Dim(
+            value[idx]
+        )
+        return DimList(comptime (Variadic.tabulate[rank, transform]))
+
     @always_inline
     @staticmethod
     fn create_unknown[length: Int]() -> Self:
@@ -579,7 +625,7 @@ struct DimList(ImplicitlyCopyable, Sized, Writable):
             A list of all dynamic dimension values.
         """
         comptime assert length > 0, "length must be positive"
-        return Self(Variadic.splat_value[Dim(), length])
+        return Self(Variadic.splat_value[length, Dim()])
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:

@@ -145,8 +145,8 @@ fn run_elementwise[
         cb_out.alloc_size(), alignment=align
     )
 
-    var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
-    var out_host = NDBuffer[dtype, rank](out_host_ptr, dims)
+    var in_host = NDBuffer[rank=rank, dtype](in_host_ptr, dims)
+    var out_host = NDBuffer[rank=rank, dtype](out_host_ptr, dims)
 
     for i in range(cb_in.alloc_size()):
         in_host_ptr[i] = Scalar[dtype](i)
@@ -161,10 +161,10 @@ fn run_elementwise[
         @__copy_capture(N)
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var in_tensor = NDBuffer[dtype, rank](
+            var in_tensor = NDBuffer[rank=rank, dtype](
                 cb_in.offset_ptr(iteration), dims
             )
-            var out_tensor = NDBuffer[dtype, rank](
+            var out_tensor = NDBuffer[rank=rank, dtype](
                 cb_out.offset_ptr(iteration), dims
             )
 

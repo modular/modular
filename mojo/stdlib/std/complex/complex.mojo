@@ -372,8 +372,10 @@ struct ComplexSIMD[dtype: DType, size: Int](
         comptime assert (
             Self.dtype.is_floating_point()
         ), "dtype must be floating point"
-        var exp_re = math.exp(self.re)
-        return Self(exp_re * math.cos(self.im), exp_re * math.sin(self.im))
+        var exp_re = std.math.exp(self.re)
+        return Self(
+            exp_re * std.math.cos(self.im), exp_re * std.math.sin(self.im)
+        )
 
 
 # TODO: we need this overload, because the Absable trait requires returning Self

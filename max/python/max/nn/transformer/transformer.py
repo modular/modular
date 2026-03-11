@@ -84,8 +84,6 @@ class ReturnLogits(str, Enum):
 class ReturnHiddenStates(str, Enum):
     NONE = "none"
     LAST = "last"
-    ALL = "all"
-    LAST_NORMALIZED = "last_normalized"
     ALL_NORMALIZED = "all_normalized"
 
 
@@ -159,14 +157,10 @@ def logits_postprocess(
         assert logits is not None
         ret_val += (logits, offsets)
 
-    if return_hidden_states == ReturnHiddenStates.ALL:
-        ret_val += (h,)
-    elif return_hidden_states == ReturnHiddenStates.LAST:
+    if return_hidden_states == ReturnHiddenStates.LAST:
         ret_val += (last_h,)
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
         ret_val += (norm(h),)
-    elif return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-        ret_val += (norm(last_h),)
 
     return ret_val
 

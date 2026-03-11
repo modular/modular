@@ -13,9 +13,7 @@
 
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -155,10 +153,10 @@ fn load_AB[
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
     ],
     producer_phase: PipelineState[Int(num_pipeline_stages)],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -263,10 +261,10 @@ fn consumer_main_loop[
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -681,7 +679,11 @@ fn kernel_6[
     ]
 
     base_ptr_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -796,9 +798,10 @@ fn kernel_6[
     var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
+    var peer_cta_quot, peer_cta_rem = divmod(rank_m, UInt(cta_group))
     var peer_cta_coord = (
-        rank_m % UInt(cta_group),
-        rank_m // UInt(cta_group),
+        peer_cta_rem,
+        peer_cta_quot,
         rank_n,
     )  # v,m,n
 
@@ -1053,9 +1056,9 @@ def test_blackwell_kernel_6[
     comptime c_layout = Layout.row_major(M, N)
 
     # Host memory allocation
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host = c_host_managed.tensor[update=False]()

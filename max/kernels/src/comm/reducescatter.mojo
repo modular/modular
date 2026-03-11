@@ -146,8 +146,7 @@ struct ReduceScatterConfig[
         """
         comptime assert Self.ngpus > 1, "ngpus must be greater than 1"
         self.stride = threads_per_gpu * Self.simd_width
-        self.axis_part = axis_size // Self.ngpus
-        self.axis_remainder = axis_size % Self.ngpus
+        self.axis_part, self.axis_remainder = divmod(axis_size, Self.ngpus)
         self.unit_numel = unit_numel
 
     @always_inline
@@ -160,8 +159,9 @@ struct ReduceScatterConfig[
         comptime assert Self.ngpus > 1, "ngpus must be greater than 1"
         self.stride = threads_per_gpu * Self.simd_width
         var num_simd_vectors = num_elements // Self.simd_width
-        self.axis_part = num_simd_vectors // Self.ngpus
-        self.axis_remainder = num_simd_vectors % Self.ngpus
+        self.axis_part, self.axis_remainder = divmod(
+            num_simd_vectors, Self.ngpus
+        )
         self.unit_numel = Self.simd_width
 
     @always_inline
@@ -600,7 +600,7 @@ fn reducescatter[
         ), "use_multimem only supported with axis=-1 (flat)"
 
     # Return early if the input buffer is empty
-    var num_elements = input_buffers[0].numel()
+    var num_elements = input_buffers[0].num_elements()
     if num_elements == 0:
         return
 
@@ -649,10 +649,10 @@ fn reducescatter[
     )
     var expected_numel = config_check.rank_num_elements(my_rank)
     comptime if axis == -1:
-        if output_buffer.numel() != expected_numel:
+        if output_buffer.num_elements() != expected_numel:
             raise Error(
                 "output buffer has "
-                + String(output_buffer.numel())
+                + String(output_buffer.num_elements())
                 + " elements, expected "
                 + String(expected_numel)
             )

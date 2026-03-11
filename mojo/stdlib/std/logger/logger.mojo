@@ -228,7 +228,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
     fn __init__(
         out self,
-        fd: FileDescriptor = sys.stdout,
+        fd: FileDescriptor = std.sys.stdout,
         *,
         prefix: String = "",
         source_location: Bool = False,

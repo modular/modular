@@ -99,16 +99,16 @@ fn test_matmul_sm90_swapAB_comparison[
     var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
 
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_normal_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_normal_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_normal_host_ptr, dynamic_c_shape
     )
-    var c_swapAB_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_swapAB_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_swapAB_host_ptr, dynamic_c_shape
     )
 
@@ -118,16 +118,16 @@ fn test_matmul_sm90_swapAB_comparison[
     var c_normal_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_swapAB_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(), dynamic_b_shape
     )
-    var c_normal_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_normal_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_normal_dev_buffer.unsafe_ptr(), dynamic_c_shape
     )
-    var c_swapAB_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_swapAB_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_swapAB_dev_buffer.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -516,16 +516,16 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     var c_normal_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_swapAB_host_ptr = alloc[Scalar[c_type]](c_size)
 
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_normal_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_normal_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_normal_host_ptr, dynamic_c_shape
     )
-    var c_swapAB_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_swapAB_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_swapAB_host_ptr, dynamic_c_shape
     )
 
@@ -535,16 +535,16 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     var c_normal_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_swapAB_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[mut=False, a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[mut=False, rank=2, a_type, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device = NDBuffer[mut=False, b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[mut=False, rank=2, b_type, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(), dynamic_b_shape
     )
-    var c_normal_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_normal_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_normal_dev_buffer.unsafe_ptr(), dynamic_c_shape
     )
-    var c_swapAB_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_swapAB_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_swapAB_dev_buffer.unsafe_ptr(), dynamic_c_shape
     )
 

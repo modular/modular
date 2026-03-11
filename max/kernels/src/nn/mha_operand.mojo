@@ -57,7 +57,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
         ...
 
     @always_inline
@@ -124,6 +124,22 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
+        DType.bfloat16,
+        IndexList[3](BN, 1, BK),
+        swizzle_mode,
+    ]:
+        """Creates a BF16 TMA tile for the rope portion of the per-tensor rope-aware KV cache.
+        """
+        ...
+
+    @always_inline
     fn scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
@@ -171,7 +187,7 @@ struct KVCacheMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         return self.cache.block_paged_ptr[tile_size](
             Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
         )
@@ -183,7 +199,7 @@ struct KVCacheMHAOperand[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
         return self.cache.scales_block_paged_ptr(
             batch_idx, start_tok_idx, head_idx, head_dim_idx
         )
@@ -270,6 +286,28 @@ struct KVCacheMHAOperand[
         )
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Delegates to the underlying KVCache to create a BF16 rope TMA tile.
+        """
+        tma = self.cache.create_rope_tma_tile[
+            swizzle_mode, BN=BN, BK=BK, padded_depth=padded_depth
+        ](ctx)
+
+    @always_inline
     fn scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
@@ -317,7 +355,7 @@ struct KVCacheScalesMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         # Forward to scales_block_paged_ptr instead of block_paged_ptr
         return self.cache.scales_block_paged_ptr(
             Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
@@ -330,8 +368,8 @@ struct KVCacheScalesMHAOperand[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]()
 
     @always_inline
     fn load_scale[
@@ -398,6 +436,27 @@ struct KVCacheScalesMHAOperand[
         comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Not supported for KVCacheScalesMHAOperand."""
+        comptime assert (
+            False
+        ), "create_rope_tma_tile is not supported for KVCacheScalesMHAOperand"
+
+    @always_inline
     fn scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
@@ -407,6 +466,9 @@ struct KVCacheScalesMHAOperand[
 
 
 struct LayoutTensorMHAOperand[
+    origin: Origin[mut=False],
+    scale_origin: Origin[mut=False],
+    //,
     dtype_: DType,
     layout: Layout,
     scale_dtype_: DType = DType.float32,
@@ -428,9 +490,9 @@ struct LayoutTensorMHAOperand[
     )
     comptime quantization_enabled: Bool = Self.scale_layout.rank() != 0
 
-    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin]
     var scale_buffer: LayoutTensor[
-        Self.scale_dtype, Self.scale_layout, MutAnyOrigin
+        Self.scale_dtype, Self.scale_layout, Self.scale_origin
     ]
     comptime device_type: AnyType = Self
 
@@ -443,19 +505,12 @@ struct LayoutTensorMHAOperand[
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
-    ):
-        self.buffer = buffer
-        self.scale_buffer = LayoutTensor[
-            Self.scale_dtype, Self.scale_layout, MutAnyOrigin
-        ](UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]())
-
-    fn __init__(
-        out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
         scale_buffer: LayoutTensor[
-            Self.scale_dtype, Self.scale_layout, MutAnyOrigin
-        ],
+            Self.scale_dtype, Self.scale_layout, Self.scale_origin
+        ] = LayoutTensor[Self.scale_dtype, Self.scale_layout](
+            UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]()
+        ),
     ):
         self.buffer = buffer
         self.scale_buffer = scale_buffer
@@ -469,7 +524,7 @@ struct LayoutTensorMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         var ret_ptr = self.buffer.ptr + self.buffer._offset(
             IndexList[self.layout.rank()](
                 Int(batch_idx),
@@ -487,7 +542,7 @@ struct LayoutTensorMHAOperand[
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
         var ret_ptr = self.scale_buffer.ptr + self.scale_buffer._offset(
             IndexList[self.scale_layout.rank()](
                 Int(batch_idx),
@@ -590,6 +645,27 @@ struct LayoutTensorMHAOperand[
         )
 
     @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Not supported for LayoutTensorMHAOperand."""
+        comptime assert (
+            False
+        ), "create_rope_tma_tile is not supported for LayoutTensorMHAOperand"
+
+    @always_inline
     fn scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
@@ -598,18 +674,23 @@ struct LayoutTensorMHAOperand[
         return UnsafePointer[Scalar[DType.float32], MutAnyOrigin]()
 
 
-struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
-    MHAOperand, TrivialRegisterPassable
-):
+struct RaggedMHAOperand[
+    origin: Origin[mut=False],
+    cache_origin: Origin[mut=False],
+    //,
+    dtype_: DType,
+    layout: Layout,
+    cache_layout: Layout,
+](MHAOperand, TrivialRegisterPassable):
     """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime scale_dtype = DType.invalid
     comptime page_size = 0
     comptime quantization_granularity = 0
-    var buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
+    var buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin]
     var cache_row_offsets: LayoutTensor[
-        DType.uint32, Self.cache_layout, ImmutAnyOrigin
+        DType.uint32, Self.cache_layout, Self.cache_origin
     ]
 
     comptime device_type: AnyType = Self
@@ -623,9 +704,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
 
     fn __init__(
         out self,
-        buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin],
+        buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
         cache_row_offsets: LayoutTensor[
-            DType.uint32, Self.cache_layout, ImmutAnyOrigin
+            DType.uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
         comptime assert (
@@ -635,7 +716,9 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
             cache_row_offsets.rank == 1
         ), "only support rank 1 inputs for cache offsets."
         self.buffer = buffer
-        self.cache_row_offsets = cache_row_offsets
+        self.cache_row_offsets = rebind[type_of(self.cache_row_offsets)](
+            cache_row_offsets
+        )
 
     @always_inline
     fn block_paged_ptr[
@@ -666,8 +749,8 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]()
 
     @always_inline
     fn load_scale[
@@ -755,6 +838,27 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         tma = type_of(tma).create[depth=depth](
             ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
+
+    @always_inline
+    fn create_rope_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        BK: Int,
+        padded_depth: Int,
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            DType.bfloat16,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """Not supported for RaggedMHAOperand."""
+        comptime assert (
+            False
+        ), "create_rope_tma_tile is not supported for RaggedMHAOperand"
 
     @always_inline
     fn scales_raw_ptr(

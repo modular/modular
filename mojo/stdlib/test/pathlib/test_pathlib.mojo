@@ -88,7 +88,7 @@ def test_joinpath() raises:
 
 
 def test_read_write() raises:
-    var temp_file = Path(os.getenv("TEST_TMPDIR")) / "foo.txt"
+    var temp_file = Path(std.os.getenv("TEST_TMPDIR")) / "foo.txt"
     temp_file.write_text("hello")
     assert_equal(temp_file.read_text(), "hello")
 
@@ -106,12 +106,12 @@ fn get_user_path() -> Path:
 
 
 fn get_current_home() -> String:
-    return os.env.getenv("HOME")
+    return std.os.env.getenv("HOME")
 
 
 def set_home(path: Path) raises:
     path_str = String(path)
-    _ = os.env.setenv("HOME", path_str)
+    _ = std.os.env.setenv("HOME", path_str)
 
 
 # More elaborate tests in `os/path/test_expanduser.mojo`
@@ -122,9 +122,9 @@ def test_expand_user() raises:
 
     path = Path("~") / "test"
     test_path = user_path / "test"
-    assert_equal(test_path, os.path.expanduser(path))
+    assert_equal(test_path, std.os.path.expanduser(path))
     # Original path should remain unmodified
-    assert_equal(path, os.path.join("~", "test"))
+    assert_equal(path, std.os.path.join("~", "test"))
 
     # Make sure this process doesn't break other tests by changing the home dir.
     set_home(original_home)

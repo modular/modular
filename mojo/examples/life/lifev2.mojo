@@ -74,7 +74,7 @@ def run_display(
         pygame.display.flip()
 
         # Pause to let the user appreciate the scene
-        time.sleep(pause)
+        std.time.sleep(pause)
 
         # Next generation
         grid = grid.evolve()

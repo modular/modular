@@ -39,6 +39,7 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
 )
+from max.profiler import traced
 
 from .interfaces import ModelInputs, ModelOutputs
 
@@ -82,9 +83,9 @@ class MHAProbeStrategy(AttentionMetadataProbeStrategy):
 
 
 class MLAProbeStrategy(AttentionMetadataProbeStrategy):
-    """MLA: probe at 256-token granularity, bucket up to nearest captured np."""
+    """MLA: probe at 64-token granularity, bucket up to nearest captured np."""
 
-    granularity = 256
+    granularity = 64
 
     def probe_lengths(self, max_cache_length: int) -> list[int]:
         """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
@@ -141,7 +142,6 @@ def _create_model_inputs_with_dispatch_metadata(
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
         if gpu_buf is not None:
-            # Place metadata on the same device as this shard's KV blocks.
             metadata = gpu_buf.to(kv.blocks.device)
         else:
             assert cpu_buf is not None
@@ -151,6 +151,7 @@ def _create_model_inputs_with_dispatch_metadata(
                 kv,
                 max_lengths=Buffer.from_numpy(ml),
                 attention_dispatch_metadata=metadata,
+                dispatch_scalars=dispatch_metadata,
             )
         )
     result = copy.copy(model_inputs)
@@ -197,6 +198,7 @@ class ServeGraphCaptureRunner:
         self._probe_strategy: AttentionMetadataProbeStrategy = (
             MLAProbeStrategy() if kv_params.is_mla else MHAProbeStrategy()
         )
+        self._is_mla = kv_params.is_mla
         self._is_data_parallel = kv_params.data_parallel_degree > 1
 
         self.graph_entries: dict[GraphKey, GraphEntry] = {}
@@ -221,6 +223,7 @@ class ServeGraphCaptureRunner:
         }
         return list(metadata_by_num_partitions.values())
 
+    @traced
     def warmup_pre_ready(self) -> None:
         """Captures decode buckets before the worker becomes ready."""
         logger.info(
@@ -276,45 +279,46 @@ class ServeGraphCaptureRunner:
             self._max_batch_size,
         )
 
-    def _resolve_replay_key(self, model_inputs: ModelInputs) -> GraphKey:
-        """Resolves the replay graph key, handling DP sync.
-
-        1. If DP: syncs max_cache_valid_length to global max across replicas.
-        2. Reads the synced num_partitions (max across replicas for DP,
-           shard 0 otherwise).
-        3. If DP: broadcasts canonical metadata (with synced np) to all
-           shards.
-
-        For DP models, we synchronize dispatch metadata across DP replicas so
-        all devices agree on num_partitions. The captured CUDA graph bakes
-        uniform grid dimensions, so replicas with shorter caches get extra
-        CTAs that early-exit.
-
-        Returns the resolved ``GraphKey``.
-        """
-        ragged_inputs = _ragged_kv_inputs_from_model_inputs(model_inputs)
-        batch_token_count = int(model_inputs.buffers[0].shape[0])
-
-        def _np_val(kv: KVCacheInputsPerDevice) -> int:
-            meta = kv.attention_dispatch_metadata
-            return int(meta.to_numpy()[2]) if meta is not None else 0
-
-        def _q_seq_val(kv: KVCacheInputsPerDevice) -> int:
-            meta = kv.attention_dispatch_metadata
-            return int(meta.to_numpy()[1]) if meta is not None else 0
-
-        if self._is_data_parallel and len(ragged_inputs) > 1:
-            synced_np = max(_np_val(kv) for kv in ragged_inputs)
-            q_max_seq_len = max(_q_seq_val(kv) for kv in ragged_inputs)
-        else:
-            synced_np = _np_val(ragged_inputs[0])
-            q_max_seq_len = _q_seq_val(ragged_inputs[0])
-
-        if synced_np < 1:
-            raise ValueError(
-                "Expected positive decode kernel mode (num_partitions), got "
-                f"{synced_np}."
+    @staticmethod
+    def _broadcast_num_partitions(
+        ragged_inputs: Sequence[KVCacheInputsPerDevice],
+        num_partitions: int,
+    ) -> None:
+        """Overwrites num_partitions in every shard's scalars and device buffer."""
+        cpu_buf: Buffer | None = None
+        for kv in ragged_inputs:
+            assert kv.dispatch_scalars is not None
+            assert kv.attention_dispatch_metadata is not None
+            s = kv.dispatch_scalars
+            updated = AttentionDispatchMetadataScalars(
+                batch_size=s.batch_size,
+                q_max_seq_len=s.q_max_seq_len,
+                num_partitions=num_partitions,
+                max_cache_valid_length=s.max_cache_valid_length,
             )
+            if cpu_buf is None:
+                cpu_buf = updated.to_buffer()
+            kv.attention_dispatch_metadata.inplace_copy_from(
+                cpu_buf.to(kv.attention_dispatch_metadata.device)
+            )
+            kv.dispatch_scalars = updated
+
+    def _resolve_dp_replay_key(
+        self,
+        ragged_inputs: Sequence[KVCacheInputsPerDevice],
+        batch_token_count: int,
+    ) -> GraphKey:
+        """Resolves graph key for DP by syncing num_partitions across replicas.
+
+        Takes the max num_partitions/q_max_seq_len across all shards,
+        buckets if MLA, then broadcasts the final value to all shards once.
+        """
+        all_scalars = []
+        for kv in ragged_inputs:
+            assert kv.dispatch_scalars is not None
+            all_scalars.append(kv.dispatch_scalars)
+        synced_np = max(s.num_partitions for s in all_scalars)
+        q_max_seq_len = max(s.q_max_seq_len for s in all_scalars)
 
         if q_max_seq_len != 1:
             raise RuntimeError(
@@ -322,59 +326,82 @@ class ServeGraphCaptureRunner:
                 "graphs are captured."
             )
 
-        # Broadcast canonical metadata to all shards for DP.
+        final_np = self._bucket_num_partitions(
+            batch_token_count, synced_np, q_max_seq_len
+        )
+        self._broadcast_num_partitions(ragged_inputs, final_np)
+        return (batch_token_count, final_np, q_max_seq_len)
+
+    def _bucket_num_partitions(
+        self,
+        batch_token_count: int,
+        num_partitions: int,
+        q_max_seq_len: int,
+    ) -> int:
+        """Buckets num_partitions to nearest captured value for MLA.
+
+        For MHA, requires an exact match and raises on miss.
+        """
+        key = (batch_token_count, num_partitions, q_max_seq_len)
+        if key in self.graph_entries:
+            return num_partitions
+
+        if not self._is_mla:
+            raise RuntimeError(
+                f"No captured device graph for {key}. "
+                f"Available batch_token_counts: "
+                f"{sorted({k[0] for k in self.graph_entries})}."
+            )
+        captured_nps = sorted(
+            {
+                k[1]
+                for k in self.graph_entries
+                if k[0] == batch_token_count and k[2] == q_max_seq_len
+            }
+        )
+        bucketed_np = self._probe_strategy.bucket_num_partitions(
+            num_partitions, captured_nps
+        )
+        if bucketed_np is None:
+            raise RuntimeError(
+                f"No captured device graph for {key}. "
+                f"Available num_partitions for batch_token_count="
+                f"{batch_token_count}: {captured_nps}. "
+                f"Available batch_token_counts: "
+                f"{sorted({k[0] for k in self.graph_entries})}."
+            )
+        return bucketed_np
+
+    def _resolve_replay_key(self, model_inputs: ModelInputs) -> GraphKey:
+        """Resolves the replay graph key for a decode batch."""
+        ragged_inputs = _ragged_kv_inputs_from_model_inputs(model_inputs)
+        batch_token_count = int(model_inputs.buffers[0].shape[0])
+
         if self._is_data_parallel and len(ragged_inputs) > 1:
-            primary_meta = ragged_inputs[0].attention_dispatch_metadata
-            if primary_meta is not None:
-                canonical = primary_meta.to_numpy().copy()
-                canonical[1] = q_max_seq_len
-                canonical[2] = synced_np
-                for kv in ragged_inputs:
-                    if kv.attention_dispatch_metadata is not None:
-                        kv.attention_dispatch_metadata.inplace_copy_from(
-                            Buffer.from_numpy(canonical).to(
-                                kv.attention_dispatch_metadata.device
-                            )
-                        )
+            return self._resolve_dp_replay_key(ragged_inputs, batch_token_count)
 
-        replay_graph_key = (batch_token_count, synced_np, q_max_seq_len)
-        if replay_graph_key not in self.graph_entries:
-            captured_nps = sorted(
-                {
-                    k[1]
-                    for k in self.graph_entries
-                    if k[0] == batch_token_count and k[2] == q_max_seq_len
-                }
+        s0 = ragged_inputs[0].dispatch_scalars
+        assert s0 is not None
+
+        if s0.num_partitions < 1:
+            raise ValueError(
+                "Expected positive decode kernel mode (num_partitions), got "
+                f"{s0.num_partitions}."
             )
-            bucketed_np = self._probe_strategy.bucket_num_partitions(
-                synced_np, captured_nps
+        if s0.q_max_seq_len != 1:
+            raise RuntimeError(
+                f"q_max_seq_len={s0.q_max_seq_len} != 1; only "
+                "q_max_seq_len=1 graphs are captured."
             )
-            if bucketed_np is None:
-                raise RuntimeError(
-                    f"No captured device graph for {replay_graph_key}. "
-                    f"Available num_partitions for batch_token_count="
-                    f"{batch_token_count}: {captured_nps}. "
-                    f"Available batch_token_counts: "
-                    f"{sorted({k[0] for k in self.graph_entries})}."
-                )
-            replay_graph_key = (batch_token_count, bucketed_np, q_max_seq_len)
 
-            # Patch num_partitions in each shard's dispatch metadata to match
-            # the captured value. This is presumably safe because num_partitions only
-            # controls the MLA decode kernel's CTA grid size.
-            bucketed_arr = np.int64(bucketed_np)
-            for kv in ragged_inputs:
-                if kv.attention_dispatch_metadata is not None:
-                    meta = kv.attention_dispatch_metadata.to_numpy().copy()
-                    meta[2] = bucketed_arr
-                    kv.attention_dispatch_metadata.inplace_copy_from(
-                        Buffer.from_numpy(meta).to(
-                            kv.attention_dispatch_metadata.device
-                        )
-                    )
+        final_np = self._bucket_num_partitions(
+            batch_token_count, s0.num_partitions, s0.q_max_seq_len
+        )
+        if final_np != s0.num_partitions:
+            self._broadcast_num_partitions(ragged_inputs, final_np)
+        return (batch_token_count, final_np, s0.q_max_seq_len)
 
-        return replay_graph_key
-
+    @traced
     def replay(
         self,
         *,

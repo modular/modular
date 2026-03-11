@@ -18,18 +18,21 @@ MMA: Uses BF16 operands (KIND_F16)
 """
 
 from std.math import sqrt
-from std.memory import LegacyUnsafePointer, bitcast
+from std.memory import bitcast
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import lane_id as get_lane_id
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
+from std.gpu import (
+    block_idx,
+    lane_id_int as lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
+)
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
@@ -59,7 +62,7 @@ from std.utils.static_tuple import StaticTuple
 
 fn cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
-](C: LayoutTensor, A: LayoutTensor, B: LayoutTensor):
+](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
     comptime N = C.layout[1].size()
     # layout_a is M x K
@@ -120,7 +123,7 @@ fn tma_umma_kernel_sgs[
     num_threads: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b: LayoutTensor[b_gmem_type, b_layout, MutAnyOrigin],  # FP8 in gmem
+    b: LayoutTensor[b_gmem_type, b_layout, ImmutAnyOrigin],  # FP8 in gmem
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: Int,
 ):
@@ -164,7 +167,11 @@ fn tma_umma_kernel_sgs[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -290,7 +297,8 @@ fn tma_umma_kernel_sgs[
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:
-        warp_id = UInt(Int(2 * Int(warp_id % 4) + Int(warp_id // 4)))
+        var warp_id_q, warp_id_r = divmod(warp_id, UInt(4))
+        warp_id = UInt(Int(2 * Int(warp_id_r) + Int(warp_id_q)))
 
     for i in range(num_iters):
         # Load A via TMA
@@ -329,11 +337,9 @@ fn tma_umma_kernel_sgs[
             # transpose_b=True: gmem NxK (K fast), smem K-major (K fast)
             # transpose_b=False: gmem KxN (N fast), smem N-major (N fast)
             comptime if transpose_b:
-                n_local = local_idx // BK
-                k_local = local_idx % BK
+                n_local, k_local = divmod(local_idx, BK)
             else:
-                k_local = local_idx // BN
-                n_local = local_idx % BN
+                k_local, n_local = divmod(local_idx, BN)
 
             # Global coordinates
             gmem_n = Int(block_idx.x) * BN + n_local
@@ -351,12 +357,10 @@ fn tma_umma_kernel_sgs[
 
             # Cast and store to smem using local coordinates
             bf16_val = fp8_val.cast[b_smem_type]()
-            n_offset = (n_local // b_shape00) * b_stride01 + (
-                n_local % b_shape00
-            ) * b_stride00
-            k_offset = (k_local // b_shape10) * b_stride11 + (
-                k_local % b_shape10
-            ) * b_stride10
+            var n_q, n_r = divmod(n_local, b_shape00)
+            n_offset = n_q * b_stride01 + n_r * b_stride00
+            var k_q, k_r = divmod(k_local, b_shape10)
+            k_offset = k_q * b_stride11 + k_r * b_stride10
             offset = swizzle(n_offset + k_offset)
             b_smem_tile.ptr.store[alignment=2 * simd_size](offset, bf16_val)
 

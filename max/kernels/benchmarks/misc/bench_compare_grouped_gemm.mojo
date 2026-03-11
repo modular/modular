@@ -23,7 +23,6 @@ kernel processes all groups in a single persistent launch.
 """
 
 from std.math import ceildiv
-from std.memory import LegacyUnsafePointer
 from std.time import perf_counter_ns
 
 from std.benchmark import (
@@ -63,8 +62,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn bench_cublas_per_group[
@@ -128,10 +125,10 @@ fn bench_cublas_per_group[
         SF_ATOM_K,
     )
 
-    var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var sfa_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
-    var sfb_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
+    var a_host = alloc[Scalar[a_type]](a_size)
+    var b_host = alloc[Scalar[b_type]](b_size)
+    var sfa_host = alloc[Scalar[scales_dtype]](a_scales_total)
+    var sfb_host = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -172,19 +169,19 @@ fn bench_cublas_per_group[
         SF_ATOM_K,
     )
 
-    var a_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
-    var b_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
-    var c_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
-    var sfa_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
+    var sfa_nd = NDBuffer[rank=5, scales_dtype, _, static_a_scales_shape](
         sfa_device.unsafe_ptr(), dynamic_a_scales_shape
     )
-    var sfb_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
+    var sfb_nd = NDBuffer[rank=5, scales_dtype, _, static_b_scales_shape](
         sfb_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
@@ -292,10 +289,10 @@ fn bench_structured_kernel[
         * SF_ATOM_K
     )
 
-    var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var sfa_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
-    var sfb_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
+    var a_host = alloc[Scalar[a_type]](a_size)
+    var b_host = alloc[Scalar[b_type]](b_size)
+    var sfa_host = alloc[Scalar[scales_dtype]](a_scales_total)
+    var sfb_host = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -320,16 +317,16 @@ fn bench_structured_kernel[
 
     # Template tensors - 3D with batch=1
     comptime static_a_3d_shape = DimList(1, m.dim, k_array_dim)
-    var a_template_nd = NDBuffer[a_type, 3, _, static_a_3d_shape](
+    var a_template_nd = NDBuffer[rank=3, a_type, _, static_a_3d_shape](
         a_device.unsafe_ptr(), IndexList[3](1, m.value, k_array_val)
     )
     comptime static_b_3d_shape = DimList(1, n.dim, k_array_dim)
-    var b_template_nd = NDBuffer[b_type, 3, _, static_b_3d_shape](
+    var b_template_nd = NDBuffer[rank=3, b_type, _, static_b_3d_shape](
         b_device.unsafe_ptr(),
         IndexList[3](1, n.value, k_array_val),
     )
     comptime static_c_3d_shape = DimList(1, m.dim, n.dim)
-    var c_template_nd = NDBuffer[c_type, 3, _, static_c_3d_shape](
+    var c_template_nd = NDBuffer[rank=3, c_type, _, static_c_3d_shape](
         c_device.unsafe_ptr(), IndexList[3](1, m.value, n.value)
     )
 
@@ -341,7 +338,9 @@ fn bench_structured_kernel[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var a_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_5d_shape](
+    var a_scales_5d_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_a_scales_5d_shape
+    ](
         sfa_device.unsafe_ptr(),
         IndexList[5](
             1,
@@ -358,7 +357,9 @@ fn bench_structured_kernel[
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
     )
-    var b_scales_5d_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_5d_shape](
+    var b_scales_5d_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_b_scales_5d_shape
+    ](
         sfb_device.unsafe_ptr(),
         IndexList[5](
             1,
@@ -375,18 +376,18 @@ fn bench_structured_kernel[
     var sfa_template = TileTensor(a_scales_5d_nd)
     var sfb_template = TileTensor(b_scales_5d_nd)
 
-    var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
+    var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
         problem_sizes_host[g * 4 + 0] = Int32(m.value)
         problem_sizes_host[g * 4 + 1] = Int32(n.value)
         problem_sizes_host[g * 4 + 2] = Int32(k.value)  # Logical K
         problem_sizes_host[g * 4 + 3] = 1
 
-    var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var b_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var c_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfa_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfb_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
+    var a_ptrs_host = alloc[UInt64](max_groups)
+    var b_ptrs_host = alloc[UInt64](max_groups)
+    var c_ptrs_host = alloc[UInt64](max_groups)
+    var sfa_ptrs_host = alloc[UInt64](max_groups)
+    var sfb_ptrs_host = alloc[UInt64](max_groups)
 
     for g in range(max_groups):
         a_ptrs_host[g] = UInt64(Int(a_device.unsafe_ptr()))

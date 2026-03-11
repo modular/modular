@@ -311,8 +311,7 @@ fn run_mamba_split_conv1d_scan_combined[
 
     for b_idx in range(batch):
         for d_idx in range(dim):
-            var h = d_idx // headdim
-            var p = d_idx % headdim
+            var h, p = divmod(d_idx, headdim)
             var group_id = h // ngroups if ngroups > 1 else 0
 
             # Pre-load A value (same for all DSTATE entries within a head)

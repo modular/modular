@@ -23,7 +23,7 @@ from std.gpu import (
     barrier,
     block_idx,
     grid_dim,
-    lane_id,
+    lane_id_int as lane_id,
     thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
@@ -36,7 +36,6 @@ from std.gpu.memory import (
     external_memory,
 )
 from layout import RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -233,11 +232,11 @@ fn multistage_mma_q[
                                 target_address_space=AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, async_copy_scales_veclen]()
-                            .distribute[async_copy_scales_layout](UInt(tid))
+                            .distribute[async_copy_scales_layout](Int(tid))
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
                             1, async_copy_scales_veclen
-                        ]().distribute[async_copy_scales_layout](UInt(tid))
+                        ]().distribute[async_copy_scales_layout](Int(tid))
 
                         comptime element_size_bytes = size_of[
                             scales_type
@@ -345,7 +344,7 @@ fn multistage_mma_q[
     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
         scales_warp_tile.vectorize[1, simd_size]().distribute[
             smem_reg_scales_layout, axis=0
-        ](UInt(lane_id))
+        ](Int(lane_id))
     )
 
     mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
@@ -381,7 +380,7 @@ fn multistage_mma_q[
                     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
                         scales_warp_tile.vectorize[1, simd_size]().distribute[
                             smem_reg_scales_layout, axis=0
-                        ](UInt(lane_id))
+                        ](Int(lane_id))
                     )
 
             mma_op.load_a[swizzle_a_pattern](
@@ -465,13 +464,13 @@ fn multistage_mma_q[
                                     ]()
                                     .vectorize[1, async_copy_scales_veclen]()
                                     .distribute[async_copy_scales_layout](
-                                        UInt(tid)
+                                        Int(tid)
                                     )
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
                                     1, async_copy_scales_veclen
                                 ]().distribute[async_copy_scales_layout](
-                                    UInt(tid)
+                                    Int(tid)
                                 )
 
                                 comptime element_size_bytes = size_of[
@@ -814,10 +813,10 @@ fn multistage_qgemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            ]().distribute[warp_layout](Int(thread_idx.x))
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
@@ -1105,7 +1104,7 @@ fn repack_Q4_0_for_sm8x[
             var thread_tile = (
                 raw_Q_tile.slice[:, 2:]()
                 .vectorize[1, 2]()
-                .distribute[thd_layout](UInt(lane_id))
+                .distribute[thd_layout](lane_id)
             )
 
             comptime for i_e in range(16):
@@ -1321,7 +1320,7 @@ fn repack_GPTQ_for_sm8x[
                     var p_Qtile_idx = p_group_idx.tile[repack_tile[1]](i_Q_tile)
                     var thd_idx = p_Qtile_idx.vectorize[2]().distribute[
                         thd_layout, axis=1
-                    ](UInt(lane_id))
+                    ](lane_id)
                     var n_idx = lane_id // 4
 
                     var weights_K = raw_weights.tile[BN, uint_K](
@@ -1353,9 +1352,7 @@ fn repack_GPTQ_for_sm8x[
                     ](0, i_Q_tile)
                     # This gets elements 0, 1, 8, 9 in each mma_tile for
                     # thread 0.
-                    var thread_tile = raw_Q_tile.distribute[thd_layout](
-                        UInt(lane_id)
-                    )
+                    var thread_tile = raw_Q_tile.distribute[thd_layout](lane_id)
 
                     comptime for i_e in range(16):
                         tmp[i_e] = thread_tile.load[1](i_e // 2, i_e % 2)

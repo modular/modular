@@ -209,16 +209,14 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         # Thus, we have head_idx vary fastest.
         #
         # self.idx's max-value = self.max_num_prompt_tiles*num_heads*batch_size
-        quotient = idx // self.max_num_prompt_tiles
-        prompt_tile_idx = idx % self.max_num_prompt_tiles
+        quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
         # max value = num_heads-1
         # head index
         # changes kv whenever head_idx//group changes
-        head_idx = quotient % num_heads
         # max value = batch_size-1
         # prompt index
         # changes kv
-        prompt_idx = quotient // num_heads
+        prompt_idx, head_idx = divmod(quotient, num_heads)
 
         return (prompt_tile_idx, head_idx, prompt_idx)
 
@@ -227,17 +225,15 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         # First dim, offset in prompt length
-        quotient = idx // self.max_num_prompt_tiles
-        prompt_tile_idx = idx % self.max_num_prompt_tiles
+        quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
         # head index
-        head_idx = quotient % num_heads
+        # prompt index
+        prompt_idx, head_idx = divmod(quotient, num_heads)
         # Switch the traverse direction in prompt for odd head.
         prompt_tile_idx = (
             prompt_tile_idx if head_idx % 2
             == 0 else self.max_num_prompt_tiles - 1 - prompt_tile_idx
         )
-        # prompt index
-        prompt_idx = quotient // num_heads
 
         return (prompt_tile_idx, head_idx, prompt_idx)
 
@@ -418,6 +414,7 @@ struct MHASchedule(TrivialRegisterPassable):
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
+    flip_prompt_idx: Bool,
 ](Defaultable, MHATileScheduler, TrivialRegisterPassable):
     comptime may_advance: Bool = False
     comptime mha_schedule: MHASchedule = MHASchedule.DEFAULT
@@ -434,6 +431,8 @@ struct TransientScheduler[
             + String(Self.tile_shape)
             + ", num_heads = "
             + String(Self.num_heads)
+            + ", flip_prompt_idx = "
+            + String(Self.flip_prompt_idx)
             + "]"
         )
 
@@ -442,9 +441,14 @@ struct TransientScheduler[
         pass
 
     @always_inline
-    fn get_current_work_info(self) -> WorkInfo:
+    fn get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
+        var prompt_tile_idx: UInt32
+        comptime if Self.flip_prompt_idx:
+            prompt_tile_idx = num_prompt_tiles - 1 - UInt32(block_idx.x)
+        else:
+            prompt_tile_idx = UInt32(block_idx.x)
         return WorkInfo(
-            UInt32(block_idx.x) * Self.tile_shape,
+            prompt_tile_idx * Self.tile_shape,
             UInt32(block_idx.y),
             UInt32(block_idx.z),
             True,
@@ -457,7 +461,7 @@ struct TransientScheduler[
     ](
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
-        return self.get_current_work_info()
+        return self.get_current_work_info(ts.max_num_prompt_tiles)
 
     @always_inline
     fn advance[
@@ -505,7 +509,9 @@ struct TransientScheduler[
         self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> SeqInfo:
         return SeqInfo.create(
-            self.get_current_work_info(), ts.valid_length, ts.max_seq_len
+            self.get_current_work_info(ts.max_num_prompt_tiles),
+            ts.valid_length,
+            ts.max_seq_len,
         )
 
 

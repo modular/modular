@@ -74,7 +74,7 @@ struct TileTensor[
     origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    linear_idx_type: DType = _get_index_type[LayoutType](address_space),
+    linear_idx_type: DType = _get_index_type(address_space),
     element_size: Int = 1,
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     """A tensor type with trait-based layouts supporting nested and hierarchical
@@ -618,8 +618,10 @@ struct TileTensor[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
     ](
-        self, idx: IndexList[_, ...], value: SIMD[Self.dtype, width]
-    ) where Self.mut:
+        self: TileTensor[mut=True, Self.dtype, ...],
+        idx: IndexList[_, ...],
+        value: SIMD[Self.dtype, width],
+    ):
         """Store elements using an IndexList index (for flat layouts).
 
         This enables TileTensor to be used directly with `_elementwise_impl_gpu`
@@ -686,7 +688,7 @@ struct TileTensor[
             self.ptr_at_offset(coords)
         )
 
-    fn numel(self) -> Int:
+    fn num_elements(self) -> Int:
         """Returns the total number of elements in the tensor.
 
         Computes the product of all shape dimensions.
@@ -1140,7 +1142,7 @@ struct TileTensor[
                 var idx = self.layout(Idx[i]())
                 self.ptr.mut_cast[True]()[idx] = val
         else:
-            var num_elements = self.numel()
+            var num_elements = self.num_elements()
 
             for i in range(num_elements):
                 var idx = self.layout(Idx(i))
@@ -1634,7 +1636,7 @@ struct TileTensor[
         """
         # Runtime validation for element count
         assert (
-            self.numel() == new_shape.product()
+            self.num_elements() == new_shape.product()
         ), "reshape: total number of elements must match"
 
         var new_layout = row_major(new_shape)
@@ -1763,8 +1765,8 @@ struct TileTensor[
     fn _to_ndbuffer(
         self,
         out result: NDBuffer[
+            rank=Self.rank,
             Self.dtype,
-            Self.rank,
             Self.origin,
             _CoordToDimList[*Self.LayoutType._shape_types],
             _CoordToDimList[*Self.LayoutType._stride_types],
@@ -1884,7 +1886,7 @@ struct TileTensor[
         return DeviceBuffer[Self.dtype](
             ctx,
             self.ptr,
-            self.numel(),
+            self.num_elements(),
             owning=False,
         )
 
@@ -2512,16 +2514,8 @@ fn _vectorize[
     ](data_layout_tensor.ptr, new_layout)
 
 
-fn _get_index_type[
-    LayoutType: TensorLayout
-](address_space: AddressSpace) -> DType:
-    """Returns int32 for shared/constant GPU memory or small known layouts,
-    int64 otherwise."""
-    comptime if LayoutType.all_dims_known and LayoutType.static_cosize <= Int(
-        max_finite[DType.int32]()
-    ):
-        return DType.int32
-
+fn _get_index_type(address_space: AddressSpace) -> DType:
+    """Returns int32 for shared/constant GPU memory, int64 otherwise."""
     if address_space in (
         AddressSpace.SHARED,
         AddressSpace.CONSTANT,
@@ -2699,32 +2693,6 @@ fn _int_to_dim(value: Int) -> Dim:
         return Dim(value)
     return Dim()
 
-
-comptime _LTDims1[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-)
-comptime _LTDims2[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-)
-comptime _LTDims3[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-    _int_to_dim(it[2].value()),
-)
-comptime _LTDims4[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-    _int_to_dim(it[2].value()),
-    _int_to_dim(it[3].value()),
-)
-comptime _LTDims5[it: _IntTuple] = DimList(
-    _int_to_dim(it[0].value()),
-    _int_to_dim(it[1].value()),
-    _int_to_dim(it[2].value()),
-    _int_to_dim(it[3].value()),
-    _int_to_dim(it[4].value()),
-)
 
 comptime _int_to_dim_tabulator[it: _IntTuple, idx: Int]: Dim = _int_to_dim(
     it[idx].value()

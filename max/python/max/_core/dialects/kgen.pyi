@@ -1820,40 +1820,6 @@ class VariadicSizeAttr(max._core.Attribute):
     @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicSplatAttr(max._core.Attribute):
-    """
-    The `#kgen.variadic.splat` creates a variadic by splatting the same value
-    to the given times.
-
-    Example:
-    ```mlir
-    #kgen.variadic.splat<Int, 5> : !variadic<!AnyType>
-    // ->
-    #kgen.variadic<[Int, Int, Int, Int, Int]> : !variadic<!AnyType>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        type: VariadicType,
-        element: max._core.dialects.builtin.TypedAttr,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        type: VariadicType,
-        element: max._core.dialects.builtin.TypedAttr,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def type(self) -> VariadicType: ...
-    @property
-    def element(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
-
 class VariadicTabulateAttr(max._core.Attribute):
     """
     The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values
@@ -4304,52 +4270,6 @@ class WitnessOp(max._core.Operation):
     def value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @value.setter
     def value(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-
-class PackageLinkOp(max._core.Operation):
-    """
-    A `kgen.package.link` defines a link to the compiled artifacts of a package.
-    It contains a reference to all precompiled packages, providing an anchor for
-    functions and other operations defined within the package during the
-    lowering pipeline. It may also contain the post-parse bodies which can be
-    used to compile the package.
-
-    Example:
-
-    ```mlir
-    kgen.package.link @foo
-      dependencies([@std])
-      post_parse(dense_resource<...> : tensor<...xi8>)
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        sym_name: max._core.dialects.builtin.StringAttr,
-        post_parse_module: max._core.dialects.builtin.DenseResourceElementsAttr,
-        dependencies: LinkDependencyArrayAttr,
-    ) -> None: ...
-    @property
-    def sym_name(self) -> str: ...
-    @sym_name.setter
-    def sym_name(
-        self, arg: max._core.dialects.builtin.StringAttr, /
-    ) -> None: ...
-    @property
-    def post_parse_module(
-        self,
-    ) -> max._core.dialects.builtin.DenseResourceElementsAttr | None: ...
-    @post_parse_module.setter
-    def post_parse_module(
-        self, arg: max._core.dialects.builtin.DenseResourceElementsAttr, /
-    ) -> None: ...
-    @property
-    def dependencies(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.FlatSymbolRefAttr] | None: ...
-    @dependencies.setter
-    def dependencies(self, arg: LinkDependencyArrayAttr, /) -> None: ...
 
 class ParameterScopeTypeInterface(Protocol):
     """

@@ -678,7 +678,9 @@ fn test_from_ndbuffer_row_major_strides() raises:
 
     # Mixed shape: dim 0 dynamic, dim 1 static (128).
     comptime shape = DimList(Dim(), 128)
-    var ndbuf = NDBuffer[DType.float32, 2, _, shape](ptr, IndexList[2](2, 128))
+    var ndbuf = NDBuffer[rank=2, DType.float32, _, shape](
+        ptr, IndexList[2](2, 128)
+    )
     var tt = TileTensor(ndbuf)
 
     # Runtime values correct.
@@ -783,14 +785,14 @@ def test_load_store_linear_non_trivial_stride() raises:
 
 
 fn test_linear_idx_type_small_static_layout() raises:
-    """Small fully-static layouts use int32 for linear_idx_type."""
-    # Cosize = (4-1)*4 + (4-1)*1 + 1 = 16, fits in int32
+    """Small fully-static layouts in GENERIC address space use int64."""
     comptime TensorType = TileTensor[
         DType.float32,
         RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
         MutAnyOrigin,
     ]
-    comptime assert TensorType.linear_idx_type == DType.int32
+    # GENERIC address space -> int64
+    comptime assert TensorType.linear_idx_type == DType.int64
 
 
 fn test_linear_idx_type_dynamic_layout_generic() raises:
@@ -819,12 +821,12 @@ fn test_linear_idx_type_recomputed_after_tile() raises:
     """After tile(), linear_idx_type is recomputed from the new layout."""
     var stack = InlineArray[Int32, 256](fill=0)
     var tensor = TileTensor(stack, row_major[16, 16]())
-    # Original: cosize=256, int32
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    # GENERIC address space -> int64
+    assert_equal(type_of(tensor).linear_idx_type, DType.int64)
 
-    # After tiling: new layout has smaller cosize, still int32
+    # After tiling: new layout, still GENERIC -> int64
     var tiled = tensor.tile[4, 4]((Idx(0), Idx(0)))
-    assert_equal(type_of(tiled).linear_idx_type, DType.int32)
+    assert_equal(type_of(tiled).linear_idx_type, DType.int64)
     _ = tiled
 
 
@@ -832,12 +834,12 @@ fn test_linear_idx_type_recomputed_after_distribute() raises:
     """After distribute(), linear_idx_type is recomputed from the new layout."""
     var stack = InlineArray[Int32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]())
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, DType.int64)
 
     comptime thread_layout = row_major((Idx[2](), Idx[2]()))
     var frag = tensor.distribute[thread_layout=thread_layout](0)
-    # Distributed fragment: shape [2,2], strides [8,2] -> cosize = (2-1)*8 + (2-1)*2 + 1 = 11
-    assert_equal(type_of(frag).linear_idx_type, DType.int32)
+    # GENERIC address space -> int64
+    assert_equal(type_of(frag).linear_idx_type, DType.int64)
     _ = frag
 
 
@@ -845,9 +847,9 @@ fn test_linear_idx_type_recomputed_after_vectorize() raises:
     """After vectorize(), linear_idx_type is recomputed from the new layout."""
     var stack = InlineArray[Int32, 256](fill=0)
     var tensor = TileTensor(stack, row_major[16, 16]())
-    assert_equal(type_of(tensor).linear_idx_type, DType.int32)
+    assert_equal(type_of(tensor).linear_idx_type, DType.int64)
 
     var vectorized = tensor.vectorize[4, 4]()
-    # Vectorized: shape [4,4], strides [64,4] -> cosize = (4-1)*64 + (4-1)*4 + 1 = 205
-    assert_equal(type_of(vectorized).linear_idx_type, DType.int32)
+    # GENERIC address space -> int64
+    assert_equal(type_of(vectorized).linear_idx_type, DType.int64)
     _ = vectorized

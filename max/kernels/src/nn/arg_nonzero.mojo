@@ -47,7 +47,7 @@ fn arg_nonzero[
     ), "output_buffer must be of rank 2"
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")]("arg_nonzero"):
-        var numel = input_buffer.numel()
+        var numel = input_buffer.num_elements()
         if numel == 0:
             return
 
@@ -97,7 +97,7 @@ fn arg_nonzero_shape[
     var shape = IndexList[2]()
     shape[1] = input_buffer.rank
 
-    var numel = input_buffer.numel()
+    var numel = input_buffer.num_elements()
 
     var j: Int = 0
     for i in range(numel):

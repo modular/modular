@@ -24,9 +24,6 @@ from layout.coord import Coord, Idx
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils import Index, IndexList
@@ -35,12 +32,12 @@ from std.utils import Index, IndexList
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     print("== run_matmul naive kernel")
 
-    var a_host = UnsafePointer[BFloat16].alloc(M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(K * N)
-    var c_host = UnsafePointer[BFloat16].alloc(M * N)
-    var a_host_n = UnsafePointer[Float32].alloc(M * K)
-    var b_host_n = UnsafePointer[Float32].alloc(K * N)
-    var c_host_n = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[BFloat16](M * K)
+    var b_host = alloc[BFloat16](K * N)
+    var c_host = alloc[BFloat16](M * N)
+    var a_host_n = alloc[Float32](M * K)
+    var b_host_n = alloc[Float32](K * N)
+    var c_host_n = alloc[Float32](M * N)
 
     var rand_min = -1.0
     var rand_max = 1.0
@@ -206,12 +203,12 @@ fn run_matmul[
 ) raises:
     print("== run_matmul kernel => ", dtype, M, N, K)
 
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var a_host_n = alloc[Scalar[dtype]](M * K)
+    var b_host_n = alloc[Scalar[dtype]](K * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
@@ -238,13 +235,13 @@ fn run_matmul[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -360,10 +357,10 @@ fn run_matmul_split_k[
         K,
     )
 
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
@@ -388,13 +385,13 @@ fn run_matmul_split_k[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -408,9 +405,9 @@ fn run_matmul_split_k[
     var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
     multistage_gemm[transpose_b=False, config=config](
-        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
+        rebind[NDBuffer[rank=2, dtype, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[rank=2, dtype, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[rank=2, dtype, b_buf.origin, b_shape]](b_buf),
         best_config,
         ctx,
     )
@@ -507,12 +504,12 @@ fn run_matmul_transpose[
     print("== run_matmul kernel transpose => ", String(dtype), M, N, K)
 
     comptime transpose_b = True
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var a_host_n = alloc[Scalar[dtype]](M * K)
+    var b_host_n = alloc[Scalar[dtype]](K * N)
+    var c_host_n = alloc[Scalar[dtype]](M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
@@ -539,13 +536,13 @@ fn run_matmul_transpose[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](N * K)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_buf = NDBuffer[dtype, 2, _, a_shape](
+    var a_buf = NDBuffer[rank=2, dtype, _, a_shape](
         a_device.unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[dtype, 2, _, b_shape](
+    var b_buf = NDBuffer[rank=2, dtype, _, b_shape](
         b_device.unsafe_ptr(), Index(N, K)
     )
-    var c_buf = NDBuffer[dtype, 2, _, c_shape](
+    var c_buf = NDBuffer[rank=2, dtype, _, c_shape](
         c_device.unsafe_ptr(), Index(M, N)
     )
 
@@ -648,12 +645,12 @@ fn run_batched_matmul(
 ) raises:
     print("== test_batched_matmul")
 
-    var a_host = UnsafePointer[BFloat16].alloc(B * M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(B * K * N)
-    var c_host = UnsafePointer[BFloat16].alloc(B * M * N)
-    var a_host_n = UnsafePointer[Float32].alloc(B * M * K)
-    var b_host_n = UnsafePointer[Float32].alloc(B * K * N)
-    var c_host_n = UnsafePointer[Float32].alloc(B * M * N)
+    var a_host = alloc[BFloat16](B * M * K)
+    var b_host = alloc[BFloat16](B * K * N)
+    var c_host = alloc[BFloat16](B * M * N)
+    var a_host_n = alloc[Float32](B * M * K)
+    var b_host_n = alloc[Float32](B * K * N)
+    var c_host_n = alloc[Float32](B * M * N)
 
     var rand_min = -100.0
     var rand_max = 100.0
@@ -675,26 +672,26 @@ fn run_batched_matmul(
     var a_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * K)
     var b_device = ctx.enqueue_create_buffer[DType.bfloat16](B * K * N)
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * N)
-    var a_buf = NDBuffer[DType.bfloat16, 3](
+    var a_buf = NDBuffer[rank=3, DType.bfloat16](
         a_device.unsafe_ptr(), Index(B, M, K)
     )
-    var b_buf = NDBuffer[DType.bfloat16, 3](
+    var b_buf = NDBuffer[rank=3, DType.bfloat16](
         b_device.unsafe_ptr(), Index(B, K, N)
     )
-    var c_buf = NDBuffer[DType.bfloat16, 3](
+    var c_buf = NDBuffer[rank=3, DType.bfloat16](
         c_device.unsafe_ptr(), Index(B, M, N)
     )
 
     var a_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * K)
     var b_device_n = ctx.enqueue_create_buffer[DType.float32](B * K * N)
     var c_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * N)
-    var a_buf_n = NDBuffer[DType.float32, 3](
+    var a_buf_n = NDBuffer[rank=3, DType.float32](
         a_device_n.unsafe_ptr(), Index(B, M, K)
     )
-    var b_buf_n = NDBuffer[DType.float32, 3](
+    var b_buf_n = NDBuffer[rank=3, DType.float32](
         b_device_n.unsafe_ptr(), Index(B, K, N)
     )
-    var c_buf_n = NDBuffer[DType.float32, 3](
+    var c_buf_n = NDBuffer[rank=3, DType.float32](
         c_device_n.unsafe_ptr(), Index(B, M, N)
     )
 

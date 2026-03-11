@@ -20,9 +20,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -95,16 +92,12 @@ fn test[
     comptime c_ref_layout = Layout.row_major(UNKNOWN_VALUE, actual_N)
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(lora_c_size)
-    var c_ref_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_ref_size)
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_experts + 1
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_experts
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](lora_c_size)
+    var c_ref_host_ptr = alloc[Scalar[c_type]](c_ref_size)
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
 
     var a_host = LayoutTensor[a_type, a_layout](
         a_host_ptr,
@@ -147,27 +140,27 @@ fn test[
         num_experts
     )
 
-    var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_dev = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
         IndexList[2](total_num_tokens, K),
     )
-    var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_dev = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
         dynamic_b_shape,
     )
-    var c_dev = NDBuffer[c_type, 3, _, static_lora_c_shape](
+    var c_dev = NDBuffer[rank=3, c_type, _, static_lora_c_shape](
         c_dev_buffer.unsafe_ptr(),
         IndexList[3](3, total_num_tokens, N),
     )
-    var c_ref_dev = NDBuffer[c_type, 2, _, static_c_ref_shape](
+    var c_ref_dev = NDBuffer[rank=2, c_type, _, static_c_ref_shape](
         c_ref_dev_buffer.unsafe_ptr(),
         IndexList[2](total_num_tokens, actual_N),
     )
-    var a_offsets_dev = NDBuffer[DType.uint32, 1](
+    var a_offsets_dev = NDBuffer[rank=1, DType.uint32](
         a_offsets_dev_buffer.unsafe_ptr(),
         IndexList[1](num_experts + 1),
     )
-    var expert_ids_dev = NDBuffer[DType.int32, 1](
+    var expert_ids_dev = NDBuffer[rank=1, DType.int32](
         expert_ids_dev_buffer.unsafe_ptr(),
         IndexList[1](num_experts),
     )
@@ -209,7 +202,7 @@ fn test[
 
     rtol = 1e-2
 
-    for qkv_idx, m, n in itertools.product(
+    for qkv_idx, m, n in std.itertools.product(
         range(3), range(total_num_tokens), range(N)
     ):
         var expect = c_ref_host[m, qkv_idx * N + n][0]
