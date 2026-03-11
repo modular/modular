@@ -95,7 +95,7 @@ fn test_dtype_randn() raises:
     seed()
     var size: Int = 1000
     var ptr = alloc[Float64](size)
-    std.random.randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
+    randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
     ptr.free()
 
 
