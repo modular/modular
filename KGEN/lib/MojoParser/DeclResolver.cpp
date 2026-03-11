@@ -439,6 +439,81 @@ DeclResolver::aliasImportDecls(ArrayRef<ASTDecl *> decls, StringAttr name,
                         allowMultipleWithSameName);
 }
 
+// Check whether the incoming decls conflict with existing decls under the same
+// name, applying the same rules as `attachDeclToParentNameTable` does for local
+// declarations: functions may freely overload each other, but a function and a
+// non-function (struct, alias, MLIR type, …) under the same name is an error,
+// as are two distinct non-functions.
+LogicalResult DeclResolver::checkImportNamingConflict(
+    ArrayRef<ASTDecl *> incoming, ArrayRef<ASTDecl *> existing, StringAttr name,
+    llvm::SMLoc aliasLoc, bool emitDiagnostics) {
+  // Single pass over each set to find a representative fn and non-fn decl
+  // (skipping UnresolvedImportOps whose type is not yet known).
+  //
+  // By module naming rules, each set has at most one non-function element
+  // (a module cannot declare e.g. both a struct and an alias under the same
+  // name). This lets us classify both sets in O(N+M) and dispatch directly,
+  // avoiding an O(N*M) nested loop over two potentially large overload sets.
+  struct DeclKinds {
+    ASTDecl *fn = nullptr, *nonFn = nullptr;
+  };
+  auto classify = [](ArrayRef<ASTDecl *> decls,
+                     ASTDecl *skip = nullptr) -> DeclKinds {
+    DeclKinds result;
+    for (ASTDecl *d : decls) {
+      if (isa_and_nonnull<UnresolvedImportOp>(d->getIfOperation()))
+        continue;
+      if (d == skip)
+        continue;
+      if (isa_and_nonnull<FnOp>(d->getIfOperation())) {
+        if (!result.fn) // any representative fn suffices for conflict detection
+          result.fn = d;
+      } else {
+        result.nonFn = d; // at most one non-fn per set (module naming rules)
+      }
+    }
+    return result;
+  };
+
+  auto [incomingFn, incomingNonFn] = classify(incoming);
+  // Skip incomingNonFn when scanning the existing set: if the user wrote
+  // `from mod_a import Foo` twice, the first resolution already placed the
+  // struct into `existing`, so the same ASTDecl* appears in both arrays.
+  // Without the skip, we would compare the decl against itself and
+  // incorrectly diagnose a "struct vs. struct" conflict.
+  auto [existingFn, existingNonFn] = classify(existing, incomingNonFn);
+
+  // Determine the conflicting pair, if any.
+  ASTDecl *conflictA = nullptr, *conflictB = nullptr;
+  if (incomingNonFn && existingFn) {
+    // Non-function being imported conflicts with an existing function.
+    conflictA = existingFn;
+    conflictB = incomingNonFn;
+  } else if (incomingFn && existingNonFn) {
+    // Function being imported conflicts with an existing non-function.
+    conflictA = existingNonFn;
+    conflictB = incomingFn;
+  } else if (incomingNonFn && existingNonFn) {
+    // Two non-functions: compatible only if they form a single struct namespace
+    // (one struct + its extensions). Two structs, two aliases, etc. conflict.
+    if (failed(
+            canMergeSingleNamespaceDecls({incomingNonFn}, {existingNonFn}))) {
+      conflictA = existingNonFn;
+      conflictB = incomingNonFn;
+    }
+  }
+
+  if (!conflictA)
+    return success();
+
+  if (emitDiagnostics) {
+    auto diag = emitError(aliasLoc, "import of ") << name << " is ambiguous";
+    diag.attachNote(conflictA->getLoc()) << name << " declared here";
+    diag.attachNote(conflictB->getLoc()) << name << " also declared here";
+  }
+  return failure();
+}
+
 LogicalResult DeclResolver::aliasDeclsImpl(
     ArrayRef<ASTDecl *> decls, StringAttr name, llvm::SMLoc aliasLoc,
     ASTDecl &context, bool emitDiagnostics, StringAttr moduleName,
@@ -517,6 +592,9 @@ LogicalResult DeclResolver::aliasDeclsImpl(
     if (foundMatchingImport) {
       // Sure enough, we found an importOp that matches the module and decl
       // name, let's replace the import with the real decls.
+      if (failed(checkImportNamingConflict(decls, entries, name, aliasLoc,
+                                           emitDiagnostics)))
+        return failure();
       shouldAdd = true;
     } else {
       // No placeholder was removed, this can happen if someone is calling
