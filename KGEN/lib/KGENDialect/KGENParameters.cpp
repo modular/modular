@@ -324,8 +324,8 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
     // If the attribute verifier failed, it will only have the location
     // source information we're passing down.  Include the full op dump now
     // for more context since this is an internal MLIR invariant violation.
-    KGEN::Diag::emitError(op,
-                          Diag::DiagID::err_invalid_symbol_use_within_operator);
+    KGEN::Diag::emitOpError(
+        op, Diag::DiagID::err_invalid_symbol_use_within_operator);
     hadError = true;
   }
 #endif
