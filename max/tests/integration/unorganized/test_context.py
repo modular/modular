@@ -31,6 +31,7 @@ from max.interfaces import (
 )
 from max.pipelines.core import (
     PixelContext,
+    SpecDecodingState,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -703,6 +704,24 @@ def test_text_context_update_with_future_token() -> None:
     assert context.status == GenerationStatus.END_OF_SEQUENCE
 
 
+def test_text_context_update_with_preemption_and_future_token() -> None:
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_token_ids=set([42]),
+    )
+    assert context.tokens.generated_length == 0
+
+    context.update_with_future_token()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, FUTURE_TOKEN]
+    assert context.tokens.generated_length == 1
+
+    # Notice that the future token is deleted when the context is reset.
+    context.reset()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4]
+    assert context.tokens.generated_length == 0
+
+
 def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
         max_length=50,
@@ -1073,6 +1092,88 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     # See GENAI-318 for details.
     _ = isinstance(ctx, VLMTextGenerationContext)
     _ = isinstance(ctx, PixelGenerationContext)
+
+
+def test_context__spec_decoding_state_lazy_init() -> None:
+    """Tests that spec_decoding_state is lazily initialized and reset clears it."""
+    context = TextContext(
+        request_id=RequestID(),
+        max_length=10,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+    )
+
+    # Initially None
+    assert context._spec_decoding_state is None
+
+    # Lazy initialization on first access
+    state = context.spec_decoding_state
+    assert isinstance(state, SpecDecodingState)
+    assert state.draft_kv_start_idx == 0
+    assert np.array_equal(
+        state.saved_draft_tokens, np.array([], dtype=np.int64)
+    )
+
+    # Same instance on subsequent access
+    assert context.spec_decoding_state is state
+
+    # Mutate the state
+    state.draft_kv_start_idx = 5
+    state.saved_draft_tokens = np.array([10, 20, 30], dtype=np.int64)
+    assert context.spec_decoding_state.draft_kv_start_idx == 5
+
+    # Reset clears the state
+    context.update(4)
+    context.reset()
+    assert context._spec_decoding_state is None
+
+    # Re-access creates a fresh state
+    new_state = context.spec_decoding_state
+    assert isinstance(new_state, SpecDecodingState)
+    assert new_state is not state
+    assert new_state.draft_kv_start_idx == 0
+    assert np.array_equal(
+        new_state.saved_draft_tokens, np.array([], dtype=np.int64)
+    )
+
+
+def test_context__spec_decoding_state_serializable() -> None:
+    """Tests that TextContext with SpecDecodingState can be serialized."""
+    context = TextContext(
+        request_id=RequestID(),
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+    )
+
+    # Initialize state with non-default values
+    context.spec_decoding_state.draft_kv_start_idx = 3
+    context.spec_decoding_state.saved_draft_tokens = np.array(
+        [10, 20], dtype=np.int64
+    )
+
+    # Pickle round-trip
+    pickle_encoded = pickle.dumps(context)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert isinstance(pickle_decoded, TextContext)
+    assert pickle_decoded._spec_decoding_state is not None
+    assert pickle_decoded.spec_decoding_state.draft_kv_start_idx == 3
+    assert np.array_equal(
+        pickle_decoded.spec_decoding_state.saved_draft_tokens,
+        np.array([10, 20], dtype=np.int64),
+    )
+
+    # MsgPack round-trip
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(TextContext)
+    msgpack_encoded = serialize(context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert isinstance(msgpack_decoded, TextContext)
+    assert msgpack_decoded.spec_decoding_state.draft_kv_start_idx == 3
+    assert np.array_equal(
+        msgpack_decoded.spec_decoding_state.saved_draft_tokens,
+        np.array([10, 20], dtype=np.int64),
+    )
 
 
 def test_pixel_context_serializable() -> None:

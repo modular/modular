@@ -178,16 +178,11 @@ def distributed_logits_postprocess(
         assert logits is not None
         ret_val += (logits, offsets)
 
-    if return_hidden_states == ReturnHiddenStates.ALL:
-        ret_val += tuple(h)
-    elif return_hidden_states == ReturnHiddenStates.LAST:
+    if return_hidden_states == ReturnHiddenStates.LAST:
         ret_val += tuple(last_token_h)
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
         norm_h = forward_sharded_layers(norm_shards, h)
         ret_val += tuple(norm_h)
-    elif return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-        ret_val += tuple(norm_last_token)
-
     return ret_val
 
 

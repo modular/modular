@@ -54,9 +54,6 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from std.utils.static_tuple import StaticTuple
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.math import ceildiv
@@ -237,7 +234,7 @@ fn blockscaled_pair_cta_mxfp8[
     var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -541,9 +538,10 @@ fn blockscaled_pair_cta_mxfp8[
 
         comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
-                SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
-                    c_type
-                ]()
+                SIMD[accum_type, 2](
+                    rebind[Scalar[accum_type]](c_frag[2 * i]),
+                    rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
+                ).cast[c_type]()
             )
     else:
         var c_gmem_frag = c_gmem_slice.tile[BM // 4, MMA_N](
@@ -552,9 +550,10 @@ fn blockscaled_pair_cta_mxfp8[
 
         comptime for i in range(c_frag_size // 2):
             c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
-                SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
-                    c_type
-                ]()
+                SIMD[accum_type, 2](
+                    rebind[Scalar[accum_type]](c_frag[2 * i]),
+                    rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
+                ).cast[c_type]()
             )
 
 
@@ -809,30 +808,30 @@ def test_blockscaled_pair_cta_mxfp8[
         k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var a_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_a_scales_size
     )
     var a_scales_host_ref = NDBuffer[
-        ref_scales_type, 2, _, static_ref_a_scales_shape
+        rank=2, ref_scales_type, _, static_ref_a_scales_shape
     ](a_scales_host_ref_ptr, dynamic_ref_a_scales_shape)
-    var b_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
+    var b_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
         ref_b_scales_size
     )
     var b_scales_host_ref = NDBuffer[
-        ref_scales_type, 2, _, static_ref_b_scales_shape
+        rank=2, ref_scales_type, _, static_ref_b_scales_shape
     ](b_scales_host_ref_ptr, dynamic_ref_b_scales_shape)
 
     var a_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
         ref_a_scales_size
     )
     var a_scales_device_ref_nd = NDBuffer[
-        ref_scales_type, 2, _, static_ref_a_scales_shape
+        rank=2, ref_scales_type, _, static_ref_a_scales_shape
     ](a_scales_device_ref.unsafe_ptr(), dynamic_ref_a_scales_shape)
     var b_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
         ref_b_scales_size
     )
     var b_scales_device_ref_nd = NDBuffer[
-        ref_scales_type, 2, _, static_ref_b_scales_shape
+        rank=2, ref_scales_type, _, static_ref_b_scales_shape
     ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
 
     a_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
@@ -932,63 +931,59 @@ def test_blockscaled_pair_cta_mxfp8[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_total
-    )
-    var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_total)
+    var a_scales_host = NDBuffer[rank=5, scales_type, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_total
-    )
-    var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_total)
+    var b_scales_host = NDBuffer[rank=5, scales_type, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_total)
-    var a_scales_device_nd = NDBuffer[scales_type, 5, _, static_a_scales_shape](
-        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
+    var a_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_total)
-    var b_scales_device_nd = NDBuffer[scales_type, 5, _, static_b_scales_shape](
-        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
+    var b_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     var a_size = m.value * k
     var b_size = n.value * k
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 

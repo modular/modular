@@ -1722,7 +1722,7 @@ fn print_layout(layout: Layout):
 
     print(layout)
     # make stdout mutable
-    var stdout = sys.stdout
+    var stdout = std.sys.stdout
     format_layout(layout, stdout)
 
 

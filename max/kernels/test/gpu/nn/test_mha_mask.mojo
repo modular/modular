@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 from std.sys.info import CompilationTarget
 
@@ -82,7 +79,9 @@ def test_causal_mask_asm() raises:
 
     print("== test_causal_mask_asm")
 
-    fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
+    fn kernel(
+        q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
+    ):
         var mask = CausalMask()
         var vec = mask.mask(
             IndexList[4, element_type=DType.uint32](
@@ -111,7 +110,7 @@ def test_causal_mask_asm() raises:
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -198,7 +197,9 @@ def test_sliding_window_causal_mask_asm() raises:
 
     print("== test_sliding_window_causal_mask_asm")
 
-    fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
+    fn kernel(
+        q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
+    ):
         var mask = SlidingWindowCausalMask[8]()
         var vec = mask.mask(
             IndexList[4, element_type=DType.uint32](
@@ -228,7 +229,7 @@ def test_sliding_window_causal_mask_asm() raises:
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 

@@ -32,9 +32,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.conv_sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,
@@ -152,9 +149,9 @@ fn bench_conv2d[
     )
 
     # Allocate host memory
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var input_host_ptr = alloc[Scalar[dtype]](input_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
 
     # Initialize with random data
     rand(input_host_ptr, input_size)
@@ -193,15 +190,15 @@ fn bench_conv2d[
     ctx.synchronize()
 
     # Create NDBuffer views for conv2d_fprop (uses NDBuffer, not LayoutTensor)
-    var input_nd = NDBuffer[dtype, 4](
+    var input_nd = NDBuffer[rank=4, dtype](
         input_dev.unsafe_ptr(),
         IndexList[4](batch, in_height, in_width, in_channels),
     )
-    var filter_nd = NDBuffer[dtype, 4](
+    var filter_nd = NDBuffer[rank=4, dtype](
         filter_dev.unsafe_ptr(),
         IndexList[4](out_channels, filter_h, filter_w, in_channels),
     )
-    var output_sm100_nd = NDBuffer[dtype, 4](
+    var output_sm100_nd = NDBuffer[rank=4, dtype](
         output_sm100_dev.unsafe_ptr(),
         IndexList[4](batch, out_height, out_width, out_channels),
     )
@@ -274,8 +271,8 @@ fn bench_conv2d[
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
     # Verify outputs match
-    var output_sm100_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_cudnn_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_sm100_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_cudnn_host_ptr = alloc[Scalar[dtype]](output_size)
     ctx.enqueue_copy(output_sm100_host_ptr, output_sm100_dev)
     ctx.enqueue_copy(output_cudnn_host_ptr, output_cudnn_dev)
     ctx.synchronize()
@@ -393,9 +390,9 @@ fn bench_all_configs[
     )
 
     # Allocate host memory
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var input_host_ptr = alloc[Scalar[dtype]](input_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
 
     rand(input_host_ptr, input_size)
     rand(filter_host_ptr, filter_size)
@@ -432,19 +429,19 @@ fn bench_all_configs[
     ctx.enqueue_copy(filter_nchw_dev, filter_nchw_host_ptr)
     ctx.synchronize()
 
-    var input_nd = NDBuffer[dtype, 4](
+    var input_nd = NDBuffer[rank=4, dtype](
         input_dev.unsafe_ptr(),
         IndexList[4](batch, in_height, in_width, in_channels),
     )
-    var filter_nd = NDBuffer[dtype, 4](
+    var filter_nd = NDBuffer[rank=4, dtype](
         filter_dev.unsafe_ptr(),
         IndexList[4](out_channels, filter_h, filter_w, in_channels),
     )
-    var output_1sm_nd = NDBuffer[dtype, 4](
+    var output_1sm_nd = NDBuffer[rank=4, dtype](
         output_1sm_dev.unsafe_ptr(),
         IndexList[4](batch, out_height, out_width, out_channels),
     )
-    var output_2sm_nd = NDBuffer[dtype, 4](
+    var output_2sm_nd = NDBuffer[rank=4, dtype](
         output_2sm_dev.unsafe_ptr(),
         IndexList[4](batch, out_height, out_width, out_channels),
     )
@@ -644,9 +641,9 @@ fn bench_residual[
     )
 
     # Allocate
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var source_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var input_host_ptr = alloc[Scalar[dtype]](input_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var source_host_ptr = alloc[Scalar[dtype]](output_size)
     rand(input_host_ptr, input_size)
     rand(filter_host_ptr, filter_size)
     rand(source_host_ptr, output_size)
@@ -662,23 +659,23 @@ fn bench_residual[
     ctx.enqueue_copy(source_dev, source_host_ptr)
     ctx.synchronize()
 
-    var input_nd = NDBuffer[dtype, 4](
+    var input_nd = NDBuffer[rank=4, dtype](
         input_dev.unsafe_ptr(),
         IndexList[4](batch, in_height, in_width, in_channels),
     )
-    var filter_nd = NDBuffer[dtype, 4](
+    var filter_nd = NDBuffer[rank=4, dtype](
         filter_dev.unsafe_ptr(),
         IndexList[4](out_channels, filter_h, filter_w, in_channels),
     )
-    var output_nd = NDBuffer[dtype, 4](
+    var output_nd = NDBuffer[rank=4, dtype](
         output_dev.unsafe_ptr(),
         IndexList[4](batch, out_height, out_width, out_channels),
     )
-    var output_res_nd = NDBuffer[dtype, 4](
+    var output_res_nd = NDBuffer[rank=4, dtype](
         output_res_dev.unsafe_ptr(),
         IndexList[4](batch, out_height, out_width, out_channels),
     )
-    var source_nd = NDBuffer[dtype, 4](
+    var source_nd = NDBuffer[rank=4, dtype](
         source_dev.unsafe_ptr(),
         IndexList[4](batch, out_height, out_width, out_channels),
     )

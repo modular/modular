@@ -79,7 +79,7 @@ def get_rope_index_torch(
             image_nums = (vision_tokens == image_token_id).sum()
             video_nums = (vision_tokens == video_token_id).sum()
             input_tokens = input_ids.tolist()
-            llm_pos_ids_list: list = []
+            llm_pos_ids_list: list = []  # type: ignore[type-arg]
             st = 0
             remain_images, remain_videos = image_nums, video_nums
             for _ in range(image_nums + video_nums):

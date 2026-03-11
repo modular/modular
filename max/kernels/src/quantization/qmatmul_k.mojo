@@ -917,7 +917,7 @@ fn _accumulate_and_store[
     simd_width: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     N: Int,
     accumulate: Bool,
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
@@ -1007,7 +1007,7 @@ fn _matmul_Q4_K_tile[
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size], _],
     b_ptr: UnsafePointer[_block_Q4_K_packed[], _],
     b_q_scales_and_mins_buf: UnsafePointer[UInt8, _],
-    c_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     N: Int,
     accumulate: Bool,
     m: Int,
@@ -1083,7 +1083,7 @@ fn _matmul_Q4_K_columns[
         mut=True, _block_Q8_K_packed[_block_Q4_K.group_size], _
     ],
     b_ptr: UnsafePointer[_block_Q4_K_packed[], _],
-    var c_ptr: UnsafePointer[Float32, _],
+    var c_ptr: UnsafePointer[mut=True, Float32, _],
     M: Int,
     N: Int,
     accumulate: Bool,
@@ -1241,10 +1241,8 @@ fn _matmul_Q6_K_tile[
     a_ptr: UnsafePointer[
         _block_Q8_K_packed[_block_Q6_K.group_size], ImmutAnyOrigin
     ],
-    b_ptr: UnsafePointer[
-        _block_Q6_K_packed[], origin=_, address_space=AddressSpace.GENERIC
-    ],
-    c_ptr: UnsafePointer[Float32, origin=_, address_space=AddressSpace.GENERIC],
+    b_ptr: UnsafePointer[_block_Q6_K_packed[], _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     N: Int,
     accumulate: Bool,
     m: Int,
@@ -1329,7 +1327,7 @@ fn _matmul_Q6_K_columns[
         mut=True, _block_Q8_K_packed[_block_Q6_K.group_size], _
     ],
     b_ptr: UnsafePointer[_block_Q6_K_packed[], _],
-    var c_ptr: UnsafePointer[Float32, _],
+    var c_ptr: UnsafePointer[mut=True, Float32, _],
     M: Int,
     N: Int,
     accumulate: Bool,
@@ -1416,7 +1414,7 @@ fn _matmul_Qb_K[
     ](
         var a_ptr: UnsafePointer[mut=True, _block_Q8_K_packed[group_size], _],
         b_ptr: UnsafePointer[b_type, _],
-        var c_ptr: UnsafePointer[Float32, _],
+        var c_ptr: UnsafePointer[mut=True, Float32, _],
         M: Int,
         N: Int,
         accumulate: Bool,
@@ -1429,7 +1427,9 @@ fn _matmul_Qb_K[
 ](
     a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
     b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
-    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1461,11 +1461,11 @@ fn _matmul_Qb_K[
         var task_n_count = block_range[1] * grain_size
 
         var a_packed_ptr = a_packed_base_ptr
-        var b_packed_ptr = b.ptr.bitcast[b_type]().as_unsafe_pointer()
+        var b_packed_ptr = b.ptr.bitcast[b_type]()
 
         for k_block in range(k_blocks):
             var bn_packed_ptr = b_packed_ptr + task_n_start
-            var cn_ptr = c.ptr.as_unsafe_pointer() + task_n_start
+            var cn_ptr = c.ptr + task_n_start
             var accumulate = k_block > 0
 
             # only run epilogue for the last iter of K loop
@@ -1512,7 +1512,9 @@ fn matmul_Q4_K[
 ](
     a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
     b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
-    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1532,7 +1534,9 @@ fn matmul_Q6_K[
 ](
     a: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
     b: LayoutTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
-    c: LayoutTensor[DType.float32, address_space=AddressSpace.GENERIC, ...],
+    c: LayoutTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2

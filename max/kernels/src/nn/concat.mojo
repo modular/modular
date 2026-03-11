@@ -72,11 +72,10 @@ fn memcpy_or_fuse[
 
         var typed_offset = out_byte_offset // size_of[dtype]()
         var typed_len = n // size_of[dtype]()
-        debug_assert(
+        assert (
             n % size_of[dtype]() == 0
-            and out_byte_offset % size_of[dtype]() == 0,
-            "offset and length must be dividable by size_of[dtype]",
-        )
+            and out_byte_offset % size_of[dtype]() == 0
+        ), "offset and length must be dividable by size_of[dtype]"
 
         # Cast
         var shape_1d = IndexList[1](typed_len)
@@ -226,8 +225,8 @@ fn _concat_parallel[
             var input_c = input_canon.c
             var input_wc = input_w * input_c
             var input_data = input_canon.data
-            debug_assert(input_h == output_h, "input_h != output_h")
-            debug_assert(input_c == output_c, "input_c != output_c")
+            assert input_h == output_h, "input_h != output_h"
+            assert input_c == output_c, "input_c != output_c"
             var input_byte_size = input_h * input_wc
 
             var input_span = _Span(
@@ -311,10 +310,9 @@ fn _concat_parallel[
             amount_traversed += input_byte_size
             output_wc_offset += input_wc
 
-        debug_assert(
-            amount_traversed == total_output_bytes,
-            "amount_traversed != total_output_bytes",
-        )
+        assert (
+            amount_traversed == total_output_bytes
+        ), "amount_traversed != total_output_bytes"
 
     # The do_chunk closure captures the stack allocated Buffer,
     # so this kernel must be run synchronously.
@@ -398,7 +396,7 @@ fn _concat_inner[
 ) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
-        var buffer_len = inputs[i].numel()
+        var buffer_len = inputs[i].num_elements()
         memcpy_or_fuse[output.rank, dtype, epilogue_fn](
             output.ptr.bitcast[Int8](),
             num_elems_copied * size_of[dtype](),
@@ -423,12 +421,9 @@ fn _check_input_consistency[
     # check inputs have same rank and same dims except for axis dim
     for i in range(len(inputs)):
         for j in range(inputs[i].rank):
-            debug_assert(
-                j == axis or inputs[0].dim(j) == inputs[i].dim(j),
-                (
-                    "all concat inputs must have the same dimensions in the"
-                    " non-concat axes"
-                ),
+            assert j == axis or inputs[0].dim(j) == inputs[i].dim(j), (
+                "all concat inputs must have the same dimensions in the"
+                " non-concat axes"
             )
 
 
@@ -572,7 +567,7 @@ fn _concat_cpu[
     comptime KB = 1024
     comptime min_work_for_parallel = 128 * KB  # TODO: autotune
 
-    var output_bytes = output.numel() * size_of[dtype]()
+    var output_bytes = output.num_elements() * size_of[dtype]()
 
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
@@ -719,7 +714,7 @@ fn _concat_inner_most_single_dim[
     ],
 ):
     var idx = block_idx.x * UInt(block_size) + thread_idx.x
-    if idx >= UInt(output.numel()):
+    if idx >= UInt(output.num_elements()):
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
@@ -866,18 +861,18 @@ fn _concat_gpu[
 
         comptime for i in range(num_inputs):
             # Skip empty inputs.
-            if inputs[i].numel() > 0:
+            if inputs[i].num_elements() > 0:
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
                     output.ptr + input_size,
-                    inputs[i].numel(),
+                    inputs[i].num_elements(),
                     owning=False,
                 )
                 var inp = DeviceBuffer(
                     ctx,
                     inputs[i].ptr,
-                    inputs[i].numel(),
+                    inputs[i].num_elements(),
                     owning=False,
                 )
                 ctx.enqueue_copy(
@@ -885,7 +880,7 @@ fn _concat_gpu[
                     inp,
                 )
 
-                input_size += inputs[i].numel()
+                input_size += inputs[i].num_elements()
 
     # If outer_dims are ones and it is not a fused kernel, use device-to-device
     # copies.
@@ -916,7 +911,7 @@ fn _concat_gpu[
             return ctx.enqueue_function[kernel, kernel](
                 output,
                 inputs,
-                grid_dim=(inputs[0].numel() // block_size),
+                grid_dim=(inputs[0].num_elements() // block_size),
                 block_dim=(block_size),
             )
 
@@ -1064,10 +1059,11 @@ fn _fused_concat_gpu[
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size: Int,
+    output_layout: TensorLayout,
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype, _, _],
+    output: TileTensor[mut=True, dtype, output_layout, _],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1129,11 +1125,12 @@ fn fused_concat[
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
+    output_layout: TensorLayout,
     target: StaticString = "cpu",
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: TileTensor[mut=True, dtype, _, _],
+    output: TileTensor[mut=True, dtype, output_layout, _],
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"

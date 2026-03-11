@@ -19,9 +19,8 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import LegacyUnsafePointer
+from std.memory import alloc
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -44,7 +43,7 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import LayoutTensor, Layout, RuntimeLayout
+from layout import LayoutTensor, Layout, RuntimeLayout, TileTensor
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -100,37 +99,37 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var b_size = batch.value * n.value * k.value // 2
     var c_size = batch.value * m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var a_host = NDBuffer[a_type, 3, _, static_a_shape](
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host = NDBuffer[rank=3, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var b_host = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 3, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=3, a_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 3, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=3, b_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 3, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=3, c_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -185,35 +184,33 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_total
-    )
-    var a_scales_host = NDBuffer[scales_dtype, 6, _, static_a_scales_shape](
-        a_scales_host_ptr, dynamic_a_scales_shape
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_total
-    )
-    var b_scales_host = NDBuffer[scales_dtype, 6, _, static_b_scales_shape](
-        b_scales_host_ptr, dynamic_b_scales_shape
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var a_scales_host = NDBuffer[
+        rank=6, scales_dtype, _, static_a_scales_shape
+    ](a_scales_host_ptr, dynamic_a_scales_shape)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_host = NDBuffer[
+        rank=6, scales_dtype, _, static_b_scales_shape
+    ](b_scales_host_ptr, dynamic_b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
     var a_scales_device_nd = NDBuffer[
-        scales_dtype, 6, _, static_a_scales_shape
+        rank=6, scales_dtype, _, static_a_scales_shape
     ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
     var b_scales_device_nd = NDBuffer[
-        scales_dtype, 6, _, static_b_scales_shape
+        rank=6, scales_dtype, _, static_b_scales_shape
     ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
-    var a_tensor = from_ndbuffer_row_major(a_device_nd)
-    var b_tensor = from_ndbuffer_row_major(b_device_nd)
-    var c_tensor = from_ndbuffer_row_major(c_device_nd)
+    var a_lt = from_ndbuffer_row_major(a_device_nd)
+    var b_lt = from_ndbuffer_row_major(b_device_nd)
+    var a_tensor = TileTensor(a_device_nd)
+    var b_tensor = TileTensor(b_device_nd)
+    var c_tensor = TileTensor(c_device_nd)
     var a_scales_tensor = from_ndbuffer_row_major(a_scales_device_nd)
     var b_scales_tensor = from_ndbuffer_row_major(b_scales_device_nd)
     var c_ref_tensor = from_ndbuffer_row_major(c_device_ref_nd)
@@ -326,9 +323,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
     )
 
+    comptime K_phys = k.dim.get()
     blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
+        K=K_phys,
     ](
         c_tensor,
         a_tensor,
@@ -405,12 +404,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             )
 
     for b in range(batch.value):
-        var a_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_2d[a_tensor.layout]()
-        ](a_tensor, b)
-        var b_tensor_2d = _convert_to_none_batched_tensor[
-            reshape_layout=_reshape_to_2d[b_tensor.layout]()
-        ](b_tensor, b)
+        var a_lt_2d = _convert_to_none_batched_tensor[
+            reshape_layout=_reshape_to_2d[a_lt.layout]()
+        ](a_lt, b)
+        var b_lt_2d = _convert_to_none_batched_tensor[
+            reshape_layout=_reshape_to_2d[b_lt.layout]()
+        ](b_lt, b)
         var c_ref_tensor_2d = _convert_to_none_batched_tensor[
             reshape_layout=_reshape_to_2d[c_ref_tensor.layout]()
         ](c_ref_tensor, b)
@@ -424,8 +423,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         vendor_blas.matmul(
             ctx,
             c_ref_tensor_2d,
-            a_tensor_2d,
-            b_tensor_2d,
+            a_lt_2d,
+            b_lt_2d,
             a_scales=a_scales_tensor_5d.get_immutable(),
             b_scales=b_scales_tensor_5d.get_immutable(),
             transpose_b=transpose_b,

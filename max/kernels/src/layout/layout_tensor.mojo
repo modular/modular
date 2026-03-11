@@ -15,6 +15,7 @@
 from std.builtin.variadics import Variadic
 from std.math import align_up, ceildiv, exp
 from std.math.math import _Expable
+from std.math.uutils import umod, ufloordiv
 from std.sys import (
     align_of,
     is_amd_gpu,
@@ -32,23 +33,21 @@ from std.builtin.device_passable import DevicePassable
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_dim, block_idx, lane_id, thread_idx
+from std.gpu import (
+    block_dim_int as block_dim,
+    block_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
+)
 from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
-from layout.tma_async import _tma_desc_tile_layout
-from std.memory import stack_allocation, LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-"""Legacy OpaquePointer migration helper."""
-comptime OpaquePointer = UnsafePointer[NoneType, origin=MutAnyOrigin]
-"""Legacy OpaquePointer migration helper."""
-
+from layout.tma_async import _tma_desc_tile_shape
+from std.memory import stack_allocation
 from std.utils import IndexList, StaticTuple
 from std.utils.index import Index
-
 from .int_tuple import (
     _get_index_type,
     _get_layout_type,
@@ -368,7 +367,7 @@ struct LayoutTensor[
     comptime rank = Self.layout.rank()
     """The number of dimensions in the tensor's layout."""
 
-    var ptr: LegacyUnsafePointer[
+    var ptr: UnsafePointer[
         Scalar[Self.dtype],
         address_space=Self.address_space,
         origin=Self.origin,
@@ -518,7 +517,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: LegacyUnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -550,7 +549,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: LegacyUnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -583,7 +582,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        unsafe_ptr: LegacyUnsafePointer[
+        unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -1096,7 +1095,11 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn ptr_at_offset(
         self, coords: IndexList
-    ) -> UnsafePointer[Scalar[Self.dtype], address_space=Self.address_space]:
+    ) -> UnsafePointer[
+        Scalar[Self.dtype],
+        address_space=Self.address_space,
+        origin=self.origin,
+    ]:
         """Get a pointer offset at the given flattened coordinates.
 
         Args:
@@ -1967,10 +1970,7 @@ struct LayoutTensor[
             comptime for arg_idx in range(arg_count):
                 var idx = index_list[arg_idx]
                 var dim_size = self.dim[arg_idx]()
-                debug_assert(
-                    0 <= idx < dim_size,
-                    "LayoutTensor index out of bounds",
-                )
+                assert 0 <= idx < dim_size, "LayoutTensor index out of bounds"
 
         var strides = self.runtime_layout.stride.value
         var offset = Self._get_offset[rank=arg_count](strides, index_list)
@@ -2108,7 +2108,9 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn load[
-        width: Int, load_alignment: Int = Self.alignment
+        width: Int,
+        load_alignment: Int = Self.alignment,
+        non_temporal: Bool = False,
     ](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified 2D coordinates.
 
@@ -2120,6 +2122,9 @@ struct LayoutTensor[
             width: The number of elements to load into the SIMD vector. Should match
                   the target hardware's vector width for optimal performance.
             load_alignment: The alignment to use. Defaults to Self.alignment.
+            non_temporal: If True, issue a non-temporal (streaming) load hint,
+                indicating the data has no temporal locality and should not
+                pollute caches.
 
         Args:
             m: The row index (first dimension).
@@ -2155,22 +2160,20 @@ struct LayoutTensor[
             # runtime layouts (including UNKNOWN_VALUE dimensions)
             var dim0 = self.dim[0]()
             var dim1 = self.dim[1]()
-            debug_assert(
-                0 <= m < dim0,
-                "LayoutTensor load out of bounds",
-            )
-            debug_assert(
-                0 <= n and n + width <= dim1,
-                "LayoutTensor load out of bounds",
-            )
+            assert 0 <= m < dim0, "LayoutTensor load out of bounds"
+            assert (
+                0 <= n and n + width <= dim1
+            ), "LayoutTensor load out of bounds"
 
-        return self.ptr.load[width=width, alignment=load_alignment](
-            self._offset(m, n)
-        )
+        return self.ptr.load[
+            width=width, alignment=load_alignment, non_temporal=non_temporal
+        ](self._offset(m, n))
 
     @always_inline("nodebug")
     fn load[
-        width: Int, load_alignment: Int = Self.alignment
+        width: Int,
+        load_alignment: Int = Self.alignment,
+        non_temporal: Bool = False,
     ](self, coords: IndexList[...]) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified coordinates.
 
@@ -2183,6 +2186,9 @@ struct LayoutTensor[
             width: The number of elements to load into the SIMD vector. Should match
                     the target hardware's vector width for optimal performance.
             load_alignment: The alignment to use. Defaults to Self.alignment.
+            non_temporal: If True, issue a non-temporal (streaming) load hint,
+                indicating the data has no temporal locality and should not
+                pollute caches.
 
         Args:
             coords: The coordinates to index. Must have the same size as the tensor's rank.
@@ -2205,11 +2211,11 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
         comptime assert self.rank == coords.size
-        debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
+        assert self.runtime_layout.stride.value[self.rank - 1] == 1
 
-        return self.ptr.load[width=width, alignment=load_alignment](
-            self._offset(coords)
-        )
+        return self.ptr.load[
+            width=width, alignment=load_alignment, non_temporal=non_temporal
+        ](self._offset(coords))
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
@@ -2371,7 +2377,12 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn store[
         width: Int, store_alignment: Int = Self.alignment
-    ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
+    ](
+        self: LayoutTensor[mut=True, Self.dtype, ...],
+        m: Int,
+        n: Int,
+        val: SIMD[Self.dtype, width],
+    ):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -2444,8 +2455,10 @@ struct LayoutTensor[
     fn store[
         width: Int, store_alignment: Int = Self.alignment
     ](
-        self, coords: IndexList[...], val: SIMD[Self.dtype, width]
-    ) where Self.mut:
+        self: LayoutTensor[mut=True, Self.dtype, ...],
+        coords: IndexList[...],
+        val: SIMD[Self.dtype, width],
+    ):
         """Store a SIMD vector to the tensor at the specified ND coordinates.
 
         Performs a vectorized store operation to the tensor's memory, writing
@@ -2477,7 +2490,7 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
         comptime assert self.rank == coords.size
-        debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
+        assert self.runtime_layout.stride.value[self.rank - 1] == 1
 
         return self.ptr.store[alignment=store_alignment](
             self._offset(coords), val
@@ -2614,7 +2627,7 @@ struct LayoutTensor[
             A null `LayoutTensor` object.
         """
         return Self.StackTensorType(
-            LegacyUnsafePointer[
+            UnsafePointer[
                 Scalar[Self.dtype],
                 address_space=Self.address_space,
                 origin=MutExternalOrigin,
@@ -2649,7 +2662,7 @@ struct LayoutTensor[
         ), "DeviceBuffer is only used on GENERIC address space"
         return DeviceBuffer[Self.dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[Self.dtype]]](self.ptr),
+            self.ptr,
             self.size(),
             owning=False,
         )
@@ -3612,7 +3625,7 @@ struct LayoutTensor[
         ]()[0],
         # Splitting inherently introduces mutable aliases of the same origin -
         # each chunk won't overlap, but the origin can't indicate that.
-        MutAnyOrigin,
+        AnyOrigin[mut=Self.mut],
         address_space=Self.address_space,
         element_layout=Self.element_layout,
         alignment=Self.alignment,
@@ -3669,6 +3682,10 @@ struct LayoutTensor[
         comptime stride = Self.layout.stride[axis].value()
         var tiles = Self.StaticSplitType[count, axis]()
 
+        # Safety: this is to turn off the mutable aliasing origin check, so we
+        # can have multiple LayoutTensors using the same pointer/origin. We've
+        # ensured that we're not overlapping any of the pointers.
+        var ptr = self.ptr.unsafe_origin_cast[AnyOrigin[mut=Self.mut]]()
         comptime for i in range(count):
             # Need tile_size alias to ensure that the ptr passed to LayoutTensor is
             # known at compile time. Otherwise we get compile time failure.
@@ -3681,11 +3698,10 @@ struct LayoutTensor[
                     tile_size=Self.layout.shape[axis].value() // count,
                     axis=axis,
                 ]()[0],
-                MutAnyOrigin,
                 address_space=Self.address_space,
                 element_layout=Self.element_layout,
                 alignment=Self.alignment,
-            ](self.ptr + i * tile_size * stride)
+            ](ptr + i * tile_size * stride)
 
         return tiles
 
@@ -3802,7 +3818,7 @@ struct LayoutTensor[
     @always_inline
     fn _clamp_distribute_shape[
         thread_layout: Layout,
-    ](self, thread_id: UInt) -> IndexList[
+    ](self, thread_id: Int) -> IndexList[
         Self.rank, element_type=Self.layout_int_type
     ]:
         comptime assert (
@@ -3822,11 +3838,12 @@ struct LayoutTensor[
         comptime for i in range(Self.rank):
             comptime thread_stride_i = Int(thread_stride[i])
             comptime thread_shape_i = Int(thread_shape[i])
-            var tile_idx = (thread_id // UInt(thread_stride_i)) % UInt(
-                thread_shape_i
+            var tile_idx = umod(
+                ufloordiv(thread_id, thread_stride_i),
+                thread_shape_i,
             )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
-            var bound_i = (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
+            var bound_i = (tile_shape_i - 1) * thread_shape_i + tile_idx
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
 
         return tile_shape
@@ -3868,7 +3885,7 @@ struct LayoutTensor[
         axis: Optional[Int] = None,
         swizzle: Optional[Swizzle] = None,
         submode_axis: Optional[Int] = None,
-    ](self, thread_id: UInt) -> Self.DistributeType[threads_layout, axis]:
+    ](self, thread_id: Int) -> Self.DistributeType[threads_layout, axis]:
         """Distribute tensor workload across multiple threads in a structured
         pattern.
 
@@ -3989,11 +4006,11 @@ struct LayoutTensor[
                 comptime fragments_stride_i = Int(fragments_layout_stride[i])
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -4050,11 +4067,11 @@ struct LayoutTensor[
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -4087,7 +4104,7 @@ struct LayoutTensor[
         submode_axis: Optional[Int] = None,
     ](
         self,
-        thread_id: UInt,
+        thread_id: Int,
     ) -> Tuple[
         Self.DistributeType[threads_layout, axis],
         IndexList[threads_layout.rank(), element_type=Self.layout_int_type],
@@ -4156,12 +4173,12 @@ struct LayoutTensor[
                 comptime fragments_stride_i = Int(fragments_layout_stride[i])
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
-                offset_coords[i] = Int(thread_coord_i)
+                offset_coords[i] = thread_coord_i
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -4226,12 +4243,12 @@ struct LayoutTensor[
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
-                var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
-                    shape_i
+                var thread_coord_i = umod(
+                    ufloordiv(thread_id, stride_i), shape_i
                 )
-                offset_coords[i] = Int(thread_coord_i)
+                offset_coords[i] = thread_coord_i
                 offset += Scalar[Self.linear_idx_type](
-                    thread_coord_i * UInt(fragments_stride_i)
+                    thread_coord_i * fragments_stride_i
                 )
 
             # Swizzling applies to the index of elements rather than scalars because
@@ -5175,7 +5192,7 @@ struct LayoutTensor[
     @always_inline
     fn distance(
         self,
-        addr: LegacyUnsafePointer[
+        addr: UnsafePointer[
             mut=False,
             Scalar[Self.dtype],
             address_space=Self.address_space,
@@ -6039,7 +6056,7 @@ struct ThreadScope(TrivialRegisterPassable):
 @always_inline("nodebug")
 fn _get_worker_idx[
     thread_scope: ThreadScope, block_dim_count: Int = 1
-]() -> UInt:
+]() -> Int:
     """
     Returns the worker index for the current thread scope.
 
@@ -6053,7 +6070,7 @@ fn _get_worker_idx[
         block_dim_count: The number of dimensions in the thread block.
 
     Returns:
-        UInt: The worker index within the specified scope.
+        Int: The worker index within the specified scope.
 
     """
 
@@ -6131,7 +6148,7 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
+](dst: LayoutTensor[mut=True, ...], src: LayoutTensor[mut=False, ...]):
     """Synchronously copy data from DRAM (global memory) to SRAM (shared memory)
     in a GPU context.
 
@@ -6199,7 +6216,7 @@ fn copy_dram_to_sram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -6324,7 +6341,7 @@ fn copy_dram_to_sram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
@@ -6437,15 +6454,16 @@ fn cp_async_k_major[
     comptime src_shape0 = src_layout.shape[0].value()
     comptime src_shape1 = src_layout.shape[1].value()
 
-    comptime desc_layout = _tma_desc_tile_layout[
+    comptime tile_desc_shape = _tma_desc_tile_shape[
         dtype,
         2,
         Index(src_shape0, src_shape1),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ]()
-    comptime desc_shape0 = desc_layout.shape[0].value()
-    comptime desc_shape1 = desc_layout.shape[1].value()
-    comptime desc_size = desc_layout.size()
+    comptime desc_shape0 = tile_desc_shape[0]
+    comptime desc_shape1 = tile_desc_shape[1]
+    comptime desc_size = desc_shape0 * desc_shape1
+    comptime desc_layout = Layout.row_major(desc_shape0, desc_shape1)
 
     comptime assert (
         desc_shape0 == src_shape0
@@ -6699,7 +6717,7 @@ fn copy_dram_to_sram_async[
     # We know at compile time that only partial threads copy based on the size
     # of input tensors. Return if current thread doesn't have work.
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     comptime row_size = dst.stride[0]()
@@ -6916,7 +6934,7 @@ fn copy_sram_to_dram[
     var worker_idx = _get_worker_idx[ThreadScope.BLOCK, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[thread_layout](worker_idx)
@@ -7155,7 +7173,7 @@ fn copy_local_to_dram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -7253,7 +7271,7 @@ fn _copy_local_to_dram[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -7388,7 +7406,7 @@ fn _copy_dram_to_local[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -7633,7 +7651,7 @@ fn copy_dram_to_local[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -7764,7 +7782,7 @@ fn copy_local_to_shared[
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     comptime if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
+        if worker_idx >= num_busy_threads:
             return
 
     comptime assert src.dtype == dst.dtype or (
@@ -8017,7 +8035,7 @@ struct LayoutTensorIter[
     ]
     """The unsigned integer type used for indexing into memory."""
 
-    var ptr: LegacyUnsafePointer[
+    var ptr: UnsafePointer[
         Scalar[Self.dtype],
         address_space=Self.address_space,
         origin=Self.origin,
@@ -8073,7 +8091,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: LegacyUnsafePointer[
+        ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -8119,7 +8137,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: LegacyUnsafePointer[
+        ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -8140,7 +8158,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __init__(
         out self,
-        ptr: LegacyUnsafePointer[
+        ptr: UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,

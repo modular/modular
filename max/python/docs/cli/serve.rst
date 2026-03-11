@@ -42,7 +42,7 @@ with your own model implementations:
 
     The `ARCHITECTURES` variable in your module should be a list of implementations
     that conform to the
-    [SupportedArchitecture](/max/api/python/pipelines/registry#max.pipelines.lib.registry.SupportedArchitecture)
+    [SupportedArchitecture](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture)
     interface. These will be registered with the MAX pipeline registry automatically.
 
     :::

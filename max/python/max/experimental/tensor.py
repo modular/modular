@@ -1263,9 +1263,15 @@ class Tensor(DLPackArray, HasTensorValue):
     def to(self, device: Device) -> Tensor:
         """Transfers the tensor to a different device.
 
-        Creates a new tensor with the same data on the specified device. This
-        allows moving tensors between CPU and accelerators or between different
-        accelerator devices.
+        For realized tensors (those with concrete data in memory), this
+        performs a direct driver-level transfer via
+        :meth:`~max.driver.Buffer.to`, bypassing graph compilation entirely.
+        If the tensor is already on the target device, ``self`` is returned
+        unchanged (matching PyTorch semantics).
+
+        For unrealized tensors (symbolic graph values), this falls through to
+        :func:`~max.graph.ops.transfer_to` which inserts a transfer op into
+        the computation graph.
 
         .. code-block:: python
 
@@ -1280,12 +1286,21 @@ class Tensor(DLPackArray, HasTensorValue):
             y = x.to(Accelerator())
             print(y.device)  # Accelerator(0)
 
+            # Same-device transfer is a no-op
+            z = y.to(y.device)
+            assert z is y
+
         Args:
             device: The target device for the tensor.
 
         Returns:
-            Tensor: A new tensor with the same data on the specified device.
+            Tensor: A new tensor on the specified device, or ``self`` if the
+            tensor is already on that device.
         """
+        if self.real:
+            if self.device == device:
+                return self
+            return Tensor(storage=self.driver_tensor.to(device))
         return F.transfer_to(self, device)
 
     def argmax(self, axis: int | None = -1) -> Tensor:
@@ -1725,8 +1740,11 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The target data type for the tensor.
 
         Returns:
-            Tensor: A new tensor with the specified data type.
+            Tensor: A new tensor with the specified data type, or ``self``
+            if the tensor already has the target dtype.
         """
+        if self.real and self.dtype == dtype:
+            return self
         return F.cast(self, dtype)
 
     def permute(self, dims: list[int]) -> Tensor:

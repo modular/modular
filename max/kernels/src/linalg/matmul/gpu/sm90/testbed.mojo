@@ -22,10 +22,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from std.collections import OptionalReg
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from std.utils.index import Index, IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
@@ -82,21 +78,21 @@ fn test_matmul_sm90[
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
 
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, a_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, b_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
@@ -106,16 +102,16 @@ fn test_matmul_sm90[
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_dev_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[mut=False, a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[mut=False, rank=2, a_type, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device = NDBuffer[mut=False, b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[mut=False, rank=2, b_type, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(), dynamic_b_shape
     )
-    var c_device = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(), dynamic_c_shape
     )
-    var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
+    var c_device_ref = NDBuffer[rank=2, c_type, _, static_c_shape](
         c_dev_ref_buffer.unsafe_ptr(), dynamic_c_shape
     )
 
@@ -167,26 +163,20 @@ fn test_matmul_sm90[
         use_tma_store,
     )
 
-    debug_assert(
-        (ceildiv(M, BM) % (CLUSTER_M)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. M",
-            "(M // BM=",
-            String(M // BM),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M),
-        ),
+    assert (ceildiv(M, BM) % (CLUSTER_M)) == 0, String(
+        "Number of blocks on M axis should be multiple of cluster dim. M",
+        "(M // BM=",
+        String(M // BM),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_M),
     )
 
-    debug_assert(
-        (ceildiv(N, BN) % (CLUSTER_N)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. N",
-            "N // BN=(",
-            String(N // BN),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N),
-        ),
+    assert (ceildiv(N, BN) % (CLUSTER_N)) == 0, String(
+        "Number of blocks on M axis should be multiple of cluster dim. N",
+        "N // BN=(",
+        String(N // BN),
+        ") CLUSTER SIZE:",
+        String(CLUSTER_N),
     )
 
     @parameter

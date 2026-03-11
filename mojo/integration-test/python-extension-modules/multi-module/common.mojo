@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
-
 from std.python import PythonObject
 
 
@@ -49,7 +45,9 @@ struct TestStruct(Defaultable, Movable, Writable):
             abort(String("failed to set b: ", b))
 
     @staticmethod
-    fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
+    fn _get_self_ptr(
+        py_self: PythonObject,
+    ) -> UnsafePointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

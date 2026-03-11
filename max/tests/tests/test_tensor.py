@@ -30,7 +30,15 @@ from max.experimental.tensor import (
     defaults_like,
     driver_tensor_type,
 )
-from max.graph import BufferValue, DeviceRef, Graph
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    ops,
+)
+from max.graph import (
+    TensorType as GraphTensorType,
+)
 
 
 def test_tensor_basic() -> None:
@@ -302,3 +310,126 @@ def test_mutation_op_order_lazy() -> None:
     assert b.item() == 1.0
     assert c.item() == 1.0
     assert d.item() == 2.0
+
+
+# ---------------------------------------------------------------------------
+# Tensor.to() fast-path tests
+# ---------------------------------------------------------------------------
+
+
+def test_tensor_to_same_device_returns_self() -> None:
+    """Realized tensor.to(same_device) returns the same object (no-op)."""
+    buf = Buffer.zeros([3, 4], DType.float32, CPU())
+    t = Tensor(storage=buf)
+    assert t.real
+    result = t.to(CPU())
+    assert result is t
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires GPU")
+def test_tensor_to_same_device_gpu_returns_self() -> None:
+    """Same-device fast path works on GPU."""
+    gpu = Accelerator()
+    buf = Buffer.zeros([2, 3], DType.float32, gpu)
+    t = Tensor(storage=buf)
+    result = t.to(gpu)
+    assert result is t
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires GPU")
+def test_tensor_to_different_device() -> None:
+    """Realized tensor.to(other_device) returns a new tensor via Buffer.to()."""
+    cpu_buf = Buffer(DType.float32, [2, 3], CPU())
+    for idx in cpu_buf._iterate_indices():
+        cpu_buf[idx] = 1.0
+    t_cpu = Tensor(storage=cpu_buf)
+
+    t_gpu = t_cpu.to(Accelerator())
+    assert t_gpu is not t_cpu
+    assert t_gpu.device == Accelerator()
+    assert t_gpu.real
+    assert list(t_gpu.shape) == [2, 3]
+    assert t_gpu.dtype == DType.float32
+
+    roundtrip = t_gpu.to(CPU())
+    assert roundtrip.device == CPU()
+    np.testing.assert_array_equal(
+        np.from_dlpack(roundtrip.driver_tensor),
+        np.ones([2, 3], dtype=np.float32),
+    )
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires GPU")
+def test_tensor_to_roundtrip_data_integrity() -> None:
+    """CPU -> GPU -> CPU preserves data exactly."""
+    src = np.arange(12, dtype=np.float32).reshape(3, 4)
+    t = Tensor(storage=Buffer.from_numpy(src))
+    assert t.device == CPU()
+
+    t_gpu = t.to(Accelerator())
+    t_back = t_gpu.to(CPU())
+
+    np.testing.assert_array_equal(np.from_dlpack(t_back.driver_tensor), src)
+
+
+def test_tensor_to_unrealized_uses_graph_path() -> None:
+    """Unrealized tensor.to() still goes through graph-based F.transfer_to."""
+    DEVICE = Accelerator() if accelerator_count() else CPU()
+    with F.lazy():
+        a = Tensor.zeros([2, 2], device=DEVICE)
+        b = a.to(DEVICE)
+        assert not b.real
+
+    asyncio.run(b.realize)
+    assert b.real
+    assert b.device == DEVICE
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires GPU")
+def test_tensor_to_idempotent_module() -> None:
+    """Module.to(device) twice doesn't re-allocate parameters already there."""
+    from max.experimental.nn import Linear
+
+    model = Linear(4, 3)
+    gpu = Accelerator()
+    model.to(gpu)
+
+    param_ids_first = {name: id(t) for name, t in model.parameters}
+
+    model.to(gpu)
+
+    param_ids_second = {name: id(t) for name, t in model.parameters}
+    assert param_ids_first == param_ids_second
+
+
+# ---------------------------------------------------------------------------
+# Tensor.cast() idempotency tests
+# ---------------------------------------------------------------------------
+
+
+def test_tensor_cast_same_dtype_returns_self() -> None:
+    """Realized tensor.cast(same_dtype) returns the same object (no-op)."""
+    buf = Buffer.zeros([3, 4], DType.float32, CPU())
+    t = Tensor(storage=buf)
+    assert t.real
+    result = t.cast(DType.float32)
+    assert result is t
+
+
+def test_ops_cast_different_dtype_emits_op() -> None:
+    """Graph-level ops.cast(x, different_dtype) emits a new CastOp."""
+    input_type = GraphTensorType(DType.float32, shape=[2, 3], device=CPU())
+    with Graph("cast_diff_test", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        y = ops.cast(x, DType.int32)
+        assert y._mlir_value is not x._mlir_value
+        assert y.dtype == DType.int32
+
+
+def test_ops_cast_same_dtype_no_op() -> None:
+    """Graph-level ops.cast(x, x.dtype) returns the same underlying value."""
+    input_type = GraphTensorType(DType.float32, shape=[2, 3], device=CPU())
+    with Graph("cast_noop_test", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        y = ops.cast(x, DType.float32)
+        assert y._mlir_value is x._mlir_value

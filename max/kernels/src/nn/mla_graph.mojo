@@ -16,6 +16,7 @@ from std.collections import OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
+from std.sys.info import align_of
 from std.utils.index import Index, IndexList
 
 from std.algorithm.functional import _elementwise_impl_gpu
@@ -25,7 +26,7 @@ from std.gpu import (
     block_idx,
     global_idx,
     grid_dim,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -200,8 +201,9 @@ fn fused_rope_rmsnorm_kernel[
                 ), "kv_norm_dim should be divisible by k_width"
 
                 var vec_data = SIMD[accum_type, k_width](0)
+                var gamma_val = SIMD[gamma_dtype, k_width](0)
 
-                var idx = Int(thread_idx.x) * k_width
+                var idx = thread_idx.x * k_width
                 if idx < kv_norm_dim:
                     vec_data = k_cache.load[width=k_width](
                         batch_idx,
@@ -209,6 +211,11 @@ fn fused_rope_rmsnorm_kernel[
                         post_seq_idx,
                         idx,
                     ).cast[accum_type]()
+                    # Prefetch gamma before reduction.
+                    gamma_val = gamma.load[
+                        width=k_width,
+                        alignment=align_of[SIMD[gamma_dtype, k_width]](),
+                    ](Coord(Idx(idx)))
 
                 var norm_val = _rms_norm_warp_tiling_subkernel[
                     warps_per_block,
@@ -217,7 +224,7 @@ fn fused_rope_rmsnorm_kernel[
                     global_token_idx,
                     idx,
                     vec_data,
-                    gamma,
+                    gamma_val,
                     epsilon.cast[accum_type](),
                     0.0,
                     kv_norm_dim,
@@ -374,12 +381,18 @@ fn fused_rope_rmsnorm_quantization_kernel[
                 ), "kv_norm_dim should be divisible by k_width"
 
                 var vec_data = SIMD[accum_type, k_width](0)
+                var gamma_val = SIMD[gamma_dtype, k_width](0)
 
-                var idx = Int(thread_idx.x) * k_width
+                var idx = thread_idx.x * k_width
                 if idx < kv_norm_dim:
                     vec_data = kv.load[width=k_width](
                         (Idx(global_token_idx), Idx(idx))
                     ).cast[accum_type]()
+                    # Prefetch gamma before reduction.
+                    gamma_val = gamma.load[
+                        width=k_width,
+                        alignment=align_of[SIMD[gamma_dtype, k_width]](),
+                    ](Coord(Idx(idx)))
 
                 var norm_val = _rms_norm_warp_tiling_subkernel[
                     warps_per_block,
@@ -388,7 +401,7 @@ fn fused_rope_rmsnorm_quantization_kernel[
                     global_token_idx,
                     idx,
                     vec_data,
-                    gamma,
+                    gamma_val,
                     epsilon.cast[accum_type](),
                     0.0,
                     kv_norm_dim,
@@ -824,11 +837,11 @@ fn mla_prefill_branch_fp8[
     # copy the k cache to the latent buffer
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     _k_cache_to_buffer(
-        buffer_row_offsets.to_layout_tensor(),
-        cache_offsets.to_layout_tensor(),
+        buffer_row_offsets,
+        cache_offsets,
         k_cache,
         Int32(buffer_length),
-        k_latent.to_layout_tensor(),
+        k_latent,
         ctx,
     )
 
@@ -1437,6 +1450,64 @@ fn mla_prefill_decode_graph_fp8[
         )
 
 
+@always_inline
+fn convert_bf16_to_fp8_e4m3fn(
+    input_buffer: TileTensor[mut=False, DType.bfloat16, ...],
+    output_buffer: TileTensor[mut=True, DType.float8_e4m3fn, ...],
+    context: DeviceContext,
+) raises:
+    """Convert bfloat16 weights to E4M3FN format.
+
+    Args:
+        input_buffer: Input tensor in bfloat16 format.
+        output_buffer: Output tensor to store E4M3FN format.
+        context: Device context for kernel execution.
+    """
+    # Runtime assertions for dynamic dimensions
+    comptime assert (
+        input_buffer.rank == output_buffer.rank
+    ), "Input and output must have the same rank"
+
+    @always_inline
+    @parameter
+    @__copy_capture(input_buffer, output_buffer)
+    fn convert_kernel[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
+        comptime assert rank == 2 or rank == 3, "rank should be 2 or 3"
+
+        output_buffer.store_linear(
+            idx,
+            input_buffer.load_linear[width](idx).cast[DType.float8_e4m3fn](),
+        )
+
+    comptime target_simd_width = simd_width_of[
+        DType.bfloat16, target=get_gpu_target()
+    ]()
+
+    comptime if input_buffer.rank == 2:
+        _elementwise_impl_gpu[
+            func=convert_kernel, simd_width=UInt(target_simd_width)
+        ](
+            IndexList[2](
+                Int(input_buffer.dim[0]()),
+                Int(input_buffer.dim[1]()),
+            ),
+            context,
+        )
+    else:
+        _elementwise_impl_gpu[
+            func=convert_kernel, simd_width=UInt(target_simd_width)
+        ](
+            IndexList[3](
+                Int(input_buffer.dim[0]()),
+                Int(input_buffer.dim[1]()),
+                Int(input_buffer.dim[2]()),
+            ),
+            context,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # Manually fused MLA prefill branch (BF16)
 # ===-----------------------------------------------------------------------===#
@@ -1560,73 +1631,207 @@ fn mla_prefill_branch_bf16[
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
     _k_cache_to_buffer(
-        buffer_row_offsets.to_layout_tensor(),
-        cache_offsets.to_layout_tensor(),
+        buffer_row_offsets,
+        cache_offsets,
         k_cache,
         Int32(buffer_length_int),
-        k_latent.to_layout_tensor(),
+        k_latent,
         ctx,
     )
 
-    var k_buf = ctx.enqueue_create_buffer[DType.bfloat16](
-        buffer_length * num_heads * qk_nope_head_dim
-    )
-    var k_flat = TileTensor(
-        k_buf,
-        row_major((Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())),
-    )
-    matmul[target=target, transpose_b=True](
-        k_flat.to_layout_tensor(),
-        k_latent.to_layout_tensor(),
-        w_k.to_layout_tensor(),
-        Optional(ctx),
-    )
+    comptime if collection_t.CacheType.dtype.is_float8():
+        # Allocate FP8 buffers for K and V
+        var k_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            buffer_length * num_heads * qk_nope_head_dim
+        )
+        var k_fp8_flat = TileTensor(
+            k_fp8_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
+            ),
+        )
 
-    var w_v = TileTensor(
-        w_uv.ptr,
-        row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
-    )
-    var v_buf = ctx.enqueue_create_buffer[DType.bfloat16](
-        buffer_length * num_heads * v_head_dim
-    )
-    var v_flat = TileTensor(
-        v_buf,
-        row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
-    )
-    matmul[target=target, transpose_b=True](
-        v_flat.to_layout_tensor(),
-        k_latent.to_layout_tensor(),
-        w_v.to_layout_tensor(),
-        Optional(ctx),
-    )
+        var v_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            buffer_length * num_heads * v_head_dim
+        )
+        var v_fp8_flat = TileTensor(
+            v_fp8_buf,
+            row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
+        )
 
-    var k = TileTensor(
-        k_buf,
-        row_major(
-            (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
-        ),
-    )
-    var v = TileTensor(
-        v_buf,
-        row_major((Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())),
-    )
+        # create a dummy buffer to instruct the matmul kernel to output values
+        # in the correct dtype
+        var k_dummy_flat = TileTensor(
+            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+            row_major(
+                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
+            ),
+        )
 
-    generic_flare_mla_prefill_kv_cache_ragged[
-        target=target,
-        mask_str=mask_str,
-    ](
-        q.to_layout_tensor(),
-        k.to_layout_tensor(),
-        v.to_layout_tensor(),
-        buffer_row_offsets.to_layout_tensor(),
-        cache_offsets.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
-        kv_collection,
-        layer_idx,
-        scale,
-        output.to_layout_tensor(),
-        ctx,
-    )
+        # Lambda function to convert K matmul output to FP8
+        @always_inline
+        @parameter
+        @__copy_capture(k_fp8_flat)
+        fn k_elementwise_convert[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
+            k_fp8_flat.store[width=width](
+                (Idx(idx[0]), Idx(idx[1])), val.cast[DType.float8_e4m3fn]()
+            )
+
+        # K matmul with FP8 conversion
+        matmul[
+            target=target,
+            transpose_b=True,
+            elementwise_lambda_fn=k_elementwise_convert,
+        ](
+            k_dummy_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_k.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        var w_v = TileTensor(
+            w_uv.ptr,
+            row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
+        )
+
+        # create a dummy buffer to instruct the matmul kernel to output values
+        # in the correct dtype
+        var v_dummy_flat = TileTensor(
+            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+            row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
+        )
+
+        # Lambda function to convert V matmul output to FP8
+        @always_inline
+        @parameter
+        @__copy_capture(v_fp8_flat)
+        fn v_elementwise_convert[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
+            v_fp8_flat.store[width=width](
+                (Idx(idx[0]), Idx(idx[1])), val.cast[DType.float8_e4m3fn]()
+            )
+
+        # V matmul with FP8 conversion
+        matmul[
+            target=target,
+            transpose_b=True,
+            elementwise_lambda_fn=v_elementwise_convert,
+        ](
+            v_dummy_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_v.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        # Create 3D views for attention kernel
+        var k_fp8 = TileTensor(
+            k_fp8_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
+            ),
+        )
+        var v_fp8 = TileTensor(
+            v_fp8_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())
+            ),
+        )
+
+        # Allocate FP8 buffer for Q and convert
+        var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            seq_len * num_heads * q_head_dim
+        )
+        var q_fp8 = TileTensor(
+            q_fp8_buf,
+            row_major((Idx(seq_len), Idx[num_heads](), Idx[q_head_dim]())),
+        )
+        convert_bf16_to_fp8_e4m3fn(q, q_fp8, ctx)
+
+        # Pass FP8 tensors to attention kernel
+        generic_flare_mla_prefill_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+        ](
+            q_fp8.to_layout_tensor(),
+            k_fp8.to_layout_tensor(),
+            v_fp8.to_layout_tensor(),
+            buffer_row_offsets.to_layout_tensor(),
+            cache_offsets.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            ctx,
+        )
+    else:
+        # Standard BF16 path
+        var k_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+            buffer_length * num_heads * qk_nope_head_dim
+        )
+        var k_flat = TileTensor(
+            k_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads * qk_nope_head_dim]())
+            ),
+        )
+        matmul[target=target, transpose_b=True](
+            k_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_k.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        var w_v = TileTensor(
+            w_uv.ptr,
+            row_major((Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]())),
+        )
+        var v_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+            buffer_length * num_heads * v_head_dim
+        )
+        var v_flat = TileTensor(
+            v_buf,
+            row_major((Idx(buffer_length), Idx[num_heads * v_head_dim]())),
+        )
+        matmul[target=target, transpose_b=True](
+            v_flat.to_layout_tensor(),
+            k_latent.to_layout_tensor(),
+            w_v.to_layout_tensor(),
+            Optional(ctx),
+        )
+
+        var k = TileTensor(
+            k_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
+            ),
+        )
+        var v = TileTensor(
+            v_buf,
+            row_major(
+                (Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())
+            ),
+        )
+
+        generic_flare_mla_prefill_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+        ](
+            q.to_layout_tensor(),
+            k.to_layout_tensor(),
+            v.to_layout_tensor(),
+            buffer_row_offsets.to_layout_tensor(),
+            cache_offsets.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            ctx,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1779,19 +1984,45 @@ fn mla_decode_branch_bf16[
         row_major((Idx(seq_len), Idx[num_heads](), Idx[kv_latent_dim]())),
     )
 
-    generic_flare_mla_decode_kv_cache_ragged[
-        target=target,
-        mask_str=mask_str,
-    ](
-        mla_decode_input.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
-        kv_collection,
-        layer_idx,
-        scale,
-        raw_output.to_layout_tensor(),
-        scalar_args_buf.to_layout_tensor(),
-        ctx,
-    )
+    comptime if collection_t.CacheType.dtype.is_float8():
+        # Convert mla_decode_input to FP8
+        var mla_decode_input_fp8_buf = ctx.enqueue_create_buffer[
+            DType.float8_e4m3fn
+        ](seq_len * num_heads * k_cache_dim)
+        var mla_decode_input_fp8 = TileTensor(
+            mla_decode_input_fp8_buf,
+            row_major((Idx(seq_len), Idx[num_heads](), Idx[k_cache_dim]())),
+        )
+        # Convert to FP8
+        convert_bf16_to_fp8_e4m3fn(mla_decode_input, mla_decode_input_fp8, ctx)
+
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+        ](
+            mla_decode_input_fp8.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            raw_output.to_layout_tensor(),
+            scalar_args_buf.to_layout_tensor(),
+            ctx,
+        )
+    else:
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+        ](
+            mla_decode_input.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            raw_output.to_layout_tensor(),
+            scalar_args_buf.to_layout_tensor(),
+            ctx,
+        )
 
     # Create a view of the raw output tensor with logical shape
     # [num_heads, seq_len, kv_latent_dim], and map directly to

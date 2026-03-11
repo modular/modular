@@ -26,8 +26,7 @@ from std.gpu.host.info import B200
 from std.utils import IndexList
 from std.utils.index import Index
 import std.itertools
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import IntTuple, Layout, TileTensor
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 
 
@@ -39,11 +38,11 @@ fn shrink_qkv_permute_3mn_sm100[
     b_type: DType,
     b_shape: DimList,
 ](
-    c_lora: NDBuffer[c_type, 3, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    c_lora: NDBuffer[rank=3, c_type, MutAnyOrigin, c_shape],
+    a: NDBuffer[rank=2, a_type, ImmutAnyOrigin, a_shape],
+    b: NDBuffer[rank=3, b_type, ImmutAnyOrigin, b_shape],
+    a_offsets: NDBuffer[rank=1, DType.uint32, ImmutAnyOrigin],
+    expert_ids: NDBuffer[rank=1, DType.int32, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -80,7 +79,7 @@ fn shrink_qkv_permute_3mn_sm100[
         - The epilogue assumes `N % vector_width == 0` for aligned vector stores.
     """
     var M = c_lora.dim[1]()
-    var c_tensor_lora = from_ndbuffer_row_major(c_lora)  # LayoutTensor[3]
+    var c_tensor_lora = TileTensor(c_lora).to_layout_tensor()
     comptime N = c_shape.get[2]()
     comptime B = c_shape.get[0]()
     comptime assert (
@@ -92,8 +91,8 @@ fn shrink_qkv_permute_3mn_sm100[
     # final C output must happen exclusively via the epilogue function.
     var c = NDBuffer[
         mut=True,
+        rank=2,
         c_type,
-        2,
         MutAnyOrigin,
         shape=DimList(Dim(), Dim(N_Total)),
         strides=DimList.create_unknown[2](),

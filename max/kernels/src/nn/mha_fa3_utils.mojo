@@ -45,7 +45,6 @@ from layout.tma_async import (
     RaggedTMA3DTile,
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
-    _split_last_layout,
     TMATensorTile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
@@ -120,12 +119,9 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
 
     @always_inline
     fn value(self) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        debug_assert(
-            Bool(self.ptr),
-            (
-                "NonNullPointer is supposed to provide a compile-time guarantee"
-                " of being non-null"
-            ),
+        assert Bool(self.ptr), (
+            "NonNullPointer is supposed to provide a compile-time guarantee"
+            " of being non-null"
         )
         return self.ptr
 
@@ -299,7 +295,7 @@ struct MHAPosition[
         dtype: DType
     ](
         self,
-        ptr: UnsafePointer[Scalar[dtype], _],
+        ptr: UnsafePointer[mut=True, Scalar[dtype], _],
         out gmem_block: LayoutTensor[
             dtype,
             Self.q_output_gmem_layout,
@@ -444,6 +440,7 @@ fn get_seq_info[
     //,
     BM: Int,
     num_heads: Int,
+    flip_prompt_idx: Bool,
 ](
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,
@@ -457,7 +454,9 @@ fn get_seq_info[
         valid_length,
         max_seq_len.as_uint32(),
     )
-    scheduler = TransientScheduler[UInt32(BM), UInt32(num_heads)]()
+    scheduler = TransientScheduler[
+        UInt32(BM), UInt32(num_heads), flip_prompt_idx=flip_prompt_idx
+    ]()
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
             UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED

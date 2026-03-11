@@ -52,7 +52,7 @@ from std.gpu.memory import (
     external_memory,
 )
 from kv_cache.types import KVCacheT
-from layout import Layout, TileTensor
+from layout import Layout, TileTensor, row_major
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import *
 from layout.layout_tensor import (
@@ -181,7 +181,7 @@ fn flash_attention[
                 LayoutTensor[
                     mask.dtype,
                     Layout.row_major(mask.layout.shape),
-                    MutAnyOrigin,
+                    mask.origin,
                 ](
                     mask.ptr,
                     RuntimeLayout[
@@ -466,6 +466,16 @@ fn q_num_matrix_view_rows[
 
     comptime for i in range(1, q.rank - 2):
         num_rows *= q.dim[i]()
+    return num_rows
+
+
+@always_inline
+fn q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
+    # TileTensor overload for the same computation.
+    var num_rows: Int = Int(q.dim[0]())
+
+    comptime for i in range(1, q.rank - 2):
+        num_rows *= Int(q.dim[i]())
     return num_rows
 
 
@@ -1238,7 +1248,7 @@ fn flash_attention[
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -1246,7 +1256,7 @@ fn flash_attention[
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()
@@ -1339,7 +1349,7 @@ fn flash_attention_ragged[
     var cache_row_offsets = input_row_offsets.as_any_origin()
 
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -1348,7 +1358,7 @@ fn flash_attention_ragged[
         cache_row_offsets,
     )
     var v_operand = RaggedMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()
@@ -1592,7 +1602,7 @@ fn mha[
         else:
             attention.mha_prefill()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -1806,10 +1816,9 @@ fn mha_single_batch[
 
     comptime for i in range(0, Int(WM), 2):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
                 sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
                 * log2e
@@ -2529,10 +2538,9 @@ fn mha_single_batch_pipelined[
 
     comptime for i in range(0, Int(WM), p_frag_simdwidth):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
                 sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
                 * log2e
@@ -3282,7 +3290,7 @@ fn mha_decoding[
             num_partitions,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -3549,10 +3557,9 @@ fn mha_decoding_single_batch[
 
     comptime for i in range(WM):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
                     sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]()
@@ -4230,10 +4237,9 @@ fn mha_decoding_single_batch_pipelined[
 
     comptime for i in range(WM):
         comptime if sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < UInt(4) * group:
                 var sink_logit_log2 = (
                     sink_weights.value()[Int(q_head_idx)][0].cast[accum_type]()
@@ -4570,19 +4576,17 @@ fn mha_splitk_reduce[
         + " should be equal to the warp_size:"
         + String(WARP_SIZE)
     )
-    debug_assert(
-        block_dim.x == UInt(WARP_SIZE),
-        "block_dim.x should be equal to the warp_size",
-    )
+    assert block_dim.x == UInt(
+        WARP_SIZE
+    ), "block_dim.x should be equal to the warp_size"
 
     comptime accum_type = get_accum_type[output_type]()
     var batch_idx = block_idx.z
     var q_head_idx = block_idx.y
 
-    debug_assert(
-        num_partitions <= WARP_SIZE,
-        "number of partitions should be less than or equal to the warp_size",
-    )
+    assert (
+        num_partitions <= WARP_SIZE
+    ), "number of partitions should be less than or equal to the warp_size"
     var partition_idx = thread_idx.x
 
     var qk_max_offset = (
@@ -4594,15 +4598,17 @@ fn mha_splitk_reduce[
     if partition_idx < UInt(num_partitions):
         l = qk_max_ptr[qk_max_offset]
 
-    var qk_max = warp.lane_group_max_and_broadcast[WARP_SIZE](l)
+    var qk_max = warp.lane_group_max[WARP_SIZE](l)
 
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
-    var exp_sums = LayoutTensor[
-        accum_type,
-        Layout(WARP_SIZE),
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+    var exp_sums = TileTensor(
+        stack_allocation[
+            WARP_SIZE,
+            Scalar[accum_type],
+            address_space=AddressSpace.SHARED,
+        ](),
+        row_major[WARP_SIZE](),
+    )
 
     comptime intermediate_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, Int(num_heads), Int(depth)
@@ -4914,11 +4920,8 @@ fn _bmm0_bs[
         cur_cache_len = max_cache_size
         p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)
 
-    debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
-    debug_assert(
-        cur_cache_len <= padded_num_keys,
-        "Invalid cur_cache_len",
-    )
+    assert cur_query_len <= max_prompt_len, "Invalid cur_query_len"
+    assert cur_cache_len <= padded_num_keys, "Invalid cur_cache_len"
 
     if x >= UInt(padded_num_keys) or y >= UInt(max_prompt_len):
         return
@@ -5048,7 +5051,7 @@ fn _bmm1_bs[
         cur_cache_len = max_cache_size
         p_offset = batch_head * UInt(max_prompt_len) * UInt(max_cache_size)
 
-    debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
+    assert cur_query_len <= max_prompt_len, "Invalid cur_query_len"
 
     if x >= UInt(depth) or y >= UInt(cur_query_len):
         return
@@ -5115,7 +5118,7 @@ fn mha_gpu_naive[
             LayoutTensor[
                 mask_type,
                 Layout.row_major(mask.layout.shape),
-                MutAnyOrigin,
+                mask.origin,
             ](
                 mask.ptr,
                 RuntimeLayout[Layout.row_major(mask.layout.shape)].row_major(
@@ -5165,7 +5168,7 @@ fn mha_gpu_naive[
     ] = None,
 ) raises:
     var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), MutAnyOrigin](
+        LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
             k.ptr,
             RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -5173,7 +5176,7 @@ fn mha_gpu_naive[
         )
     )
     var v_operand = LayoutTensorMHAOperand(
-        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), MutAnyOrigin](
+        LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
             v.ptr,
             RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
                 v.runtime_layout.shape.value.canonicalize()
@@ -5309,16 +5312,16 @@ fn _naive_attention_with_transpose[
     # O = Score * V. It's transposed and will be transposed back to output.
     var ot_ptr = alloc[Scalar[dtype]](output.size())
 
-    var qt = NDBuffer[dtype, 4](
+    var qt = NDBuffer[rank=4, dtype](
         qt_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
-    var kt = NDBuffer[dtype, 4](
+    var kt = NDBuffer[rank=4, dtype](
         kt_ptr, Index(batch_size, num_heads, depth, num_keys)
     )
-    var vt = NDBuffer[dtype, 4](
+    var vt = NDBuffer[rank=4, dtype](
         vt_ptr, Index(batch_size, num_heads, num_keys, depth)
     )
-    var ot = NDBuffer[dtype, 4](
+    var ot = NDBuffer[rank=4, dtype](
         ot_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
 
@@ -5350,7 +5353,7 @@ fn _naive_attention_with_transpose[
 
     # BSHD -> BHSD
     var q_perm_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
-    var q_perm = LayoutTensor[DType.int, Layout(4)](q_perm_stack)
+    var q_perm = TileTensor(q_perm_stack, row_major[4]())
     q_perm[0] = 0
     q_perm[1] = 2
     q_perm[2] = 1
@@ -5358,7 +5361,7 @@ fn _naive_attention_with_transpose[
 
     # BSHD -> BHDS
     var k_perm_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
-    var k_perm = LayoutTensor[DType.int, Layout(4)](k_perm_stack)
+    var k_perm = TileTensor(k_perm_stack, row_major[4]())
     k_perm[0] = 0
     k_perm[1] = 2
     k_perm[2] = 3
@@ -5366,7 +5369,7 @@ fn _naive_attention_with_transpose[
 
     # BHSD -> BSHD
     var o_perm_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
-    var o_perm = LayoutTensor[DType.int, Layout(4)](o_perm_stack)
+    var o_perm = TileTensor(o_perm_stack, row_major[4]())
     o_perm[0] = 0
     o_perm[1] = 2
     o_perm[2] = 1
@@ -5374,7 +5377,7 @@ fn _naive_attention_with_transpose[
 
     transpose(
         qt,
-        NDBuffer[q.dtype, 4, q.origin](
+        NDBuffer[rank=4, q.dtype, q.origin](
             q.ptr,
             rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5382,7 +5385,7 @@ fn _naive_attention_with_transpose[
     )
     transpose(
         kt,
-        NDBuffer[k.dtype, 4, k.origin](
+        NDBuffer[rank=4, k.dtype, k.origin](
             k.ptr,
             rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5390,7 +5393,7 @@ fn _naive_attention_with_transpose[
     )
     transpose(
         vt,
-        NDBuffer[v.dtype, 4, v.origin](
+        NDBuffer[rank=4, v.dtype, v.origin](
             v.ptr,
             rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5402,7 +5405,7 @@ fn _naive_attention_with_transpose[
     )
 
     transpose(
-        NDBuffer[output.dtype, 4, output.origin](
+        NDBuffer[rank=4, output.dtype, output.origin](
             output.ptr,
             rebind[IndexList[4]](
                 output.runtime_layout.shape.value.canonicalize()
@@ -5447,24 +5450,16 @@ fn _naive_attention[
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
     var score_ptr = alloc[Scalar[dtype]](score_size)
-    var score = NDBuffer[dtype, 4](
+    var score = NDBuffer[rank=4, dtype](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
-    comptime layout_4d = Layout.row_major[4]()
-    var score_lt = LayoutTensor[dtype, layout_4d](
-        score_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
-    )
-
     batched_matmul[transpose_b=transpose_k](
         score,
-        NDBuffer[q.dtype, 4, q.origin](
+        NDBuffer[rank=4, q.dtype, q.origin](
             q.ptr,
             rebind[IndexList[4]](q.runtime_layout.shape.value.canonicalize()),
         ),
-        NDBuffer[k.dtype, 4, k.origin](
+        NDBuffer[rank=4, k.dtype, k.origin](
             k.ptr,
             rebind[IndexList[4]](k.runtime_layout.shape.value.canonicalize()),
         ),
@@ -5484,7 +5479,7 @@ fn _naive_attention[
         score.store[width=width](rebind[IndexList[4]](coords), vec)
 
     elementwise[scale_and_mask, simd_size](
-        score_lt.runtime_layout.shape.value.canonicalize()
+        Index(batch_size, num_heads, seq_len, num_keys)
     )
 
     var score_tt = TileTensor(score)
@@ -5495,14 +5490,14 @@ fn _naive_attention[
     )
 
     batched_matmul[transpose_b=False](
-        NDBuffer[output.dtype, 4, output.origin](
+        NDBuffer[rank=4, output.dtype, output.origin](
             output.ptr,
             rebind[IndexList[4]](
                 output.runtime_layout.shape.value.canonicalize()
             ),
         ),
         score.get_immutable(),
-        NDBuffer[v.dtype, 4, v.origin](
+        NDBuffer[rank=4, v.dtype, v.origin](
             v.ptr,
             rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),
         ),

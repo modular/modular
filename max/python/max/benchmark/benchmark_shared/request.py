@@ -90,6 +90,15 @@ class BaseRequestFuncOutput:
     # List of per-chunk time-per-output-token values
     tpot: list[float] = field(default_factory=list)
     error: str = ""
+    # time.perf_counter() at request dispatch (monotonic, run-relative)
+    request_submit_time: float | None = None
+
+    @property
+    def request_complete_time(self) -> float | None:
+        """Derived completion timestamp: submit time + latency."""
+        if self.request_submit_time is None:
+            return None
+        return self.request_submit_time + self.latency
 
 
 # TODO: We shouldn't have to maintain two separate RequestFuncOutput classes for
@@ -291,6 +300,7 @@ class TRTLLMRequestDriver(RequestDriver):
 
             ttft = 0.0
             st = time.perf_counter()
+            output.request_submit_time = st
             most_recent_timestamp = st
             try:
                 async with session.post(url=api_url, json=payload) as response:
@@ -374,6 +384,7 @@ async def _run_openai_stream_request(
     generated_text = ""
     ttft = 0.0
     st = time.perf_counter()
+    output.request_submit_time = st
     most_recent_timestamp = st
     has_content = False
     latency = 0.0
@@ -539,8 +550,17 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload=payload,
             headers=headers,
             prompt_len=request_func_input.prompt_len,
-            content_extractor=lambda data: data["choices"][0]["delta"].get(
-                "content", ""
+            # NOTE:
+            # "reasoning" and "reasoning_content" are NOT official OpenAI fields.
+            # Different model providers and serving frameworks may emit one or both
+            # to stream chain-of-thought tokens separately from "content". These
+            # fields may also be None in some chunks.
+            #
+            # We merge them here to preserve all streamed text.
+            content_extractor=lambda data: (
+                (data["choices"][0]["delta"].get("reasoning") or "")
+                + (data["choices"][0]["delta"].get("reasoning_content") or "")
+                + (data["choices"][0]["delta"].get("content") or "")
             ),
             tokenizer=self.tokenizer,
         )
@@ -607,6 +627,7 @@ class OpenResponsesRequestDriver(RequestDriver):
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len
         start = time.perf_counter()
+        output.request_submit_time = start
 
         async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
             try:

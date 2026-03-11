@@ -86,8 +86,8 @@ fn _bmm0_bs[
     # num_heads * kv_max_seq_len * batch * depth + depth * head
     num_keys = cur_kv_len + k_cache.cache_length(Int(batch))
 
-    debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
-    debug_assert(num_keys <= padded_num_keys, "Invalid max_cache_size")
+    assert cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len"
+    assert num_keys <= padded_num_keys, "Invalid max_cache_size"
 
     if x >= UInt(kv_max_seq_len + max_cache_size) or y >= UInt(q_max_seq_len):
         return
@@ -187,8 +187,8 @@ fn _bmm1_bs[
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
 
-    debug_assert(cur_query_len <= q_max_seq_len, "Invalid cur_query_len")
-    debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
+    assert cur_query_len <= q_max_seq_len, "Invalid cur_query_len"
+    assert cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len"
 
     if x >= UInt(depth) or y >= UInt(cur_query_len):
         return
@@ -298,7 +298,9 @@ fn mha_cross_gpu_naive[
             (Idx(batch_size * num_heads), Idx(q_max_seq_len), Idx(num_keys))
         ),
     )
-    var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.numel(), owning=False)
+    var q_device = DeviceBuffer[q_type](
+        ctx, q.ptr, q.num_elements(), owning=False
+    )
 
     comptime kernel_0 = _bmm0_bs[
         QLayoutType=q.LayoutType,
@@ -347,7 +349,7 @@ fn mha_cross_gpu_naive[
         ctx,
     )
     var output_device = DeviceBuffer[output.dtype](
-        ctx, output.ptr, output.numel(), owning=False
+        ctx, output.ptr, output.num_elements(), owning=False
     )
 
     comptime kernel_1 = _bmm1_bs[

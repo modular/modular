@@ -21,10 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    KVCacheQuantizationConfig,
-)
+from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
@@ -142,14 +139,10 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             DType.float8_e4m3fnuz,
         ):
             # Configure the KVCacheParams quantization parameters.
+            # TODO: Set valid scale_dtype when kv_scales are needed (SERVOPT-1094: [EPIC] SnapMLA Implementation).
             kvcache_quant_config = KVCacheQuantizationConfig(
-                scale_dtype=DType.float32, quantization_granularity=32
+                scale_dtype=DType.int8, quantization_granularity=32
             )
-        # Determine q_max_seq_len from speculative decoding config (MTP).
-        q_max_seq_len = 1
-        spec_cfg = pipeline_config.speculative
-        if spec_cfg is not None and spec_cfg.is_mtp():
-            q_max_seq_len = spec_cfg.num_speculative_tokens + 1
 
         return kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -163,7 +156,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
-            q_max_seq_len=q_max_seq_len,
             kvcache_quant_config=kvcache_quant_config,
         )
 

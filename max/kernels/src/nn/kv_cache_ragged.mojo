@@ -37,8 +37,11 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    lt_to_tt,
     row_major,
 )
+from layout.tile_layout import RowMajorLayout
+from layout.coord import RuntimeInt
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
@@ -1488,20 +1491,63 @@ fn _matmul_blockwise_scaled_fp8_common[
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
-    var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
-    ]
 
-    c_nd = {
-        UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
-        RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
-    }
+    # Helper to convert 2D LayoutTensor to TileTensor. Needed because
+    # this function still accepts LayoutTensor parameters. Will be
+    # removed when kv_cache_ragged.mojo is fully migrated to TileTensor.
+    @always_inline
+    fn _lt_to_tt[
+        dtype: DType,
+    ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
+        dtype,
+        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        lt.origin,
+    ]:
+        var layout = row_major(
+            (
+                RuntimeInt(Scalar[DType.int64](lt.dim(0))),
+                RuntimeInt(Scalar[DType.int64](lt.dim(1))),
+            )
+        )
+        return TileTensor[
+            dtype,
+            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            lt.origin,
+        ](
+            ptr=UnsafePointer[Scalar[dtype], lt.origin](
+                unsafe_from_address=Int(lt.ptr)
+            ),
+            layout=layout,
+        )
+
+    # Construct a null-pointer TileTensor for the output (allocated by the
+    # callee when an epilogue is present).
+    var c_tt = TileTensor[
+        output_dtype,
+        RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+        MutAnyOrigin,
+    ](
+        ptr=UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
+        layout=row_major(
+            (
+                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
+                RuntimeInt(Scalar[DType.int64](N)),
+            )
+        ),
+    )
 
     blockwise_scaled_fp8_with_epilogue[
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
         scales_granularity_mnk=scales_granularity_mnk,
-    ](c_nd, hidden_state, weight, input_scale, weight_scale, context)
+    ](
+        c_tt,
+        _lt_to_tt(hidden_state),
+        _lt_to_tt(weight),
+        _lt_to_tt(input_scale),
+        _lt_to_tt(weight_scale),
+        context,
+    )
 
 
 @always_inline
@@ -2855,6 +2901,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    per_token_scale_rope_aware: Bool = False,
 ](
     q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2868,6 +2915,9 @@ fn generic_flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     @always_inline
     @parameter
@@ -2900,6 +2950,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            per_token_scale_rope_aware=per_token_scale_rope_aware,
         ](
             q,
             input_row_offsets,
@@ -2909,6 +2960,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
             output,
             scalar_args_buf,
             context,
+            q_scale_ptr,
         )
 
 
@@ -2920,6 +2972,7 @@ fn _flare_mla_decode_kv_cache_ragged[
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
+    per_token_scale_rope_aware: Bool = False,
 ](
     q: LayoutTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2933,6 +2986,9 @@ fn _flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    q_scale_ptr: UnsafePointer[
+        Scalar[DType.float32], origin=MutAnyOrigin
+    ] = UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin](),
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -2946,6 +3002,8 @@ fn _flare_mla_decode_kv_cache_ragged[
             (batch_size, num_heads, seq_len, head_size).
         scalar_args_buf: Buffer containing scalar arguments for device graph capture.
         context: Pointer containing the runtime context for the target device.
+        q_scale_ptr: Per-token Q scale pointer (float32 array, one per Q token).
+            Default is null (sigma_Q = 1.0).
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -2958,9 +3016,13 @@ fn _flare_mla_decode_kv_cache_ragged[
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_lt)
+    @__copy_capture(k, scalar_args_buf_lt, q_scale_ptr)
     fn _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
-        flare_mla_decoding[rank=q.rank, ragged=True](
+        flare_mla_decoding[
+            rank=q.rank,
+            ragged=True,
+            per_token_scale_rope_aware=per_token_scale_rope_aware,
+        ](
             output,
             q,
             k,
@@ -2969,6 +3031,7 @@ fn _flare_mla_decode_kv_cache_ragged[
             scale,
             context.get_device_context(),
             scalar_args_buf=scalar_args_buf_lt,
+            q_scale_ptr=q_scale_ptr,
         )
 
     dispatch_mask[
@@ -2981,15 +3044,22 @@ fn _flare_mla_decode_kv_cache_ragged[
 @always_inline
 fn generic_flare_mla_prefill_kv_cache_ragged[
     collection_t: KVCollectionT,
+    input_dtype: DType,
     dtype: DType,
     //,
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    k: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     buffer_row_offsets: LayoutTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3069,6 +3139,7 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
 
 @always_inline
 fn _flare_mla_prefill_kv_cache_ragged[
+    input_dtype: DType,
     dtype: DType,
     collection_t: KVCollectionT,
     //,
@@ -3076,9 +3147,15 @@ fn _flare_mla_prefill_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    k: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    v: LayoutTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
     buffer_row_offsets: LayoutTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
@@ -3184,10 +3261,10 @@ fn generic_flare_mla_prefill_ragged_paged_plan[
         task_id=Int(context.get_device_context().id()),
     ):
         mla_prefill_plan(
-            buffer_row_offsets,
-            cache_offsets,
-            buffer_lengths,
-            input_row_offsets,
+            lt_to_tt(buffer_row_offsets),
+            lt_to_tt(cache_offsets),
+            lt_to_tt(buffer_lengths),
+            lt_to_tt(input_row_offsets),
             k,
             buffer_token_size,
             cuda_ctx,
@@ -3223,12 +3300,17 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
+    comptime latent_dim = Int(k_latent_buffer.layout.shape[1])
+    var k_latent_tile = TileTensor(
+        k_latent_buffer.ptr,
+        row_major((Idx(buffer_length_int), Idx[latent_dim]())),
+    )
     _k_cache_to_buffer(
-        buffer_row_offsets_1d,
-        cache_offsets_1d,
+        lt_to_tt(buffer_row_offsets_1d),
+        lt_to_tt(cache_offsets_1d),
         k,
         Int32(buffer_length_int),
-        k_latent_buffer,
+        k_latent_tile,
         cuda_ctx,
     )
 

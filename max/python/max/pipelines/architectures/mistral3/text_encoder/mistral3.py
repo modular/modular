@@ -33,7 +33,7 @@ from max.graph import TensorType
 from .attention import EncoderAttention
 
 if TYPE_CHECKING:
-    from .model_config import Mistral3TextEncoderConfigBase
+    from .model_config import Mistral3TextEncoderConfig
 
 
 class Mistral3MLP(Module[[Tensor], Tensor]):
@@ -106,7 +106,7 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
     states from the configured layers and merging the layer/hidden dimensions.
     """
 
-    def __init__(self, config: Mistral3TextEncoderConfigBase) -> None:
+    def __init__(self, config: Mistral3TextEncoderConfig) -> None:
         super().__init__()
 
         self.dim = config.hidden_size

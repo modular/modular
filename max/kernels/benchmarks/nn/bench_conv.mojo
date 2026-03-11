@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import align_up, ceildiv
 from std.random import rand
 from std.sys import simd_width_of, size_of
@@ -92,13 +89,13 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = UnsafePointer[Scalar[input_type]].alloc(
+    var input_ptr = alloc[Scalar[input_type]](
         input_alloc_size * num_copies, alignment=alignment
     )
-    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+    var filter_ptr = alloc[Scalar[filter_type]](
         num_copies * filter_alloc_size, alignment=alignment
     )
-    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(
+    var output_ptr = alloc[Scalar[output_type]](
         num_copies * output_alloc_size, alignment=alignment
     )
 
@@ -165,9 +162,6 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
                     layout_2,
                     layout_3,
                     layout_2,
-                    _,
-                    _,
-                    _,
                     input_type,
                     filter_type,
                     output_type,

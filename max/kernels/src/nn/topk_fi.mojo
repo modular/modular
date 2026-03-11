@@ -16,7 +16,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
-    block_idx,
+    block_idx_int as block_idx,
     grid_dim,
     lane_id,
     thread_idx,
@@ -124,7 +124,7 @@ fn TopKMaskLogitsKernel[
     top_k_val: Int,
     d: Int,
 ):
-    var bx = Int(block_idx.x)
+    var bx = block_idx.x
     var tx = Int(thread_idx.x)
     var row_idx = bx
 
@@ -610,7 +610,7 @@ fn TopKSamplingFromProbKernel[
     """
     comptime assert output.flat_rank == 1
 
-    var bx = Int(block_idx.x)
+    var bx = block_idx.x
     var tx = Int(thread_idx.x)
 
     var sampled_id_sram = stack_allocation[
@@ -924,7 +924,7 @@ fn TopKTopPSamplingFromProbKernel[
     """
     comptime assert output.flat_rank == 1
 
-    var bx = Int(block_idx.x)
+    var bx = block_idx.x
     var tx = Int(thread_idx.x)
 
     var row_idx = bx
@@ -1247,7 +1247,7 @@ fn TopKSoftmaxSampleKernel[
 ):
     comptime assert sampled_indices.flat_rank == 1
 
-    var bx = Int(block_idx.x)
+    var bx = block_idx.x
     var tx = Int(thread_idx.x)
     var row_idx = bx
 

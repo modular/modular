@@ -54,7 +54,7 @@ from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
     is_big_endian,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -789,13 +789,9 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[Self.dtype, Self.size]()
 
         # TODO: Make this a compile-time check when possible.
-        debug_assert(
-            Self.size == len(elems),
-            (
-                "mismatch in the number of elements in the SIMD variadic"
-                " constructor"
-            ),
-        )
+        assert Self.size == len(
+            elems
+        ), "mismatch in the number of elements in the SIMD variadic constructor"
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
@@ -1850,6 +1846,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             return Int(self._refine[new_size=1]().cast[DType.int]()._mlir_value)
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -2613,7 +2610,7 @@ struct SIMD[dtype: DType, size: Int](
         elif offset % simd_width_of[Self.dtype]():
             return slice_body()
 
-        if is_compile_time():
+        if is_run_in_comptime_interpreter():
             return slice_body()
 
         comptime if is_apple_gpu():
@@ -3319,7 +3316,7 @@ fn _powf_scalar(
     if fractional and base < 0:
         return _nan[base.dtype]()
 
-    return math.exp(exponent.cast[base.dtype]() * math.log(base))
+    return std.math.exp(exponent.cast[base.dtype]() * std.math.log(base))
 
 
 @always_inline
@@ -3343,7 +3340,7 @@ fn _powi(base: Scalar, exp: Int32) -> type_of(base):
     if base.dtype.is_integral() and exp < 0:
         # Not defined for Integers, this should raise an
         # exception.
-        debug_assert(False, "exponent < 0 is undefined for integers")
+        assert False, "exponent < 0 is undefined for integers"
         return 0
 
     var a = base

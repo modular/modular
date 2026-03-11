@@ -46,10 +46,9 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var valid_lengths: List[Int] = [100, 200, 300]
     var cache_lengths: List[Int] = [100, 200, 300]
 
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     var cache_lengths_table = CacheLengthsTable.build(
         valid_lengths, cache_lengths, ctx
@@ -222,10 +221,9 @@ fn test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     var valid_lengths: List[Int] = [3, 1, 4]
     var cache_lengths: List[Int] = [5, 2, 0]
 
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     var cache_lengths_table = CacheLengthsTable.build(
         valid_lengths, cache_lengths, ctx

@@ -44,7 +44,7 @@ fn scatter_nd_gpu[
     if id >= num_indices:
         return
 
-    var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
+    var element_counts_and_input_dims = NDBuffer[rank=1, DType.int64](
         element_counts_and_input_dims_ptr, Index(last_index_dimension * 2)
     )
 
@@ -98,10 +98,10 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[dtype, data_rank, _, _, _],
-    indices: NDBuffer[indices_type, indices_rank, _, _, _],
-    updates: NDBuffer[dtype, updates_rank, _, _, _],
-    output: NDBuffer[dtype, data_rank, _, _, _],
+    data: NDBuffer[rank=data_rank, dtype, _, _, _],
+    indices: NDBuffer[rank=indices_rank, indices_type, _, _, _],
+    updates: NDBuffer[rank=updates_rank, dtype, _, _, _],
+    output: NDBuffer[rank=data_rank, dtype, _, _, _],
     ctx: DeviceContext,
 ) raises:
     """
@@ -183,7 +183,7 @@ fn scatter_nd[
     # NDBuffer below will store both input_strides and data NDBuffer dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
     var ptr = alloc[Int64](last_shape_of_indices * 2)
-    var element_counts_and_input_dims = NDBuffer[DType.int64, 1](
+    var element_counts_and_input_dims = NDBuffer[rank=1, DType.int64](
         ptr, DimList(last_shape_of_indices * 2)
     )
 
@@ -191,7 +191,7 @@ fn scatter_nd[
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
     var input_strides = NDBuffer[
-        DType.int64, 1, MutAnyOrigin, DimList(data_rank)
+        rank=1, DType.int64, MutAnyOrigin, DimList(data_rank)
     ]().stack_allocation()
     for i in range(data_rank):
         var total_stride = 1
@@ -257,10 +257,8 @@ fn scatter_nd[
 
 fn linear_fill[
     dtype: DType
-](buf: NDBuffer[dtype, _, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
-    debug_assert(
-        buf.num_elements() == len(elems), "must fill all elements of tensor"
-    )
+](buf: NDBuffer[rank=_, dtype, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
+    assert buf.num_elements() == len(elems), "must fill all elements of tensor"
 
     for i in range(buf.num_elements()):
         buf[i] = elems[i]
@@ -277,18 +275,20 @@ fn test_case[
     updates_vals: Span[Scalar[dtype]],
     output_ref_vals: Span[Scalar[dtype]],
 ) raises:
-    var data = NDBuffer[dtype, 3, MutAnyOrigin, input_shape].stack_allocation()
+    var data = NDBuffer[
+        rank=3, dtype, MutAnyOrigin, input_shape
+    ].stack_allocation()
     linear_fill(data, data_vals)
     var indices = NDBuffer[
-        DType.int64, 2, MutAnyOrigin, indices_shape
+        rank=2, DType.int64, MutAnyOrigin, indices_shape
     ].stack_allocation()
     linear_fill(indices, indices_vals)
     var updates = NDBuffer[
-        dtype, 3, MutAnyOrigin, updates_shape
+        rank=3, dtype, MutAnyOrigin, updates_shape
     ].stack_allocation()
     linear_fill(updates, updates_vals)
     var output = NDBuffer[
-        dtype, 3, MutAnyOrigin, input_shape
+        rank=3, dtype, MutAnyOrigin, input_shape
     ].stack_allocation()
 
     # Note: This is for the specific set of examples
@@ -301,7 +301,7 @@ fn test_case[
     _ = updates
 
     var output_ref = NDBuffer[
-        dtype, 3, MutAnyOrigin, input_shape
+        rank=3, dtype, MutAnyOrigin, input_shape
     ].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 

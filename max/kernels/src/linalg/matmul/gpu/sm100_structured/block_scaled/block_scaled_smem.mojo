@@ -22,6 +22,7 @@ BlockScaledTileCore and shared with GroupedBlockScaledSmem and Grouped1D1DSmem.
 Each SMEM struct is a thin wrapper that adds the appropriate pipeline bundle.
 """
 
+from std.math import align_up
 from std.gpu.memory import AddressSpace
 from layout import Layout
 from layout.tensor_core_async import tile_sf_layout_k_major
@@ -111,7 +112,7 @@ struct BlockScaledTileCore[
     ]()
 
     comptime sfb_smem_layout = tile_sf_layout_k_major[
-        Self.MMA_N,
+        align_up(Self.MMA_N, SF_MN_GROUP_SIZE),
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
     ]()
@@ -350,7 +351,9 @@ fn sfa_dim1[config: BlockScaledMatmulConfig]() -> Int:
 @always_inline
 fn sfb_dim0[config: BlockScaledMatmulConfig]() -> Int:
     """Compute SFB first dimension from config."""
-    return (config.mma_shape[1] // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
+    return (
+        align_up(config.mma_shape[1], SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE
+    ) * SF_ATOM_M[0]
 
 
 @always_inline

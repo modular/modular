@@ -74,7 +74,7 @@ fn named_barrier[
         - The number of threads value must be a multiple of the warp size.
     """
 
-    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    assert id < MaxHardwareBarriers, "barrier id should not exceed 16"
     comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
@@ -106,7 +106,7 @@ fn named_barrier_arrive[
         - The barrier ID must not exceed 16.
         - All threads participating in the barrier must specify the same num_threads value.
     """
-    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    assert id < MaxHardwareBarriers, "barrier id should not exceed 16"
     comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
@@ -136,7 +136,7 @@ fn barrier():
         # threadgroup_barrier(mem_flags::mem_threadgroup)
         llvm_intrinsic["llvm.air.wg.barrier", NoneType](Int32(2), Int32(1))
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -276,10 +276,10 @@ fn schedule_barrier(
         raise a compile time error.
     """
 
-    comptime if is_amd_gpu():
-        llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
-    else:
-        comptime assert False, "schedule_barrier is only supported on AMDGPU."
+    comptime assert (
+        is_amd_gpu()
+    ), "schedule_barrier is only supported on AMDGPU."
+    llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
 
 
 @always_inline("nodebug")
@@ -304,14 +304,12 @@ fn schedule_group_barrier(
         The sync_id parameter allows creating multiple schedule groups that can be ordered relative to each other.
     """
 
-    comptime if is_amd_gpu():
-        llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
-            Int32(Int(mask)), size, sync_id
-        )
-    else:
-        comptime assert (
-            False
-        ), "schedule_group_barrier is only supported on AMDGPU."
+    comptime assert (
+        is_amd_gpu()
+    ), "schedule_group_barrier is only supported on AMDGPU."
+    llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
+        Int32(Int(mask)), size, sync_id
+    )
 
 
 # reference for waitcnt_arg and related synchronization utilities:
@@ -336,10 +334,9 @@ struct _WaitCountArg:
         comptime assert (
             _is_amd_cdna()
         ), "from_vmcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_VM_CNT,
-            "cnt should be less than or equal to MAX_VM_CNT = 63",
-        )
+        assert (
+            cnt <= Self.MAX_VM_CNT
+        ), "cnt should be less than or equal to MAX_VM_CNT = 63"
         return Self.MAX & ((cnt & 0b1111) | ((cnt & 0b110000) << 10))
 
     @staticmethod
@@ -347,10 +344,9 @@ struct _WaitCountArg:
         comptime assert (
             _is_amd_cdna()
         ), "from_expcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_EXP_CNT,
-            "cnt should be less than or equal to MAX_EXP_CNT = 7",
-        )
+        assert (
+            cnt <= Self.MAX_EXP_CNT
+        ), "cnt should be less than or equal to MAX_EXP_CNT = 7"
         return Self.MAX & (cnt << 4)
 
     @staticmethod
@@ -358,10 +354,9 @@ struct _WaitCountArg:
         comptime assert (
             _is_amd_cdna()
         ), "from_lgkmcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_LGKM_CNT,
-            "cnt should be less than or equal to MAX_LGKM_CNT = 15",
-        )
+        assert (
+            cnt <= Self.MAX_LGKM_CNT
+        ), "cnt should be less than or equal to MAX_LGKM_CNT = 15"
         return Self.MAX & (cnt << 8)
 
 
@@ -476,7 +471,7 @@ fn syncwarp(mask: Int = -1):
         )
         return
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -535,7 +530,7 @@ fn async_copy_arrive[
     comptime if is_nvidia_gpu():
         _mbarrier_impl(address)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="async_copy_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -568,7 +563,7 @@ fn mbarrier_init[
             shared_mem, num_threads
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_init() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -602,8 +597,7 @@ fn mbarrier_arrive[
             shared_mem
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            Int,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -639,8 +633,7 @@ fn mbarrier_test_wait[
             shared_mem, state
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            Bool,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_test_wair() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -671,7 +664,7 @@ fn mbarrier_arrive_expect_tx_shared[
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_shared() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -735,12 +728,10 @@ fn mbarrier_arrive_expect_tx_relaxed[
             has_side_effect=True,
         ](addr, tx_count)
     else:
-        return CompilationTarget.unsupported_target_error[
-            UInt64,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_relaxed() is only supported when targeting NVIDIA GPUs",
         ]()
-    return 0
 
 
 @always_inline("nodebug")
@@ -770,7 +761,7 @@ fn mbarrier_try_wait_parity_shared[
             to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="mbarrier_try_wait_parity_shared() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -823,7 +814,7 @@ fn cp_async_bulk_commit_group():
     comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.cp.async.bulk.commit.group`[_type=None]()
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="cp_async_bulk_commit_group() is only supported when targeting NVIDIA GPUs",
         ]()
@@ -873,7 +864,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
         ](n)
 
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="cp_async_bulk_wait_group() is only supported when targeting NVIDIA GPUs",
         ]()

@@ -246,7 +246,6 @@ class PagedKVCacheManager:
                 device=DeviceRef.from_device(replica_devices[0]),
                 is_mla=params.is_mla,
                 n_kv_heads_per_device=params.n_kv_heads_per_device,
-                q_max_seq_len=params.q_max_seq_len,
                 num_q_heads=params.num_q_heads,
             )
             replica_metadata = _ReplicaMetadata(
@@ -488,7 +487,7 @@ class PagedKVCacheManager:
         # max cached context length for this step (including active prompt
         # tokens), i.e. `max_cached_len` here.
         resolved_metadata = replica.attention_dispatch_resolver(
-            batch_size, max_cached_len
+            batch_size, max_prompt_len, max_cached_len
         )
 
         # MLA: the resolver usually produces the buffer on GPU (devices[0]).
@@ -536,6 +535,7 @@ class PagedKVCacheManager:
                     if replica.device_buffer.scales is not None
                     else None,
                     attention_dispatch_metadata=metadata,
+                    dispatch_scalars=resolved_metadata,
                 )
             )
 

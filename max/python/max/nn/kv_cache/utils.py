@@ -31,10 +31,6 @@ class AttentionDispatchResolver:
     Callers query partition counts with a simple
     ``resolver(batch_size, max_cache_valid_length)`` call.
 
-    For MLA, the resolver graph runs entirely on GPU and returns the
-    result buffer on the compute device, avoiding a redundant CPU→GPU
-    round-trip.  Host-side scalars (needed for graph-key computation)
-    are read via an implicit D2H copy inside ``to_numpy()``.
     """
 
     def __init__(
@@ -43,12 +39,11 @@ class AttentionDispatchResolver:
         device: DeviceRef,
         is_mla: bool,
         n_kv_heads_per_device: int,
-        q_max_seq_len: int,
         num_q_heads: int | None = None,
     ) -> None:
         self._model: Model | None = None
         self._is_mla = is_mla
-        self._q_max_seq_len = q_max_seq_len if self._is_mla else 1
+        self._device = device
 
         if device.is_cpu():
             return
@@ -99,26 +94,31 @@ class AttentionDispatchResolver:
             batch_size_val = graph.inputs[0].tensor
             max_cache_val = graph.inputs[1].tensor
             q_max_seq_len_val = graph.inputs[2].tensor
-            (gpu_args,) = ops.custom(
+            (scalars,) = ops.custom(
                 "mo.mla.compute_dispatch_args.scalar",
                 device=device,
                 values=[batch_size_val, max_cache_val, q_max_seq_len_val],
                 out_types=[
-                    TensorType(shape=[4], dtype=DType.int64, device=device),
+                    TensorType(
+                        shape=[4], dtype=DType.int64, device=DeviceRef.CPU()
+                    ),
                 ],
                 parameters={"num_heads": num_heads},
             )
-            graph.output(gpu_args.tensor)
+            graph.output(scalars.tensor)
         return session.load(graph)
 
     def __call__(
-        self, batch_size: int, max_cache_valid_length: int
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
     ) -> AttentionDispatchMetadataScalars:
         """Returns decode dispatch metadata for the given shape."""
         if self._model is None or batch_size <= 0:
             return AttentionDispatchMetadataScalars(
                 batch_size=batch_size,
-                q_max_seq_len=self._q_max_seq_len,
+                q_max_seq_len=max_prompt_length,
                 num_partitions=1,
                 max_cache_valid_length=max_cache_valid_length,
             )
@@ -129,19 +129,16 @@ class AttentionDispatchResolver:
                 np.array([max_cache_valid_length], dtype=np.int64)
             )
             qs_buf = Buffer.from_numpy(
-                np.array([self._q_max_seq_len], dtype=np.int64)
+                np.array([max_prompt_length], dtype=np.int64)
             )
             (output,) = self._model(bs_buf, mc_buf, qs_buf)
-            # output lives on GPU.  to_numpy() does an implicit D2H copy
-            # so we can read the scalars on the host for graph-key
-            # computation, while keeping the device buffer for direct use.
             out_np = output.to_numpy()
             return AttentionDispatchMetadataScalars(
                 batch_size=int(out_np[0]),
                 q_max_seq_len=int(out_np[1]),
                 num_partitions=int(out_np[2]),
                 max_cache_valid_length=int(out_np[3]),
-                device_buffer=output,
+                device_buffer=output.to(self._device.to_device()),
             )
 
         request = Buffer.from_numpy(
@@ -158,13 +155,7 @@ class AttentionDispatchResolver:
 
 @dataclass(frozen=True)
 class AttentionDispatchMetadataScalars:
-    """Scalar attention dispatch metadata used by ragged decode kernels.
-
-    For MLA the resolver graph runs on GPU and the result buffer is
-    kept on device in ``device_buffer``.  Callers that need the
-    metadata on GPU should use ``device_buffer`` directly instead of
-    round-tripping through ``to_buffer()`` → ``.to(device)``.
-    """
+    """Scalar attention dispatch metadata used by ragged decode kernels."""
 
     batch_size: int
     q_max_seq_len: int

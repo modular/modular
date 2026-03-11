@@ -25,18 +25,23 @@ batches.
 ## How offline inference works
 
 The core of offline inference revolves around the
-[`LLM`](/max/api/python/entrypoints#max.entrypoints.llm.LLM) class which provides
+[`LLM`](/max/api/python/generated/max.entrypoints.llm.LLM) class which provides
 a Python interface to load and run language models.
 
 Specify the model from a Hugging Face repository or a local path and MAX handles
-the process of downloading the model. The
-[`PipelineConfig`](/max/api/python/pipelines/config/#max.pipelines.lib.config.PipelineConfig)
-class allows you to specify parameters related to the inference pipeline, such as
-[`max_length`](/max/api/python/pipelines/config/#max.pipelines.lib.config.PipelineConfig.max_length)
-and
-[`max_num_steps`](/max/api/python/pipelines/config/#max.pipelines.lib.config.PipelineConfig.max_num_steps).
-The [`generate()`](/max/api/python/entrypoints#max.entrypoints.llm.LLM.generate)
-function is used to generate text from the model.
+the process of downloading the model. You can pass model settings such as
+[`max_length`](/max/api/python/generated/max.pipelines.MAXModelConfig#max.pipelines.MAXModelConfig.max_length)
+as kwargs to
+[`MAXModelConfig`](/max/api/python/generated/max.pipelines.MAXModelConfig),
+and runtime settings such as
+[`max_num_steps`](/max/api/python/generated/max.pipelines.lib.PipelineRuntimeConfig#max.pipelines.lib.PipelineRuntimeConfig.max_num_steps)
+to
+[`PipelineRuntimeConfig`](/max/api/python/generated/max.pipelines.lib.PipelineRuntimeConfig),
+then pass these sub-configs to
+[`PipelineConfig`](/max/api/python/generated/max.pipelines.PipelineConfig).
+Then call
+[`generate()`](/max/api/python/generated/max.entrypoints.llm.LLM#max.entrypoints.llm.LLM.generate)
+to generate text from the model.
 
 :::note
 

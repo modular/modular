@@ -63,7 +63,7 @@ def test_compile_config_split_k_reduction_scheme(
 
 
 def test_compile_config_use_logger(
-    capfd: pytest.CaptureFixture,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
     session: InferenceSession,
     compile_config_ops_path: Path,
 ) -> None:

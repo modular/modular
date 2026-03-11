@@ -47,16 +47,16 @@ def distributed_broadcast(
         same shape and dtype as the input tensor.
 
     Raises:
-        ValueError: If input tensor device is not found in signal buffer devices,
-            if devices are not unique, or if there are fewer than 2 signal buffers.
+        ValueError: If signal_buffers is empty, if input tensor device is not
+            found in signal buffer devices, or if devices are not unique.
     """
     input = TensorValue(input)
     signal_buffers = _buffer_values(signal_buffers)
-    num_devices = len(signal_buffers)
 
-    if num_devices < 2:
-        # Single device or empty: no-op, return input as-is
-        return [input] if num_devices == 1 else []
+    if not signal_buffers:
+        raise ValueError(
+            "distributed_broadcast requires at least 1 signal buffer."
+        )
 
     # Get devices and infer root from input tensor's device
     devices = [buf.device for buf in signal_buffers]

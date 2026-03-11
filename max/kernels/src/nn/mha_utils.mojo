@@ -28,7 +28,7 @@ from std.sys import (
 from std.sys.info import _accelerator_arch
 
 from std.bit import prev_power_of_two
-from std.gpu import WARP_SIZE, lane_id
+from std.gpu import WARP_SIZE, lane_id_int as lane_id
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
 from layout.int_tuple import UNKNOWN_VALUE
@@ -422,7 +422,7 @@ fn _copy_frag_to_smem_nvidia[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space=AddressSpace.SHARED, ...
+        mut=True, type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, _, address_space=AddressSpace.LOCAL
@@ -521,7 +521,7 @@ fn _copy_frag_to_smem_amd[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space=AddressSpace.SHARED, ...
+        mut=True, type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, _, address_space=AddressSpace.LOCAL
@@ -601,7 +601,7 @@ fn _copy_frag_to_smem[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space=AddressSpace.SHARED, ...
+        mut=True, type0, layout0, address_space=AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, _, address_space=AddressSpace.LOCAL
@@ -618,7 +618,7 @@ fn _copy_frag_to_smem[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
         ](p_smem_iter, p_reg_tile, warp_x, warp_y)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -705,7 +705,7 @@ fn dispatch_materialized_mask[
     //,
     callback_fn: callback_fn_type,
 ](
-    mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
+    mask_nd: LayoutTensor[mut=False, dtype, layout, _],
     start_pos_nd: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -820,9 +820,7 @@ struct SplitKPartition[dtype: DType](
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        debug_assert(
-            ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
-        )
+        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 

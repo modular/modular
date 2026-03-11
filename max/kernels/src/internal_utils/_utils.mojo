@@ -35,31 +35,6 @@ from tensor import DynamicTensor
 from std.utils import IndexList
 
 
-# ===----------------------------------------------------------------------=== #
-# Unsigned division/modulo helpers for Int
-# ===----------------------------------------------------------------------=== #
-# These helpers allow performing unsigned division and modulo operations on Int
-# arguments while using unsigned hardware operations internally. This is useful
-# when migrating from UInt to Int, as unsigned division is faster on NVIDIA GPUs.
-
-
-@always_inline
-fn ufloordiv(a: Int, b: Int) -> Int:
-    """Perform unsigned division (`//`) on Int arguments.
-
-    This function treats both arguments as unsigned values and performs
-    unsigned division, which is faster than signed division on NVIDIA GPUs.
-
-    Args:
-        a: The dividend (treated as unsigned).
-        b: The divisor (treated as unsigned).
-
-    Returns:
-        The quotient of unsigned division.
-    """
-    return Int(UInt(a) // UInt(b))
-
-
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
@@ -362,12 +337,12 @@ struct Timer:
     var report: List[String]
 
     fn __init__(out self):
-        self.start = Float64(time.perf_counter_ns())
+        self.start = Float64(std.time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
     fn measure(mut self, msg: String):
-        var current = Float64(time.perf_counter_ns())
+        var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")

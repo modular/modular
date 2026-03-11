@@ -35,7 +35,6 @@ from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import blocked_product
 from layout._utils import make_amd_buffer_resource, idx2crd
 from layout.element import Element
-from layout.layout_tensor import LayoutTensorIter
 from layout.runtime_layout import RuntimeLayout
 from layout.swizzle import Swizzle
 from layout.tensor_core import (
@@ -169,7 +168,7 @@ struct KVCacheIterator[
         out result: LayoutTensor[
             Self.cache_t.dtype,
             Self.kv_gmem_layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
             masked=True,
         ],
     ):
@@ -244,20 +243,23 @@ struct KVBuffer[
     comptime wtile_dim0 = Self.WN
     comptime wtile_dim1 = Self.BK
 
-    comptime SharedIterType = LayoutTensorIter[
+    comptime SharedTileType = LayoutTensor[
         Self.kv_t.dtype,
         Self.smem_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-        circular=True,
     ]
-
-    var smem_iter: Self.SharedIterType
-
-    comptime SharedTileType = Self.SharedIterType.LayoutTensorType
     comptime SharedWarpTileType = Self.SharedTileType.TileType[
         Self.wtile_dim0, Self.wtile_dim1
     ]
+
+    var smem_ptr: UnsafePointer[
+        Scalar[Self.kv_t.dtype],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
+
+    comptime smem_stage_size = Self.smem_layout.size()
 
     var kv_cache_iter: KVCacheIterator[
         Self.kv_t, Self.BN, Self.kv_num_heads, Self.depth
@@ -275,14 +277,14 @@ struct KVBuffer[
         head_idx: UInt,
         shared_ptr: UnsafePointer[
             Scalar[Self.kv_t.dtype],
+            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-            ...,
         ],
         end: UInt,
         warp_id: UInt32,
     ):
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
-        self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
+        self.smem_ptr = shared_ptr
 
         self.kv_cache_iter = type_of(self.kv_cache_iter)(
             k_cache, Int(batch_idx), Int(head_idx), Int(end)
@@ -296,9 +298,9 @@ struct KVBuffer[
         self.lds_base_ptrs = type_of(self.lds_base_ptrs)(uninitialized=True)
 
         comptime for i in range(2):
-            var smem_tile = self.smem_iter.next_unsafe(
-                self.smem_iter.linear_uint_type(i)
-            )[]
+            var smem_tile = Self.SharedTileType(
+                self.smem_ptr + i * Self.smem_stage_size
+            )
             var smem_warp_tile = smem_tile.tile[32, Self.BK](
                 Int(warp_row), Int(warp_col)
             )
@@ -310,9 +312,9 @@ struct KVBuffer[
     fn load_from_dram[buffer_idx: Int](mut self):
         var global_tile = self.kv_cache_iter.next_unsafe()
 
-        var smem_tile = self.smem_iter.next_unsafe(
-            self.smem_iter.linear_uint_type(buffer_idx)
-        )[]
+        var smem_tile = Self.SharedTileType(
+            self.smem_ptr + buffer_idx * Self.smem_stage_size
+        )
 
         comptime if Self.depth == 64:
             var smem_warp_tile = smem_tile.tile[32, Self.BK](
@@ -372,9 +374,10 @@ struct KVBuffer[
         comptime if Self.transpose:
             comptime num_warps_n = Self.BN // Self.WN
             var warp_col = get_warp_id() % UInt(num_warps_n)
-            var smem_tile = self.smem_iter.next_unsafe(
-                self.smem_iter.layout_uint_type(buffer)
-            )[].tile[Self.BN, Self.BK](0, bk_tile)
+            var smem_base = Self.SharedTileType(
+                self.smem_ptr + Int(buffer) * Self.smem_stage_size
+            )
+            var smem_tile = smem_base.tile[Self.BN, Self.BK](0, bk_tile)
 
             var wtile_coord0 = Int(warp_col)
             var wtile_coord1 = 0
@@ -395,9 +398,9 @@ struct KVBuffer[
 
             comptime for k in range(Self.BK // MMA_K):
                 var smem_tile = (
-                    self.smem_iter.next_unsafe(
-                        self.smem_iter.layout_uint_type(buffer)
-                    )[]
+                    Self.SharedTileType(
+                        self.smem_ptr + Int(buffer) * Self.smem_stage_size
+                    )
                     .tile[Self.BK, Self.depth](bk_tile, 0)
                     .tile[MMA_K, Self.depth](k, 0)
                 )
@@ -791,7 +794,7 @@ __extension Attention:
         barrier()
 
         self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
+            self.softmax.rowsum_tensor.to_layout_tensor()
         )
 
         if high_warps == 0:

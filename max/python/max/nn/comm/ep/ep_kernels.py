@@ -322,7 +322,9 @@ def call_ep_dispatch_wait(
         "n_nodes": config.n_nodes,
     }
 
-    max_recv_tokens = config.max_tokens_per_rank * config.n_experts
+    max_recv_tokens = config.max_tokens_per_rank * min(
+        config.n_experts, config.n_gpus_per_node * config.n_nodes * config.top_k
+    )
     n_ranks = config.n_gpus_per_node * config.n_nodes
     n_local_experts = config.n_experts // n_ranks
     device_ref = atomic_counter.device
@@ -624,7 +626,9 @@ def call_ep_dispatch(
 
     device_ref = atomic_counter.device
     op_name = "ep.dispatch"
-    max_recv_tokens = config.max_tokens_per_rank * config.n_experts
+    max_recv_tokens = config.max_tokens_per_rank * min(
+        config.n_experts, config.n_gpus_per_node * config.n_nodes * config.top_k
+    )
     n_ranks = config.n_gpus_per_node * config.n_nodes
     n_local_experts = config.n_experts // n_ranks
 

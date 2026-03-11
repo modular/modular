@@ -33,7 +33,7 @@ conflicts can degrade performance.  Applying swizzle layouts
 optimizes memory access patterns for higher throughput.
 """
 
-from std.sys import is_compile_time, simd_width_of, size_of
+from std.sys import is_run_in_comptime_interpreter, simd_width_of, size_of
 
 from std.bit import log2_floor
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -362,12 +362,12 @@ struct Swizzle(
             base: Least significant bits to keep constant.
             shift: Distance to shift the mask.
         """
-        if not is_compile_time():
-            debug_assert(
-                bits >= 0 and base >= 0,
-                "Require non-negative mask bits and base",
-            )
-            debug_assert(abs(shift) >= bits, "shift should be less than bits")
+        if not is_run_in_comptime_interpreter():
+            assert (
+                bits >= 0 and base >= 0
+            ), "Require non-negative mask bits and base"
+
+            assert abs(shift) >= bits, "shift should be less than bits"
 
         self.bits = bits
         self.base = base
@@ -557,15 +557,13 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    comptime if mode in (
+    comptime assert mode in (
         TensorMapSwizzle.SWIZZLE_128B,
         TensorMapSwizzle.SWIZZLE_64B,
         TensorMapSwizzle.SWIZZLE_32B,
         TensorMapSwizzle.SWIZZLE_NONE,
-    ):
-        return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
-    else:
-        comptime assert False, "Only support 32B, 64B, 128B, or no swizzle"
+    ), "Only support 32B, 64B, 128B, or no swizzle"
+    return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
 
 
 # ===-----------------------------------------------------------------------===#

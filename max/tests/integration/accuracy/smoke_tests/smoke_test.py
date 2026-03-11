@@ -75,9 +75,11 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-def is_deepseek(model: str) -> bool:
-    """Temporary workaround for large DeepSeek models."""
-    return "deepseek" in model and "lite" not in model
+def is_huge_moe(model: str) -> bool:
+    """Large MoE models that need expert parallelism instead of tensor parallelism."""
+    if "deepseek" in model and "lite" not in model:
+        return True
+    return any(x in model for x in ["minimax-m", "kimi-k"])
 
 
 def validate_hf_token() -> None:
@@ -203,10 +205,14 @@ def get_server_cmd(
     VLLM = f"vllm.entrypoints.openai.api_server --max-model-len {max_model_len} --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
-    is_huge_model = is_deepseek(model)
+    is_huge_model = is_huge_moe(model)
     if is_huge_model and framework != "sglang":
         MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
         VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
+        if "minimax-m2" in model:
+            os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
+            VLLM += " --attention-backend FLASH_ATTN"
         # Have not been successful in getting SGLang to work with R1 yet
     elif gpu_count > 1:
         MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
@@ -602,6 +608,8 @@ def smoke_test(
             "qwen2.5-vl",
             "qwen3-vl",
             "vision",
+            "kimi-k2.5",
+            "kimi-vl",
         )
     )
     # 1b is non-vision
@@ -617,7 +625,7 @@ def smoke_test(
     all_samples = []
     if disable_timeouts:
         timeout = sys.maxsize
-    elif is_deepseek(model):
+    elif is_huge_moe(model):
         timeout = 1800
     else:
         timeout = 900

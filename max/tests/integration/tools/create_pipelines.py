@@ -22,7 +22,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -38,8 +38,12 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
-from max.pipelines.architectures.flux2.pipeline_flux2 import Flux2Pipeline
+from max.pipelines.architectures.flux1_modulev3.pipeline_flux import (
+    FluxPipeline,
+)
+from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
+    Flux2Pipeline,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
@@ -121,6 +125,8 @@ class VLLMPipeline:
     trust_remote_code: bool = False
     encoding: pipelines.SupportedEncoding | None = None
     tensor_parallel_size: int = 1
+    extra_kwargs: dict[str, Any] = field(default_factory=dict)
+    mm_data_key: str = "image"
 
 
 class PipelineOracle(ABC):
@@ -698,6 +704,89 @@ class PixtralPipelineOracle(PipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
+class KimiK2_5PipelineOracle(PipelineOracle):
+    """Pipeline oracle for Kimi K2.5 multimodal architectures (vLLM only).
+
+    Kimi K2.5 is a 1T-parameter MoE model.
+    """
+
+    def __init__(self, model_path: str) -> None:
+        super().__init__()
+        self.model_path = model_path
+        self.trust_remote_code = True
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {"gpu": ["float4_e2m1fnx2"]}
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        text_only_requests = [
+            MockTextGenerationRequest.text_only(prompt)
+            for prompt in test_data.SHORT_TEXT_PROMPTS
+        ]
+        return test_data.KIMIK2_5_REQUESTS + text_only_requests
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        config = pipelines.PipelineConfig.model_validate(
+            {
+                "defer_resolve": True,
+                "device_specs": device_specs,
+                "quantization_encoding": encoding,
+                "model_path": self.model_path,
+                "huggingface_model_revision": revision,
+                "huggingface_weight_revision": revision,
+                "max_num_steps": 1,
+                "max_length": 1028,
+                "trust_remote_code": self.trust_remote_code,
+                "max_batch_input_tokens": 1024,
+                "ep_size": 8,
+                "data_parallel_degree": 8,
+            }
+        )
+        hf_repo_lock.apply_to_config(config)
+        config.resolve()
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+    def create_torch_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device | str,
+    ) -> TorchModelAndDataProcessor:
+        raise NotImplementedError(
+            "Kimi K2.5 is 1T params (MoE) — torch golden generation is not"
+            " practical. Use --framework vllm instead."
+        )
+
+    def create_vllm_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
+    ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        return VLLMPipeline(
+            model_path=self.model_path,
+            trust_remote_code=self.trust_remote_code,
+            encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
+        )
+
+
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -723,6 +812,7 @@ class GenericOracle(PipelineOracle):
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
@@ -796,12 +886,11 @@ class GenericOracle(PipelineOracle):
         encoding: pipelines.SupportedEncoding | None,
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
-        trust_remote_code = self.config_params.get("trust_remote_code", False)
         model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
             revision=model_revision,
-            trust_remote_code=trust_remote_code,
+            trust_remote_code=self.trust_remote_code,
         )
         weight_path = self.weight_path(encoding) if encoding else None
         if weight_path:
@@ -830,7 +919,7 @@ class GenericOracle(PipelineOracle):
                     config=config,
                     gguf_file=str(downloaded_weight_path),
                     device_map=device,
-                    trust_remote_code=trust_remote_code,
+                    trust_remote_code=self.trust_remote_code,
                     torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                     if encoding
                     else None,
@@ -840,7 +929,7 @@ class GenericOracle(PipelineOracle):
                 self.model_path,
                 revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 device_map=device,
-                trust_remote_code=trust_remote_code,
+                trust_remote_code=self.trust_remote_code,
                 torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding]
                 if encoding
                 else None,
@@ -1236,6 +1325,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": GenericOracle(
+        model_path="RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
+    ),
     "meta-llama/Llama-3.2-1B": GenericOracle(
         model_path="meta-llama/Llama-3.2-1B",
         config_params={"max_length": 512},
@@ -1454,6 +1550,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8": GenericOracle(
+        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
@@ -1618,6 +1719,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={

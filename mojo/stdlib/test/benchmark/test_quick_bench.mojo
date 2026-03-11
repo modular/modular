@@ -258,12 +258,12 @@ def test_overloaded() raises:
 
 @always_inline
 fn exp(x: SIMD[DType.float32, 4]) -> type_of(x):
-    return math.exp(x)
+    return std.math.exp(x)
 
 
 @always_inline
 fn tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
-    return math.tanh(x)
+    return std.math.tanh(x)
 
 
 def test_mojo_math() raises:

@@ -24,7 +24,7 @@ from std.sys import (
     bit_width_of,
     is_amd_gpu,
     is_apple_gpu,
-    is_compile_time,
+    is_run_in_comptime_interpreter,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -522,7 +522,9 @@ fn _ldexp_impl[
 @always_inline
 fn ldexp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], exp: SIMD[DType.int32, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes elementwise ldexp function.
 
     The ldexp function multiplies a floating point value x by the number 2
@@ -540,10 +542,6 @@ fn ldexp[
     Returns:
         Vector containing elementwise result of ldexp on x and exp.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     return _ldexp_impl(x, exp.cast[dtype]())
 
 
@@ -812,7 +810,9 @@ fn _frexp_mask2[
 @always_inline
 fn frexp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> StaticTuple[SIMD[dtype, width], 2]:
+](x: SIMD[dtype, width]) -> StaticTuple[
+    SIMD[dtype, width], 2
+] where dtype.is_floating_point():
     """Breaks floating point values into a fractional part and an exponent part.
     This follows C and Python in increasing the exponent by 1 and normalizing the
     fraction from 0.5 to 1.0 instead of 1.0 to 2.0.
@@ -832,7 +832,6 @@ fn frexp[
         of the input floating point values.
     """
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
-    comptime assert dtype.is_floating_point(), "must be a floating point value"
 
     comptime T = SIMD[dtype, width]
     comptime zero = T(0)
@@ -862,7 +861,7 @@ fn frexp[
 @always_inline
 fn _log_base[
     dtype: DType, width: Int, //, base: Int
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs elementwise log of a SIMD vector with a specific base.
 
     Parameters:
@@ -937,7 +936,7 @@ fn log[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return log(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _log_base[27](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -974,7 +973,7 @@ fn log2[
         Vector containing result of performing log base 2 on x.
     """
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         comptime if size_of[dtype]() < size_of[DType.float32]():
             return log2(x.cast[DType.float32]()).cast[dtype]()
 
@@ -1141,6 +1140,18 @@ fn tanh[
                 instruction="tanh.approx.f32", constraints="=f,f"
             ](x)
 
+    comptime if dtype == DType.float64 and not is_gpu():
+        # For float64 on CPU, use the expm1-based identity for full accuracy:
+        #   tanh(x) = -expm1(-2|x|) / (expm1(-2|x|) + 2)
+        # expm1 computes e^y - 1 accurately even for small |y|, avoiding the
+        # catastrophic cancellation that occurs in (e^y - 1) computed naively.
+        # This matches the accuracy of FreeBSD/Cephes libm tanh for float64.
+        # Clamp at ±20: tanh(±20) rounds to exactly ±1 in float64.
+        var xc64 = x.clamp(-20, 20)
+        var x_abs = abs(xc64)
+        var e = expm1((-2) * x_abs)
+        return copysign((-e) / (e + 2), xc64)
+
     var xc = x.clamp(-9, 9)
     var x_squared = xc * xc
 
@@ -1267,7 +1278,7 @@ fn iota[
 
     comptime step_dtype = dtype if dtype.is_integral() else DType.int
     var step: SIMD[step_dtype, width]
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         step = 0
 
         comptime for i in range(width):
@@ -1401,7 +1412,7 @@ fn align_down(value: Int, alignment: Int) -> Int:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return (value // alignment) * alignment
 
 
@@ -1418,7 +1429,7 @@ fn align_down(value: UInt, alignment: UInt) -> UInt:
         Closest multiple of the alignment that is less than or equal to the
         input value. In other words, floor(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return (value // alignment) * alignment
 
 
@@ -1440,7 +1451,7 @@ fn align_up(value: Int, alignment: Int) -> Int:
         Closest multiple of the alignment that is greater than or equal to the
         input value. In other words, ceiling(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return ceildiv(value, alignment) * alignment
 
 
@@ -1457,7 +1468,7 @@ fn align_up(value: UInt, alignment: UInt) -> UInt:
         Closest multiple of the alignment that is greater than or equal to the
         input value. In other words, ceiling(value / alignment) * alignment.
     """
-    debug_assert(alignment != 0, "zero alignment")
+    assert alignment != 0, "zero alignment"
     return ceildiv(value, alignment) * alignment
 
 
@@ -1710,7 +1721,7 @@ fn cos[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return cos(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _llvm_unary_fn["llvm.cos"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -1753,7 +1764,7 @@ fn sin[
     comptime if size_of[dtype]() < size_of[DType.float32]():
         return sin(x.cast[DType.float32]()).cast[dtype]()
 
-    if is_compile_time():
+    if is_run_in_comptime_interpreter():
         return _llvm_unary_fn["llvm.sin"](x)
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
@@ -2443,7 +2454,9 @@ fn cbrt[
 # TODO: implement for variadic inputs as Python.
 fn hypot[
     dtype: DType, width: Int, //
-](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `hypot` of the inputs.
 
     Constraints:
@@ -2460,9 +2473,6 @@ fn hypot[
     Returns:
         The `hypot` of the inputs.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2477,10 +2487,6 @@ fn hypot[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypot", Scalar[result_type]](arg0, arg1)
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
@@ -2653,7 +2659,9 @@ fn erfc[
 # ===----------------------------------------------------------------------=== #
 
 
-fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn lgamma[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `lgamma` of the inputs.
 
     Constraints:
@@ -2669,9 +2677,6 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `lgamma` of the input.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["lgamma"](x)
 
@@ -2681,7 +2686,9 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn gamma[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Gamma of the input.
 
     For details, see https://en.wikipedia.org/wiki/Gamma_function.
@@ -2699,9 +2706,6 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The Gamma function evaluated at the input.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["tgamma"](x)
 
@@ -2713,7 +2717,9 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
 fn remainder[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `remainder` of the inputs.
 
     Constraints:
@@ -2730,10 +2736,6 @@ fn remainder[
     Returns:
         The `remainder` of the inputs.
     """
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2752,10 +2754,6 @@ fn remainder[
         return _external_call_const["remainder", Scalar[result_type]](
             arg0, arg1
         )
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](x, y)
@@ -2881,7 +2879,9 @@ fn y1[
 
 fn scalb[
     dtype: DType, width: Int, //
-](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `scalb` of the inputs.
 
     Constraints:
@@ -2898,9 +2898,6 @@ fn scalb[
     Returns:
         The `scalb` of the inputs.
     """
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -2915,10 +2912,6 @@ fn scalb[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalb", Scalar[result_type]](arg0, arg1)
-
-    comptime assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
@@ -3114,7 +3107,7 @@ fn modf[
 @always_inline
 fn ulp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the ULP (units of last place) or (units of least precision) of
     the number.
 
@@ -3131,8 +3124,6 @@ fn ulp[
     Returns:
         The ULP of x.
     """
-
-    comptime assert dtype.is_floating_point(), "the type must be floating point"
 
     var nan_mask = isnan(x)
     var xabs = abs(x)
@@ -3189,10 +3180,88 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(
-        0 <= n <= (12 if is_32bit() else 20), "input value causes an overflow"
-    )
+    assert (
+        0 <= n <= (12 if is_32bit() else 20)
+    ), "input value causes an overflow"
     return table[n]
+
+
+fn comb(n: Int, k: Int) -> Int:
+    """Computes the number of ways to choose `k` items from `n` items without
+    repetition and without order (binomial coefficient).
+
+    Equivalent to Python's `math.comb(n, k)`.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to choose. Must be non-negative.
+
+    Returns:
+        The binomial coefficient C(n, k). Returns 0 if `k > n`. Asserts if
+        either argument is negative.
+
+    Examples:
+
+    ```mojo
+    from std.math import comb
+    print(comb(5, 2))  # 10
+    print(comb(10, 0)) # 1
+    print(comb(3, 5))  # 0
+    ```
+    """
+    assert n >= 0, "n must be non-negative"
+    assert k >= 0, "k must be non-negative"
+    if k > n:
+        return 0
+    # Use the smaller of k and n-k to minimise the number of iterations.
+    var k2 = k if k <= n - k else n - k
+    var result = 1
+    for i in range(k2):
+        # Reduce (n-i) and (i+1) by their gcd before multiplying to avoid
+        # intermediate overflow when the final result fits in Int.
+        var num = n - i
+        var den = i + 1
+        var g = gcd(num, den)
+        num //= g
+        den //= g
+        # After removing gcd(num, den), the remaining den divides result
+        # exactly (since C(n, i+1) is always an integer).
+        result = (result // den) * num
+    return result
+
+
+fn perm(n: Int, k: Int = -1) -> Int:
+    """Computes the number of ways to arrange `k` items from `n` items without
+    repetition (permutations).
+
+    Equivalent to Python's `math.perm(n, k)`.
+
+    Args:
+        n: The total number of items. Must be non-negative.
+        k: The number of items to arrange. Must be non-negative and at most `n`.
+           If omitted (default), returns `n!` via `factorial(n)`.
+
+    Returns:
+        The number of permutations P(n, k) = n! / (n-k)!. Asserts if `n` is
+        negative, `k` is negative, or `k > n`.
+
+    Examples:
+
+    ```mojo
+    from std.math import perm
+    print(perm(5, 2))  # 20
+    print(perm(5))     # 120  (same as factorial(5))
+    print(perm(5, 0))  # 1
+    ```
+    """
+    assert n >= 0, "n must be non-negative"
+    if k == -1:
+        return factorial(n)
+    assert 0 <= k <= n, "k must be between 0 and n"
+    var result = 1
+    for i in range(k):
+        result *= n - i
+    return result
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3282,10 +3351,9 @@ fn _call_libm[
     width: Int,
     //,
     func_name: StaticString,
-](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    comptime assert (
-        dtype.is_floating_point()
-    ), "argument type must be floating point"
+](arg: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     comptime assert (
         not is_gpu()
     ), "libm operations are only available on CPU targets"

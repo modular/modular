@@ -142,7 +142,7 @@ fn test_case_sampling[
     var _xx_no_lifetimes = out_vals
     var _x_no_lifetimes = out_idxs
 
-    for i in range(out_idxs.numel()):
+    for i in range(out_idxs.num_elements()):
         print(out_idxs.ptr[i], end="")
         print(",", end="")
     print("")
@@ -318,12 +318,12 @@ def main() raises:
     ](buf: TileTensor[mut=True, dtype, ...]):
         var flat_buf = TileTensor(
             buf.ptr,
-            row_major(Idx(buf.numel())),
+            row_major(Idx(buf.num_elements())),
         )
 
-        for i in range(flat_buf.numel()):
+        for i in range(flat_buf.num_elements()):
             var idx = flat_buf.layout(Coord(Idx(i)))
-            flat_buf.ptr[idx] = Scalar[dtype](flat_buf.numel() - i - 1)
+            flat_buf.ptr[idx] = Scalar[dtype](flat_buf.num_elements() - i - 1)
         flat_buf[0] = -1
 
     fn test_5d():

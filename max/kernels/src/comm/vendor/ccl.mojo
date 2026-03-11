@@ -11,13 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-from std.memory import UnsafePointer as RealUnsafePointer
 from std.sys import has_amd_gpu_accelerator
 from std.pathlib import Path
 from std.ffi import _get_global_or_null, external_call
@@ -33,7 +26,10 @@ from comm import MAX_GPUS
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
 
-comptime ncclComm_t = OpaquePointer
+# Safety: don't use `ExternalOrigin` here as that will turn of extending the
+# lifetime of any Mojo structs that pass an internal pointer to the functions
+# below.
+comptime ncclComm_t = OpaquePointer[AnyOrigin[mut=True]]
 
 
 @fieldwise_init
@@ -105,37 +101,6 @@ fn _get_ccl_function[
     return _ffi_get_dylib_function[CCL_LIBRARY(), func_name, result_type]()
 
 
-# Common function signatures for CCL APIs (shared by RCCL/NCCL)
-comptime CCLAllReduceFn = fn(
-    OpaquePointer,
-    OpaquePointer,
-    Int,
-    ncclDataType_t,
-    ncclRedOp_t,
-    ncclComm_t,
-    OpaquePointer,
-) -> ncclResult_t
-
-comptime CCLAllGatherFn = fn(
-    OpaquePointer,
-    OpaquePointer,
-    Int,
-    ncclDataType_t,
-    ncclComm_t,
-    OpaquePointer,
-) -> ncclResult_t
-
-comptime CCLBroadcastFn = fn(
-    OpaquePointer,
-    OpaquePointer,
-    Int,
-    ncclDataType_t,
-    Int,
-    ncclComm_t,
-    OpaquePointer,
-) -> ncclResult_t
-
-
 # Paired wrappers grouped RCCl/NCCL for comparison
 struct _Group:
     fn __init__(out self):
@@ -157,13 +122,13 @@ fn group() -> _Group:
 
 
 fn ncclCommInitAll(
-    comms: UnsafePointer[ncclComm_t], ndev: Int, devlist: UnsafePointer[Int32]
+    comms: UnsafePointer[ncclComm_t, _],
+    ndev: Int,
+    devlist: UnsafePointer[Int32, _],
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        fn(
-            UnsafePointer[ncclComm_t], Int, UnsafePointer[Int32]
-        ) -> ncclResult_t,
+        fn(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
     ]()(comms, ndev, devlist)
 
 
@@ -178,9 +143,18 @@ fn _ccl_allreduce(
     ctx: DeviceContext,
 ) raises -> ncclResult_t:
     var stream_ptr = _ccl_stream_ptr(ctx)
-    return _get_ccl_function["ncclAllReduce", CCLAllReduceFn]()(
-        sendbuff, recvbuff, count, datatype, op, comm, stream_ptr
-    )
+    return _get_ccl_function[
+        "ncclAllReduce",
+        fn(
+            type_of(sendbuff),
+            type_of(recvbuff),
+            Int,
+            ncclDataType_t,
+            ncclRedOp_t,
+            ncclComm_t,
+            type_of(stream_ptr),
+        ) -> ncclResult_t,
+    ]()(sendbuff, recvbuff, count, datatype, op, comm, stream_ptr)
 
 
 # === AllGather binding (unified) ===
@@ -194,9 +168,17 @@ fn _ccl_allgather(
     ctx: DeviceContext,
 ) raises -> ncclResult_t:
     var stream_ptr = _ccl_stream_ptr(ctx)
-    return _get_ccl_function["ncclAllGather", CCLAllGatherFn]()(
-        sendbuff, recvbuff, count, datatype, comm, stream_ptr
-    )
+    return _get_ccl_function[
+        "ncclAllGather",
+        fn(
+            type_of(sendbuff),
+            type_of(recvbuff),
+            Int,
+            ncclDataType_t,
+            ncclComm_t,
+            type_of(stream_ptr),
+        ) -> ncclResult_t,
+    ]()(sendbuff, recvbuff, count, datatype, comm, stream_ptr)
 
 
 # === Broadcast binding (unified) ===
@@ -211,13 +193,32 @@ fn _ccl_broadcast(
     ctx: DeviceContext,
 ) raises -> ncclResult_t:
     var stream_ptr = _ccl_stream_ptr(ctx)
-    return _get_ccl_function["ncclBroadcast", CCLBroadcastFn]()(
-        sendbuff, recvbuff, count, datatype, root, comm, stream_ptr
+    return _get_ccl_function[
+        "ncclBroadcast",
+        fn(
+            type_of(sendbuff),
+            type_of(recvbuff),
+            Int,
+            ncclDataType_t,
+            Int,
+            ncclComm_t,
+            type_of(stream_ptr),
+        ) -> ncclResult_t,
+    ]()(
+        sendbuff,
+        recvbuff,
+        count,
+        datatype,
+        root,
+        comm,
+        stream_ptr,
     )
 
 
 @always_inline
-fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
+fn _ccl_stream_ptr(
+    ctx: DeviceContext,
+) raises -> OpaquePointer[ExternalOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
         return HIP(ctx.stream()).bitcast[NoneType]()
     else:
@@ -269,7 +270,8 @@ fn _get_global_comms(ngpus: Int) raises -> Communicators:
     )
 
     var c = Communicators(ngpus=ngpus, comms=comms.copy())
-    var ptr = UnsafePointer[Communicators].alloc(1)
+
+    var ptr = alloc[Communicators](1)
     ptr.init_pointee_move(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(NAME), ptr.bitcast[NoneType]()
@@ -290,6 +292,9 @@ fn init_comms(ngpus: Int) raises:
 @parameter
 fn allreduce[
     dtype: DType,
+    input_origin: Origin[mut=False],
+    rank_sigs_origin: Origin[mut=True],
+    //,
     rank: Int,
     ngpus: Int,
     output_lambda: Optional[elementwise_epilogue_type] = None,
@@ -298,11 +303,11 @@ fn allreduce[
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[rank=rank, dtype, input_origin], 1 if use_multimem else ngpus
     ],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[
-        RealUnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS
+        UnsafePointer[comm.Signal, rank_sigs_origin], MAX_GPUS
     ],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -368,11 +373,16 @@ fn is_broadcast_available() -> Bool:
 @parameter
 fn allgather[
     dtype: DType,
+    inputs_origin: Origin[mut=False],
+    outputs_origin: Origin[mut=True],
+    //,
     rank: Int,
     ngpus: Int,
 ](
-    inputs: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
-    outputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus],
+    inputs: InlineArray[NDBuffer[rank=rank, dtype, inputs_origin], ngpus],
+    outputs: InlineArray[
+        NDBuffer[rank=rank, dtype, outputs_origin], ngpus * ngpus
+    ],
     list_of_ctx: List[DeviceContext],
 ) raises:
     if ngpus < 1:
@@ -429,16 +439,16 @@ fn allgather[
 fn broadcast[
     dtype: DType,
     rank: Int,
+    input_origin: Origin[mut=False],
+    output_origin: Origin[mut=True],
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_buffer: NDBuffer[dtype, rank, ImmutAnyOrigin],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
-    rank_sigs: InlineArray[
-        RealUnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS
-    ],
+    input_buffer: NDBuffer[rank=rank, dtype, input_origin],
+    output_buffer: NDBuffer[rank=rank, dtype, output_origin],
+    rank_sigs: InlineArray[UnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,

@@ -311,7 +311,7 @@ struct Container[ElementType: Movable & ImplicitlyDestructible]:
 
     def write_to[
         StrElementType: Writable & Movable, //
-    ](self: Container[StrElementType], mut writer: Some[Writer]):
+    ](self: Container[StrElementType], mut writer: Some[Writer]) raises:
       self.element.write_to(writer)
 
 
@@ -340,13 +340,13 @@ traits.
 
 ```mojo
 def write_to[StrElementType: Writable & Movable, //](
-        self: Container[StrElementType], mut writer: Some[Writer]):
+        self: Container[StrElementType], mut writer: Some[Writer]) raises:
 ```
 
 The trait bound on `StrElementType` must include `ElementType`'s original trait
-(`Movable` in this case), either by composition or by inheritance. The trait
+(`Movable` in this case), either by composition or by refinement. The trait
 composition `Writable & Movable` includes the original trait. You could also use
-a trait that inherits from `Movable`.
+a trait that refines `Movable`.
 
 Note that the `main()` function calls the `write_to()` method directly,
 rather than calling `String(float_container)`. One current limitation of
@@ -1141,21 +1141,21 @@ It can appear in code in the following forms:
 - *Fully bound*, with all of its parameters specified:
 
   ```mojo
-  def my_fn1(m1: MyType["Hello", 3, 4, True]):
+  def my_fn1(m1: MyType["Hello", 3, 4, True]) raises:
       pass
   ```
 
 - *Partially bound*, with *some but not all* of its parameters specified:
 
   ```mojo
-  def my_fn2(m2: MyType["Hola", _, _, True]):
+  def my_fn2(m2: MyType["Hola", _, _, True]) raises:
       pass
   ```
 
 - *Unbound*, with no parameters specified:
 
   ```mojo
-  def my_fn3(m3: MyType[_, _, _, _]):
+  def my_fn3(m3: MyType[_, _, _, _]) raises:
       pass
   ```
 

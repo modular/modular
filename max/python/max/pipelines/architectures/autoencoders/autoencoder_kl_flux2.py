@@ -148,11 +148,18 @@ class PostprocessAndDecode(Module[..., Tensor]):
         latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
 
         decoded = self.decoder(latents, None)
-        decoded = F.cast(decoded, DType.float32)
         decoded = F.permute(
             decoded, (0, 2, 3, 1)
         )  # (B, C, H, W) -> (B, H, W, C)
-        return decoded
+        # Denormalize [-1, 1] -> [0, 1], scale to [0, 255], cast to uint8.
+        # Keeping in the decoder's native dtype (bfloat16/float16): all values
+        # in [0, 255] are exactly representable, and avoiding the float32 upcast
+        # reduces GPU compute and memory bandwidth for the post-processing ops.
+        decoded = decoded * 0.5 + 0.5
+        decoded = F.max(decoded, 0.0)
+        decoded = F.min(decoded, 1.0)
+        decoded = decoded * 255.0
+        return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:
         return (
@@ -207,7 +214,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             autoencoder_class=AutoencoderKLFlux2,
         )
 
-    def load_model(self) -> Any:
+    def load_model(self) -> Callable[..., Any]:
         """Load and compile the decoder and encoder models with BatchNorm statistics.
 
         Extracts BatchNorm statistics (bn.*) which are specific to Flux2, then

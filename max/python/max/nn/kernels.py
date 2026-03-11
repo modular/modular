@@ -439,9 +439,9 @@ def fused_qkv_ragged_matmul_scaled_float4(
             dtype uint32.
         n_heads: Number of attention heads.
         input_scale: TensorValue representing the input scale tensor. Shape
-            for blockwise scaling is 5D e.g., [2, 3, 32, 4, 4].
+            for blockwise scaling is 5D, for example, [2, 3, 32, 4, 4].
         weight_scale: TensorValue representing the weight scale tensor. Shape
-            for blockwise scaling is 5D e.g., [2, 34, 32, 4, 4]
+            for blockwise scaling is 5D, for example, [2, 34, 32, 4, 4]
         tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (pre-quantization, non-inverted).
         kv_scales: TBD, used in NVFP4 KV cache, see: https://github.com/NVIDIA/TensorRT-LLM/blob/0ffa77af51b272ba27424564ed253096d6f0f11a/tensorrt_llm/_torch/modules/linear.py#L690
         _output_dim: Optional output dimension. If not provided, the output
@@ -560,11 +560,11 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     layer_idx: TensorValue,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A `quantization_config` must be provided.
+    quantized weight matrices. A ``quantization_config`` must be provided.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
+    ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    ``input_row_offsets`` indicates where each batch starts and ends in ``input``
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -643,11 +643,11 @@ def fused_qkv_ragged_matmul_quantized(
     bias: TensorValue | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A `quantization_config` must be provided.
+    quantized weight matrices. A ``quantization_config`` must be provided.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
+    ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    ``input_row_offsets`` indicates where each batch starts and ends in ``input``
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
@@ -1290,7 +1290,7 @@ def rope_ragged(
     *,
     interleaved: bool = True,
 ) -> TensorValue:
-    """Apply RoPE to ragged input using the standard rope kernel."""
+    """Applies RoPE to ragged input using the standard rope kernel."""
     if input_row_offsets.dtype != DType.uint32:
         raise ValueError(
             "expected input_row_offsets to have dtype uint32, was"
@@ -1343,7 +1343,7 @@ def _apply_rope_with_freqs_cis(
     *,
     interleaved: bool = True,
 ) -> TensorValue:
-    """Apply RoPE using per-token freqs_cis (no KV cache coupling)."""
+    """Applies RoPE using per-token freqs_cis (no KV cache coupling)."""
     if freqs_cis.rank == 2:
         head_dim = input.shape[-1]
         freqs_cis = freqs_cis.reshape((freqs_cis.shape[0], head_dim // 2, 2))
@@ -1378,7 +1378,7 @@ def _freqs_cis_from_position_ids(
     *,
     mrope_section: list[int] | None = None,
 ) -> TensorValue:
-    """Build per-token freqs_cis from a freqs table + explicit position_ids."""
+    """Builds per-token freqs_cis from a freqs table and explicit position_ids."""
     if position_ids.dtype != DType.uint32:
         raise ValueError(
             f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
@@ -1471,7 +1471,56 @@ def rope_ragged_with_position_ids(
     mrope_section: list[int] | None = None,
     interleaved: bool = True,
 ) -> TensorValue:
-    """Apply RoPE using explicit position_ids (no KV cache coupling)."""
+    """Applies RoPE using explicit position_ids (no KV cache coupling)."""
+    if position_ids.dtype != DType.uint32:
+        raise ValueError(
+            f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+        )
+    if position_ids.rank == 1:
+        position_ids = ops.unsqueeze(position_ids, 0)
+    if position_ids.rank != 2:
+        raise ValueError(
+            f"expected position_ids to be 1D or 2D, got rank {position_ids.rank}"
+        )
+
+    # Fast path: invoke kernel directly when mrope_section is not used.
+    if mrope_section is None:
+        total_tokens = input.shape[0]
+        row_offsets = ops.range(
+            0,
+            total_tokens + 1,
+            total_tokens,
+            out_dim=2,
+            dtype=DType.uint32,
+            device=input.device,
+        )
+        start_pos = ops.range(
+            0,
+            1,
+            1,
+            out_dim=1,
+            dtype=DType.uint32,
+            device=input.device,
+        )
+        return ops.custom(
+            "mo.rope.ragged.with_position_id",
+            device=input.device,
+            values=[
+                input,
+                row_offsets,
+                start_pos,
+                freqs_cis,
+                position_ids,
+            ],
+            out_types=[
+                TensorType(
+                    dtype=input.dtype, shape=input.shape, device=input.device
+                )
+            ],
+            parameters={"interleaved": interleaved},
+        )[0].tensor
+
+    # Fallback path for mRoPE sections, keep existing graph implementation.
     per_token_freqs = _freqs_cis_from_position_ids(
         freqs_cis,
         position_ids,
@@ -1664,11 +1713,7 @@ def mla_fp8_index_top_k(
             q,
             q_s,
             input_row_offsets,
-            k_collection.blocks,
-            k_collection.cache_lengths,
-            k_collection.lookup_table,
-            k_collection.max_lengths,
-            k_collection.kv_scales,
+            *k_collection,
             layer_idx,
         ],
         out_types=[
@@ -1855,10 +1900,7 @@ def flash_attention_ragged(
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        kv_collection.kv_blocks,
-        kv_collection.cache_lengths,
-        kv_collection.lookup_table,
-        kv_collection.max_lengths,
+        *kv_collection,
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2202,10 +2244,7 @@ def flare_mla_prefill_plan(
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            kv_collection.kv_blocks,
-            kv_collection.cache_lengths,
-            kv_collection.lookup_table,
-            kv_collection.max_lengths,
+            *kv_collection,
             layer_idx,
             buffer_size_tensor,
         ],
@@ -2245,11 +2284,6 @@ def _validate_mla_prefill_decode_graph_inputs(
     if q.rank != input_rank_expected:
         raise ValueError(
             f"expected {tensor_name} of rank {input_rank_expected} but got {q.rank}"
-        )
-
-    if expected_dtype is not None and q.dtype != expected_dtype:
-        raise ValueError(
-            f"expected {tensor_name} to be dtype: {expected_dtype}, got {q.dtype}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -2407,28 +2441,12 @@ def compute_mla_dispatch_args_scalar(
     num_heads: int,
     device: DeviceRef,
 ) -> TensorValue:
-    """Pre-compute MLA decode dispatch scalar args via Mojo heuristic.
-
-    Calls into the Mojo ``compute_mla_dispatch_scalar_args`` function.
-
-    Args:
-        batch_size: Rank-1 int64 tensor of shape `[1]` on CPU.
-        max_cache_valid_length: Rank-1 int64 tensor of shape `[1]` on CPU.
-        q_max_seq_len: Rank-1 int64 tensor of shape `[1]` on CPU.
-            Number of query tokens per sequence (1 for standard decode,
-            >1 for MTP).
-        num_heads: Number of Q attention heads.
-        device: GPU device for the output buffer.
-
-    Returns:
-        GPU tensor of shape `[4]` int64.
-    """
     results = ops.custom(
         "mo.mla.compute_dispatch_args.scalar",
         device=device,
         values=[batch_size, max_cache_valid_length, q_max_seq_len],
         out_types=[
-            TensorType(shape=[4], dtype=DType.int64, device=device),
+            TensorType(shape=[4], dtype=DType.int64, device=DeviceRef.CPU()),
         ],
         parameters={"num_heads": num_heads},
     )
@@ -2667,8 +2685,6 @@ def mla_prefill_decode_graph(
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
-    elif kv_collection.kv_scales is not None:
-        op_name += ".quantized"
 
     if scalar_args is not None:
         op_name += ".capturable"
@@ -3564,7 +3580,7 @@ def batched_dynamic_scaled_fp8_matmul(
     weight_scale_spec: Float8WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Perform a batched blockwise scaled matmul of two tensors with scaling factors.
+    """Performs a batched blockwise scaled matmul of two tensors with scaling factors.
 
     Args:
         a: The first tensor to multiply (3D tensor).
@@ -3863,7 +3879,7 @@ def dynamic_scaled_matmul(
     weight_scale_spec: Float8WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Perform a matmul of two tensors with scaling factors. Currently only
+    """Performs a matmul of two tensors with scaling factors. Currently only
     supports channel-wise scaling for weights and per-token scaling for inputs.
 
     Args:
@@ -3973,7 +3989,7 @@ def dynamic_block_scaled_matmul_fp4(
     sf_vector_size: int = 16,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Perform a matmul of two FP4 tensors with 1D-block scaled scaling factors.
+    """Performs a matmul of two FP4 tensors with 1D-block scaled scaling factors.
 
     Args:
         a: The first tensor to multiply.
@@ -4299,10 +4315,10 @@ def matmul_static_scaled_float8(
 
 
 def needs_fp8_fnuz_conversion() -> bool:
-    """Check if we need to convert FP8 E4M3FN to FNUZ for AMD GPUs.
+    """Checks if FP8 E4M3FN to FNUZ conversion is needed for AMD GPUs.
 
     Returns:
-        True if running on AMD GPU with CDNA3 architecture, False otherwise.
+        ``True`` if running on AMD GPU with CDNA3 architecture, ``False`` otherwise.
     """
     try:
         return "gfx94" in accelerator_architecture_name()
@@ -4314,7 +4330,7 @@ def normalize_e4m3fn_to_e4m3fnuz(
     weight: TensorValue,
     weight_scale: TensorValue,
 ) -> tuple[TensorValue, TensorValue]:
-    """Convert E4M3FN weights to E4M3FNUZ format for AMD GPUs.
+    """Converts E4M3FN weights to E4M3FNUZ format for AMD GPUs.
 
     This conversion is necessary because AMD GPUs use the E4M3FNUZ format
     while NVIDIA GPUs use E4M3FN. The key differences are:
@@ -4366,7 +4382,7 @@ def convert_weights_to_fp8_fnuz_if_needed(
     weight: TensorValue,
     weight_scale: TensorValue,
 ) -> tuple[TensorValue, TensorValue]:
-    """Convert weights and scales to FP8 FNUZ format if needed for AMD GPUs.
+    """Converts weights and scales to FP8 FNUZ format if needed for AMD GPUs.
 
     This utility function checks if FP8 FNUZ conversion is needed, currently onli AMD MI300 GPUs,
     and performs the conversion if required. This centralizes the conversion logic
@@ -5591,7 +5607,7 @@ def tpool_patch_merger(
         kW: Merge kernel width.
         max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
-        total_output_patches: Total number of output patches, i.e.
+        total_output_patches: Total number of output patches, that is,
             ``sum(H_i * W_i)`` over all videos.
 
     Returns:

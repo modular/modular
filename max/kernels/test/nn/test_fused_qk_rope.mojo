@@ -131,9 +131,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
 
     # Create and initialize query buffer.
     q_buffer = q_input[dtype]()
-    debug_assert(
-        len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
-    )
+    assert len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
 
     # Create query tensor as a view of the query buffer.
     q = TileTensor(
@@ -142,26 +140,23 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
-    debug_assert(
-        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
-        "invalid freqs_cis_table init",
-    )
+    assert (
+        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim
+    ), "invalid freqs_cis_table init"
     freqs_cis_table = TileTensor(
         freqs_cis_table_buffer, row_major[max_seq_len, head_dim]()
     )
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[dtype]()
-    debug_assert(
-        len(expected_q_out_buffer) == len(q_buffer),
-        "invalid expected q out init",
-    )
+    assert len(expected_q_out_buffer) == len(
+        q_buffer
+    ), "invalid expected q out init"
     expected_q_out = TileTensor(expected_q_out_buffer, q.layout)
     expected_k_out_buffer = k_out_golden[dtype]()
-    debug_assert(
-        len(expected_k_out_buffer) == batch_size * seq_len * dim,
-        "invalid expected k out init",
-    )
+    assert (
+        len(expected_k_out_buffer) == batch_size * seq_len * dim
+    ), "invalid expected k out init"
 
     # Create output buffer.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
@@ -189,7 +184,9 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
     )
 
     # Compare output and expected query tensors.
-    assert_almost_equal(q_out.ptr, expected_q_out.ptr, expected_q_out.numel())
+    assert_almost_equal(
+        q_out.ptr, expected_q_out.ptr, expected_q_out.num_elements()
+    )
 
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):

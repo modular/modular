@@ -81,13 +81,9 @@ from std.sys import size_of
 
 from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 
 comptime MbarPtr = UnsafePointer[
-    SharedMemBarrier, address_space=AddressSpace.SHARED
+    SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
 ]
 
 

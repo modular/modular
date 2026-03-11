@@ -64,12 +64,6 @@ class Range:
     end: int
 
     def __init__(self, start: int, end: int) -> None:
-        """Initialize a Range with start and end indices.
-
-        Args:
-            start: The inclusive start index.
-            end: The exclusive end index.
-        """
         if start > end:
             raise ValueError(f"start ({start}) must be <= end ({end})")
 
@@ -90,10 +84,10 @@ class Range:
             )
 
     def __len__(self) -> int:
-        """Return the number of elements in the range (end - start).
+        """Returns the number of elements in the range (``end - start``).
 
         Returns:
-            int: The length of the range, which is always >= 0.
+            The length of the range, which is always >= 0.
         """
         return max(0, self.end - self.start)
 
@@ -157,15 +151,15 @@ fundamental data type for token-based operations in MAX pipelines.
 class TokenBuffer:
     """A dynamically resizable container for managing token sequences.
 
-    `TokenBuffer` provides efficient storage and access to token sequences during
-    text generation. It maintains the prompt tokens (initial input) and generated
-    tokens (model output) separately, while handling automatic memory management
-    as new tokens are added.
+    :class:`TokenBuffer` provides efficient storage and access to token sequences
+    during text generation. It maintains the prompt tokens (initial input) and
+    generated tokens (model output) separately, while handling automatic memory
+    management as new tokens are added.
 
-    `TokenBuffer` organizes tokens across three related views:
+    :class:`TokenBuffer` organizes tokens across three related views:
 
-    1. The full stored sequence (`all`), split into `prompt` and `generated` tokens.
-    2. The processing window (`active` versus processed and pending tokens).
+    1. The full stored sequence (``all``), split into ``prompt`` and ``generated`` tokens.
+    2. The processing window (``active`` versus processed and pending tokens).
     3. The streaming window over newly generated tokens consumed by callers.
 
     The first diagram shows how prompt and generated tokens share a single
@@ -180,9 +174,10 @@ class TokenBuffer:
         0                                   len(self) ^
 
     This includes three attributes for accessing tokens:
-    - `all`: The slice of the array containing all valid tokens.
-    - `prompt`: The slice of the array containing the prompt tokens.
-    - `generated`: The slice of the array containing the generated tokens.
+
+    - ``all``: The slice of the array containing all valid tokens.
+    - ``prompt``: The slice of the array containing the prompt tokens.
+    - ``generated``: The slice of the array containing the generated tokens.
 
     Along with three attributes for tracking their lengths:
     - `prompt_length`: The number of tokens in the prompt.
@@ -199,15 +194,15 @@ class TokenBuffer:
         0                              current_position ^
         0                                                     len(self) ^
 
-    In the above, `processed` tracks tokens which has already been processed,
-    `active` tracks tokens, which are scheduled to be processed in the next batch,
-    and `pending` tracks tokens, which have not yet been processed, but are not
+    In the above, ``processed`` tracks tokens which has already been processed,
+    ``active`` tracks tokens, which are scheduled to be processed in the next batch,
+    and ``pending`` tracks tokens, which have not yet been processed, but are not
     actively scheduled to be processed in the next batch (this commonly
     occurs during chunked prefill).
 
     This includes one attribute for accessing tokens:
 
-    - `active`: The slice of the array containing the tokens scheduled
+    - ``active``: The slice of the array containing the tokens scheduled
       for processing in the next batch.
 
     Along with three additional attributes for tracking their lengths:
@@ -218,10 +213,10 @@ class TokenBuffer:
     - `current_position`: The global index marking the end of the current
       active processing window.
 
-    This processing view is updated by method such as `rewind_processing`,
-    `skip_processing`, `chunk`, and `advance_chunk/advance_with_token`. Which
-    control how much of the existing sequence is reprocessed or advanced at
-    each step.
+    This processing view is updated by methods such as ``rewind_processing``,
+    ``skip_processing``, ``chunk``, and ``advance_chunk``/``advance_with_token``,
+    which control how much of the existing sequence is reprocessed or advanced
+    at each step.
 
     It also maintains a completion window over the generated tokens
     for completion streaming::
@@ -238,11 +233,11 @@ class TokenBuffer:
     2. **read to stream**: the newest generated tokens that have not yet
        been returned.
 
-    Each call to `consume_recently_generated_tokens()` returns the (2) region
+    Each call to ``consume_recently_generated_tokens()`` returns the (2) region
     and advances the boundary between (1) and (2), so subsequent calls only
     see newly generated tokens.
 
-    Together, these three views let `TokenBuffer` support efficient prompt
+    Together, these three views let :class:`TokenBuffer` support efficient prompt
     handling, chunked processing, and incremental streaming while exposing a small,
     consistent public API.
     """
@@ -543,7 +538,7 @@ class TokenBuffer:
 
         Raises:
             ValueError: If called before `maybe_chunk` has limited the active
-                tokens (i.e., when no chunk is currently active).
+                tokens (that is, when no chunk is currently active).
         """
         # This error occurs if no chunk was set up with `maybe_chunk` first.
         if not self.actively_chunked:
@@ -645,11 +640,18 @@ class TokenBuffer:
     # State Management and Reset
     # ============================================================================
 
-    def reset_as_new_prompt(self) -> None:
+    def reset_as_new_prompt(
+        self, delete_last_generated_token: bool = False
+    ) -> None:
         """Treat the current sequence as a fresh prompt.
 
         Marks all existing tokens as prompt tokens so the next generation pass
         starts from this state.
+
+        Args:
+            delete_last_generated_token: If True, deletes the last generated token
+                before resetting the buffer. This is useful when the last token is
+                a placeholder future token.
 
         Raises:
             ValueError: If the buffer state is invalid.
@@ -660,6 +662,13 @@ class TokenBuffer:
                 f"Internal error: processing range end ({self._processing_range.end}) "
                 f"exceeds current length ({self._current_length})"
             )
+
+        if delete_last_generated_token:
+            if not self.generated_length:
+                raise ValueError(
+                    "Cannot delete the last generated token if there are no generated tokens."
+                )
+            self._current_length -= 1
 
         # Reset ranges and make all current tokens the new prompt
         self._processing_range = Range(0, self._current_length)

@@ -28,9 +28,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from test_utils import ulp_distance
 from std.testing import assert_almost_equal
 
@@ -136,10 +133,10 @@ fn test[
     )
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[dtype]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
 
     var a_host = LayoutTensor[dtype, a_layout](
         a_host_ptr,
@@ -164,19 +161,19 @@ fn test[
     var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
-    var a_device = NDBuffer[dtype, 2, _, static_a_shape](
+    var a_device = NDBuffer[rank=2, dtype, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
         IndexList[2](m, k),
     )
-    var b_device = NDBuffer[dtype, 2, _, static_b_shape](
+    var b_device = NDBuffer[rank=2, dtype, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
         IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
-    var c_device = NDBuffer[dtype, 2, _, static_c_shape](
+    var c_device = NDBuffer[rank=2, dtype, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
         IndexList[2](m, n),
     )
-    var c_device_ref = NDBuffer[dtype, 2, _, static_c_shape](
+    var c_device_ref = NDBuffer[rank=2, dtype, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
         IndexList[2](m, n),
     )

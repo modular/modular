@@ -19,7 +19,7 @@ from diffusers.models.embeddings import (
     apply_rotary_emb as diffusers_apply_rotary_emb,
 )
 from max.experimental.tensor import Tensor
-from max.pipelines.architectures.flux1.layers.embeddings import (
+from max.pipelines.architectures.flux1_modulev3.layers.embeddings import (
     apply_rotary_emb as max_apply_rotary_emb,
 )
 from torch.utils.dlpack import from_dlpack

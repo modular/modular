@@ -36,9 +36,6 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils import IndexList
 from std.utils.index import product
 
@@ -143,15 +140,13 @@ fn run_elementwise[
     var cb_in = CacheBustingBuffer[dtype](N, pack_size, ctx)
     var cb_out = CacheBustingBuffer[dtype](N, pack_size, ctx)
 
-    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        cb_in.alloc_size(), alignment=align
-    )
-    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var in_host_ptr = alloc[Scalar[dtype]](cb_in.alloc_size(), alignment=align)
+    var out_host_ptr = alloc[Scalar[dtype]](
         cb_out.alloc_size(), alignment=align
     )
 
-    var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
-    var out_host = NDBuffer[dtype, rank](out_host_ptr, dims)
+    var in_host = NDBuffer[rank=rank, dtype](in_host_ptr, dims)
+    var out_host = NDBuffer[rank=rank, dtype](out_host_ptr, dims)
 
     for i in range(cb_in.alloc_size()):
         in_host_ptr[i] = Scalar[dtype](i)
@@ -166,10 +161,10 @@ fn run_elementwise[
         @__copy_capture(N)
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var in_tensor = NDBuffer[dtype, rank](
+            var in_tensor = NDBuffer[rank=rank, dtype](
                 cb_in.offset_ptr(iteration), dims
             )
-            var out_tensor = NDBuffer[dtype, rank](
+            var out_tensor = NDBuffer[rank=rank, dtype](
                 cb_out.offset_ptr(iteration), dims
             )
 

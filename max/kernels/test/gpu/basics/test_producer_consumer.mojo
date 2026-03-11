@@ -147,14 +147,11 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext) raises:
 
 fn cpaysnc_producer_consumer_pipeline_kernel[
     num_stages: Int,
-    src_origin: ImmutOrigin,
-    dst_origin: MutOrigin,
-](src: Span[Float32, src_origin], dst: Span[Float32, dst_origin]):
+](src: Span[Float32, ImmutAnyOrigin], dst: Span[Float32, MutAnyOrigin]):
     comptime size_per_copy = 16 // size_of[DType.float32]()
     comptime size_per_stage = size_per_copy * 128
 
-    warpgroup_idx = thread_idx.x // 128
-    warpgroup_tid = thread_idx.x % 128
+    warpgroup_idx, warpgroup_tid = divmod(thread_idx.x, 128)
 
     smem = stack_allocation[
         size_per_stage * num_stages,
@@ -253,18 +250,10 @@ def test_cpasync_producer_consumer_pipeline[
         dst_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
     )
 
-    comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[
-        num_stages, origin_of(src_device), origin_of(dst_device)
-    ]
+    comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
     ctx.enqueue_function_experimental[kernel](
-        Span[Float32, origin_of(src_device)](
-            ptr=UnsafePointer[Float32, origin_of(src_device)](src_device.ptr),
-            length=size,
-        ).get_immutable(),
-        Span[Float32, origin_of(dst_device)](
-            ptr=UnsafePointer[Float32, origin_of(dst_device)](dst_device.ptr),
-            length=size,
-        ),
+        Span[Float32](ptr=src_device.ptr, length=size).get_immutable(),
+        Span[Float32](ptr=dst_device.ptr, length=size),
         grid_dim=(1),
         block_dim=(256),
     )

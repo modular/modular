@@ -132,6 +132,7 @@ struct LegacyUnsafePointer[
         """
         self.address = value
 
+    @deprecated("LegacyUnsafePointer is deprecated. Use UnsafePointer instead.")
     @always_inline("nodebug")
     fn __init__(
         out self,
@@ -222,6 +223,7 @@ struct LegacyUnsafePointer[
     # Factory methods
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("LegacyUnsafePointer is deprecated. Use UnsafePointer instead.")
     @staticmethod
     @always_inline
     fn alloc(
@@ -645,13 +647,27 @@ struct LegacyUnsafePointer[
 
             var self_tmp = UnsafeMaybeUninit[U]()
             var other_tmp = UnsafeMaybeUninit[U]()
-            memcpy(dest=self_tmp.unsafe_ptr(), src=UnsafePointer(self), count=1)
             memcpy(
-                dest=other_tmp.unsafe_ptr(), src=UnsafePointer(other), count=1
+                dest=self_tmp.unsafe_ptr(),
+                src=self.as_unsafe_pointer(),
+                count=1,
+            )
+            memcpy(
+                dest=other_tmp.unsafe_ptr(),
+                src=other.as_unsafe_pointer(),
+                count=1,
             )
 
-            memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
-            memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+            memcpy(
+                dest=self.as_unsafe_pointer(),
+                src=other_tmp.unsafe_ptr(),
+                count=1,
+            )
+            memcpy(
+                dest=other.as_unsafe_pointer(),
+                src=self_tmp.unsafe_ptr(),
+                count=1,
+            )
         else:
             # If `moveinit` is NOT trivial, we need to check if the pointers are
             # the same to avoid undefined behavior when moving from rhs to lhs.
@@ -684,6 +700,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
     ](self: LegacyUnsafePointer[Scalar[dtype], ...]) -> SIMD[dtype, width]:
         """Loads `width` elements from the value the pointer points to.
 
@@ -711,6 +728,7 @@ struct LegacyUnsafePointer[
             alignment: The minimal alignment (bytes) of the address.
             volatile: Whether the operation is volatile.
             invariant: Whether the load is from invariant memory.
+            non_temporal: Whether the load has no temporal locality (streaming).
 
         Returns:
             The loaded SIMD vector.
@@ -739,6 +757,7 @@ struct LegacyUnsafePointer[
                     alignment=alignment._mlir_value,
                     isVolatile=volatile._mlir_value,
                     isInvariant=invariant._mlir_value,
+                    isNonTemporal=non_temporal._mlir_value,
                 ]((self + i).address)
             return v
         elif dtype == DType.bool and width > 1:
@@ -752,6 +771,7 @@ struct LegacyUnsafePointer[
                     alignment=alignment,
                     volatile=volatile,
                     invariant=invariant,
+                    non_temporal=non_temporal,
                 ]()
                 .cast[DType.bool]()
             )
@@ -762,6 +782,7 @@ struct LegacyUnsafePointer[
             alignment=alignment._mlir_value,
             isVolatile=volatile._mlir_value,
             isInvariant=invariant._mlir_value,
+            isNonTemporal=non_temporal._mlir_value,
         ](address)
 
     @always_inline("nodebug")
@@ -773,6 +794,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
     ](self: LegacyUnsafePointer[Scalar[dtype], ...], offset: Scalar) -> SIMD[
         dtype, width
     ]:
@@ -788,6 +810,7 @@ struct LegacyUnsafePointer[
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
             invariant: Whether the memory is load invariant.
+            non_temporal: Whether the load has no temporal locality (streaming).
 
         Args:
             offset: The offset to load from.
@@ -801,6 +824,7 @@ struct LegacyUnsafePointer[
             alignment=alignment,
             volatile=volatile,
             invariant=invariant,
+            non_temporal=non_temporal,
         ]()
 
     @always_inline("nodebug")
@@ -813,6 +837,7 @@ struct LegacyUnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
     ](self: LegacyUnsafePointer[Scalar[dtype], ...], offset: I) -> SIMD[
         dtype, width
     ]:
@@ -828,6 +853,7 @@ struct LegacyUnsafePointer[
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
             invariant: Whether the memory is load invariant.
+            non_temporal: Whether the load has no temporal locality (streaming).
 
         Args:
             offset: The offset to load from.
@@ -840,6 +866,7 @@ struct LegacyUnsafePointer[
             alignment=alignment,
             volatile=volatile,
             invariant=invariant,
+            non_temporal=non_temporal,
         ]()
 
     @always_inline("nodebug")
@@ -851,6 +878,7 @@ struct LegacyUnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
         self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         offset: I,
@@ -868,12 +896,15 @@ struct LegacyUnsafePointer[
             width: The size of the SIMD vector.
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
+            non_temporal: Whether the store has no temporal locality (streaming).
 
         Args:
             offset: The offset to store to.
             val: The value to store.
         """
-        (self + offset).store[alignment=alignment, volatile=volatile](val)
+        (self + offset).store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](val)
 
     @always_inline("nodebug")
     fn store[
@@ -884,6 +915,7 @@ struct LegacyUnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
         self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         offset: Scalar[offset_type],
@@ -900,13 +932,16 @@ struct LegacyUnsafePointer[
             width: The size of the SIMD vector.
             alignment: The minimal alignment of the address.
             volatile: Whether the operation is volatile or not.
+            non_temporal: Whether the store has no temporal locality (streaming).
 
         Args:
             offset: The offset to store to.
             val: The value to store.
         """
         comptime assert offset_type.is_integral(), "offset must be integer"
-        (self + Int(offset))._store[alignment=alignment, volatile=volatile](val)
+        (self + Int(offset))._store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](val)
 
     @always_inline("nodebug")
     fn store[
@@ -916,6 +951,7 @@ struct LegacyUnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
         self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -945,11 +981,14 @@ struct LegacyUnsafePointer[
             width: The number of elements to store.
             alignment: The minimal alignment (bytes) of the address.
             volatile: Whether the operation is volatile.
+            non_temporal: Whether the store has no temporal locality (streaming).
 
         Args:
             val: The SIMD value to store.
         """
-        self._store[alignment=alignment, volatile=volatile](val)
+        self._store[
+            alignment=alignment, volatile=volatile, non_temporal=non_temporal
+        ](val)
 
     @always_inline("nodebug")
     fn _store[
@@ -958,6 +997,7 @@ struct LegacyUnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
+        non_temporal: Bool = False,
     ](
         self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
@@ -972,12 +1012,15 @@ struct LegacyUnsafePointer[
             # packs bits. Cast to uint8 and store so each element
             # occupies its own byte boundary.
             self.bitcast[Scalar[DType.uint8]]()._store[
-                alignment=alignment, volatile=volatile
+                alignment=alignment,
+                volatile=volatile,
+                non_temporal=non_temporal,
             ](val.cast[DType.uint8]())
         else:
             __mlir_op.`pop.store`[
                 alignment=alignment._mlir_value,
                 isVolatile=volatile._mlir_value,
+                isNonTemporal=non_temporal._mlir_value,
             ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")
@@ -1000,7 +1043,9 @@ struct LegacyUnsafePointer[
             A vector which is stride loaded.
         """
         return strided_load(
-            UnsafePointer(self), Int(stride), SIMD[DType.bool, width](fill=True)
+            self.as_unsafe_pointer(),
+            Int(stride),
+            SIMD[DType.bool, width](fill=True),
         )
 
     @always_inline("nodebug")
@@ -1026,7 +1071,10 @@ struct LegacyUnsafePointer[
             stride: The stride between stores.
         """
         strided_store(
-            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
+            val,
+            self.as_unsafe_pointer(),
+            Int(stride),
+            SIMD[DType.bool, width](fill=True),
         )
 
     @always_inline("nodebug")
@@ -1149,7 +1197,7 @@ struct LegacyUnsafePointer[
         ]
     ):
         """Free the memory referenced by the pointer."""
-        _free(self)
+        _free(self.as_unsafe_pointer())
 
     @always_inline("builtin")
     fn bitcast[

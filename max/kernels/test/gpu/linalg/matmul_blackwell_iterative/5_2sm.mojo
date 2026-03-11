@@ -32,9 +32,6 @@ from std.gpu.compute.mma import st_matrix
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout import (
     UNKNOWN_VALUE,
     IntTuple,
@@ -198,7 +195,7 @@ fn kernel_5[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    comptime c_half_frag_size = c_frag_size // 2
 
     comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -242,9 +239,10 @@ fn kernel_5[
     var rank_n = block_id_in_cluster.y
 
     # (peer_id, mma_coord_m, mma_coord_n)
+    var peer_cta_quot, peer_cta_rem = divmod(rank_m, UInt(cta_group))
     var peer_cta_coord = (
-        rank_m % UInt(cta_group),
-        rank_m // UInt(cta_group),
+        peer_cta_rem,
+        peer_cta_quot,
         rank_n,
     )
 
@@ -358,7 +356,7 @@ fn kernel_5[
         repeat=BN // 8 if MMA_M == 128 else MMA_N // 8,
         dtype=accum_type,
         pack=False,
-        width=c_frag.size // 2,
+        width=c_half_frag_size,
     ](tmem_addr | UInt32((warp_id() * 32) << 16))
 
     var c_frag_lower = tcgen05_ld[
@@ -367,7 +365,7 @@ fn kernel_5[
         repeat=BN // 8 if MMA_M == 128 else MMA_N // 8,
         dtype=accum_type,
         pack=False,
-        width=c_frag.size // 2,
+        width=c_half_frag_size,
     ](tmem_addr | UInt32((warp_id() * 32 + 16) << 16))
     tcgen05_load_wait()
 
@@ -408,12 +406,31 @@ fn kernel_5[
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
         comptime for i in range(TMA_BN // 16):
-            var d_reg_upper = c_frag_upper.slice[
-                8, offset=(i + tma_n * (TMA_BN // 16)) * 8
-            ]().cast[DType.bfloat16]()
-            var d_reg_lower = c_frag_lower.slice[
-                8, offset=(i + tma_n * (TMA_BN // 16)) * 8
-            ]().cast[DType.bfloat16]()
+            var d_reg_upper = SIMD[DType.bfloat16, 8]()
+            var d_reg_lower = SIMD[DType.bfloat16, 8]()
+
+            comptime for _ei in range(4):
+                comptime _src_offset = (
+                    i + tma_n * (TMA_BN // 16)
+                ) * 8 + 2 * _ei
+                var upper_pair = SIMD[DType.float32, 2](
+                    rebind[Scalar[DType.float32]](c_frag_upper[_src_offset]),
+                    rebind[Scalar[DType.float32]](
+                        c_frag_upper[_src_offset + 1]
+                    ),
+                )
+                var lower_pair = SIMD[DType.float32, 2](
+                    rebind[Scalar[DType.float32]](c_frag_lower[_src_offset]),
+                    rebind[Scalar[DType.float32]](
+                        c_frag_lower[_src_offset + 1]
+                    ),
+                )
+                var upper_casted = upper_pair.cast[DType.bfloat16]()
+                var lower_casted = lower_pair.cast[DType.bfloat16]()
+                d_reg_upper[2 * _ei] = upper_casted[0]
+                d_reg_upper[2 * _ei + 1] = upper_casted[1]
+                d_reg_lower[2 * _ei] = lower_casted[0]
+                d_reg_lower[2 * _ei + 1] = lower_casted[1]
 
             var st_matrix_args = RuntimeTuple[
                 IntTuple(
@@ -621,9 +638,9 @@ def test_blackwell_kernel_5[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)

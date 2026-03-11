@@ -53,8 +53,7 @@ fn _format_nsec(nanoseconds: UInt) -> String:
 
     The returned string is in the format of "NNN.NNN"
     """
-    var ms_total = nanoseconds // 1_000_000
-    var ns_remainder = nanoseconds % 1_000_000
+    var ms_total, ns_remainder = divmod(nanoseconds, 1_000_000)
 
     var fractional_ms = (ns_remainder * 1000) // 1_000_000
 
@@ -445,7 +444,7 @@ struct TestSuite(Movable):
         self.location = location.or_else(call_location())
         self.skip_list = {}
         self.allow_list = None  # None means no allow list specified.
-        self.cli_args = cli_args.or_else(List[StaticString](argv()))
+        self.cli_args = cli_args^.or_else(List[StaticString](argv()))
 
     fn _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""

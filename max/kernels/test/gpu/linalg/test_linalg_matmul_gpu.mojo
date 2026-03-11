@@ -16,9 +16,6 @@ from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -35,12 +32,12 @@ fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutAnyOrigin, shape]
+    DeviceBuffer[dtype], NDBuffer[rank=rank, dtype, MutAnyOrigin, shape]
 ]:
     var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
-        NDBuffer[dtype, rank, _, shape](
+        NDBuffer[rank=rank, dtype, _, shape](
             storage.unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
@@ -49,25 +46,25 @@ fn _create_device_buffer[
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](dynamic_shape: IndexList[rank, ...]) raises -> NDBuffer[
-    dtype, rank, MutAnyOrigin, shape
+    rank=rank, dtype, MutAnyOrigin, shape
 ]:
-    var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
-    return NDBuffer[dtype, rank, MutAnyOrigin, shape](
+    var storage_ptr = alloc[Scalar[dtype]](_size(dynamic_shape))
+    return NDBuffer[rank=rank, dtype, MutAnyOrigin, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )
 
 
 fn _linspace_fill[
     dtype: DType, rank: Int, shape: DimList
-](mut buff: NDBuffer[mut=True, dtype, rank, _, shape]):
+](mut buff: NDBuffer[mut=True, rank=rank, dtype, _, shape]):
     for i in range(buff.size()):
         buff.data[i] = Scalar[dtype](i)
 
 
 fn _create_host_buffer_like[
     dtype: DType, rank: Int, shape: DimList
-](buff: NDBuffer[dtype, rank, _, shape]) raises -> NDBuffer[
-    dtype, rank, MutAnyOrigin, shape
+](buff: NDBuffer[rank=rank, dtype, _, shape]) raises -> NDBuffer[
+    rank=rank, dtype, MutAnyOrigin, shape
 ]:
     return _create_host_buffer[dtype, rank, shape](buff.dynamic_shape)
 

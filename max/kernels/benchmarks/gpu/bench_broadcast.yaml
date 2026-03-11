@@ -18,7 +18,8 @@ commons: &commons
   dtype: [DType.bfloat16, DType.float32]
   num_gpus: [2, 4, 8]
   rank: [1]
-  $num_bytes: "[2**i for i in range(14, 28)]"
+  root: [0]
+  $num_bytes: "[4, 8, 256, 4096, 32768, 2**18, 2**22]"
   TUNE_MAX_NUM_BLOCKS: [0]
 
 params:

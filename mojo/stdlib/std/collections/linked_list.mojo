@@ -21,9 +21,8 @@ traversal.
 
 from std.collections._index_normalization import normalize_index
 import std.format._utils as fmt
+from std.hashlib.hasher import Hasher
 from std.os import abort
-
-from std.builtin.constrained import _constrained_conforms_to
 
 
 struct Node[
@@ -142,9 +141,11 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Defaultable,
+    Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
     Iterable,
     Sized,
-    Writable,
+    Writable where conforms_to(ElementType, Writable),
 ):
     """A doubly-linked list implementation.
 
@@ -595,17 +596,11 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return False
 
-    fn __eq__[
-        _ElementType: Equatable & Copyable, //
-    ](
-        read self: LinkedList[_ElementType],
-        read other: LinkedList[_ElementType],
-    ) -> Bool:
+    fn __eq__(
+        read self,
+        read other: Self,
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if the two lists are equal.
-
-        Parameters:
-            _ElementType: The list element type, used to conditionally enable the
-                function.
 
         Args:
             other: The list to compare to.
@@ -623,7 +618,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         var other_cursor = other._head
 
         while self_cursor:
-            if self_cursor[].value != other_cursor[].value:
+            ref lhs = trait_downcast[Equatable](self_cursor[].value)
+            ref rhs = trait_downcast[Equatable](other_cursor[].value)
+            if lhs != rhs:
                 return False
 
             self_cursor = self_cursor[].next
@@ -631,25 +628,22 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return True
 
-    fn __ne__[
-        _ElementType: Equatable & Copyable, //
-    ](self: LinkedList[_ElementType], other: LinkedList[_ElementType]) -> Bool:
-        """Checks if the two lists are not equal.
+    fn __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Hash the elements of this list.
 
         Parameters:
-            _ElementType: The list element type, used to conditionally enable the
-                function.
+            H: The hasher type.
 
         Args:
-            other: The list to compare to.
-
-        Returns:
-            Whether the lists are not equal.
-
-        Notes:
-            Time Complexity: O(n) in min(len(self), len(other)) compares.
+            hasher: The hasher instance.
         """
-        return not (self == other)
+        var curr = self._head
+        while curr:
+            ref elt = trait_downcast[Hashable](curr[].value)
+            elt.__hash__(hasher)
+            curr = curr[].next
 
     fn _get_node_ptr[
         I: Indexer, //
@@ -675,7 +669,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         var l = len(self)
         var i = normalize_index["LinkedList"](idx, l)
-        debug_assert(0 <= i < l, "index out of bounds")
+        assert 0 <= i < l, "index out of bounds"
         var mid = l // 2
         if i <= mid:
             var curr = self._head
@@ -703,7 +697,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        debug_assert(len(self) > 0, "unable to get item from empty list")
+        assert len(self) > 0, "unable to get item from empty list"
         return self._get_node_ptr(idx)[].value
 
     fn __len__(self) -> Int:
@@ -760,9 +754,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
     fn _write_self_to[
         f: fn(Self.ElementType, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
-
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.ElementType, Writable
+    ):
         var iterator = self.__iter__()
 
         @parameter
@@ -773,7 +767,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         _ = iterator^
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Convert the list to its string representation.
 
         Returns:
@@ -787,7 +781,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         return writer
 
     @deprecated("Representable is deprecated. Use Writable instead.")
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.ElementType, Writable):
         """Convert the list to its string representation.
 
         Returns:
@@ -800,22 +794,20 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self.write_repr_to(writer)
         return writer
 
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Write the list to the given writer.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The writer to write the list to.
         """
         self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Write the repr representation of this LinkedList to a Writer.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The writer to write to.

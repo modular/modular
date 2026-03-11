@@ -88,6 +88,8 @@ def positional_embedding(
 
 @module_dataclass
 class RotaryEmbedding(Module[[Tensor, DimLike], Tensor]):
+    """Applies rotary positional embeddings (RoPE) to input tensors."""
+
     weight: Tensor
     #: Pre-computed embeddings of shape [max_sequence_length, n // 2, 2]
 
@@ -131,6 +133,8 @@ class RotaryEmbedding(Module[[Tensor, DimLike], Tensor]):
 
 
 class TransposedRotaryEmbedding(RotaryEmbedding):
+    """Applies RoPE using a transposed head-dimension layout."""
+
     @F.functional
     def forward(self, x: Tensor, start_pos: DimLike = 0) -> Tensor:
         """Applies rotary positional embeddings (RoPE) to `x`.

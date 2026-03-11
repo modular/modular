@@ -89,14 +89,14 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, ...],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
         a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[mut=False, b_scales_type, b_scales_layout, ...],
     num_iters: UInt,
 ):
     comptime assert transpose_b, "Only support transposed B"
@@ -278,7 +278,9 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     # final results accumulator regs for C
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag = InlineArray[Scalar[accum_type], c_frag_size](
+        fill=Scalar[accum_type](0)
+    )
 
     # temporary accumulators for TMEM loads
     comptime total_repeat = BN // 8
@@ -288,7 +290,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime assert (
         total_repeat % repeat == 0
     ), "total_repeat must be divisible by repeat"
-    var c_frag_temp = SIMD[accum_type, temp_cfrags_size]()
+    var c_frag_temp: InlineArray[Scalar[accum_type], temp_cfrags_size]
 
     for k_iter in range(num_iters):
         if elect_one_thread:
@@ -390,13 +392,16 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 var scale = rebind[Scalar[accum_type]](a_scale) * rebind[
                     Scalar[accum_type]
                 ](b_scale)
+                var scale_pair = SIMD[accum_type, 2](scale)
 
-                c_frag[ld_iter * temp_cfrags_size + 2 * j] += c_frag_temp[
-                    2 * j
-                ] * rebind[Scalar[accum_type]](scale)
-                c_frag[ld_iter * temp_cfrags_size + 2 * j + 1] += c_frag_temp[
-                    2 * j + 1
-                ] * rebind[Scalar[accum_type]](scale)
+                comptime idx = ld_iter * temp_cfrags_size + 2 * j
+                var c_pair = SIMD[accum_type, 2](c_frag[idx], c_frag[idx + 1])
+                var t_pair = SIMD[accum_type, 2](
+                    c_frag_temp[2 * j], c_frag_temp[2 * j + 1]
+                )
+                var result = c_pair + t_pair * scale_pair
+                c_frag[idx] = result[0]
+                c_frag[idx + 1] = result[1]
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[1]()
@@ -425,7 +430,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             c_gmem_frag, _c_gmem_frag_coords, _ = c_gmem_warp_tile.vectorize[
                 1, 2
-            ]().distribute_with_offset[Layout.row_major(8, 4)](lane_id())
+            ]().distribute_with_offset[Layout.row_major(8, 4)](Int(lane_id()))
             new_c_gmem_frag_coords = rebind[c_coord_type](_c_gmem_frag_coords)
             new_c_gmem_frag_coords[1] *= 2
             c_gmem_frag_coords = (
@@ -445,14 +450,16 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
-                    comptime dst_m_offset = dst_idx // c_row_stride
-                    comptime dst_n_offset = dst_idx % c_row_stride
+                    comptime dst_m_offset, dst_n_offset = divmod(
+                        dst_idx, c_row_stride
+                    )
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
                     if m < UInt32(M) and n < UInt32(N):
                         var c_mn = SIMD[accum_type, 2](
-                            c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
+                            c_frag[2 * i_vec],
+                            c_frag[2 * i_vec + 1],
                         ).cast[c_type]()
 
                         comptime if elementwise_lambda_fn:
@@ -591,7 +598,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime a_layout_tensor_3D = LayoutTensor[
         a_type,
         _3D_layout[a.layout, a.rank],
-        MutAnyOrigin,
+        a.origin,
         address_space=a.address_space,
         element_layout=a.element_layout,
         layout_int_type=a.layout_int_type,
@@ -603,7 +610,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime b_layout_tensor_3D = LayoutTensor[
         b_type,
         _3D_layout[b.layout, b.rank],
-        MutAnyOrigin,
+        b.origin,
         address_space=b.address_space,
         element_layout=b.element_layout,
         layout_int_type=b.layout_int_type,
@@ -615,7 +622,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime a_scales_layout_tensor_3D = LayoutTensor[
         a_scales_type,
         _3D_layout[a_scales.layout, a_scales.rank],
-        MutAnyOrigin,
+        a_scales.origin,
         address_space=a_scales.address_space,
         element_layout=a_scales.element_layout,
         layout_int_type=a_scales.layout_int_type,
@@ -657,7 +664,6 @@ fn matmul_sm100_blockwise_scaled_fp8[
 
     var a_scales_dim0 = a_scales_3D.dim(1)
     var a_scales_dim1 = a_scales_3D.dim(2)
-    var b_scales_dim0 = b_scales.dim(0)
     var b_scales_dim1 = b_scales.dim(1)
 
     if (

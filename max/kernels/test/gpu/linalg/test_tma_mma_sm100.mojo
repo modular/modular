@@ -12,18 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import sqrt
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import lane_id as get_lane_id
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
+from std.gpu import (
+    block_idx,
+    lane_id_int as lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
+)
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
@@ -52,7 +54,7 @@ from std.utils.static_tuple import StaticTuple
 
 fn cpu_matmul_naive[
     *, transpose_a: Bool, transpose_b: Bool
-](C: LayoutTensor, A: LayoutTensor, B: LayoutTensor):
+](C: LayoutTensor[mut=True, ...], A: LayoutTensor, B: LayoutTensor):
     comptime M = C.layout[0].size()
     comptime N = C.layout[1].size()
     # layout_a is M x K
@@ -151,7 +153,11 @@ fn tma_umma_kernel_ss[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
@@ -195,7 +201,7 @@ fn tma_umma_kernel_ss[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
     comptime b_expected_bytes = b_size * size_of[b_type]()
@@ -334,7 +340,8 @@ fn tma_umma_kernel_ss[
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:
-        warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
+        var warp_id_q, warp_id_r = divmod(warp_id, UInt(4))
+        warp_id = UInt(2 * Int(warp_id_r) + Int(warp_id_q))
 
     ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
@@ -382,7 +389,7 @@ fn tma_umma_kernel_ts[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: UInt = 128,
 ](
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -410,7 +417,11 @@ fn tma_umma_kernel_ts[
     ]()
 
     b_smem = rebind[
-        UnsafePointer[Scalar[b_type], address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[b_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[b_type],
@@ -439,7 +450,7 @@ fn tma_umma_kernel_ts[
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = b_expected_bytes
@@ -499,10 +510,13 @@ fn tma_umma_kernel_ts[
     var warp_id = get_warp_id()
 
     comptime if num_threads > 128:
-        warp_id = UInt(2 * Int(warp_id % 4) + Int(warp_id // 4))
+        var warp_id_q, warp_id_r = divmod(warp_id, UInt(4))
+        warp_id = UInt(2 * Int(warp_id_r) + Int(warp_id_q))
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // Int(num_threads)
-    var a_frag = SIMD[DType.uint32, a_frag_size]()
+    var a_frag = InlineArray[Scalar[DType.uint32], a_frag_size](
+        uninitialized=True
+    )
 
     for i in range(num_iters):
         # Load A from global memory to registers.
@@ -515,7 +529,7 @@ fn tma_umma_kernel_ts[
         # of size 2x4B=4xBF16
         a_gmem_frag = a_gmem_warp_tile.vectorize[1, 4]().distribute[
             Layout.row_major(8, 4)
-        ](get_lane_id())
+        ](lane_id())
         comptime num_vecs_m = a_gmem_frag.layout.shape[0].value()
         comptime num_vecs_k = a_gmem_frag.layout.shape[1].value()
 

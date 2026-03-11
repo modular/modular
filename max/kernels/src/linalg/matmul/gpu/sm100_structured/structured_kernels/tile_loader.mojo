@@ -36,7 +36,7 @@ from layout.tma_async import SharedMemBarrier, TMATensorTile
 from linalg.structuring import SMemTile as LTSMemTile
 
 # Import TileTensor types for overloaded load methods
-from structured_kernels.tile_types import SMemTile2D, TMATile
+from structured_kernels.tile_types import SMemTile2D, TmaOpType
 
 # Import variadic types for TileTensor load overload
 from std.builtin.variadics import Variadic
@@ -192,13 +192,11 @@ struct TileLoader[
 ](TrivialRegisterPassable):
     """TMA tile loader parameterized on new Layout types.
 
-    Uses TMATile to derive the TMATensorTile type from new Layout.
+    Uses TmaOpType to derive the TMATensorTile type from new Layout.
     Accepts TileTensor destinations.
     """
 
-    comptime TmaOp = TMATile[
-        Self.dtype, Self.tile_layout, Self.desc_layout
-    ].InnerType
+    comptime TmaOp = TmaOpType[Self.dtype, Self.tile_layout, Self.desc_layout]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
     var tma_op: Self.TmaOpPtr
@@ -253,14 +251,12 @@ struct ScalesLoader[
 ](TrivialRegisterPassable):
     """TMA scales loader parameterized on new Layout types.
 
-    Uses TMATile to derive the TMATensorTile type from new Layout.
+    Uses TmaOpType to derive the TMATensorTile type from new Layout.
     Uses async_copy (no multicast). Coordinate order is
     (row_coord, k_coord) matching scales tensor layout.
     """
 
-    comptime TmaOp = TMATile[
-        Self.dtype, Self.tile_layout, Self.desc_layout
-    ].InnerType
+    comptime TmaOp = TmaOpType[Self.dtype, Self.tile_layout, Self.desc_layout]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
     var tma_op: Self.TmaOpPtr

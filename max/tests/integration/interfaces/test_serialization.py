@@ -228,7 +228,7 @@ def test_msgpack_numpy_encoder_pickle_preserves_parameters() -> None:
 def test_generation_output_serialization() -> None:
     """Test that GenerationOutput can be serialized and deserialized with ZeroMQ."""
     # Create test GenerationOutput with OutputImageContent containing base64 image data
-    img_array = np.random.rand(64, 64, 3).astype(np.float32)
+    img_array = np.random.randint(0, 256, (64, 64, 3), dtype=np.uint8)
     test_output = GenerationOutput(
         request_id=RequestID(),
         final_status=GenerationStatus.END_OF_SEQUENCE,
@@ -269,8 +269,8 @@ def test_generation_output_serialization() -> None:
 def test_generation_output_serialization_with_multiple_images() -> None:
     """Test serialization of GenerationOutput with multiple images."""
     # Create test GenerationOutput with multiple OutputImageContent objects
-    img_array1 = np.random.rand(32, 32, 3).astype(np.float32)
-    img_array2 = np.random.rand(64, 64, 3).astype(np.float32)
+    img_array1 = np.random.randint(0, 256, (32, 32, 3), dtype=np.uint8)
+    img_array2 = np.random.randint(0, 256, (64, 64, 3), dtype=np.uint8)
 
     test_output = GenerationOutput(
         request_id=RequestID(),

@@ -46,13 +46,16 @@ from .grid_controls import (
 # Thread/block/grid indexing
 from .id import (
     block_dim,
+    block_dim_int,
     block_id_in_cluster,
     block_idx,
+    block_idx_int,
     cluster_dim,
     cluster_idx,
     global_idx,
     grid_dim,
     lane_id,
+    lane_id_int,
     sm_id,
     thread_idx,
     thread_idx_int,

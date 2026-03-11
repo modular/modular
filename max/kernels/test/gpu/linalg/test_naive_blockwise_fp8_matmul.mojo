@@ -15,10 +15,6 @@ from std.math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
 from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
@@ -98,21 +94,21 @@ fn test_naive_blockwise_fp8_matmul[
         k.value, BLOCK_SCALE_K
     )
 
-    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[input_type]](a_size)
+    var b_host_ptr = alloc[Scalar[input_type]](b_size)
+    var c_host_ptr = alloc[Scalar[DType.float32]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
 
-    var a_host = NDBuffer[input_type, 2, _, static_a_shape](
+    var a_host = NDBuffer[rank=2, input_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host = NDBuffer[input_type, 2, _, static_b_shape](
+    var b_host = NDBuffer[rank=2, input_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
 
@@ -126,27 +122,23 @@ fn test_naive_blockwise_fp8_matmul[
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)
     var c_device = ctx.enqueue_create_buffer[DType.float32](c_size)
 
-    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, input_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, input_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
-    var c_device_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
 
-    var a_scale_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scale_size
-    )
-    var b_scale_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scale_size
-    )
+    var a_scale_host_ptr = alloc[Scalar[DType.float32]](a_scale_size)
+    var b_scale_host_ptr = alloc[Scalar[DType.float32]](b_scale_size)
 
-    var a_scale_host = NDBuffer[DType.float32, 2, _, static_a_scale_shape](
+    var a_scale_host = NDBuffer[rank=2, DType.float32, _, static_a_scale_shape](
         a_scale_host_ptr, dynamic_a_scale_shape
     )
-    var b_scale_host = NDBuffer[DType.float32, 2, _, static_b_scale_shape](
+    var b_scale_host = NDBuffer[rank=2, DType.float32, _, static_b_scale_shape](
         b_scale_host_ptr, dynamic_b_scale_shape
     )
 
@@ -156,12 +148,12 @@ fn test_naive_blockwise_fp8_matmul[
     var a_scale_device = ctx.enqueue_create_buffer[DType.float32](a_scale_size)
     var b_scale_device = ctx.enqueue_create_buffer[DType.float32](b_scale_size)
 
-    var a_scale_device_nd = NDBuffer[DType.float32, 2, _, static_a_scale_shape](
-        a_scale_device.unsafe_ptr(), dynamic_a_scale_shape
-    )
-    var b_scale_device_nd = NDBuffer[DType.float32, 2, _, static_b_scale_shape](
-        b_scale_device.unsafe_ptr(), dynamic_b_scale_shape
-    )
+    var a_scale_device_nd = NDBuffer[
+        rank=2, DType.float32, _, static_a_scale_shape
+    ](a_scale_device.unsafe_ptr(), dynamic_a_scale_shape)
+    var b_scale_device_nd = NDBuffer[
+        rank=2, DType.float32, _, static_b_scale_shape
+    ](b_scale_device.unsafe_ptr(), dynamic_b_scale_shape)
 
     # run blockwise CPU as the reference output
     for _m in range(M):

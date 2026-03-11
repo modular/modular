@@ -12,21 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """Implements operations used when staging a graph.
 
-This module provides operations for building computational graphs in MAX. These
-operations create, transform, and manipulate tensor values within the graph.
+This module provides operations for building a :class:`~max.graph.Graph` in
+MAX. Most operations return a :class:`~max.graph.TensorValue`, which supports
+standard Python operators such as ``+``, ``*``, and ``@`` (matrix
+multiplication), as well as convenience methods like
+:meth:`~max.graph.TensorValue.reshape` and
+:meth:`~max.graph.TensorValue.flatten`. Ops like
+:func:`~max.graph.ops.constant` can also add constant values to your graph.
 
-You can also use functions in [`Graph`](/max/api/python/graph/Graph) to add
-constant values to your graph with operations like
-[`constant()`](/max/api/python/graph/ops#max.graph.ops.constant).
+When an operation receives inputs with different data types
+(:class:`~max.dtype.DType`), MAX promotes the output to a common type by
+picking the higher-ranked category (``bool < unsigned int < signed int <
+float``) and the larger bit width. The result is always one of the input types.
+Plainly, the promotion rule for two values ``x`` and ``y`` is:
 
-The [`TensorValue`](/max/api/python/graph/TensorValue/) type (returned by most
-operations) implements various dunder methods to support operations between
-TensorValues, such as `+` for addition, `*` for multiplication, and `@` for
-matrix multiplication. It also provides convenience methods like
-[`reshape()`](/max/api/python/graph/TensorValue/#max.graph.TensorValue.reshape)
-and
-[`flatten()`](/max/api/python/graph/TensorValue/#max.graph.TensorValue.flatten).
-"""
+.. code-block:: python
+
+    max(category(x), category(y)), max(bitwidth(x), bitwidth(y))
+
+If any input can't be safely represented in the chosen type, MAX raises an
+error. For example, MAX fails to promote ``uint8`` and ``int8`` to ``int8``,
+since ``int8`` can't represent all ``uint8`` values."""
 
 from __future__ import annotations
 
@@ -65,6 +71,7 @@ from .matmul import matmul
 from .nonzero import nonzero
 from .outer import outer
 from .pad import pad
+from .parallel import parallel
 from .permute import permute
 from .pooling import avg_pool2d, max_pool2d
 from .quantized import dequantize, qmatmul

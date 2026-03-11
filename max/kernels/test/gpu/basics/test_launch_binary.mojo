@@ -15,17 +15,14 @@
 from std.gpu import *
 from std.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.gpu.host.compile import _compile_code
 from std.testing import assert_equal
 
 
 fn vec_func(
-    in0: UnsafePointer[Float32],
-    in1: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+    in0: UnsafePointer[Float32, ImmutAnyOrigin],
+    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x

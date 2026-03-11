@@ -40,6 +40,7 @@ from tensor import (
     ManagedTensorSlice,
     Output,
     StaticTensorSpec,
+    get_row_major_tensor_spec,
 )
 
 
@@ -50,7 +51,7 @@ struct Tensor[
     rank: Int,
     //,
     io_spec: IOSpec,
-    static_spec: StaticTensorSpec[dtype, rank],
+    static_spec: StaticTensorSpec[dtype, rank, _, _],
 ](ImplicitlyCopyable):
     comptime size = Int(Self.static_spec.shape.product())
 
@@ -66,8 +67,8 @@ struct Tensor[
             io_spec=Self.io_spec, static_spec=Self.static_spec
         ](
             self.buffer.unsafe_ptr(),
-            Self.static_spec.shape.into_index_list[Self.rank](),
-            Self.static_spec.strides.into_index_list[Self.rank](),
+            Self.static_spec.shape.to_index_list[Self.rank](),
+            Self.static_spec.strides.to_index_list[Self.rank](),
         )
 
     fn rand(self) raises -> Self:
@@ -114,8 +115,8 @@ def top_k() raises:
     comptime idx_dtype = DType.int32
 
     comptime shape = DimList(batch_size, K)
-    comptime val_spec = StaticTensorSpec[val_dtype, rank](shape)
-    comptime idx_spec = StaticTensorSpec[idx_dtype, rank](shape)
+    comptime val_spec = get_row_major_tensor_spec[val_dtype, rank, shape]()
+    comptime idx_spec = get_row_major_tensor_spec[idx_dtype, rank, shape]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -168,9 +169,9 @@ def matmul() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    comptime c_spec = StaticTensorSpec[dtype, rank](DimList(M, N))
+    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList(M, K)]()
+    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList(K, N)]()
+    comptime c_spec = get_row_major_tensor_spec[dtype, rank, DimList(M, N)]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -238,9 +239,11 @@ def tensor_core_mma() raises:
 
     comptime FLOPS = M * N * (2 * K - 1)
 
-    comptime a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
-    comptime b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
-    comptime c_spec = StaticTensorSpec[DType.float32, rank](DimList(M, N))
+    comptime a_spec = get_row_major_tensor_spec[dtype, rank, DimList(M, K)]()
+    comptime b_spec = get_row_major_tensor_spec[dtype, rank, DimList(K, N)]()
+    comptime c_spec = get_row_major_tensor_spec[
+        DType.float32, rank, DimList(M, N)
+    ]()
 
     var cpu_ctx = DeviceContext(api="cpu")
 

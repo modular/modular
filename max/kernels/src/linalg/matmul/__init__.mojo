@@ -71,8 +71,8 @@ fn matmul[
         target=target,
     ](
         NDBuffer[
+            rank=2,
             c.dtype,
-            2,
             c.origin,
             DimList(
                 _to_value_or_dim(Int(c.layout.shape[0])),
@@ -83,8 +83,8 @@ fn matmul[
             rebind[IndexList[2]](c.runtime_layout.shape.value.canonicalize()),
         ),
         NDBuffer[
+            rank=2,
             a.dtype,
-            2,
             a.origin,
             DimList(
                 _to_value_or_dim(Int(a.layout.shape[0])),
@@ -95,8 +95,8 @@ fn matmul[
             rebind[IndexList[2]](a.runtime_layout.shape.value.canonicalize()),
         ),
         NDBuffer[
+            rank=2,
             b.dtype,
-            2,
             b.origin,
             DimList(
                 _to_value_or_dim(Int(b.layout.shape[0])),
@@ -124,9 +124,9 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var cuda_ctx = Optional[DeviceContext]() if is_cpu[
@@ -160,17 +160,16 @@ fn matmul[
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
     comptime assert is_valid_target[target](), "unsupported target"
     comptime assert not transpose_a, "transpose_a not yet supported"
-    debug_assert(
-        is_cpu[target]() or Bool(ctx),
-        "expected DeviceContext to be provided if target != cpu",
-    )
+    assert is_cpu[target]() or Bool(
+        ctx
+    ), "expected DeviceContext to be provided if target != cpu"
 
     # If any of the dimensions are 0, we can skip the kernel.
     if c.dim[0]() == 0 or c.dim[1]() == 0:

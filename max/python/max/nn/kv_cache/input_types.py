@@ -16,11 +16,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Generic, Protocol, TypeAlias, cast, runtime_checkable
+from typing import (
+    Any,
+    Generic,
+    Protocol,
+    TypeAlias,
+    cast,
+    runtime_checkable,
+)
 
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, BufferValue, TensorType, TensorValue, Value
+from max.nn.kv_cache.utils import AttentionDispatchMetadataScalars
 from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
@@ -112,7 +120,7 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     dispatch_metadata: AttentionDispatchMetadata[TensorValue] | None = None
 
     def __iter__(self) -> Iterator[BufferValue | TensorValue]:
-        # Canonical paged KV ABI order.
+        # Canonical paged KV ABI order. (intentionally skip AttentionDispatchMetadata)
         yield self.kv_blocks
         yield self.cache_lengths
         yield self.lookup_table
@@ -280,6 +288,7 @@ class KVCacheInputsPerDevice:
     max_lengths: Buffer
     kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
     attention_dispatch_metadata: Buffer | None = None
+    dispatch_scalars: AttentionDispatchMetadataScalars | None = None
 
     def __iter__(self) -> Iterator[Buffer]:
         yield from self.as_list()

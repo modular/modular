@@ -193,7 +193,7 @@ struct ImageData[
         elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
-        debug_assert(False, "Invalid layout")
+        assert False, "Invalid layout"
         return 0
 
     fn get_tuple_index(self, idx: Int) -> IndexList[4]:
@@ -244,7 +244,7 @@ struct ImageData[
         elif Self.static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
-        debug_assert(False, "Invalid layout")
+        assert False, "Invalid layout"
         return IndexList[4](0)
 
     fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[Self.dtype]:
@@ -278,7 +278,7 @@ struct ImageData[
         self.data.ptr[self._get_index(n, c, h, w)] = value
 
     fn num_elements(self) -> Int:
-        return self.data.numel()
+        return self.data.num_elements()
 
 
 struct ImageShape(TrivialRegisterPassable):
@@ -313,10 +313,9 @@ struct ImageShape(TrivialRegisterPassable):
             self.W = Int(image_data.data.dim[2]())
 
         else:
-            debug_assert(
-                image_data.get_image_layout() == Image2DLayout.RSCF,
-                "Invalid layout",
-            )
+            assert (
+                image_data.get_image_layout() == Image2DLayout.RSCF
+            ), "Invalid layout"
             self.N = Int(image_data.data.dim[3]())
             self.C = Int(image_data.data.dim[2]())
             self.H = Int(image_data.data.dim[0]())

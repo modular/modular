@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import iota
 from std.random import random_float64
 
@@ -83,7 +80,7 @@ fn time_kernel[
 @parameter
 fn fill_random[
     rank: Int, dtype: DType
-](mut buffer: NDBuffer[mut=True, dtype, rank, ...]):
+](mut buffer: NDBuffer[mut=True, rank=rank, dtype, ...]):
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
@@ -95,14 +92,14 @@ fn fill_random[
 @parameter
 fn fill_iota[
     rank: Int, dtype: DType
-](mut buf: NDBuffer[mut=True, dtype, rank, ...]):
+](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
 fn merge[
     dtype: DType, rank: Int
 ](
-    mut buf: NDBuffer[mut=True, dtype, rank, ...],
+    mut buf: NDBuffer[mut=True, rank=rank, dtype, ...],
     start: Int,
     mid: Int,
     end: Int,
@@ -112,8 +109,8 @@ fn merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_ptr = UnsafePointer[Scalar[dtype]].alloc(left_size)
-    var right_ptr = UnsafePointer[Scalar[dtype]].alloc(right_size)
+    var left_ptr = alloc[Scalar[dtype]](left_size)
+    var right_ptr = alloc[Scalar[dtype]](right_size)
 
     # Copy data to temporary arrays
     for i in range(left_size):
@@ -153,7 +150,7 @@ fn merge[
 
 fn merge_sort_recursive[
     dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, dtype, rank, ...], start: Int, end: Int):
+](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...], start: Int, end: Int):
     """Recursive merge sort implementation."""
     if end - start > 1:
         var mid = start + (end - start) // 2
@@ -164,7 +161,7 @@ fn merge_sort_recursive[
 
 fn sort_buf_descending[
     dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, dtype, rank, ...], vocab_size: Int):
+](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...], vocab_size: Int):
     """Sort each batch separately in descending order using parallel merge sort.
     """
     comptime assert rank == 2, "rank must be 2"
@@ -178,10 +175,10 @@ fn sort_buf_descending[
 
 fn test_is_sorted_descending[
     dtype: DType, rank: Int
-](mut buf: NDBuffer[mut=True, dtype, rank, ...], vocab_size: Int) -> Bool:
+](mut buf: NDBuffer[mut=True, rank=rank, dtype, ...], vocab_size: Int) -> Bool:
     comptime assert rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
-    var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
+    var sorted_flag = alloc[Bool](batch_size)
 
     # Initialize all flags to True
     for i in range(batch_size):
@@ -246,7 +243,7 @@ fn print_test_case(test_case: TestCase):
 
 fn test_case_sampling[
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank, ...]
+        mut NDBuffer[mut=True, rank=rank, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     print_test_case(test_case)
@@ -265,20 +262,16 @@ fn test_case_sampling[
         m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
-    var in_logits = NDBuffer[dtype, rank, ...](
+    var in_logits_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var in_logits = NDBuffer[rank=rank, dtype, ...](
         in_logits_ptr, IndexList[2](batch_size, vocab_size)
     )
-    var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
-        batch_size * 1
-    )
-    var token_ids = NDBuffer[out_idx_type, rank, ...](
+    var token_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * 1)
+    var token_ids = NDBuffer[rank=rank, out_idx_type, ...](
         token_ids_ptr, IndexList[2](batch_size, 1)
     )
-    var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
-    var p_thresholds = NDBuffer[dtype, 1, ...](
+    var p_thresholds_ptr = alloc[Scalar[dtype]](batch_size)
+    var p_thresholds = NDBuffer[rank=1, dtype, ...](
         p_thresholds_ptr, IndexList[1](batch_size)
     )
 
@@ -301,16 +294,12 @@ fn test_case_sampling[
     ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.data)
 
     # Copy to CPU and perform softmax & sort for correctness testing
-    var in_logits_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
-    var in_logits_cpu_test = NDBuffer[dtype, rank, ...](
+    var in_logits_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var in_logits_cpu_test = NDBuffer[rank=rank, dtype, ...](
         in_logits_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
-    var probs_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
-    var probs_cpu_test = NDBuffer[dtype, rank, ...](
+    var probs_cpu_test_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var probs_cpu_test = NDBuffer[rank=rank, dtype, ...](
         probs_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
     for i in range(in_logits.num_elements()):
@@ -428,7 +417,7 @@ fn test_toppminp_gpu[
     dtype: DType,
     out_idx_type: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank, ...]
+        mut NDBuffer[mut=True, rank=rank, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     comptime test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
@@ -452,7 +441,7 @@ fn test_toppminp_gpu[
 fn test_all_out_idx_types[
     dtype: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank, ...]
+        mut NDBuffer[mut=True, rank=rank, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     test_toppminp_gpu[dtype, DType.int32, fill_fn](ctx)
@@ -462,7 +451,7 @@ fn test_all_out_idx_types[
 
 fn test_all_types[
     fill_fn: fn[rank: Int, dtype: DType](
-        mut NDBuffer[mut=True, dtype, rank, ...]
+        mut NDBuffer[mut=True, rank=rank, dtype, ...]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     print("\n=== Testing Float32 ===")

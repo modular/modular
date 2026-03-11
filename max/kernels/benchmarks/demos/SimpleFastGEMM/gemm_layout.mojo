@@ -19,9 +19,6 @@ from std.sys import align_of, simd_width_of
 import std.benchmark
 from buffer import NDBuffer
 from layout import *
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 comptime MR = 6
 comptime NR = 64
@@ -34,8 +31,8 @@ comptime alignment = align_of[SIMD[dtype, simd_size]]()
 fn gemm_naive[
     layout_b: Layout, origin: Origin
 ](
-    c: NDBuffer[dtype, 2],  # M x N
-    a: NDBuffer[dtype, 2],  # M x K
+    c: NDBuffer[rank=2, dtype],  # M x N
+    a: NDBuffer[rank=2, dtype],  # M x K
     b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
 ):
     var M = c.dim(0)
@@ -113,8 +110,8 @@ fn gemm[
     K: Int,
     layout_b: Layout,
 ](
-    c: NDBuffer[dtype, 2],  # M x N
-    a: NDBuffer[dtype, 2],  # M x K
+    c: NDBuffer[rank=2, dtype],  # M x N
+    a: NDBuffer[rank=2, dtype],  # M x K
     b_packed: LayoutTensor[layout_b, dtype],  # (N // NR) x (K * NR)
 ):
     var M = c.dim(0)
@@ -146,16 +143,16 @@ fn gemm[
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export(ABI="C")
 fn gemm_export_dynamic(
-    a_ptr: UnsafePointer[Scalar[dtype]],
-    b_packed_ptr: UnsafePointer[Scalar[dtype]],
-    c_ptr: UnsafePointer[Scalar[dtype]],
+    a_ptr: UnsafePointer[Scalar[dtype], _],
+    b_packed_ptr: UnsafePointer[Scalar[dtype], _],
+    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     M: Int,
 ):
     comptime N = 1024
     comptime K = 1024
-    var a = NDBuffer[dtype, 2](a_ptr, (M, N))
+    var a = NDBuffer[rank=2, dtype](a_ptr, (M, N))
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
-    var c = NDBuffer[dtype, 2](c_ptr, (M, N))
+    var c = NDBuffer[rank=2, dtype](c_ptr, (M, N))
     gemm[N, K](c, a, b_packed)
 
 
@@ -178,19 +175,19 @@ fn main():
     print(K)
 
     # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
-    var a_ptr = UnsafePointer[Float32].alloc(M * K, alignment=alignment)
-    var b_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
-    var b_packed_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
-    var c_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
-    var c2_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
+    var a_ptr = alloc[Float32](M * K, alignment=alignment)
+    var b_ptr = alloc[Float32](K * N, alignment=alignment)
+    var b_packed_ptr = alloc[Float32](K * N, alignment=alignment)
+    var c_ptr = alloc[Float32](M * N, alignment=alignment)
+    var c2_ptr = alloc[Float32](M * N, alignment=alignment)
 
-    var a = NDBuffer[dtype, 2](a_ptr, (M, K))
+    var a = NDBuffer[rank=2, dtype](a_ptr, (M, K))
 
     var b = TensorBuilder[K, N, dtype].Wrap(b_ptr)
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
 
-    var c = NDBuffer[dtype, 2](c_ptr, (M, N))
-    var c2 = NDBuffer[dtype, 2](c2_ptr, (M, N))
+    var c = NDBuffer[rank=2, dtype](c_ptr, (M, N))
+    var c2 = NDBuffer[rank=2, dtype](c2_ptr, (M, N))
 
     for j in range(M):
         for i in range(K):
@@ -224,7 +221,7 @@ fn main():
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
-    var time = benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
     print(time, end="")
     print(" seconds")

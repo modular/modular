@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import isclose
 from std.random import rand
 
@@ -95,12 +92,12 @@ fn test_attention[
     var mask_size = batch_size * num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
-    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var q_ptr = alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = alloc[Scalar[qkv_type]](v_size)
+    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+    var output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
 
     # Construct buffers.
     comptime layout_4d = Layout.row_major[4]()

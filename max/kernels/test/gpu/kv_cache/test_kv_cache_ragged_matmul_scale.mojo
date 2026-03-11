@@ -24,9 +24,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.memory import memcpy, legacy_unsafe_pointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import memcpy
 from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_scale_impl,
 )
@@ -46,7 +44,9 @@ comptime block_scale = 128
 def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
-    input_row_offsets_host_ptr: UnsafePointer[Scalar[DType.uint32]],
+    input_row_offsets_host_ptr: UnsafePointer[
+        mut=True, Scalar[DType.uint32], _
+    ],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
@@ -77,9 +77,7 @@ def _initialize_ragged_inputs[
     # Initialize ragged hidden state.
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
     var ragged_size = total_length * hidden_size
-    var hidden_state_ragged_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        ragged_size
-    )
+    var hidden_state_ragged_host_ptr = alloc[Scalar[dtype]](ragged_size)
     var hidden_state_ragged_host = LayoutTensor[dtype, hidden_state_layout](
         hidden_state_ragged_host_ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -95,9 +93,7 @@ def _initialize_ragged_inputs[
 
     # Initialize padded hidden state.
     var padded_size = batch_size * max_seq_length_batch * hidden_size
-    var hidden_state_padded_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        padded_size
-    )
+    var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
 
     # Copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
@@ -183,10 +179,9 @@ def execute_matmul_k_cache_ragged_scale[
 
     var batch_size = len(prompt_lens)
 
-    debug_assert(
-        len(prompt_lens) == len(cache_sizes),
-        "expected prompt_lens and cache_sizes size to be equal",
-    )
+    assert len(prompt_lens) == len(
+        cache_sizes
+    ), "expected prompt_lens and cache_sizes size to be equal"
 
     var kv_block_size = (
         num_paged_blocks
@@ -241,9 +236,7 @@ def execute_matmul_k_cache_ragged_scale[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size + 1
-    )
+    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
     var init_result = _initialize_ragged_inputs[weight_dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -256,7 +249,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Initialize the weights.
     var weight_size = Int(kv_hidden_size) * hidden_size
     var weight_shape = IndexList[2](Int(kv_hidden_size), hidden_size)
-    var weight_host_ptr = UnsafePointer[Scalar[weight_dtype]].alloc(weight_size)
+    var weight_host_ptr = alloc[Scalar[weight_dtype]](weight_size)
     var weight_host = LayoutTensor[weight_dtype, weight_layout](
         weight_host_ptr,
         RuntimeLayout[weight_layout].row_major(weight_shape),
@@ -343,23 +336,23 @@ def execute_matmul_k_cache_ragged_scale[
 
     # Execute reference using naive blockwise scaled matmul.
     # Create NDBuffers for naive_blockwise_scaled_fp8_matmul
-    var ref_output_ndbuffer = NDBuffer[dtype, 2](
+    var ref_output_ndbuffer = NDBuffer[rank=2, dtype](
         ref_output.device_tensor[update=False]().ptr,
         ref_output_shape,
     )
-    var hidden_state_ragged_ndbuffer = NDBuffer[weight_dtype, 2](
+    var hidden_state_ragged_ndbuffer = NDBuffer[rank=2, weight_dtype](
         hidden_state_ragged_device.unsafe_ptr(),
         IndexList[2](ragged_total_length, hidden_size),
     )
-    var weight_ref_ndbuffer = NDBuffer[weight_dtype, 2](
+    var weight_ref_ndbuffer = NDBuffer[rank=2, weight_dtype](
         weight_device.unsafe_ptr(),
         weight_shape,
     )
-    var ref_input_scale_ndbuffer = NDBuffer[scale_dtype, 2](
+    var ref_input_scale_ndbuffer = NDBuffer[rank=2, scale_dtype](
         input_scale.device_tensor[update=False]().ptr,
         input_scale_shape,
     )
-    var ref_weight_scale_ndbuffer = NDBuffer[scale_dtype, 2](
+    var ref_weight_scale_ndbuffer = NDBuffer[rank=2, scale_dtype](
         weight_scale.device_tensor[update=False]().ptr,
         weight_scale_shape,
     )
@@ -386,8 +379,7 @@ def execute_matmul_k_cache_ragged_scale[
         var prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                var head_idx = k_dim // kv_params.head_size
-                var head_dim_idx = k_dim % kv_params.head_size
+                var head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 var a = ref_output_host[
                     Int(input_row_offsets_host_ptr[bs]) + s, Int(k_dim)
                 ]

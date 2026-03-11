@@ -26,7 +26,7 @@ import pytest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn import Allreduce, Signals
 
 
@@ -98,8 +98,8 @@ def test_multi_device_graph_capture_replay() -> None:
     )
 
 
-def test_multi_device_replay_rejects_mixed_keys() -> None:
-    """Replay rejects mixed per-stream keys on multi-GPU models."""
+def test_multi_device_replay_mixed_keys_routes_outputs_per_device() -> None:
+    """Mixed-key replay should route output bindings per replayed device key."""
     available_gpus = accelerator_count()
     if available_gpus < 2:
         pytest.skip("Test requires at least 2 GPUs")
@@ -116,7 +116,7 @@ def test_multi_device_replay_rejects_mixed_keys() -> None:
     )
 
     with Graph(
-        "multi_device_mixed_keys_all_hit",
+        "multi_device_mixed_keys_per_device_binding",
         input_types=[input_type0, input_type1],
     ) as graph:
         graph.output(graph.inputs[0].tensor + 1, graph.inputs[1].tensor + 2)
@@ -139,14 +139,26 @@ def test_multi_device_replay_rejects_mixed_keys() -> None:
         device1
     )
 
-    model.capture(keys_a, input0_a, input1_a)
-    model.capture(keys_b, input0_b, input1_b)
+    captured_a0, _captured_a1 = model.capture(keys_a, input0_a, input1_a)
+    _captured_b0, captured_b1 = model.capture(keys_b, input0_b, input1_b)
 
-    with pytest.raises(
-        RuntimeError,
-        match="mixed per-device graph keys are not supported",
-    ):
-        model.replay(mixed_keys, input0_a, input1_b)
+    input0_a.inplace_copy_from(
+        Buffer.from_numpy(np.arange(4, dtype=np.float32) + 5).to(device0)
+    )
+    input1_b.inplace_copy_from(
+        Buffer.from_numpy(np.arange(4, dtype=np.float32) + 5000).to(device1)
+    )
+
+    model.replay(mixed_keys, input0_a, input1_b)
+
+    np.testing.assert_allclose(
+        captured_a0.to_numpy(),
+        (np.arange(4, dtype=np.float32) + 5) + 1,
+    )
+    np.testing.assert_allclose(
+        captured_b1.to_numpy(),
+        (np.arange(4, dtype=np.float32) + 5000) + 2,
+    )
 
 
 def test_multi_device_graph_capture_with_updated_inputs() -> None:
@@ -543,9 +555,17 @@ def test_multi_device_debug_verify_replay() -> None:
         graph_key, input0, input1
     )
 
+    verify_input0 = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 20).to(
+        device0
+    )
+    verify_input1 = Buffer.from_numpy(np.arange(4, dtype=np.float32) + 30).to(
+        device1
+    )
+
     # Verify that the captured graphs match eager execution on both devices
-    # This validates that the launch traces on both GPUs are correct
-    model.debug_verify_replay(graph_key, input0, input1)
+    # This validates that the launch traces on both GPUs are correct even if
+    # the eager verification run uses different input buffers.
+    model.debug_verify_replay(graph_key, verify_input0, verify_input1)
 
     # Ensure the captured graphs still work after verification
     model.replay(graph_key, input0, input1)
@@ -660,4 +680,205 @@ def test_multi_device_debug_verify_replay_many_outputs() -> None:
             captured.to_numpy(),
             expected_values,
             err_msg=f"Output {i} mismatch",
+        )
+
+
+def test_allgather_graph_capture_replay() -> None:
+    """Test graph capture and replay with allgather distributed operations.
+
+    This verifies that allgather collective operations can be captured
+    and replayed correctly across multiple GPUs, including with updated
+    inputs (which exercises the stable input buffer mechanism).
+    """
+    available_gpus = accelerator_count()
+    if available_gpus < 2:
+        pytest.skip("Test requires at least 2 GPUs")
+
+    num_gpus = min(available_gpus, 4)
+    host = CPU()
+    devices = [Accelerator(i) for i in range(num_gpus)]
+
+    M = 64
+    N = 128
+
+    graph_devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    input_types = [
+        TensorType(dtype=DType.float32, shape=[M, N], device=graph_devices[i])
+        for i in range(num_gpus)
+    ]
+    with Graph(
+        "allgather_capture",
+        input_types=[*input_types, *signals.input_types()],
+    ) as graph:
+        allgather_outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[:num_gpus]),
+            signal_buffers=(v.buffer for v in graph.inputs[num_gpus:]),
+            axis=0,
+        )
+        graph.output(*allgather_outputs)
+
+    session = InferenceSession(devices=[host, *devices])
+    model = session.load(graph)
+    graph_key = 10
+
+    # Create distinct input data per device.
+    stride = M * N
+    numpy_inputs = [
+        (np.arange(stride, dtype=np.float32) + stride * i).reshape((M, N))
+        for i in range(num_gpus)
+    ]
+    input_tensors = [
+        Buffer.from_numpy(a).to(d)
+        for a, d in zip(numpy_inputs, devices, strict=True)
+    ]
+
+    # Expected: each device sees the concatenation of all inputs along axis 0.
+    expected_output = np.concatenate(numpy_inputs, axis=0)
+
+    signal_buffers = signals.buffers()
+
+    # Execute baseline.
+    baseline_outputs = model.execute(*input_tensors, *signal_buffers)
+    for output in baseline_outputs:
+        np.testing.assert_allclose(
+            output.to(host).to_numpy(), expected_output, rtol=1e-5
+        )
+
+    # Capture the graph.
+    captured_outputs = model.capture(graph_key, *input_tensors, *signal_buffers)
+
+    # Replay and verify.
+    model.replay(graph_key, *input_tensors, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(), expected_output, rtol=1e-5
+        )
+
+    # Update inputs in-place and replay to exercise stable input buffers.
+    new_numpy_inputs = [
+        (np.arange(stride, dtype=np.float32) * 2 + stride * i).reshape((M, N))
+        for i in range(num_gpus)
+    ]
+    for i, device in enumerate(devices):
+        input_tensors[i].inplace_copy_from(
+            Buffer.from_numpy(new_numpy_inputs[i]).to(device)
+        )
+
+    expected_output_updated = np.concatenate(new_numpy_inputs, axis=0)
+
+    model.replay(graph_key, *input_tensors, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(),
+            expected_output_updated,
+            rtol=1e-5,
+        )
+
+    # One more replay with different values to ensure stability.
+    final_numpy_inputs = [
+        np.ones((M, N), dtype=np.float32) * (i + 1) * 7.0
+        for i in range(num_gpus)
+    ]
+    for i, device in enumerate(devices):
+        input_tensors[i].inplace_copy_from(
+            Buffer.from_numpy(final_numpy_inputs[i]).to(device)
+        )
+
+    expected_output_final = np.concatenate(final_numpy_inputs, axis=0)
+
+    model.replay(graph_key, *input_tensors, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(),
+            expected_output_final,
+            rtol=1e-5,
+        )
+
+
+def test_broadcast_graph_capture_replay() -> None:
+    """Test graph capture and replay with distributed broadcast operations.
+
+    This verifies that broadcast collective operations can be captured
+    and replayed correctly across multiple GPUs, including with updated
+    inputs (which exercises the stable input buffer mechanism).
+    """
+    available_gpus = accelerator_count()
+    if available_gpus < 2:
+        pytest.skip("Test requires at least 2 GPUs")
+
+    num_gpus = min(available_gpus, 4)
+    host = CPU()
+    devices = [Accelerator(i) for i in range(num_gpus)]
+
+    M = 64
+    N = 128
+
+    graph_devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    # Input tensor lives on GPU 0 (the root of the broadcast).
+    input_types = [
+        TensorType(dtype=DType.float32, shape=[M, N], device=graph_devices[0])
+    ]
+    with Graph(
+        "broadcast_capture",
+        input_types=[*input_types, *signals.input_types()],
+    ) as graph:
+        broadcast_outputs = ops.distributed_broadcast(
+            input=graph.inputs[0].tensor,
+            signal_buffers=(v.buffer for v in graph.inputs[1:]),
+        )
+        graph.output(*broadcast_outputs)
+
+    session = InferenceSession(devices=[host, *devices])
+    model = session.load(graph)
+    graph_key = 12
+
+    # Create input data on the root device (GPU 0).
+    input_np = np.arange(M * N, dtype=np.float32).reshape((M, N))
+    input_tensor = Buffer.from_numpy(input_np).to(devices[0])
+
+    signal_buffers = signals.buffers()
+
+    # Execute baseline — every device should see the same data as root.
+    baseline_outputs = model.execute(input_tensor, *signal_buffers)
+    for output in baseline_outputs:
+        np.testing.assert_allclose(
+            output.to(host).to_numpy(), input_np, rtol=1e-5
+        )
+
+    # Capture the graph.
+    captured_outputs = model.capture(graph_key, input_tensor, *signal_buffers)
+
+    # Replay and verify.
+    model.replay(graph_key, input_tensor, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(), input_np, rtol=1e-5
+        )
+
+    # Update input in-place and replay to exercise stable input buffers.
+    new_input_np = np.arange(M * N, dtype=np.float32).reshape((M, N)) * 3.0
+    input_tensor.inplace_copy_from(
+        Buffer.from_numpy(new_input_np).to(devices[0])
+    )
+
+    model.replay(graph_key, input_tensor, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(), new_input_np, rtol=1e-5
+        )
+
+    # One more replay with different values to ensure stability.
+    final_input_np = np.ones((M, N), dtype=np.float32) * 42.0
+    input_tensor.inplace_copy_from(
+        Buffer.from_numpy(final_input_np).to(devices[0])
+    )
+
+    model.replay(graph_key, input_tensor, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(), final_input_np, rtol=1e-5
         )

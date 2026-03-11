@@ -102,6 +102,7 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
     fn __int__(self) -> Int:
         return self.axis
 
+    @doc_private
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
         """Convert to index.
@@ -141,7 +142,7 @@ fn gather_reduce[
     comptime assert reduce_axis == 1
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
-    if input.numel() == 0 or indices.numel() == 0:
+    if input.num_elements() == 0 or indices.num_elements() == 0:
         return
 
     # TODO: find a heuristic to replace the magic number.
@@ -304,7 +305,7 @@ fn gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr + indices.numel()
+    var end_indices_ptr = indices.ptr + indices.num_elements()
 
     @parameter
     @__copy_capture(end_indices_ptr)
@@ -410,7 +411,7 @@ fn gather[
 
     comptime prefetch_offset = 12  # TODO: search
 
-    var end_indices_ptr = indices.ptr + indices.numel()
+    var end_indices_ptr = indices.ptr + indices.num_elements()
 
     @parameter
     @__copy_capture(end_indices_ptr)
@@ -947,8 +948,12 @@ fn scatter_nd_generator[
                 " indices_shape[-1] - 1"
             )
 
-        var output_flat = TileTensor(output.ptr, row_major(Idx(output.numel())))
-        var data_flat = TileTensor(data.ptr, row_major(Idx(data.numel())))
+        var output_flat = TileTensor(
+            output.ptr, row_major(Idx(output.num_elements()))
+        )
+        var data_flat = TileTensor(
+            data.ptr, row_major(Idx(data.num_elements()))
+        )
 
         # Always copy input to output first.
         comptime if is_gpu[target]():
@@ -958,10 +963,12 @@ fn scatter_nd_generator[
             var outp = DeviceBuffer(
                 ctx,
                 output.ptr,
-                data.numel(),
+                data.num_elements(),
                 owning=False,
             )
-            var inp = DeviceBuffer(ctx, data.ptr, data.numel(), owning=False)
+            var inp = DeviceBuffer(
+                ctx, data.ptr, data.num_elements(), owning=False
+            )
             ctx.enqueue_copy(
                 outp,
                 inp,
@@ -971,15 +978,15 @@ fn scatter_nd_generator[
             memcpy(
                 dest=output_flat.ptr,
                 src=data_flat.ptr,
-                count=output_flat.numel(),
+                count=output_flat.num_elements(),
             )
 
-        if updates.numel() == 0:
+        if updates.num_elements() == 0:
             # Nothing to update.
             return
 
         var updates_flat = TileTensor(
-            updates.ptr, row_major(Idx(updates.numel()))
+            updates.ptr, row_major(Idx(updates.num_elements()))
         )
 
         var data_shape = coord_to_index_list(data.layout.shape_coord())
@@ -1600,10 +1607,9 @@ fn _gather_nd_impl[
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
     var indices_shape = coord_to_index_list(indices.layout.shape_coord())
-    debug_assert(
-        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims,
-        "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims",
-    )
+    assert (
+        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims
+    ), "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims"
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
@@ -1639,16 +1645,14 @@ fn _gather_nd_impl[
             data_idx[src_start + i] = output_idx[output_start + i]
 
         comptime for i in range(data.rank):
-            debug_assert(
-                data_idx[i] >= 0 and data_idx[i] < Int(data.dim[i]()),
-                "data index out of bounds",
-            )
+            assert data_idx[i] >= 0 and data_idx[i] < Int(
+                data.dim[i]()
+            ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            debug_assert(
-                output_idx[i] >= 0 and output_idx[i] < Int(output.dim[i]()),
-                "output index out of bounds",
-            )
+            assert output_idx[i] >= 0 and output_idx[i] < Int(
+                output.dim[i]()
+            ), "output index out of bounds"
 
         var data_coord = Coord(data_idx)
         var output_coord = Coord(output_idx)
@@ -1696,9 +1700,7 @@ fn _gather_nd_impl[
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
     else:
-        debug_assert(
-            Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        )
+        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[
@@ -1767,10 +1769,9 @@ fn scatter_set_constant[
     comptime assert (
         indices.flat_rank == 2
     ), "scatter_set: indices must have rank 2"
-    debug_assert(
-        Int(indices.dim[1]()) == 2,
-        "scatter_set: indices must have shape [total_seq_len, 2]",
-    )
+    assert (
+        Int(indices.dim[1]()) == 2
+    ), "scatter_set: indices must have shape [total_seq_len, 2]"
 
     @always_inline
     @parameter

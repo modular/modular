@@ -17,9 +17,9 @@ from std.sys import simd_width_of, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx,
-    lane_id,
-    thread_idx,
+    block_idx_int as block_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
     grid_dim,
 )
 from std.gpu import warp_id
@@ -29,9 +29,6 @@ from std.gpu.memory import AddressSpace
 from std.gpu.compute.mma import mma
 from std.sys import llvm_intrinsic
 from std.gpu.sync import barrier, schedule_barrier, s_waitcnt
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.memory.unsafe import bitcast
 
 from std.utils import Index, IndexList, StaticTuple
@@ -291,7 +288,11 @@ fn _load_from_lds[
     //,
     width: Int = 1,
 ](
-    shared_ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED],
+    shared_ptr: UnsafePointer[
+        Scalar[dtype],
+        _,
+        address_space=AddressSpace.SHARED,
+    ],
 ) -> SIMD[dtype, width]:
     """Load a SIMD vector from LDS with LLVM alias scopes.
 
@@ -497,7 +498,7 @@ fn load_lds_fragment[
 
     # =========================================================================
 
-    var lane = Int(lane_id())
+    var lane = lane_id()
     # RuntimeLayout wraps compile-time layout for efficient evaluation
     var lane_offset = Int(RuntimeLayout[mma_access_layout]()(lane))
     var frag_ptr = reg_frag.ptr.bitcast[FragElement]()
@@ -983,7 +984,9 @@ struct TileBuffers[
 
     # LDS pointer type aliases
     comptime smem_ptr = UnsafePointer[
-        Scalar[Self.in_type], address_space=AddressSpace.SHARED
+        Scalar[Self.in_type],
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     # =========================================================================
@@ -1431,13 +1434,13 @@ struct AMDPingPongMatmul[
         # See module header and TileBuffers struct for detailed swizzle documentation.
 
         # Thread and warp identification
-        var thread_id = Int(thread_idx.x)
-        var lane_id = Int(lane_id())
+        var thread_id = thread_idx.x
+        var lane_id = lane_id()
         var warp_id = readfirstlane(Int(warp_id()))
 
         # Block coordinates from block indices
-        var n = Int(block_idx.x) * BN
-        var m = Int(block_idx.y) * BM
+        var n = block_idx.x * BN
+        var m = block_idx.y * BM
 
         # Swizzle for LDS bank conflict avoidance (see make_mma_swizzle docs)
         comptime mma_swizzle = Optional(
@@ -2100,7 +2103,7 @@ struct AMDPingPongMatmul[
         # Create global memory fragment distributed across threads
         var c_gmem_fragment = c_warp_tile.vectorize[
             1, accum_width
-        ]().distribute[output_thread_layout](UInt(lane_id))
+        ]().distribute[output_thread_layout](lane_id)
 
         # Use shared write_output_fragments function
         write_output_fragments[

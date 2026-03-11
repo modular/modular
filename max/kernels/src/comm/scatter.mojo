@@ -129,8 +129,10 @@ fn scatter[
     dp_size: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, dtype, ImmutAnyOrigin], dp_size
+    ],
+    output_buffer: NDBuffer[rank=rank, dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:

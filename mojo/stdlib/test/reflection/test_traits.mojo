@@ -19,9 +19,12 @@ from std.reflection.traits import (
     AllImplicitlyCopyable,
     AllDefaultable,
     AllEquatable,
+    AllHashable,
+    AllImplicitlyDestructible,
 )
 from std.testing import assert_true, assert_false
 from std.testing import TestSuite
+from test_utils import ExplicitDelOnly
 
 
 struct NoConformances:
@@ -68,6 +71,22 @@ def test_all_equatable() raises:
     assert_true(comptime (AllEquatable[Int, String, Bool]))
     assert_false(comptime (AllEquatable[Int, NoConformances]))
     assert_false(comptime (AllEquatable[NoConformances]))
+
+
+def test_all_hashable() raises:
+    assert_true(comptime (AllHashable[Int]))
+    assert_true(comptime (AllHashable[Int, String, Bool]))
+    assert_false(comptime (AllHashable[Int, NoConformances]))
+    assert_false(comptime (AllHashable[NoConformances]))
+
+
+def test_all_implicitly_destructible() raises:
+    assert_true(comptime (AllImplicitlyDestructible[Int]))
+    assert_true(comptime (AllImplicitlyDestructible[Int, String, Bool]))
+    # NoConformances is trivially ImplicitlyDestructible (no fields), so use
+    # ExplicitDelOnly from test_utils which requires explicit destruction.
+    assert_false(comptime (AllImplicitlyDestructible[Int, ExplicitDelOnly]))
+    assert_false(comptime (AllImplicitlyDestructible[ExplicitDelOnly]))
 
 
 def main() raises:

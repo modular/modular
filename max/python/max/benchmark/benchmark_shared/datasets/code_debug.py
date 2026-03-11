@@ -20,7 +20,7 @@ import msgspec
 from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from .distribution import BaseDistribution
+from .distribution import BaseDistribution, DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .types import (
     ChatSamples,
@@ -70,10 +70,13 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
     def gen_twoturn_longcontext_requests(
         self,
         num_chat_sessions: int,
-        delay_between_chat_turns: BaseDistribution | None,
+        delay_between_chat_turns: DistributionParameter | None,
         tokenizer: PreTrainedTokenizerBase,
     ) -> ChatSamples:
         # Expand code_debug dataset to 2-turn chats with a pre-defined followup question
+        delay_dist = BaseDistribution.from_distribution_parameter(
+            delay_between_chat_turns
+        )
         DUMMY_OUTPUT = "A"
         CODE_DEBUG_FOLLOWUP_QUESTION = "Explain your reasoning?"
         request_samples = self.sample_requests(
@@ -95,10 +98,8 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     DUMMY_OUTPUT,
                     tokenizer,
                     2,
-                    delay_until_next_message=max(
-                        delay_between_chat_turns.sample_value(), 0
-                    )
-                    if delay_between_chat_turns
+                    delay_until_next_message=max(delay_dist.sample_value(), 0)
+                    if delay_dist
                     else None,
                 ),
                 build_chat_message(
@@ -108,10 +109,8 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     "assistant",
                     DUMMY_OUTPUT,
                     tokenizer,
-                    delay_until_next_message=max(
-                        delay_between_chat_turns.sample_value(), 0
-                    )
-                    if delay_between_chat_turns
+                    delay_until_next_message=max(delay_dist.sample_value(), 0)
+                    if delay_dist
                     else None,
                 ),
             ]

@@ -25,7 +25,6 @@ from std.memory import stack_allocation
 from std.testing import assert_equal
 from buffer.dimlist import DimList, Dim
 from std.utils.index import Index, IndexList
-from std.memory import LegacyUnsafePointer
 from buffer.buffer import NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from std.gpu.memory import (
@@ -36,7 +35,6 @@ from std.gpu.memory import (
 )
 from std.math import recip
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout.layout_tensor import LayoutTensorIter
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.utils.static_tuple import StaticTuple
@@ -83,30 +81,26 @@ def test_nvfp4_quantization[
     comptime input_static_shape = DimList(m.dim, n.dim)
     var input_dynamic_shape = IndexList[2](m.value, n.value)
 
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var host_buffer = NDBuffer[dtype, 2, _, input_static_shape](
+    var host_ptr = alloc[Scalar[dtype]](M * N)
+    var host_buffer = NDBuffer[rank=2, dtype, _, input_static_shape](
         host_ptr, input_dynamic_shape
     )
 
     comptime output_static_shape = DimList(m.dim, ceildiv(n.dim, 2))
     var output_dynamic_shape = IndexList[2](m.value, ceildiv(n.value, 2))
 
-    var host_ptr_output = UnsafePointer[Scalar[out_dtype]].alloc(
-        M * ceildiv(N, 2)
-    )
-    var host_buffer_output = NDBuffer[out_dtype, 2, _, output_static_shape](
-        host_ptr_output, output_dynamic_shape
-    )
+    var host_ptr_output = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_buffer_output = NDBuffer[
+        rank=2, out_dtype, _, output_static_shape
+    ](host_ptr_output, output_dynamic_shape)
 
-    var host_ptr_output_ref = UnsafePointer[Scalar[out_dtype]].alloc(
-        M * ceildiv(N, 2)
-    )
-    var host_buffer_output_ref = NDBuffer[out_dtype, 2, _, output_static_shape](
-        host_ptr_output_ref, output_dynamic_shape
-    )
+    var host_ptr_output_ref = alloc[Scalar[out_dtype]](M * ceildiv(N, 2))
+    var host_buffer_output_ref = NDBuffer[
+        rank=2, out_dtype, _, output_static_shape
+    ](host_ptr_output_ref, output_dynamic_shape)
 
     var device_buffer = ctx.enqueue_create_buffer[dtype](M * N)
-    var device_nd_buffer = NDBuffer[dtype, 2, _, input_static_shape](
+    var device_nd_buffer = NDBuffer[rank=2, dtype, _, input_static_shape](
         device_buffer.unsafe_ptr(), input_dynamic_shape
     )
 
@@ -114,14 +108,14 @@ def test_nvfp4_quantization[
         M * ceildiv(N, 2)
     )
     var device_nd_buffer_output = NDBuffer[
-        out_dtype, 2, _, output_static_shape
+        rank=2, out_dtype, _, output_static_shape
     ](device_buffer_output.unsafe_ptr(), output_dynamic_shape)
 
     var device_buffer_output_ref = ctx.enqueue_create_buffer[out_dtype](
         M * ceildiv(N, 2)
     )
     var device_nd_buffer_output_ref = NDBuffer[
-        out_dtype, 2, _, output_static_shape
+        rank=2, out_dtype, _, output_static_shape
     ](device_buffer_output_ref.unsafe_ptr(), output_dynamic_shape)
 
     var host_tensor = from_ndbuffer_row_major(host_buffer)
@@ -153,30 +147,26 @@ def test_nvfp4_quantization[
         * SF_ATOM_K
     )
 
-    var scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        scales_total
-    )
-    var scales_host = NDBuffer[scales_dtype, 5, _, static_scales_shape](
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host = NDBuffer[rank=5, scales_dtype, _, static_scales_shape](
         scales_host_ptr, dynamic_scales_shape
     )
 
-    var scales_host_ptr_ref = UnsafePointer[Scalar[scales_dtype]].alloc(
-        scales_total
-    )
-    var scales_host_ref = NDBuffer[scales_dtype, 5, _, static_scales_shape](
-        scales_host_ptr_ref, dynamic_scales_shape
-    )
+    var scales_host_ptr_ref = alloc[Scalar[scales_dtype]](scales_total)
+    var scales_host_ref = NDBuffer[
+        rank=5, scales_dtype, _, static_scales_shape
+    ](scales_host_ptr_ref, dynamic_scales_shape)
 
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_total)
-    var scales_device_nd = NDBuffer[scales_dtype, 5, _, static_scales_shape](
-        scales_device.unsafe_ptr(), dynamic_scales_shape
-    )
+    var scales_device_nd = NDBuffer[
+        rank=5, scales_dtype, _, static_scales_shape
+    ](scales_device.unsafe_ptr(), dynamic_scales_shape)
 
     var scales_device_ref = ctx.enqueue_create_buffer[scales_dtype](
         scales_total
     )
     var scales_device_nd_ref = NDBuffer[
-        scales_dtype, 5, _, static_scales_shape
+        rank=5, scales_dtype, _, static_scales_shape
     ](scales_device_ref.unsafe_ptr(), dynamic_scales_shape)
 
     var input_tensor = from_ndbuffer_row_major(device_nd_buffer)

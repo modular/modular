@@ -14,6 +14,7 @@
 
 from std.math import exp2, recip, align_up
 from std.math.constants import log2e
+from std.memory import bitcast
 from std.sys import size_of
 import std.gpu.primitives.warp as warp
 from std.gpu import thread_idx
@@ -41,9 +42,9 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout import row_major, stack_allocation as tt_stack_allocation
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.fa4_config import FA4Config, EnableForcedOrdering, EnableEarlyAdd
 from nn.sm100_attention_utils import (
-    LocalTensor,
     SharedMemPointer,
     MBarType,
     TMemTile,
@@ -83,41 +84,43 @@ fn fa4_scale_write_output[
     qkv_type: DType,
     output_type: DType,
     config: FA4Config,
+    output_swizzle_mode: TensorMapSwizzle = config.swizzle_mode,
+    kv_depth: Int = config.depth,
+    half_bm: Int = config.BM // 2,
+    tmem_kv_depth: Int = config.padded_depth,
 ](
     local_row: UInt32,
     local_warp_idx: UInt32,
     warp_group_idx: UInt32,
     inv_row_sum: Float32,
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
-    o_tmem_arg: TMemTile[DType.float32, config.BM // 2, config.padded_depth],
+    o_tmem_arg: TMemTile[DType.float32, half_bm, tmem_kv_depth],
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        config.swizzle_mode,
-        BM=config.BM // 2,
-        BN=config.depth,
+        output_swizzle_mode,
+        BM=half_bm,
+        BN=kv_depth,
     ],
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
 ):
     comptime accum_type = DType.float32
-    comptime BM = config.BM
-    comptime padded_depth = config.padded_depth
 
-    comptime swizzle_granularity = config.swizzle_mode.bytes() // size_of[
+    comptime swizzle_granularity = output_swizzle_mode.bytes() // size_of[
         output_type
     ]()
-    comptime iters = padded_depth // swizzle_granularity
+    comptime iters = tmem_kv_depth // swizzle_granularity
 
     comptime ST = STMatrixLayout[
-        BM // 2,
+        half_bm,
         swizzle_granularity,
         num_threads=WARPGROUP_SIZE,
         accum_type_size=4,
     ]
     comptime num_rows = ST.vec_local_layout[0].size()
 
-    comptime swizzle = make_swizzle[output_type, config.swizzle_mode]()
+    comptime swizzle = make_swizzle[output_type, output_swizzle_mode]()
 
     comptime swizzle_block_size: UInt32 = UInt32(
         WARP_SIZE * swizzle_granularity
@@ -129,7 +132,7 @@ fn fa4_scale_write_output[
             ragged_tma_store.prefetch_descriptor()
 
     # Allocate register tiles for double-buffered pipeline.
-    comptime ChunkTMemType = TMemTile[accum_type, BM // 2, swizzle_granularity]
+    comptime ChunkTMemType = TMemTile[accum_type, half_bm, swizzle_granularity]
     var o_cur = ChunkTMemType.allocate_register_tile[
         num_threads=WARPGROUP_SIZE
     ]()
@@ -141,13 +144,6 @@ fn fa4_scale_write_output[
     fn load_chunk[col: Int, m_half: Int](dst: type_of(o_cur)):
         """Async tmem load for one M-half of column `col`."""
         comptime load_dtype = DType.uint32
-        var ptr = rebind[
-            UnsafePointer[
-                Scalar[load_dtype],
-                MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
-            ]
-        ](dst.ptr)
         chunk_tmem_addr = o_tmem_arg.tmem_addr + UInt32(
             col * swizzle_granularity
         )
@@ -158,7 +154,7 @@ fn fa4_scale_write_output[
             comptime assert pow_two + local_offset <= ST.repeat
             comptime if pow_two > 0:
                 comptime offsets = STMatrixOffsets[
-                    BM // 2,
+                    half_bm,
                     swizzle_granularity,
                     num_threads=WARPGROUP_SIZE,
                     accum_type_size=4,
@@ -166,6 +162,9 @@ fn fa4_scale_write_output[
                     cumulative_repeat=local_offset,
                     m_mma=m_half,
                 ]()
+                comptime assert (
+                    offsets.local_frag_size_b32 % 2 == 0
+                ), "local_frag_size_b32 must be even for f32x2 stores"
                 tmem = chunk_tmem_addr + UInt32(offsets.tmem_offset)
                 frag = tcgen05_ld[
                     datapaths=16,
@@ -175,7 +174,18 @@ fn fa4_scale_write_output[
                     pack=False,
                     width=offsets.local_frag_size_b32,
                 ](tmem)
-                ptr.store(offsets.ptr_offset, frag)
+
+                # Store as f32x2 pairs so SROA decomposes the alloca
+                # into individual f32x2 pieces instead of <8 x i32>.
+                comptime for _i in range(offsets.local_frag_size_b32 // 2):
+                    var pair = SIMD[DType.float32, 2](
+                        bitcast[DType.float32](frag[2 * _i]),
+                        bitcast[DType.float32](frag[2 * _i + 1]),
+                    )
+                    dst.ptr.store(
+                        offsets.ptr_offset + 2 * _i,
+                        pair,
+                    )
 
         comptime max_value = 64 if ST.bits == 128 else 32
         break_into_powers_of_two[
@@ -220,7 +230,7 @@ fn fa4_scale_write_output[
         )
 
         comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
-            j * (BM // 2) * swizzle_granularity
+            j * half_bm * swizzle_granularity
         )
         comptime smem_layout = row_major[16, swizzle_granularity]()
         var accum_smem_warp_tile = _SharedMemTT[output_type, smem_layout](
@@ -439,7 +449,7 @@ fn fa4_softmax[
     @always_inline
     fn mask_row[
         BN: Int, //, mask_strategy: MaskStrategy
-    ](s: LocalTensor[accum_type, row_major[BN]()], kv_row: UInt32,):
+    ](mut s: InlineArray[Scalar[accum_type], BN], kv_row: UInt32):
         apply_mask[
             mask_strategy=mask_strategy,
             skip_scale=use_fma,
@@ -465,9 +475,7 @@ fn fa4_softmax[
     )
 
     gmem_row = PositionType.get_q_gmem_row[ragged=ragged](seq_info, max_seq_len)
-    s = tt_stack_allocation[dtype=accum_type, address_space=AddressSpace.LOCAL](
-        row_major[config.BN]()
-    )
+    var s = InlineArray[Scalar[accum_type], config.BN](uninitialized=True)
 
     comptime max_unroll = 8
 
@@ -495,7 +503,8 @@ fn fa4_softmax[
         mask_row[mask_strategy=mask_strategy](s0, kv_row)
         vrow_max = maximum[width=max_unroll](s0)
 
-        s.ptr.store(s0.ptr.load[width=first_cols]())
+        comptime for _i in range(first_cols):
+            s[_i] = s0[_i]
         comptime cols = config.BN - first_cols + batch_size
 
         comptime for i in range(cols // (2 * batch_size)):
@@ -508,7 +517,9 @@ fn fa4_softmax[
                     s1, kv_row + UInt32(offset0)
                 )
                 vrow_max = maximum(s1, vrow_max)
-                s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
+
+                comptime for _i in range(batch_size):
+                    s[offset0 + _i] = s1[_i]
             else:
                 s2 = TMemTile[accum_type, BM, batch_size](
                     s_tmem + UInt32(offset1)
@@ -517,7 +528,9 @@ fn fa4_softmax[
                     s1, kv_row + UInt32(offset0)
                 )
                 vrow_max = maximum(s1, vrow_max)
-                s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
+
+                comptime for _i in range(batch_size):
+                    s[offset0 + _i] = s1[_i]
 
                 comptime if offset2 < config.BN:
                     s1 = TMemTile[accum_type, BM, batch_size](
@@ -527,7 +540,9 @@ fn fa4_softmax[
                     s2, kv_row + UInt32(offset1)
                 )
                 vrow_max = maximum(s2, vrow_max)
-                s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
+
+                comptime for _i in range(batch_size):
+                    s[offset1 + _i] = s2[_i]
 
         return vrow_max
 
@@ -568,7 +583,17 @@ fn fa4_softmax[
         ]
         comptime assert (config.BN % exp_simd) == 0
 
-        vs = s.vectorize[exp_simd]()
+        @parameter
+        @always_inline
+        fn s_load[i: Int]() -> f32x2:
+            return f32x2(s[2 * i], s[2 * i + 1])
+
+        @parameter
+        @always_inline
+        fn s_store[i: Int](v: f32x2):
+            s[2 * i] = v[0]
+            s[2 * i + 1] = v[1]
+
         var vrow_max: f32x2
         var vscale: f32x2
         var vneg_max_scaled: f32x2
@@ -590,43 +615,39 @@ fn fa4_softmax[
             else:
                 return sub_ftz(score, vrow_max)
 
-        var acc: f32x2 = exp2(score_to_logit(rebind[f32x2](vs[0])))
-        vs[0] = rebind[vs.ElementType](acc)
-        vsi = exp2(score_to_logit(rebind[f32x2](vs[1])))
-        vs[1] = rebind[vs.ElementType](vsi)
+        var acc: f32x2 = exp2(score_to_logit(s_load[0]()))
+        s_store[0](acc)
+        vsi = exp2(score_to_logit(s_load[1]()))
+        s_store[1](vsi)
 
         comptime if EnableEarlyAdd:
             acc = add_ftz(acc, vsi)
         comptime exp2_emulation_freq = 3
 
         comptime for i in range(2, 8):
-            vs[i] = rebind[vs.ElementType](score_to_logit(rebind[f32x2](vs[i])))
+            s_store[i](score_to_logit(s_load[i]()))
 
         comptime for i in range(2, 8):
-            vsi = exp2(rebind[f32x2](vs[i]))
-            vs[i] = rebind[vs.ElementType](vsi)
+            vsi = exp2(s_load[i]())
+            s_store[i](vsi)
 
             comptime if EnableEarlyAdd:
                 acc = add_ftz(acc, vsi)
 
         comptime for i in range(8, batch_size // 2):
-            diff = score_to_logit(rebind[f32x2](vs[i]))
+            diff = score_to_logit(s_load[i]())
             vsi = exp2(diff)
-            vs[i] = rebind[vs.ElementType](vsi)
+            s_store[i](vsi)
 
             comptime if EnableEarlyAdd:
                 acc = add_ftz(acc, vsi)
 
         # at this point, we need 32 fewer fp32 registers but 16 more u32
         comptime for i in range(batch_size // 2, batch_size):
-            diff = score_to_logit(rebind[f32x2](vs[i]))
-            vs[i] = rebind[vs.ElementType](exp2(diff))
+            diff = score_to_logit(s_load[i]())
+            s_store[i](exp2(diff))
 
-        BatchTileType(p_tmem).store_async(
-            LocalTensor[accum_type, row_major[batch_size * exp_simd]()](
-                s.ptr, row_major[batch_size * exp_simd]()
-            )
-        )
+        BatchTileType(p_tmem).store_async(s)
 
         comptime for b in range(1, num_batch_iters):
             comptime offset = batch_size * b
@@ -645,43 +666,39 @@ fn fa4_softmax[
                 pipeline_s.release_no_step[b - 1]()
 
             comptime for i in range(offset, offset + batch_size):
-                diff = score_to_logit(rebind[f32x2](vs[i]))
+                diff = score_to_logit(s_load[i]())
 
                 comptime if i % exp2_emulation_freq == 0:
-                    vs[i] = rebind[vs.ElementType](exp2_emulation(diff))
+                    s_store[i](exp2_emulation(diff))
                 else:
-                    vs[i] = rebind[vs.ElementType](exp2(diff))
+                    s_store[i](exp2(diff))
 
             comptime el_offset = offset * exp_simd
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
                 accum_type
             ]()
-            BatchTileType(p_tmem + UInt32(tmem_offset)).store_async(
-                LocalTensor[accum_type, row_major[batch_size * exp_simd]()](
-                    s.ptr + el_offset, row_major[batch_size * exp_simd]()
-                )
-            )
+            BatchTileType(p_tmem + UInt32(tmem_offset)).store_async[
+                src_offset=el_offset
+            ](s)
 
         comptime if remainder > 0:
             comptime offset = batch_size * num_batch_iters
 
             comptime for i in range(offset, offset + remainder):
-                diff = score_to_logit(rebind[f32x2](vs[i]))
+                diff = score_to_logit(s_load[i]())
 
                 comptime if i % exp2_emulation_freq == 0:
-                    vs[i] = rebind[vs.ElementType](exp2_emulation(diff))
+                    s_store[i](exp2_emulation(diff))
                 else:
-                    vs[i] = rebind[vs.ElementType](exp2(diff))
+                    s_store[i](exp2(diff))
 
             comptime el_offset = offset * exp_simd
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
                 accum_type
             ]()
-            RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async(
-                LocalTensor[accum_type, row_major[remainder * exp_simd]()](
-                    s.ptr + el_offset, row_major[remainder * exp_simd]()
-                )
-            )
+            RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async[
+                src_offset=el_offset
+            ](s)
 
         tcgen05_store_wait()
         tcgen05_fence_before()
@@ -700,23 +717,23 @@ fn fa4_softmax[
 
         comptime if EnableEarlyAdd:
             acc0 = acc
-            acc1 = rebind[f32x2](vs[batch_size // 2])
-            acc2 = rebind[f32x2](vs[batch_size // 2 + 1])
+            acc1 = s_load[batch_size // 2]()
+            acc2 = s_load[batch_size // 2 + 1]()
             acc3 = add_ftz(
-                rebind[f32x2](vs[batch_size // 2 + 2]),
-                rebind[f32x2](vs[batch_size // 2 + 3]),
+                s_load[batch_size // 2 + 2](),
+                s_load[batch_size // 2 + 3](),
             )
         else:
             acc0 = acc
-            acc1 = rebind[f32x2](vs[1])
-            acc2 = rebind[f32x2](vs[2])
-            acc3 = rebind[f32x2](vs[3])
+            acc1 = s_load[1]()
+            acc2 = s_load[2]()
+            acc3 = s_load[3]()
 
         comptime for i in range(add_offset + 4, vs_len, 4):
-            acc0 = add_ftz(acc0, rebind[f32x2](vs[i]))
-            acc1 = add_ftz(acc1, rebind[f32x2](vs[i + 1]))
-            acc2 = add_ftz(acc2, rebind[f32x2](vs[i + 2]))
-            acc3 = add_ftz(acc3, rebind[f32x2](vs[i + 3]))
+            acc0 = add_ftz(acc0, s_load[i]())
+            acc1 = add_ftz(acc1, s_load[i + 1]())
+            acc2 = add_ftz(acc2, s_load[i + 2]())
+            acc3 = add_ftz(acc3, s_load[i + 3]())
         return add_ftz(add_ftz(acc0, acc1), add_ftz(acc2, acc3))
 
     var kv_row: UInt32 = mask.start_column[BM, BN, page_size](score_row)

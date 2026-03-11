@@ -67,7 +67,9 @@ fn ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[dtype, width]:
+](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[
+    dtype, width
+] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -91,7 +93,6 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    comptime assert dtype.is_numeric(), "the dtype must be numeric"
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -207,8 +208,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
             has_side_effect=False,
         ](a, b, c, lut)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Int32,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
             note="lop() is only supported when targeting NVIDIA GPUs.",
         ]()
@@ -252,8 +252,7 @@ fn _byte_permute_inst() -> StaticString:
     elif is_amd_gpu():
         return "llvm.amdgcn.perm"
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString,
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -776,7 +775,7 @@ fn store_release[
             True,
         )
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -827,7 +826,7 @@ fn store_relaxed[
             ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](value, ptr.address)
     else:
-        return CompilationTarget.unsupported_target_error[
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
 
@@ -908,8 +907,7 @@ fn load_acquire[
         )
         return value
     else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype],
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 
@@ -962,8 +960,7 @@ fn load_relaxed[
             ordering=Consistency.MONOTONIC.__mlir_attr(),
         ](ptr.address)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype],
+        CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),
         ]()
 

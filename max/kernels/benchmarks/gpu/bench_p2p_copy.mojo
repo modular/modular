@@ -108,10 +108,9 @@ fn bench_p2p[
     comptime is_bidir = (direction == 2 or direction == 3)
 
     var num_elements = num_bytes // size_of[dtype]()
-    debug_assert(
-        num_bytes % (size_of[dtype]() * simd_width) == 0,
-        "Ragged sizes unsupported by bench_p2p.",
-    )
+    assert (
+        num_bytes % (size_of[dtype]() * simd_width) == 0
+    ), "Ragged sizes unsupported by bench_p2p."
     var grid_size = ceildiv(num_elements // simd_width, BLOCK_SIZE)
 
     # Create contexts and buffers on both GPUs.

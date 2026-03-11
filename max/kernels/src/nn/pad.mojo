@@ -69,12 +69,9 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     var early_stop: Bool
 
     fn __init__(out self, loop_bounds: Self.LoopBoundSpec):
-        debug_assert(
-            len(loop_bounds) == Self.n_loops,
-            (
-                "Number of entries in loop_bounds doesn't match the number of"
-                " loops specified"
-            ),
+        assert len(loop_bounds) == Self.n_loops, (
+            "Number of entries in loop_bounds doesn't match the number of"
+            " loops specified"
         )
 
         # TODO: Should this function take an `owned loop_bounds` to avoid

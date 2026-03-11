@@ -342,6 +342,9 @@ complex_mul = functional(ops.complex.mul)
 #: Concatenates a list of tensors along an axis.
 #: See :func:`max.graph.ops.concat` for details.
 concat = functional(ops.concat)
+#: Conditionally executes one of two branches based on a boolean predicate.
+#: See :func:`max.graph.ops.cond` for details.
+cond = functional(ops.cond)
 #: Creates a constant tensor.
 #: See :func:`max.graph.ops.constant` for details.
 constant = functional(ops.constant)

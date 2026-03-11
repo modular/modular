@@ -56,6 +56,7 @@ _EXTRA_CONSTRAINTS = {
         "//:nvidia_gpu",
         "//:has_multi_gpu",
     ],
+    "test_mxfp4_dequant_smoke.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_fp8.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_bf16_multicast.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_hilbert.mojo": ["//:h100_gpu"],
@@ -72,10 +73,6 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: MOCO-2366
     "test_grouped_matmul_vendor.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_overlap_matmul_allreduce.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
@@ -192,7 +189,6 @@ _GPU_MEMORY = {
     "test_matmul_sm100_bf16.mojo": "3",
     "test_matmul_sm100_fp8.mojo": "3",
     "test_matmul_sm100_epilogue.mojo": "3",
-    "test_overlap_matmul_allreduce.mojo": "1.5",
     "test_matmul_sm100_batched_block_scaled_mxfp8_1sm.mojo": "3",
     "test_matmul_sm100_batched_block_scaled_mxfp8_2sm.mojo": "3",
     "test_matmul_sm100_batched_block_scaled_nvfp4_1sm.mojo": "3",

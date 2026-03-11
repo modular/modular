@@ -17,23 +17,21 @@ from std.format._utils import (
     FormatStruct,
     Named,
     TypeNames,
-    constrained_conforms_to_writable,
 )
 from std.hashlib import Hasher, default_hasher
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
-from std.builtin.constrained import _constrained_conforms_to
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
     Boolable,
-    Comparable,
-    Copyable,
-    Hashable,
+    Comparable where conforms_to(T, Equatable),
+    Copyable where conforms_to(T, Copyable),
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
     Iterable,
-    KeyElement,
     Sized,
-    Writable,
+    Writable where conforms_to(T, Writable),
 ):
     """A set data type.
 
@@ -117,7 +115,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return t in self._data
 
-    fn __eq__(self, other: Self) -> Bool:
+    fn __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Set equality.
 
         Args:
@@ -203,7 +201,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         self.difference_update(other)
 
-    fn __le__(self, other: Self) -> Bool:
+    fn __le__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the <= operator for sets. Works like as `issubset` method.
 
         Args:
@@ -214,7 +212,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issubset(other)
 
-    fn __ge__(self, other: Self) -> Bool:
+    fn __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the >= operator for sets. Works like as `issuperset` method.
 
         Args:
@@ -225,7 +223,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return self.issuperset(other)
 
-    fn __gt__(self, other: Self) -> Bool:
+    fn __gt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the > operator for strict superset comparison of sets.
 
         Args:
@@ -236,7 +234,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self) > len(other) and other.issubset(self)
 
-    fn __lt__(self, other: Self) -> Bool:
+    fn __lt__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Overloads the < operator for strict subset comparison of sets.
 
         Args:
@@ -288,13 +286,12 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """
         return len(self._data)
 
-    fn __hash__[_H: Hasher](self, mut hasher: _H):
+    fn __hash__(
+        self, mut hasher: Some[Hasher]
+    ) where conforms_to(Self.T, Hashable):
         """Updates hasher with the underlying values.
 
         The update is order independent, so s1 == s2 -> hash(s1) == hash(s2).
-
-        Parameters:
-            _H: The hasher type.
 
         Args:
             hasher: The hasher instance.
@@ -308,7 +305,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self) -> String where conforms_to(Self.T, Writable):
         """Returns the string representation of the set.
 
         Returns:
@@ -320,7 +317,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__(self) -> String:
+    fn __repr__(self) -> String where conforms_to(Self.T, Writable):
         """Returns the string representation of the set.
 
         Returns:
@@ -330,9 +327,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self.write_repr_to(output)
         return output
 
-    fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
-        constrained_conforms_to_writable[Self.T, Parent=Self]()
-
+    fn _write_self_to[
+        *, is_repr: Bool
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
         @parameter
@@ -348,11 +345,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    fn write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
@@ -360,11 +356,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self._write_self_to[is_repr=False](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this set to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.

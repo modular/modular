@@ -61,7 +61,7 @@ from std.os import abort
 from buffer import DimList
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
-from std.sys.compile import is_compile_time
+from std.sys.compile import is_run_in_comptime_interpreter
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 from std.utils.numerics import max_finite
@@ -533,7 +533,7 @@ struct IntTuple(
         """
         # Skip validation during compile-time interpretation since the comparison
         # may involve complex type witness expressions that can't be evaluated.
-        if not is_compile_time():
+        if not is_run_in_comptime_interpreter():
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",
@@ -935,10 +935,9 @@ struct IntTuple(
             - This operation requires reallocating the underlying `IntArray` storage to accommodate
             the new elements, which may impact performance for large tuples.
         """
-        debug_assert(
-            self._store.owning(),
-            "Can't modify a non-owning IntTuple (sub-tuple reference)",
-        )
+        assert (
+            self._store.owning()
+        ), "Can't modify a non-owning IntTuple (sub-tuple reference)"
 
         if len(elements) == 0:
             return
@@ -990,10 +989,9 @@ struct IntTuple(
               to accommodate the new elements, which may impact performance for large tuples.
             - If the input tuple is empty, this method returns without making any changes.
         """
-        debug_assert(
-            self._store.owning(),
-            "Can't modify a non-owning IntTuple (sub-tuple reference)",
-        )
+        assert (
+            self._store.owning()
+        ), "Can't modify a non-owning IntTuple (sub-tuple reference)"
 
         if len(tuple) == 0:
             return
@@ -2312,10 +2310,9 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
                 v_init = UNKNOWN_VALUE if is_unknown else v_init * product(v)
             return r
     else:
-        debug_assert(
-            not is_tuple(init),
-            "Invalid prefix_product: 'int' tuple case not allowed",
-        )
+        assert not is_tuple(
+            init
+        ), "Invalid prefix_product: 'int' tuple case not allowed"
 
         if is_tuple(init):  # "int" tuple
             return IntTuple()
@@ -2613,8 +2610,7 @@ fn crd2idx(
                     return UNKNOWN_VALUE
 
                 # Extract coordinates
-                var c0 = c_val % s0_prod
-                var c1 = c_val // s0_prod
+                var c1, c0 = divmod(c_val, s0_prod)
 
                 # Handle direct stride values case
                 if _stride.is_value(0) and _stride.is_value(1):
@@ -2677,10 +2673,9 @@ fn crd2idx(
                 return 0
             var result: Int = 0
             for i in range(len(shape) - 1):
-                result += crd2idx(
-                    int_crd % product(shape[i]), shape[i], stride[i]
-                )
-                int_crd = int_crd // product(shape[i])
+                var remainder: Int
+                int_crd, remainder = divmod(int_crd, product(shape[i]))
+                result += crd2idx(remainder, shape[i], stride[i])
             return result + crd2idx(int_crd, shape[-1], stride[-1])
         else:  # "int" "int" "int"
             return int_crd * Int(stride)

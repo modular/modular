@@ -31,7 +31,7 @@ architecture.
 """
 
 from std.collections import Optional
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.memory import Pointer
 from std.sys import size_of
 
@@ -53,7 +53,7 @@ from layout import TileTensor
 from layout.tile_layout import TensorLayout
 from structured_kernels.tile_types import (
     GMEMLayout1D,
-    TMATile,
+    TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
     tma_desc_layout_4d,
@@ -178,10 +178,19 @@ struct Grouped1D1DMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
+    # SFB N dimension aligned up to SF_MN_GROUP_SIZE (e.g. 64 → 128).
+    # Used for TMA descriptors and SMEM layout (both need the full SF group).
+    comptime SFB_N_ALIGNED = align_up(Self.MMA_N, SF_MN_GROUP_SIZE)
+
     # TMEM configuration — stride matches MMA output width for scaled kernels.
+    # SFB TMEM width must be SFB_N_ALIGNED (not MMA_N) because
+    # _copy_sf_to_tmem_tt writes SF_MN_GROUP_SIZE//32 = 4 columns per
+    # SF group regardless of MMA_N.  Matches the sm100/block_scaled kernel.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
-    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
+    comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (
+        Self.SFB_N_ALIGNED // 32
+    )
     comptime stage_stride_cols = Self.MMA_N
 
     # Output pipeline config (bundles accum stages, stride, and cta_group)
@@ -273,6 +282,7 @@ struct Grouped1D1DMatmulKernel[
         Self.num_pipeline_stages,
         cta_group=Self.cta_group,
         num_sf_k_tiles=Self.config.num_sf_k_tiles,
+        SFB_N=Self.SFB_N_ALIGNED,
     ]
 
     comptime OutputPipeline = OutputTilePipeline[Self.opc]
@@ -321,6 +331,7 @@ struct Grouped1D1DMatmulKernel[
         tile_shape=Self.config.block_tile_shape,
         cluster=Self.config.cluster_shape,
         cta_group=Self.cta_group,
+        AB_swapped=Self.config.AB_swapped,
     ]
 
     # ========== TMA Load Size Constants ==========
@@ -407,7 +418,7 @@ struct Grouped1D1DMatmulKernel[
     ]
     comptime SFBTileLayout = RowMajorLayout[
         *_IntToComptimeInt[
-            Self.MMA_N // SF_MN_GROUP_SIZE,
+            Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
             Self.config.num_sf_k_tiles,
             SF_ATOM_M[0],
             SF_ATOM_M[1] * SF_ATOM_K,
@@ -415,27 +426,22 @@ struct Grouped1D1DMatmulKernel[
     ]
     comptime SFBDescLayout = tma_desc_layout_4d[
         Self.sfb_dtype,
-        Self.MMA_N // SF_MN_GROUP_SIZE,
+        Self.SFB_N_ALIGNED // SF_MN_GROUP_SIZE,
         Self.config.num_sf_k_tiles,
         SF_ATOM_M[0],
         TensorMapSwizzle.SWIZZLE_NONE,
     ]
 
     # TMA operation types
-    comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
-    comptime ATmaOp = Self.ATmaTile.InnerType
-    comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
-    comptime BTmaOp = Self.BTmaTile.InnerType
-    comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
-    comptime CTmaOp = Self.CTmaTile.InnerType
-    comptime SFATmaTile = TMATile[
+    comptime ATmaOp = TmaOpType[Self.a_type, Self.ATileLayout, Self.ADescLayout]
+    comptime BTmaOp = TmaOpType[Self.b_type, Self.BTileLayout, Self.BDescLayout]
+    comptime CTmaOp = TmaOpType[Self.c_type, Self.CTileLayout, Self.CDescLayout]
+    comptime SFATmaOp = TmaOpType[
         Self.sfa_dtype, Self.SFATileLayout, Self.SFADescLayout
     ]
-    comptime SFATmaOp = Self.SFATmaTile.InnerType
-    comptime SFBTmaTile = TMATile[
+    comptime SFBTmaOp = TmaOpType[
         Self.sfb_dtype, Self.SFBTileLayout, Self.SFBDescLayout
     ]
-    comptime SFBTmaOp = Self.SFBTmaTile.InnerType
 
     # 1D data TileTensor types (offsets, expert IDs, scales)
     comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
@@ -715,6 +721,10 @@ struct Grouped1D1DMatmulKernel[
                         with mma_ctx.output_pipeline.producer() as output_stage:
                             var tmem_offset = UInt32(output_stage.tmem.offset())
 
+                            var sfb_tmem_adj = Self._compute_sfb_tmem_adj(
+                                ctx.m(), ctx.n(), ctx.m_start()
+                            )
+
                             with input_pipeline.consumer() as consumer:
                                 var next_ready = True
                                 if num_k_iters > 0:
@@ -731,6 +741,7 @@ struct Grouped1D1DMatmulKernel[
                                             tmem_region,
                                             UInt32(k_tile),
                                             0,
+                                            sfb_tmem_adj,
                                         )
                                     next_ready = True
                                     if k_tile + 1 < num_k_iters:
@@ -773,13 +784,22 @@ struct Grouped1D1DMatmulKernel[
         n_coord: UInt32,
         expert_id: Int32,
         a_scale_offset: Scalar[DType.uint32],
+        m_start: UInt32,
     ) -> Tuple[Int, Int]:
         """Return (sfa_m_coord, sfb_n_coord), swapped when AB_swapped."""
         var expert_sf_coord = (
             Int(n_coord) + Int(expert_id) * Self.static_N
         ) // SF_MN_GROUP_SIZE
-        var token_sf_coord = Int(m_coord) // SF_MN_GROUP_SIZE + Int(
-            a_scale_offset
+
+        # Use expert-relative position for the SF group index to avoid
+        # incorrect floor-division when MMA_N < SF_MN_GROUP_SIZE and the
+        # expert starts at a non-SF_MN_GROUP_SIZE-aligned token offset.
+        # (m_coord - m_start) // G gives the correct per-expert group;
+        # m_start // G + a_scale_offset restores the absolute SF row.
+        var token_sf_coord = (
+            Int(m_coord - m_start) // SF_MN_GROUP_SIZE
+            + Int(m_start) // SF_MN_GROUP_SIZE
+            + Int(a_scale_offset)
         )
 
         comptime if Self.config.AB_swapped:
@@ -828,13 +848,18 @@ struct Grouped1D1DMatmulKernel[
         var b_gmem_n_coord: Int
 
         comptime if Self.config.AB_swapped:
-            # A loads weights (b_device): use weight coordinate
+            # A loads weights (b_device): per-CTA weight row offset.
+            # peer_rank_n differentiates CTAs in the weight dimension
+            # (0 for CTA0, 1 for CTA1 in a 2SM cluster).
+            # Each CTA provides BM weight rows to the UMMA.
             a_gmem_m_coord = (
-                peer_m_rank * Self.a_tma_rows
+                peer_rank_n * Self.BM
                 + Int(n_coord)
                 + Int(expert_id) * Self.static_N
             )
-            # B loads tokens (a_device): use token coordinate
+            # B loads tokens (a_device): per-CTA token offset.
+            # The UMMA combines B rows from both CTAs, so each CTA
+            # loads a different portion of the token range.
             b_gmem_n_coord = (
                 peer_rank_m * Self.b_tma_rows
                 + peer_rank_n * Self.BN
@@ -898,11 +923,21 @@ struct Grouped1D1DMatmulKernel[
 
                 var sfa_m_coord: Int
                 var sfb_n_coord: Int
+                # For AB_swapped 2SM, each CTA needs scale factors
+                # for its own weight rows. Add per-CTA offset (BM)
+                # to the weight coordinate used for SFA lookup.
+                var n_coord_sf = n_coord
+                comptime if Self.config.AB_swapped:
+                    n_coord_sf = UInt32(
+                        UInt(n_coord) + UInt(peer_rank_n) * UInt(Self.BM)
+                    )
+
                 sfa_m_coord, sfb_n_coord = Self._get_sf_coords(
                     m_coord,
-                    n_coord,
+                    n_coord_sf,
                     expert_id,
                     a_scale_offset,
+                    work_ctx.m_start(),
                 )
 
                 sfa_tma_op.async_copy_4d[Self.cta_group](
@@ -935,6 +970,32 @@ struct Grouped1D1DMatmulKernel[
 
     @staticmethod
     @always_inline
+    fn _compute_sfb_tmem_adj(
+        m_coord: UInt32, n_coord: UInt32, m_start: UInt32
+    ) -> UInt32:
+        """Compute SFB TMEM column adjustment for MMA_N < SF_MN_GROUP_SIZE.
+
+        When MMA_N < SF_MN_GROUP_SIZE (e.g. 64 < 128), one SF group covers
+        two adjacent work tiles.  The MMA reads MMA_N//32 TMEM columns, so
+        adjacent tiles need an offset to select the correct half.  Matches
+        `_get_sfb_tmem_offset` in the non-TileTensor MMA overload.
+
+        Divides by MMA_N (not BN): in 2SM mode BN = MMA_N/2, but both CTAs
+        must supply the same adj because the paired UMMA distributes SF data
+        internally.
+        """
+        comptime if Self.MMA_N % SF_MN_GROUP_SIZE != 0:
+            var effective_n: UInt
+            comptime if Self.config.AB_swapped:
+                effective_n = UInt(m_coord) - UInt(m_start)
+            else:
+                effective_n = UInt(n_coord)
+            return UInt32(Int(effective_n) // Self.MMA_N % 2) * 2
+        else:
+            return UInt32(0)
+
+    @staticmethod
+    @always_inline
     fn mma[
         tiles_origin: MutOrigin,
         //,
@@ -950,6 +1011,7 @@ struct Grouped1D1DMatmulKernel[
         tmem_region: Self.TmemRegion,
         iter_idx: UInt32,
         k_start: UInt32,
+        sfb_tmem_adj: UInt32,
     ):
         """Execute MMA operations."""
         if elect_one_sync():
@@ -981,6 +1043,7 @@ struct Grouped1D1DMatmulKernel[
                     sfa_tmem_offset,
                     sfb_tmem_offset,
                     init_c=is_first_k,
+                    sfb_tmem_adj=sfb_tmem_adj,
                 )
 
             mma_op.commit(tiles.mbar())
@@ -1006,11 +1069,20 @@ struct Grouped1D1DMatmulKernel[
         # swap internally.
         var c_lt = c_device.to_layout_tensor()
 
+        # For AB_swapped 2SM, each CTA computes different weight rows.
+        # Add per-CTA offset (BM) to the N (weight) coordinate so each CTA
+        # writes its portion: CTA0 writes n..n+BM-1, CTA1 writes n+BM..n+2*BM-1.
+        var n_abs = work_ctx.n()
+        comptime if Self.config.AB_swapped and Self.cta_group > 1:
+            var rank_m = UInt(block_id_in_cluster.x)
+            var cta_n_offset = (rank_m % UInt(Self.cta_group)) * UInt(Self.BM)
+            n_abs = UInt32(UInt(n_abs) + cta_n_offset)
+
         tile_writer.write_absolute_with_bounds_check[type_of(c_lt).layout](
             c_tiles,
             stage,
             work_ctx.m(),  # Absolute M in contiguous token space
-            work_ctx.n(),  # Absolute N in output space
+            n_abs,  # Absolute N in output space (per-CTA for 2SM)
             work_ctx.m_end,  # Token dim end for bounds checking
             work_ctx.expert_scale,
             c_lt,

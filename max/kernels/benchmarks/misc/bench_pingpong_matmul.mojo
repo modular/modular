@@ -31,9 +31,6 @@ from std.benchmark import (
 from buffer import DimList, NDBuffer
 from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,
@@ -142,13 +139,13 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+            var tensor_a = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_a](
                 cb_a.offset_ptr(iteration), shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+            var tensor_b = NDBuffer[rank=2, dtype, MutAnyOrigin, shape_b](
                 cb_b.offset_ptr(iteration), shape_b_dim
             )
-            var tensor_c = NDBuffer[c_dtype, 2, MutAnyOrigin, shape_c](
+            var tensor_c = NDBuffer[rank=2, c_dtype, MutAnyOrigin, shape_c](
                 cb_c.offset_ptr(iteration), shape_c_dim
             )
 

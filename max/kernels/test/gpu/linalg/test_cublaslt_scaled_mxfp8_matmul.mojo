@@ -15,9 +15,6 @@ from std.math import ceildiv, align_up
 from std.random import random_ui64
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
@@ -122,38 +119,34 @@ fn test_scaled_mxfp8_cublaslt[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_size
-    )
-    var a_scales_host = NDBuffer[scales_type, 5, _, static_a_scales_shape](
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
+    var a_scales_host = NDBuffer[rank=5, scales_type, _, static_a_scales_shape](
         a_scales_host_ptr, dynamic_a_scales_shape
     )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        b_scales_size
-    )
-    var b_scales_host = NDBuffer[scales_type, 5, _, static_b_scales_shape](
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
+    var b_scales_host = NDBuffer[rank=5, scales_type, _, static_b_scales_shape](
         b_scales_host_ptr, dynamic_b_scales_shape
     )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var a_scales_device_nd = NDBuffer[scales_type, 5, _, static_a_scales_shape](
-        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
+    var a_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_a_scales_shape
+    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-    var b_scales_device_nd = NDBuffer[scales_type, 5, _, static_b_scales_shape](
-        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
+    var b_scales_device_nd = NDBuffer[
+        rank=5, scales_type, _, static_b_scales_shape
+    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
 
     var a_size = m.value * k.value
     var b_size = n.value * k.value
     var c_size = m.value * n.value
 
-    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(a_size)
-    var a_host = NDBuffer[input_type, 2, _, static_a_shape](
+    var a_host_ptr = alloc[Scalar[input_type]](a_size)
+    var a_host = NDBuffer[rank=2, input_type, _, static_a_shape](
         a_host_ptr, dynamic_a_shape
     )
-    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
-    var b_host = NDBuffer[input_type, 2, _, static_b_shape](
+    var b_host_ptr = alloc[Scalar[input_type]](b_size)
+    var b_host = NDBuffer[rank=2, input_type, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
     var c_host_managed = ManagedLayoutTensor[
@@ -162,7 +155,7 @@ fn test_scaled_mxfp8_cublaslt[
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_host = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
     var c_host_ref_managed = ManagedLayoutTensor[
@@ -171,24 +164,24 @@ fn test_scaled_mxfp8_cublaslt[
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
         ctx,
     )
-    var c_host_ref = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_host_ref = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
-    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
+    var a_device_nd = NDBuffer[rank=2, input_type, _, static_a_shape](
         a_device.unsafe_ptr(), dynamic_a_shape
     )
     var b_device = ctx.enqueue_create_buffer[input_type](b_size)
-    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
+    var b_device_nd = NDBuffer[rank=2, input_type, _, static_b_shape](
         b_device.unsafe_ptr(), dynamic_b_shape
     )
     var c_device = ctx.enqueue_create_buffer[output_type](c_size)
-    var c_device_nd = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_device_nd = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
     )
     var c_device_ref = ctx.enqueue_create_buffer[output_type](c_size)
-    var c_device_ref_nd = NDBuffer[output_type, 2, _, static_c_shape](
+    var c_device_ref_nd = NDBuffer[rank=2, output_type, _, static_c_shape](
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 

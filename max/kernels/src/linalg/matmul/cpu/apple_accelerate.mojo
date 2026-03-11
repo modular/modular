@@ -248,9 +248,9 @@ fn apple_gemv[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[mut=True, rank=2, _, _, _],
+    a: NDBuffer[mut=False, rank=2, _, _, _],
+    b: NDBuffer[mut=False, rank=2, _, _, _],
 ) raises:
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
@@ -258,7 +258,7 @@ fn apple_gemv[
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b.type, 2, MutAnyOrigin]()
+    var transposed_b = NDBuffer[rank=2, b.type, MutAnyOrigin]()
     var transposed_b_ptr = UnsafePointer[Scalar[b.type], MutExternalOrigin]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -266,7 +266,7 @@ fn apple_gemv[
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
         transposed_b_ptr = alloc[Scalar[b.type]](b.num_elements())
-        transposed_b = NDBuffer[b.type, 2, MutAnyOrigin](
+        transposed_b = NDBuffer[rank=2, b.type, MutAnyOrigin](
             transposed_b_ptr, transposed_b_shape
         )
 
@@ -353,64 +353,65 @@ fn apple_matmul[
     a: NDBuffer,
     b: NDBuffer,
 ) raises:
-    comptime if a.type == b.type == c.type == DType.float32:
-        var m = Int32(a.dim[0]())
-        var n = Int32(b.dim[0]() if transpose_b else b.dim[1]())
-        var k = Int32(a.dim[1]())
+    comptime assert (
+        a.type == b.type == c.type == DType.float32
+    ), "unsupported type in apple accelerate"
+    var m = Int32(a.dim[0]())
+    var n = Int32(b.dim[0]() if transpose_b else b.dim[1]())
+    var k = Int32(a.dim[1]())
 
-        var lda = k
-        var ldb = n if not transpose_b else k
-        var ldc = n
+    var lda = k
+    var ldb = n if not transpose_b else k
+    var ldc = n
 
-        comptime alpha = 1.0
-        comptime beta = 0.0
+    comptime alpha = 1.0
+    comptime beta = 0.0
 
-        _cblas_f32[transpose_b=transpose_b](
-            cblas_gemm_fn,
-            m,
-            n,
-            k,
-            lda,
-            ldb,
-            ldc,
-            alpha,
-            beta,
-            rebind[
-                LegacyUnsafePointer[
-                    mut=True, Float32, address_space=c.address_space
-                ]
-            ](c.data),
-            rebind[
-                LegacyUnsafePointer[
-                    mut=True, Float32, address_space=a.address_space
-                ]
-            ](a.data),
-            rebind[
-                LegacyUnsafePointer[
-                    mut=True, Float32, address_space=b.address_space
-                ]
-            ](b.data),
-        )
+    _cblas_f32[transpose_b=transpose_b](
+        cblas_gemm_fn,
+        m,
+        n,
+        k,
+        lda,
+        ldb,
+        ldc,
+        alpha,
+        beta,
+        rebind[
+            UnsafePointer[
+                Float32,
+                MutAnyOrigin,
+                address_space=c.address_space,
+            ]
+        ](c.data),
+        rebind[
+            UnsafePointer[
+                Float32, ImmutAnyOrigin, address_space=a.address_space
+            ]
+        ](a.data),
+        rebind[
+            UnsafePointer[
+                Float32, ImmutAnyOrigin, address_space=b.address_space
+            ]
+        ](b.data),
+    )
 
-        comptime if elementwise_lambda_fn:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
-            comptime epilogue = elementwise_lambda_fn.value()
-            comptime simd_size = simd_width_of[c.type]()
+    comptime if elementwise_lambda_fn:
+        var m = c.dim[0]()
+        var n = c.dim[1]()
+        comptime epilogue = elementwise_lambda_fn.value()
+        comptime simd_size = simd_width_of[c.type]()
 
-            @always_inline
-            @parameter
-            fn epilogue_on_col_chunk[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = IndexList[2](idx[0], idx[1])
-                var c_val = c.load[width=simd_width](c_coord)
-                epilogue[c.type, simd_width](c_coord, c_val)
+        @always_inline
+        @parameter
+        fn epilogue_on_col_chunk[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            var c_coord = IndexList[2](idx[0], idx[1])
+            var c_val = c.load[width=simd_width](c_coord)
+            epilogue[c.type, simd_width](c_coord, c_val)
 
-            elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
-        return
-    else:
-        comptime assert False, "unsupported type in apple accelerate"
+        elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul
@@ -420,16 +421,14 @@ fn apple_matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
-    comptime if a.type == b.type == c.type == DType.float32:
-        var cblas_gemm = get_cblas_f32_function()
+    comptime assert (
+        a.type == b.type == c.type == DType.float32
+    ), "unsupported type in apple accelerate"
+    var cblas_gemm = get_cblas_f32_function()
 
-        apple_matmul[
-            transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
-        ](cblas_gemm, c, a, b)
-
-        return
-    else:
-        comptime assert False, "unsupported type in apple accelerate"
+    apple_matmul[
+        transpose_b=transpose_b, elementwise_lambda_fn=elementwise_lambda_fn
+    ](cblas_gemm, c, a, b)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -457,13 +456,13 @@ fn apple_batched_matmul[
     var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
-        var c2 = NDBuffer[c.type, 2, address_space=c.address_space](
+        var c2 = NDBuffer[rank=2, c.type, address_space=c.address_space](
             c3.data + (c_shape[0] * c_shape[1]) * batch, c_shape
         )
-        var a2 = NDBuffer[a.type, 2, address_space=a.address_space](
+        var a2 = NDBuffer[rank=2, a.type, address_space=a.address_space](
             a3.data + (a_shape[0] * a_shape[1]) * batch, a_shape
         )
-        var b2 = NDBuffer[b.type, 2, address_space=b.address_space](
+        var b2 = NDBuffer[rank=2, b.type, address_space=b.address_space](
             b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
         )
 

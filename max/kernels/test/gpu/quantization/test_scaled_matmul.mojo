@@ -17,9 +17,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -79,16 +76,12 @@ fn test_matmul_dynamic_scaled_fp8[
     ) if transpose_b else Layout.row_major(1, N.or_else(UNKNOWN_VALUE))
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[in_dtype]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(c_size)
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_size
-    )
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(c_size)
+    var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[in_dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
 
     var a_host = LayoutTensor[in_dtype, a_layout](
         a_host_ptr,
@@ -141,8 +134,8 @@ fn test_matmul_dynamic_scaled_fp8[
         return DimList(shape.at[1](), 1)
 
     var a_ndbuffer = NDBuffer[
+        rank=2,
         in_dtype,
-        2,
         ImmutAnyOrigin,
         static_a_shape,
         stride_from_shape[static_a_shape](),
@@ -151,8 +144,8 @@ fn test_matmul_dynamic_scaled_fp8[
         IndexList[2](m, k),
     )
     var b_ndbuffer = NDBuffer[
+        rank=2,
         in_dtype,
-        2,
         ImmutAnyOrigin,
         static_b_shape,
         stride_from_shape[static_b_shape](),
@@ -161,14 +154,18 @@ fn test_matmul_dynamic_scaled_fp8[
         IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
     var c_ndbuffer = NDBuffer[
-        out_dtype, 2, _, static_c_shape, stride_from_shape[static_c_shape]()
+        rank=2,
+        out_dtype,
+        _,
+        static_c_shape,
+        stride_from_shape[static_c_shape](),
     ](
         c_device.unsafe_ptr(),
         IndexList[2](m, n),
     )
     var a_scales_ndbuffer = NDBuffer[
+        rank=2,
         scales_dtype,
-        2,
         _,
         static_a_scales_shape,
         stride_from_shape[static_a_scales_shape](),
@@ -177,8 +174,8 @@ fn test_matmul_dynamic_scaled_fp8[
         IndexList[2](1, m),
     )
     var b_scales_ndbuffer = NDBuffer[
+        rank=2,
         scales_dtype,
-        2,
         _,
         static_b_scales_shape,
         stride_from_shape[static_b_scales_shape](),
@@ -186,7 +183,7 @@ fn test_matmul_dynamic_scaled_fp8[
         b_scales_device.unsafe_ptr(),
         IndexList[2](n, 1) if transpose_b else IndexList[2](1, n),
     )
-    var c_ref_ndbuffer = NDBuffer[DType.float32, 2, _, static_c_shape](
+    var c_ref_ndbuffer = NDBuffer[rank=2, DType.float32, _, static_c_shape](
         c_device_ref.unsafe_ptr(),
         IndexList[2](m, n),
     )

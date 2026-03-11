@@ -25,9 +25,6 @@ from buffer.dimlist import DimList
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from std.memory import LegacyUnsafePointer
-
-comptime MutPointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils.index import IndexList
 
 
@@ -39,8 +36,8 @@ from std.utils.index import IndexList
 fn _transpose_rscf_to_krsc[
     dtype: DType,
 ](
-    src_ptr: MutPointer[Scalar[dtype]],
-    dst_ptr: MutPointer[Scalar[dtype]],
+    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     R: Int,
     S: Int,
     C: Int,
@@ -64,8 +61,8 @@ fn _transpose_rscf_to_krsc[
 fn _transpose_fcrs_to_krsc[
     dtype: DType,
 ](
-    src_ptr: MutPointer[Scalar[dtype]],
-    dst_ptr: MutPointer[Scalar[dtype]],
+    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     F: Int,
     C: Int,
     R: Int,
@@ -194,13 +191,13 @@ fn dispatch_sm100_conv2d[
         )
 
         comptime static_shape = DimList(-1, -1, -1, -1)
-        var act_nd = NDBuffer[input_type, 4, _, static_shape](
+        var act_nd = NDBuffer[rank=4, input_type, _, static_shape](
             input.ptr, IndexList[4](batch, in_h, in_w, in_c)
         )
-        var filter_nd = NDBuffer[filter_type, 4, _, static_shape](
+        var filter_nd = NDBuffer[rank=4, filter_type, _, static_shape](
             filter_krsc_ptr, IndexList[4](out_c, fh, fw, in_c)
         )
-        var out_nd = NDBuffer[output_type, 4, _, static_shape](
+        var out_nd = NDBuffer[rank=4, output_type, _, static_shape](
             output.ptr, IndexList[4](batch, out_h, out_w, out_c)
         )
 

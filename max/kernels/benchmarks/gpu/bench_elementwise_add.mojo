@@ -25,9 +25,6 @@ from std.benchmark import (
 from buffer import NDBuffer
 from std.gpu.host import DeviceContext
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.utils import IndexList
 
 
@@ -39,9 +36,9 @@ fn bench_add[
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
     var output_ptr = ctx.enqueue_create_buffer[type](size)
-    var input0_ptr_host = UnsafePointer[Scalar[type]].alloc(size)
-    var input1_ptr_host = UnsafePointer[Scalar[type]].alloc(size)
-    var output_ptr_host = UnsafePointer[Scalar[type]].alloc(size)
+    var input0_ptr_host = alloc[Scalar[type]](size)
+    var input1_ptr_host = alloc[Scalar[type]](size)
+    var output_ptr_host = alloc[Scalar[type]](size)
     randn(input0_ptr_host, size)
     randn(input1_ptr_host, size)
     randn(output_ptr_host, size)
@@ -49,9 +46,9 @@ fn bench_add[
     ctx.enqueue_copy(input1_ptr, input1_ptr_host)
     ctx.enqueue_copy(output_ptr, output_ptr_host)
 
-    var input0 = NDBuffer[type, rank](input0_ptr.unsafe_ptr(), shape)
-    var input1 = NDBuffer[type, rank](input1_ptr.unsafe_ptr(), shape)
-    var output = NDBuffer[type, rank](output_ptr.unsafe_ptr(), shape)
+    var input0 = NDBuffer[rank=rank, type](input0_ptr.unsafe_ptr(), shape)
+    var input1 = NDBuffer[rank=rank, type](input1_ptr.unsafe_ptr(), shape)
+    var output = NDBuffer[rank=rank, type](output_ptr.unsafe_ptr(), shape)
 
     @parameter
     @always_inline

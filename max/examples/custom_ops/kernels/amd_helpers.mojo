@@ -20,10 +20,10 @@ from std.sys.info import simd_width_of
 from std.gpu import (
     barrier,
     block_dim,
-    block_idx,
+    block_idx_int as block_idx,
     global_idx,
-    lane_id,
-    thread_idx,
+    lane_id_int as lane_id,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import AddressSpace
@@ -39,7 +39,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from std.memory import Pointer, LegacyUnsafePointer
+from std.memory import Pointer
 
 from std.utils.index import IndexList
 
@@ -511,20 +511,20 @@ fn max_reduce_kernel[
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var local_relative_error = relative_error.ptr[offset * elements * Int(bid)]
+    var local_relative_error = relative_error.ptr[offset * elements * bid]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
     var i = elements >> 1
     while i > 0:
         # Check bounds: threadIdx.x < i && offset * (elements * blockIdx.x + threadIdx.x + i) < maxIdx
-        var current_idx = offset * (elements * Int(bid) + Int(tid) + i)
+        var current_idx = offset * (elements * bid + tid + i)
 
-        if Int(tid) < i and current_idx < max_idx:
+        if tid < i and current_idx < max_idx:
             var max_val = max(
-                local_relative_error[offset * Int(tid)],
-                local_relative_error[offset * Int(tid) + i],
+                local_relative_error[offset * tid],
+                local_relative_error[offset * tid + i],
             )
-            local_relative_error[Int(tid)] = max_val
+            local_relative_error[tid] = max_val
 
         barrier()
 

@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
 
 from std.python import PythonObject
@@ -45,10 +42,10 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int]
-    var strides: UnsafePointer[Int]
+    var dimensions: UnsafePointer[Int, MutAnyOrigin]
+    var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -64,7 +61,7 @@ fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
 
     print("Hello from mojo_incr_np_array")
 
-    var py_array_object_ptr = LegacyUnsafePointer[PyArrayObject[dtype], ...](
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], ...](
         unchecked_downcast_value=py_array_object
     )
 

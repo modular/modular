@@ -177,6 +177,7 @@ struct Bool(
         """
         return self
 
+    @doc_private
     @always_inline("builtin")
     fn __mlir_i1__(self) -> __mlir_type.i1:
         """Convert this Bool to __mlir_type.i1.

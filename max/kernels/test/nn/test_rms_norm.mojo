@@ -39,7 +39,8 @@ fn compute_rms[
         var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
     return sqrt(
-        (sum_of_squares / Float32(data.numel())) + eps.cast[DType.float32]()
+        (sum_of_squares / Float32(data.num_elements()))
+        + eps.cast[DType.float32]()
     )
 
 

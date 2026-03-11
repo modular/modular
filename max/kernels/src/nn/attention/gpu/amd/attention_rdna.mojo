@@ -31,7 +31,7 @@ from std.sys import size_of, simd_width_of
 from std.algorithm.functional import unswitch
 from std.gpu import barrier, block_idx, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor, row_major as tt_row_major
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import blocked_product
@@ -40,6 +40,7 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_local_to_dram,
 )
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
 from std.memory import stack_allocation
@@ -297,13 +298,15 @@ struct AttentionRDNA[
         Self.k_group_size,
     ]
 
-    comptime row_layout = Layout.row_major(
+    comptime row_tt_layout = tt_row_major[
         Int(Self.num_m_mmas), Self.fragment_layout.shape[0].value()
-    )
+    ]()
 
-    comptime RowMaxTensorType = LocalLayoutTensor[
+    comptime RowMaxTensorType = TileTensor[
         Self.accum_type,
-        Self.row_layout,
+        type_of(Self.row_tt_layout),
+        MutExternalOrigin,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime RowSumTensorType = Self.RowMaxTensorType
@@ -592,8 +595,12 @@ struct AttentionRDNA[
         start_pos: Int,
         cache_start_pos: Int = 0,
     ):
-        self.rowmax = Self.RowMaxTensorType.stack_allocation()
-        self.rowsum = Self.RowSumTensorType.stack_allocation()
+        self.rowmax = tt_stack_allocation[
+            dtype=Self.accum_type, address_space=AddressSpace.LOCAL
+        ](Self.row_tt_layout)
+        self.rowsum = tt_stack_allocation[
+            dtype=Self.accum_type, address_space=AddressSpace.LOCAL
+        ](Self.row_tt_layout)
         self.out_reg_buffer = Self.OutputRegisterBufferType()
         self.out_reg_buffer.zero()
 
@@ -650,10 +657,9 @@ struct AttentionRDNA[
         self.cache_start_pos = cache_start_pos
 
         comptime if Self.sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
                 sink_weights.value()[Int(self.q_head_idx())][0].cast[
                     Self.accum_type

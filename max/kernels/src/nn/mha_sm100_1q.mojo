@@ -59,7 +59,6 @@ from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
-    LayoutTensorIter,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
@@ -526,12 +525,18 @@ struct TMemAccumulator[
                 tmem = self.tmem_addr + UInt32(tmem_offset)
                 frag = bitcast[DType.uint32, frag_size_b32](frags[mma_id, 0])
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
+                var frag_st = InlineArray[Scalar[DType.uint32], frag_size_b32](
+                    uninitialized=True
+                )
+
+                comptime for _i in range(frag_size_b32):
+                    frag_st[_i] = frag[_i]
                 tcgen05_st[
                     datapaths=16,  # first dimension of the shape
                     bits=256,  # second dimension of the shape
                     repeat=repeat,
                     pack=False,
-                ](tmem, frag)
+                ](tmem, frag_st)
         tcgen05_store_wait()
         named_barrier[Int32(Self.num_softmax_threads)]()
 
@@ -562,18 +567,21 @@ struct TMemAccumulator[
                     n_mma=n_mma,
                 )
                 tmem = self.tmem_addr + UInt32(tmem_offset)
+                var _ld_result = tcgen05_ld[
+                    datapaths=16,  # first dimension of the shape
+                    bits=256,  # second dimension of the shape
+                    repeat=repeat,
+                    dtype=DType.uint32,
+                    pack=False,
+                    width=frag_size_b32,
+                ](tmem)
+                var _ld_simd = SIMD[DType.uint32, frag_size_b32]()
+
+                comptime for _i in range(frag_size_b32):
+                    _ld_simd[_i] = _ld_result[_i]
                 frags[mma_id, 0] = bitcast[
                     Self.dtype, frags.element_layout.size()
-                ](
-                    tcgen05_ld[
-                        datapaths=16,  # first dimension of the shape
-                        bits=256,  # second dimension of the shape
-                        repeat=repeat,
-                        dtype=DType.uint32,
-                        pack=False,
-                        width=frag_size_b32,
-                    ](tmem)
-                )
+                ](_ld_simd)
 
         tcgen05_load_wait()
 
@@ -689,12 +697,18 @@ struct TMemOperand[
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
             # 256b means 256 // 4 = 64b per thread
+            var frag_st2 = InlineArray[Scalar[DType.uint32], frag_size_b32](
+                uninitialized=True
+            )
+
+            comptime for _i in range(frag_size_b32):
+                frag_st2[_i] = frag[_i]
             tcgen05_st[
                 datapaths=16,  # first dimension of the shape
                 bits=bits,  # second dimension of the shape
                 repeat=repeat,
                 pack=False,
-            ](tmem, frag)
+            ](tmem, frag_st2)
         tcgen05_store_wait()
         named_barrier[Int32(Self.num_softmax_threads)]()
 
@@ -745,20 +759,21 @@ struct TMemOperand[
         comptime for m_mma in range(Self.num_m_mmas):
             tmem = self.offset[m_mma, 0]()
             # 16 x 256b results in repeated 8x4<1x2> pattern
+            var _ld_result2 = tcgen05_ld[
+                datapaths=16,  # first dimension of the shape
+                bits=bits,  # second dimension of the shape
+                repeat=repeat,
+                dtype=DType.uint32,
+                pack=False,
+                width=frag_size_b32,
+            ](tmem)
+            var _ld_simd2 = SIMD[DType.uint32, frag_size_b32]()
+
+            comptime for _i in range(frag_size_b32):
+                _ld_simd2[_i] = _ld_result2[_i]
             frags[m_mma, 0] = rebind[
                 SIMD[dst_type, type_of(frags).element_size]
-            ](
-                bitcast[Self.dtype, Self.frag_size](
-                    tcgen05_ld[
-                        datapaths=16,  # first dimension of the shape
-                        bits=bits,  # second dimension of the shape
-                        repeat=repeat,
-                        dtype=DType.uint32,
-                        pack=False,
-                        width=frag_size_b32,
-                    ](tmem)
-                ).cast[dst_type]()
-            )
+            ](bitcast[Self.dtype, Self.frag_size](_ld_simd2).cast[dst_type]())
         tcgen05_load_wait()
 
 
@@ -1362,7 +1377,10 @@ fn mha_sm100_dispatch[
     ](ctx)
 
     comptime SchedulerType = TransientScheduler[
-        UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
+        UInt32(scheduler_tile_shape),
+        UInt32(num_scheduler_heads),
+        flip_prompt_idx=not decoding
+        and MaskType.get_type_name() == "CausalMask",
     ]
     var scheduler: SchedulerType = SchedulerType()
 

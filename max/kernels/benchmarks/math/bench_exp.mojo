@@ -31,9 +31,7 @@ from std.benchmark import (
 from buffer import NDBuffer
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.memory import bitcast
 
 
 fn apply[
@@ -41,7 +39,10 @@ fn apply[
         dtype, width
     ],
     dtype: DType,
-](input: NDBuffer[dtype, 1, ...], output: NDBuffer[mut=True, dtype, 1, ...]):
+](
+    input: NDBuffer[rank=1, dtype, ...],
+    output: NDBuffer[mut=True, rank=1, dtype, ...],
+):
     fn _func[width: Int](idx: Int) unified {mut}:
         output.store((idx,), func(input.load[width=width](idx)))
 
@@ -53,7 +54,7 @@ def bench_unary[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size_range: _StridedRange, op_name: String):
+](mut m: Bench, size_range: _StridedRange, op_name: String) raises:
     for i in size_range:
         bench_unary[func, dtype](m, i, op_name)
 
@@ -63,14 +64,10 @@ def bench_unary[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size: Int, op_name: String):
+](mut m: Bench, size: Int, op_name: String) raises:
     comptime alignment = 64
-    var input_ptr = UnsafePointer[Scalar[dtype],].alloc(
-        size, alignment=alignment
-    )
-    var output_ptr = UnsafePointer[Scalar[dtype],].alloc(
-        size, alignment=alignment
-    )
+    var input_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
+    var output_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
@@ -82,8 +79,8 @@ def bench_unary[
         @parameter
         fn iter_fn():
             apply[func](
-                NDBuffer[dtype, 1](input_ptr, IndexList[1](size)),
-                NDBuffer[dtype, 1](output_ptr, IndexList[1](size)),
+                NDBuffer[rank=1, dtype](input_ptr, IndexList[1](size)),
+                NDBuffer[rank=1, dtype](output_ptr, IndexList[1](size)),
             )
             keep(output_ptr)
 
@@ -395,7 +392,7 @@ def accuracy_test() raises:
     comptime delta_range = delta_max - delta_min + 1
 
     var deltas = NDBuffer[
-        DType.int32, 1, MutAnyOrigin, delta_range
+        rank=1, DType.int32, MutAnyOrigin, delta_range
     ].stack_allocation()
     deltas.zero()
 

@@ -326,7 +326,7 @@ def generate_max_outputs_fp8(
                 q_max_seq_len,
                 num_heads=config.num_attention_heads,
                 device=DeviceRef.GPU(),
-            )
+            ).to(DeviceRef.GPU())
             mla_decode_metadata = MLADecodeMetadata(scalar_args=gpu_args)
 
             result = latent_attention(

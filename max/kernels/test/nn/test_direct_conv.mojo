@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import ceildiv, isclose
 from std.random import rand
 from std.sys.info import num_physical_cores, simd_width_of
@@ -79,10 +76,10 @@ fn test[
         num_groups=num_groups,
     )
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(R * S * C * F)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
+    var input_ptr = alloc[Scalar[dtype]](N * H * W * C)
+    var filter_ptr = alloc[Scalar[dtype]](R * S * C * F)
+    var output_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
+    var output_ref_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
 
     rand[dtype](input_ptr, N * H * W * C)
     rand[dtype](filter_ptr, R * S * C * F)
@@ -111,7 +108,7 @@ fn test[
         RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
     )
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
     var packed_filter = LayoutTensor[dtype, layout_5d](
@@ -156,9 +153,6 @@ fn test[
             layout_4d,
             layout_5d,
             layout_4d,
-            input.origin,
-            filter.origin,
-            output.origin,
             dtype,
             dtype,
             dtype,
@@ -175,9 +169,6 @@ fn test[
             layout_4d,
             layout_4d,
             layout_4d,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,

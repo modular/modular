@@ -192,13 +192,14 @@ struct BlockwiseFP8Accumulator[
         num_input_stages: Int,
         # Type parameters
         b_scales_dtype: DType,
+        b_scales_layout: TensorLayout,
         a_scales_dtype: DType,
         # A-scales tile dimensions
         a_scales_dim0: Int,
         a_scales_dim1: Int,
     ](
         mut self,
-        b_scales: TileTensor[b_scales_dtype, _, ImmutAnyOrigin],
+        b_scales: TileTensor[b_scales_dtype, b_scales_layout, ImmutAnyOrigin],
         a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
             a_scales_dim0,
@@ -371,9 +372,6 @@ struct BlockwiseFP8Accumulator[
                 comptime for j in range(Self.fragment_size // 2):
                     comptime offset = ld_iter * Self.fragment_size + j * 2
 
-                    var upper_elems = frags.upper.slice[2, offset=offset]()
-                    var lower_elems = frags.lower.slice[2, offset=offset]()
-
                     var upper_a_scale = (
                         upper_sfa0_smem if j == 0 else upper_sfa1_smem
                     )
@@ -386,23 +384,29 @@ struct BlockwiseFP8Accumulator[
 
                     self.upper[stage, offset] += rebind[
                         Scalar[Self.accum_type]
-                    ](upper_elems[0]) * rebind[Scalar[Self.accum_type]](
+                    ](frags.upper[offset]) * rebind[Scalar[Self.accum_type]](
                         upper_scale
                     )
                     self.upper[stage, offset + 1] += rebind[
                         Scalar[Self.accum_type]
-                    ](upper_elems[1]) * rebind[Scalar[Self.accum_type]](
+                    ](frags.upper[offset + 1]) * rebind[
+                        Scalar[Self.accum_type]
+                    ](
                         upper_scale
                     )
 
                     comptime if Self.is_lower_required:
                         self.lower[stage, offset] += rebind[
                             Scalar[Self.accum_type]
-                        ](lower_elems[0]) * rebind[Scalar[Self.accum_type]](
+                        ](frags.lower[offset]) * rebind[
+                            Scalar[Self.accum_type]
+                        ](
                             lower_scale
                         )
                         self.lower[stage, offset + 1] += rebind[
                             Scalar[Self.accum_type]
-                        ](lower_elems[1]) * rebind[Scalar[Self.accum_type]](
+                        ](frags.lower[offset + 1]) * rebind[
+                            Scalar[Self.accum_type]
+                        ](
                             lower_scale
                         )

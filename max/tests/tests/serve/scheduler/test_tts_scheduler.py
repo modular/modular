@@ -301,7 +301,7 @@ def create_batch_and_execute(
 def run_until_completion(
     scheduler: AudioGenerationScheduler,
     max_num_iters: int = 50,
-    output_list: list | None = None,
+    output_list: list | None = None,  # type: ignore[type-arg]
 ) -> list[BatchInfo]:
     if output_list is None:
         batch_infos = []

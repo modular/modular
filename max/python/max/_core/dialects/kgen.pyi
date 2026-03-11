@@ -1820,16 +1820,18 @@ class VariadicSizeAttr(max._core.Attribute):
     @property
     def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class VariadicSplatAttr(max._core.Attribute):
+class VariadicTabulateAttr(max._core.Attribute):
     """
-    The `#kgen.variadic.splat` creates a variadic by splatting the same value
-    to the given times.
+    The `#kgen.variadic.tabulate` attribute produces a variadic of (type) values
+    by invoking the provided generator function N times with indices 0, 1, ...,
+    N-1, where N is the integer count. The generator is a function from index to
+    (element type); each result is collected into the result variadic.
 
     Example:
     ```mlir
-    #kgen.variadic.splat<Int, 5> : !variadic<!AnyType>
+    #kgen.variadic.tabulate<:!kgen.variadic<f32> 3, fn(i: index) -> f32> : !kgen.variadic<f32>
     // ->
-    #kgen.variadic<[Int, Int, Int, Int, Int]> : !variadic<!AnyType>
+    #kgen.variadic<0, 1, 2> : !kgen.variadic<f32>
     ```
     """
 
@@ -1837,22 +1839,22 @@ class VariadicSplatAttr(max._core.Attribute):
     def __init__(
         self,
         type: VariadicType,
-        element: max._core.dialects.builtin.TypedAttr,
         count: max._core.dialects.builtin.TypedAttr,
+        generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: VariadicType,
-        element: max._core.dialects.builtin.TypedAttr,
         count: max._core.dialects.builtin.TypedAttr,
+        generator: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def type(self) -> VariadicType: ...
     @property
-    def element(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
     def count(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariadicZipAttr(max._core.Attribute):
     """
@@ -3079,10 +3081,10 @@ class GeneratorOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
 
-class IsCompileTimeOp(max._core.Operation):
+class IsRunInComptimeInterpreterOp(max._core.Operation):
     """
-    The `kgen.is_compile_time` represents a boolean value which is `true`
-    during compile time and `false` otherwise.
+    The `kgen.is_run_in_comptime_interpreter` represents a boolean value which
+    is `true` when running in the comptime interpreter and `false` otherwise.
     When used as condition for control flow, for example,
     only the `true` branch will be evaluated during compile
     time, while the other branch will be compiled to generated code.
@@ -3092,7 +3094,7 @@ class IsCompileTimeOp(max._core.Operation):
     Example:
 
     ```mlir
-      kgen.is_compile_time : i1
+      kgen.is_run_in_comptime_interpreter : i1
     ```
     """
 
@@ -4268,52 +4270,6 @@ class WitnessOp(max._core.Operation):
     def value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @value.setter
     def value(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-
-class PackageLinkOp(max._core.Operation):
-    """
-    A `kgen.package.link` defines a link to the compiled artifacts of a package.
-    It contains a reference to all precompiled packages, providing an anchor for
-    functions and other operations defined within the package during the
-    lowering pipeline. It may also contain the post-parse bodies which can be
-    used to compile the package.
-
-    Example:
-
-    ```mlir
-    kgen.package.link @foo
-      dependencies([@std])
-      post_parse(dense_resource<...> : tensor<...xi8>)
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        sym_name: max._core.dialects.builtin.StringAttr,
-        post_parse_module: max._core.dialects.builtin.DenseResourceElementsAttr,
-        dependencies: LinkDependencyArrayAttr,
-    ) -> None: ...
-    @property
-    def sym_name(self) -> str: ...
-    @sym_name.setter
-    def sym_name(
-        self, arg: max._core.dialects.builtin.StringAttr, /
-    ) -> None: ...
-    @property
-    def post_parse_module(
-        self,
-    ) -> max._core.dialects.builtin.DenseResourceElementsAttr | None: ...
-    @post_parse_module.setter
-    def post_parse_module(
-        self, arg: max._core.dialects.builtin.DenseResourceElementsAttr, /
-    ) -> None: ...
-    @property
-    def dependencies(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.FlatSymbolRefAttr] | None: ...
-    @dependencies.setter
-    def dependencies(self, arg: LinkDependencyArrayAttr, /) -> None: ...
 
 class ParameterScopeTypeInterface(Protocol):
     """

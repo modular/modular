@@ -69,7 +69,7 @@ from std.gpu import (
     barrier,
     block_idx,
     grid_dim,
-    thread_idx,
+    thread_idx_int as thread_idx,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
@@ -134,8 +134,8 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     scale_ub: Scalar[scales_dtype],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
-    residual: NDBuffer[in_dtype, 2, ImmutAnyOrigin],
-    residual_output: NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin],
+    residual: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin],
+    residual_output: NDBuffer[mut=True, rank=2, in_dtype, MutAnyOrigin],
 ):
     """Fused allreduce + RMSNorm + FP8 kernel using warp-tiling.
 
@@ -149,7 +149,7 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var idx = tid * simd_width
     var is_valid = idx < cols
 
@@ -288,8 +288,8 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     scale_ub: Scalar[scales_dtype],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
-    residual: NDBuffer[in_dtype, 2, ImmutAnyOrigin],
-    residual_output: NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin],
+    residual: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin],
+    residual_output: NDBuffer[mut=True, rank=2, in_dtype, MutAnyOrigin],
 ):
     """Single-kernel 2-stage fused RS + RMSNorm + FP8 + AG.
 
@@ -334,7 +334,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var col_idx = tid * simd_width
     var is_valid = col_idx < cols
     var num_blocks = Int(grid_dim.x)
@@ -347,10 +347,9 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     # Layout: [fp8_data | scales (padded) | bf16_residual (optional)]
     # See kernel docstring for the full size formula.
     var fp8_per_rank = rows_per_rank * cols
-    debug_assert(
-        fp8_per_rank % 4 == 0,
-        "fp8 scratch must be 4-byte aligned for scale stores",
-    )
+    assert (
+        fp8_per_rank % 4 == 0
+    ), "fp8 scratch must be 4-byte aligned for scale stores"
 
     # Round up the scale element count to the next multiple of
     # (simd_width / sizeof(scales_dtype)) so that the residual scratch
@@ -573,21 +572,21 @@ fn _allreduce_rmsnorm_fp8_launch[
     src_ptrs: InlineArray[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ],
-    output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
+    output: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin],
+    scale_output: NDBuffer[mut=True, rank=1, scales_dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
-    residual: NDBuffer[in_dtype, 2, ImmutAnyOrigin] = NDBuffer[
-        in_dtype, 2, ImmutAnyOrigin
+    residual: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin] = NDBuffer[
+        rank=2, in_dtype, ImmutAnyOrigin
     ](),
-    residual_output: NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin] = NDBuffer[
-        in_dtype, 2, MutAnyOrigin
-    ](),
+    residual_output: NDBuffer[
+        mut=True, rank=2, in_dtype, MutAnyOrigin
+    ] = NDBuffer[rank=2, in_dtype, MutAnyOrigin](),
 ) raises:
     """Launch the fused allreduce + RMSNorm + FP8 kernel."""
     comptime sm_version = get_sm_version()
@@ -652,21 +651,21 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
     src_ptrs: InlineArray[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ],
-    output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
+    output: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin],
+    scale_output: NDBuffer[mut=True, rank=1, scales_dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
-    residual: NDBuffer[in_dtype, 2, ImmutAnyOrigin] = NDBuffer[
-        in_dtype, 2, ImmutAnyOrigin
+    residual: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin] = NDBuffer[
+        rank=2, in_dtype, ImmutAnyOrigin
     ](),
-    residual_output: NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin] = NDBuffer[
-        in_dtype, 2, MutAnyOrigin
-    ](),
+    residual_output: NDBuffer[
+        mut=True, rank=2, in_dtype, MutAnyOrigin
+    ] = NDBuffer[rank=2, in_dtype, MutAnyOrigin](),
 ) raises:
     """Launch the single-kernel 2-stage fused RS + RMSNorm + FP8 + AG.
 
@@ -710,18 +709,16 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
     var _min_buf = size_of[Signal]() + _fp8_scratch + _scale_scratch
     comptime if has_residual:
         _min_buf += _rows_per_rank * cols * size_of[in_dtype]()
-    debug_assert(
-        _fp8_scratch % size_of[scales_dtype]() == 0,
+    assert _fp8_scratch % size_of[scales_dtype]() == 0, (
         String("2-stage: fp8 scratch (")
         + String(_fp8_scratch)
         + " B) must be a multiple of sizeof(scales_dtype) for scale pointer"
         + " alignment; rank_sigs[i] must be >= "
         + String(_min_buf)
-        + " bytes",
+        + " bytes"
     )
     comptime if has_residual:
-        debug_assert(
-            (_fp8_scratch + _scale_scratch) % simd_width == 0,
+        assert (_fp8_scratch + _scale_scratch) % simd_width == 0, (
             String("2-stage: residual scratch offset (fp8=")
             + String(_fp8_scratch)
             + " B + scales_padded="
@@ -730,7 +727,7 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
             + String(_fp8_scratch + _scale_scratch)
             + " B) must be a multiple of simd_width ("
             + String(simd_width)
-            + " B) for SIMD residual stores",
+            + " B) for SIMD residual stores"
         )
 
     @always_inline
@@ -789,16 +786,16 @@ fn _launch_split_allreduce_rmsnorm_fp8[
     src_ptrs: InlineArray[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ],
-    output_2d: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
+    output_2d: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output_1d: NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin],
+    scale_output_1d: NDBuffer[mut=True, rank=1, scales_dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
-    residual: NDBuffer[in_dtype, 2, ImmutAnyOrigin],
-    residual_output: NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin],
+    residual: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin],
+    residual_output: NDBuffer[mut=True, rank=2, in_dtype, MutAnyOrigin],
 ) raises:
     """Two-kernel fallback: allreduce+add epilogue, then rmsnorm+fp8.
 
@@ -807,11 +804,11 @@ fn _launch_split_allreduce_rmsnorm_fp8[
     """
     # Reconstruct NDBuffer inputs for allreduce.
     var input_buffers = InlineArray[
-        NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus
+        NDBuffer[rank=2, in_dtype, ImmutAnyOrigin], ngpus
     ](uninitialized=True)
 
     comptime for i in range(ngpus):
-        input_buffers[i] = NDBuffer[in_dtype, 2, ImmutAnyOrigin](
+        input_buffers[i] = NDBuffer[rank=2, in_dtype, ImmutAnyOrigin](
             src_ptrs[i], IndexList[2](rows, cols)
         )
 
@@ -830,9 +827,9 @@ fn _launch_split_allreduce_rmsnorm_fp8[
         return res_out_ptr.load[width=width, alignment=width](li)
 
     var shape = IndexList[2](rows, cols)
-    var scale_output_2d = NDBuffer[mut=True, scales_dtype, 2, MutAnyOrigin](
-        scale_output_1d.data, IndexList[2](rows, 1)
-    )
+    var scale_output_2d = NDBuffer[
+        mut=True, rank=2, scales_dtype, MutAnyOrigin
+    ](scale_output_1d.data, IndexList[2](rows, 1))
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
     # This avoids a deadlock where cuModuleLoadDataEx (JIT compilation)
@@ -908,20 +905,20 @@ fn _dispatch_fused_kernel[
     src_ptrs: InlineArray[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ],
-    output_2d: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
+    output_2d: NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output_1d: NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin],
+    scale_output_1d: NDBuffer[mut=True, rank=1, scales_dtype, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
-    residual: NDBuffer[in_dtype, 2, ImmutAnyOrigin] = NDBuffer[
-        in_dtype, 2, ImmutAnyOrigin
+    residual: NDBuffer[rank=2, in_dtype, ImmutAnyOrigin] = NDBuffer[
+        rank=2, in_dtype, ImmutAnyOrigin
     ](),
-    residual_output: NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin] = NDBuffer[
-        in_dtype, 2, MutAnyOrigin
-    ](),
+    residual_output: NDBuffer[
+        mut=True, rank=2, in_dtype, MutAnyOrigin
+    ] = NDBuffer[rank=2, in_dtype, MutAnyOrigin](),
 ) raises:
     """Dispatch the fused kernel with appropriate simd width and stage count.
 
@@ -1151,13 +1148,15 @@ fn allreduce_rmsnorm_fp8[
     ngpus: Int,
     //,
 ](
-    input_buffers: InlineArray[NDBuffer[in_dtype, rank, ImmutAnyOrigin], ngpus],
-    output: NDBuffer[mut=True, out_dtype, rank, ...],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin], ngpus
+    ],
+    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, scales_dtype, rank, ...],
+    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
@@ -1222,12 +1221,12 @@ fn allreduce_rmsnorm_fp8[
         src_ptrs[i] = input_buffers[i].data
 
     # Create internal 2D/1D views and dispatch.
-    var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
+    var output_2d = NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin](
         output.data, IndexList[2](rows, cols)
     )
-    var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, IndexList[1](rows)
-    )
+    var scale_output_1d = NDBuffer[
+        mut=True, rank=1, scales_dtype, MutAnyOrigin
+    ](scale_output.data, IndexList[1](rows))
 
     _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
         rows,
@@ -1252,15 +1251,17 @@ fn allreduce_residual_rmsnorm_fp8[
     ngpus: Int,
     //,
 ](
-    input_buffers: InlineArray[NDBuffer[in_dtype, rank, ImmutAnyOrigin], ngpus],
-    residual: NDBuffer[in_dtype, rank, ImmutAnyOrigin],
-    output: NDBuffer[mut=True, out_dtype, rank, ...],
-    residual_output: NDBuffer[mut=True, in_dtype, rank, ...],
+    input_buffers: InlineArray[
+        NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin], ngpus
+    ],
+    residual: NDBuffer[rank=rank, in_dtype, ImmutAnyOrigin],
+    output: NDBuffer[mut=True, rank=rank, out_dtype, ...],
+    residual_output: NDBuffer[mut=True, rank=rank, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
-    scale_output: NDBuffer[mut=True, scales_dtype, rank, ...],
+    scale_output: NDBuffer[mut=True, rank=rank, scales_dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
@@ -1353,18 +1354,18 @@ fn allreduce_residual_rmsnorm_fp8[
         src_ptrs[i] = input_buffers[i].data
 
     # Create internal 2D/1D views and dispatch.
-    var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
+    var output_2d = NDBuffer[mut=True, rank=2, out_dtype, MutAnyOrigin](
         output.data, IndexList[2](rows, cols)
     )
-    var residual_2d = NDBuffer[in_dtype, 2, ImmutAnyOrigin](
+    var residual_2d = NDBuffer[rank=2, in_dtype, ImmutAnyOrigin](
         residual.data, IndexList[2](rows, cols)
     )
-    var residual_output_2d = NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin](
+    var residual_output_2d = NDBuffer[mut=True, rank=2, in_dtype, MutAnyOrigin](
         residual_output.data, IndexList[2](rows, cols)
     )
-    var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, IndexList[1](rows)
-    )
+    var scale_output_1d = NDBuffer[
+        mut=True, rank=1, scales_dtype, MutAnyOrigin
+    ](scale_output.data, IndexList[1](rows))
 
     _dispatch_fused_kernel[
         in_dtype, out_dtype, scales_dtype, ngpus, has_residual=True

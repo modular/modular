@@ -34,6 +34,8 @@ from typing_extensions import TypeVar
 
 @dataclass(frozen=True)
 class PixelGenerationRequest:
+    """An immutable request for pixel (image) generation from a pipeline."""
+
     request_id: RequestID = field()
     """A unique identifier for the request."""
 

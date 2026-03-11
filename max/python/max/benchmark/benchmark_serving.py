@@ -40,10 +40,12 @@ from urllib.parse import urlparse
 import numpy as np
 import yaml
 from tqdm.asyncio import tqdm
-from transformers import AutoTokenizer
-from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
+from transformers import (
+    AutoTokenizer,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerBase,
+    PreTrainedTokenizerFast,
+)
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
@@ -64,7 +66,6 @@ from max.benchmark.benchmark_shared.cpu_metrics import (
 from max.benchmark.benchmark_shared.datasets import (
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
-    BaseDistribution,
     BatchJobBenchmarkDataset,
     BenchmarkDataset,
     ChatSession,
@@ -1093,7 +1094,9 @@ async def chat_session_driver(
             benchmark_should_end_time is not None
             and time.perf_counter_ns() >= benchmark_should_end_time
         ):
-            response = RequestFuncOutput(cancelled=True)
+            response = RequestFuncOutput(
+                cancelled=True, request_submit_time=time.perf_counter()
+            )
         else:
             response = await request_driver.request(request_func_input)
         if (
@@ -1158,7 +1161,9 @@ async def run_single_turn_benchmark(
                 benchmark_should_end_time is not None
                 and time.perf_counter_ns() >= benchmark_should_end_time
             ):
-                return RequestFuncOutput(cancelled=True)
+                return RequestFuncOutput(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
             return await request_driver.request(request_func_input)
 
     tasks: list[asyncio.Task[RequestFuncOutput]] = []
@@ -1715,6 +1720,12 @@ async def benchmark(
                 output.num_generated_outputs for output in outputs
             ],
             "errors": [output.error for output in outputs],
+            "request_submit_times": [
+                output.request_submit_time for output in outputs
+            ],
+            "request_complete_times": [
+                output.request_complete_time for output in outputs
+            ],
             "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
             "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
             "gpu_utilization": pixel_metrics.gpu_utilization,
@@ -1804,6 +1815,12 @@ async def benchmark(
         "itls": [output.itl for output in outputs],
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
+        "request_submit_times": [
+            output.request_submit_time for output in outputs
+        ],
+        "request_complete_times": [
+            output.request_complete_time for output in outputs
+        ],
         "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
         "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
         "gpu_utilization": text_metrics.gpu_utilization,
@@ -1925,9 +1942,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     )
                 samples = benchmark_dataset.gen_twoturn_longcontext_requests(
                     num_chat_sessions=args.num_chat_sessions,
-                    delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
-                        args.delay_between_chat_turns
-                    ),
+                    delay_between_chat_turns=args.delay_between_chat_turns,
                     tokenizer=tokenizer,
                 )
             else:
@@ -1989,23 +2004,16 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 max_output_len=args.max_output_len,
             )
         elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
-            random_state = np.random.default_rng(args.seed)
             if args.num_chat_sessions:
                 samples = benchmark_dataset.gen_multiturn_random_requests(
                     input_len=args.random_input_len,
                     output_len=args.random_output_len,
                     num_chat_sessions=args.num_chat_sessions,
                     num_turns=args.random_num_turns,
-                    delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
-                        args.delay_between_chat_turns
-                    ),
-                    coefficient_of_variation=args.random_coefficient_of_variation,
+                    delay_between_chat_turns=args.delay_between_chat_turns,
                     tokenizer=tokenizer,
                     sys_prompt_ratio=args.random_sys_prompt_ratio,
                     max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                    distribution_type=args.random_distribution_type,
-                    first_turn_ratio=args.random_first_turn_ratio,
-                    random_state=random_state,
                 )
             else:
                 assert args.num_prompts is not None
@@ -2014,13 +2022,10 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     tokenizer=tokenizer,
                     input_len=args.random_input_len,
                     output_len=args.random_output_len,
-                    coefficient_of_variation=args.random_coefficient_of_variation,
                     sys_prompt_ratio=args.random_sys_prompt_ratio,
                     max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                    distribution_type=args.random_distribution_type,
                     image_size=args.random_image_size,
                     image_count=args.random_image_count,
-                    random_state=random_state,
                 )
         elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
             assert args.num_prompts is not None
