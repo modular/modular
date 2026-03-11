@@ -827,10 +827,11 @@ class AutoencoderKLLTX2AudioModel(BaseAutoencoderModel):
         )
 
     def load_model(self) -> Any:
-        """Load and compile the decoder and encoder models with BatchNorm statistics.
+        """Load and compile the decoder model with latent normalization statistics.
 
-        Extracts BatchNorm statistics (latents_mean, latents_std) which are specific to LTX2, then
-        delegates to base class for weight loading and model compilation.
+        Extracts latent normalization statistics (latents_mean, latents_std) which
+        are specific to LTX2 audio, then delegates to base class for weight loading
+        and model compilation.
 
         Returns:
             Compiled decoder model callable.
