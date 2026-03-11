@@ -169,13 +169,10 @@ private:
                                           bool emitDiagnostics);
 
 public:
-  /// Import the given module into the provided destination. If isLeafBinding
-  /// is true, the import is a dotted `import a.b` without `as`; unqualified
-  /// use of the leaf name will emit a deprecation warning.
+  /// Import the given module into the provided destination.
   LogicalResult importModule(ASTDecl &dest, PackageOp currentPackage,
                              StringAttr moduleName, StringAttr importName,
-                             SMLoc loc, SMLoc importNameLoc,
-                             bool isLeafBinding = false);
+                             SMLoc loc, SMLoc importNameLoc);
   /// Import the provided decl from the given module decl, into the provided
   /// destination.
   /// resolveTarget determines whether we resolve the ultimate decl as well.

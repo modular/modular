@@ -119,11 +119,6 @@ public:
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
   ParserListener *parserListener;
 
-  /// Maps leaf import wrapper ASTDecls to their full module name, used for
-  /// deprecation diagnostics. Populated for `import a.b` without `as`, where
-  /// unqualified use of the leaf name `b` is deprecated.
-  llvm::DenseMap<ASTDecl *, mlir::StringAttr> deprecatedLeafImportModuleNames;
-
   const mlir::StringAttr bufferNameIdentifier;
 
   /// This is used to efficiently walk MLIR types to find embedded origins.
