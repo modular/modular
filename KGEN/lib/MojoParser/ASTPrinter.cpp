@@ -896,6 +896,14 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto vaGet = dyn_cast<VariadicGetAttr>(param)) {
+    printParam(os, vaGet.getVariadic(), diagShared);
+    os << "[";
+    printParam(os, vaGet.getIndex(), diagShared);
+    os << "]";
+    return;
+  }
+
   if (auto memAttr = dyn_cast<StoreToMemAttr>(param))
     return printParam(os, memAttr.getValue(), diagShared);
 

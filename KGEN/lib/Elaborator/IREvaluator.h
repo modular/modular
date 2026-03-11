@@ -113,7 +113,6 @@ private:
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
   FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
-  FailureOr<TypedAttr> evaluateVariadicSizeAttr(VariadicSizeAttr attr);
   FailureOr<TypedAttr> evaluateGetBaseTypeNameAttr(GetBaseTypeNameAttr attr);
 
   /// Helper to get the base generator symbol name from a type reference.
