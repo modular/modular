@@ -16,6 +16,6 @@ fn main():
     # CHECK-NEXT: [world]
     comptime not_used = String("not_used")
     comptime res0 = f0(not_used, [["hello"], ["world"]], 0)
-    print(materialize[res0.__str__()]())
+    print(materialize[String(res0)]())
     comptime res1 = f0(not_used, [["hello"], ["world"]], 1)
-    print(materialize[res1.__str__()]())
+    print(materialize[String(res1)]())

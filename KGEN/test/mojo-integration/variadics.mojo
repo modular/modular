@@ -8,7 +8,7 @@
 
 
 # This isn't copyable or movable, but it is talkative!
-struct TalkativeMem(Stringable, Writable):
+struct TalkativeMem(Writable):
     var state: Int
 
     @implicit
@@ -18,16 +18,13 @@ struct TalkativeMem(Stringable, Writable):
 
     fn __del__(deinit self):
         print("destroying", self.state)
-
-    fn __str__(self) -> String:
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
 # This isn't copyable or movable, but it is talkative!
-struct TalkativeReg(RegisterPassable, Stringable, Writable):
+struct TalkativeReg(RegisterPassable, Writable):
     var state: Int
 
     @implicit
@@ -38,17 +35,12 @@ struct TalkativeReg(RegisterPassable, Stringable, Writable):
     fn __del__(deinit self):
         print("destroying", self.state)
 
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
 # This is copyable, movable, and talkative!  It doesn't print on move.
-struct TalkativeCopableReg(
-    ImplicitlyCopyable, RegisterPassable, Stringable, Writable
-):
+struct TalkativeCopableReg(ImplicitlyCopyable, RegisterPassable, Writable):
     var state: Int
 
     @implicit
@@ -63,15 +55,12 @@ struct TalkativeCopableReg(
     fn __del__(deinit self):
         print("destroying", self.state)
 
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
 # This is copyable, movable, and talkative!  It prints on move.
-struct TalkativeCopableMovableMem(ImplicitlyCopyable, Stringable, Writable):
+struct TalkativeCopableMovableMem(ImplicitlyCopyable, Writable):
     var state: Int
 
     @implicit
@@ -89,9 +78,6 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Stringable, Writable):
 
     fn __del__(deinit self):
         print("destroying", self.state)
-
-    fn __str__(self) -> String:
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
