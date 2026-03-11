@@ -25,6 +25,7 @@ import shutil
 import string
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from itertools import product
@@ -128,7 +129,7 @@ def _run_cmdline(
 
 
 def _init_gpu_worker(
-    gpu_queue: multiprocessing.Queue,  # type: ignore[type-arg]
+    gpu_queue: multiprocessing.Queue[int | str],
     visible_device_prefix: str,
 ) -> None:
     """Worker initializer that assigns a dedicated GPU to each pool worker."""
@@ -577,17 +578,13 @@ class Spec:
 
     @staticmethod
     def load_yaml_list(yaml_path_list: list[Path]) -> Spec:
-        spec: Spec = None  # type: ignore
-        for i, yaml_path in enumerate(yaml_path_list):
-            spec_ld = Spec.load_yaml(Path(yaml_path))
-            if i == 0:
-                spec = spec_ld
-            else:
-                spec.join(spec_ld)
+        spec = Spec.load_yaml(Path(yaml_path_list[0]))
+        for yaml_path in yaml_path_list[1:]:
+            spec.join(Spec.load_yaml(Path(yaml_path)))
         return spec
 
     @staticmethod
-    def parse_params(param_list: list[str]):  # noqa: ANN205
+    def parse_params(param_list: Sequence[str]):  # noqa: ANN205
         """
         Parse the parameters as (key,value) dictionary.
         The parameters can be defined as follows:
@@ -600,7 +597,7 @@ class Spec:
         Returns:
             Spec: Dictionary of with extra param names as keys and param values.
         """
-        d: dict[str, list] = {}  # type: ignore[type-arg]
+        d: dict[str, list[Any]] = {}
         IFS = ":"
         for p in param_list:
             name = ""
@@ -625,7 +622,7 @@ class Spec:
             d[name].extend(vals)
         return d
 
-    def extend_params(self, param_list: list[str]) -> None:
+    def extend_params(self, param_list: Sequence[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
@@ -795,8 +792,8 @@ class Spec:
                 new_mesh.append(s)
         return new_mesh
 
-    def filter(self, filter_list: list[str]) -> None:
-        filters: dict[str, list] = {}  # type: ignore[type-arg]
+    def filter(self, filter_list: Sequence[str]) -> None:
+        filters: dict[str, list[str]] = {}
         for f in filter_list:
             if "=" in f:
                 name, val = f.split("=")
@@ -875,7 +872,7 @@ class BuildItem:
     idx: int
     spec_instance: SpecInstance
     output_dir: Path
-    build_opts: list  # type: ignore[type-arg]
+    build_opts: list[str]
     dryrun: bool = False
     use_shared_lib: bool = False
     output_path: Path = Path()
@@ -1032,11 +1029,13 @@ class Scheduler:
             "Created directories for all instances in spec." + utils.LINE
         )
 
-    def schedule_unique_build_items(self) -> list[dict]:  # type: ignore[type-arg]
+    def schedule_unique_build_items(
+        self,
+    ) -> tuple[dict[str, int], dict[str, Path]]:
         # Stores items that need to be build (i.e. not in cache)
         unique_build_items: dict[str, int] = {}
         # Stores paths to real binaries that have been cached beforehand
-        unique_build_paths: dict[str, str] = {}
+        unique_build_paths: dict[str, Path] = {}
 
         for b in self.build_items:
             i = b.idx
@@ -1052,7 +1051,7 @@ class Scheduler:
             bin_path = self.obj_cache.query(bin_name)
             debug_msg += [f"In cache: {bool(bin_path)}"]
             if isinstance(bin_path, str):
-                unique_build_paths[bin_name] = bin_path
+                unique_build_paths[bin_name] = Path(bin_path)
             elif bin_path is BuildFailed:
                 # This binary failed to build before and would just fail again.
                 # Skip it.
@@ -1067,7 +1066,7 @@ class Scheduler:
                     idx = unique_build_items[bin_name]
                     debug_msg += [f"Currently in schedule (ref_idx=[{idx}])"]
             logging.debug("\n".join(debug_msg) + utils.LINE)
-        return [unique_build_items, unique_build_paths]
+        return unique_build_items, unique_build_paths
 
     @staticmethod
     def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
@@ -1242,7 +1241,9 @@ class Scheduler:
         use_mpirun: bool = False,
     ) -> None:
         if visible_device_prefix and self.num_gpu > 1 and not use_mpirun:
-            gpu_queue: multiprocessing.Queue = multiprocessing.Queue()  # type: ignore[type-arg]
+            gpu_queue: multiprocessing.Queue[int | str] = (
+                multiprocessing.Queue()
+            )
             # Respect any pre-set device visibility env var
             existing = os.environ.get(visible_device_prefix, "")
             if existing.strip():

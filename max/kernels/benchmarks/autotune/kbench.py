@@ -17,6 +17,7 @@ import logging
 import math
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from time import time
 
@@ -104,13 +105,13 @@ def log_and_raise_error(message: str, param_hint: str | None = None) -> None:
 
 
 def run(
-    yaml_path_list,  # noqa: ANN001
+    yaml_path_list: list[Path] | None,
     obj_cache: KbenchCache,
     shape: SpecInstance,
     output_path: Path = Path(),
-    mode=KBENCH_MODE.BUILD_AND_RUN,  # noqa: ANN001
-    param_list=None,  # noqa: ANN001
-    filter_list=None,  # noqa: ANN001
+    mode: KBENCH_MODE = KBENCH_MODE.BUILD_AND_RUN,
+    param_list: Sequence[str] | None = None,
+    filter_list: Sequence[str] | None = None,
     build_opts: list[str] = [],  # noqa: B006
     profile: str = "",
     exec_prefix: list[str] = [],  # noqa: B006
@@ -326,13 +327,13 @@ def _validate_partition(partition: str) -> list[int]:
     return [partition_idx, num_partitions]
 
 
-def set_build_opts(  # noqa: ANN201
-    debug_level=None,  # noqa: ANN001
-    optimization_level=None,  # noqa: ANN001
-    use_experimental_kernels=None,  # noqa: ANN001
-    target_accelerator=None,  # noqa: ANN001
-    disable_warnings=None,  # noqa: ANN001
-):
+def set_build_opts(
+    debug_level: str | None = None,
+    optimization_level: str | None = None,
+    use_experimental_kernels: bool | None = None,
+    target_accelerator: str | None = None,
+    disable_warnings: bool | None = None,
+) -> list[str]:
     build_opts = []
     if debug_level:
         build_opts.extend(["--debug-level", debug_level])
@@ -532,33 +533,33 @@ def set_build_opts(  # noqa: ANN201
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files,  # noqa: ANN001
-    filter,  # noqa: ANN001
-    output_path,  # noqa: ANN001
-    output_dir,  # noqa: ANN001
-    build,  # noqa: ANN001
-    run_only,  # noqa: ANN001
-    param,  # noqa: ANN001
-    debug_level,  # noqa: ANN001
-    use_experimental_kernels,  # noqa: ANN001
-    optimization_level,  # noqa: ANN001
-    target_accelerator,  # noqa: ANN001
-    disable_warnings,  # noqa: ANN001
-    force,  # noqa: ANN001
-    skip_clock_check,  # noqa: ANN001
-    cached,  # noqa: ANN001
-    clear_cache,  # noqa: ANN001
-    num_cpu,  # noqa: ANN001
-    num_gpu,  # noqa: ANN001
+    files: tuple[str, ...],
+    filter: tuple[str, ...],
+    output_path: str,
+    output_dir: str,
+    build: bool,
+    run_only: bool,
+    param: tuple[str, ...],
+    debug_level: str | None,
+    use_experimental_kernels: bool,
+    optimization_level: str | None,
+    target_accelerator: str | None,
+    disable_warnings: bool,
+    force: bool,
+    skip_clock_check: bool,
+    cached: bool,
+    clear_cache: bool,
+    num_cpu: int,
+    num_gpu: int,
     mpirun_np: int,
     dryrun: bool,
-    verbose,  # noqa: ANN001
-    shapes,  # noqa: ANN001
-    build_opts,  # noqa: ANN001
-    profile,  # noqa: ANN001
-    exec_prefix,  # noqa: ANN001
-    exec_suffix,  # noqa: ANN001
-    timeout_secs: int,
+    verbose: bool,
+    shapes: tuple[str, ...],
+    build_opts: str,
+    profile: str,
+    exec_prefix: str,
+    exec_suffix: str,
+    timeout_secs: int | None,
     partition: str,
     plot: str,
 ) -> bool:
@@ -627,7 +628,9 @@ def cli(
         check_gpu_clock()
 
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
-    shape_list = list(Spec.load_yaml_list(shapes) if shapes else Spec())
+    shape_list = list(
+        Spec.load_yaml_list([Path(s) for s in shapes]) if shapes else Spec()
+    )
     shape_path_list = (
         [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
@@ -647,8 +650,8 @@ def cli(
             param_hint="'--target-accelerator'",
         )
 
-    build_opts = build_opts.split(" ") if build_opts else []
-    build_opts.extend(
+    build_opts_list: list[str] = build_opts.split(" ") if build_opts else []
+    build_opts_list.extend(
         set_build_opts(
             debug_level,
             optimization_level,
@@ -678,15 +681,16 @@ def cli(
                 " detected on this machine."
             )
 
-    exec_suffix = exec_suffix.split(" ") if exec_suffix else []
-    exec_prefix = exec_prefix.split(" ") if exec_prefix else []
+    exec_suffix_list: list[str] = exec_suffix.split(" ") if exec_suffix else []
+    exec_prefix_list: list[str] = exec_prefix.split(" ") if exec_prefix else []
     if mpirun_np > 1:
-        exec_prefix.extend(["mpirun", "-np", str(mpirun_np)])
+        exec_prefix_list.extend(["mpirun", "-np", str(mpirun_np)])
 
     shapes_per_partition = math.ceil(len(shape_list) / num_partitions)
     shape_idx_lb = partition_idx * shapes_per_partition
     shape_idx_ub = min(shape_idx_lb + shapes_per_partition, len(shape_list))
 
+    output_dir_path: Path | None = Path(output_dir) if output_dir else None
     for i in range(shape_idx_lb, shape_idx_ub):
         run(
             yaml_path_list=yaml_files,
@@ -696,13 +700,13 @@ def cli(
             mode=mode,
             param_list=param,
             filter_list=filter,
-            build_opts=build_opts,
+            build_opts=build_opts_list,
             profile=profile,
-            exec_prefix=exec_prefix,
-            exec_suffix=exec_suffix,
+            exec_prefix=exec_prefix_list,
+            exec_suffix=exec_suffix_list,
             dryrun=dryrun,
             verbose=verbose,
-            output_dir=output_dir,
+            output_dir=output_dir_path,
             num_cpu=num_cpu,
             num_gpu=num_gpu,
             target_accelerator=target_accelerator,
