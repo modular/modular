@@ -123,7 +123,7 @@ def test_long_conditional_conformance():
     """Test conditional conformance that needs line wrapping."""
     source = (
         "struct VeryLongWrapper[T: ImplicitlyDestructible & Movable]("
-        "Copyable where conforms_to(T, Copyable) and conforms_to(T, Intable) and conforms_to(T, Stringable), "
+        "Copyable where conforms_to(T, Copyable) and conforms_to(T, Intable) and conforms_to(T, Writable), "
         "Movable): pass"
     )
     expected = (
@@ -131,7 +131,7 @@ def test_long_conditional_conformance():
         "    Copyable where (\n"
         "        conforms_to(T, Copyable)\n"
         "        and conforms_to(T, Intable)\n"
-        "        and conforms_to(T, Stringable)\n"
+        "        and conforms_to(T, Writable)\n"
         "    ),\n"
         "    Movable,\n"
         "):\n"

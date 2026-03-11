@@ -10,7 +10,7 @@ from std.utils.variant import Variant
 from std.collections import List
 
 
-struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Stringable, Writable):
+struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
     comptime Element = Variant[Self.T, Self]
     var elts: List[Self.Element]
 
@@ -46,9 +46,6 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Stringable, Writable):
         for e in other.elts:
             new.elts.append(e)
         return new
-
-    fn __str__(self) -> String:
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("(")
