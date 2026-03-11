@@ -846,7 +846,7 @@ fn expect[T: TrivialRegisterPassable, //, expected_val: T](val: T) -> T:
     Notes:
         Only works with integer/boolean types.
     """
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return val
     return llvm_intrinsic["llvm.expect", T, has_side_effect=False](
         val, expected_val
@@ -904,7 +904,7 @@ fn assume(val: Bool):
     Args:
       val: The input value which is assumed to be `True`.
     """
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return
     llvm_intrinsic["llvm.assume", NoneType](val)
 

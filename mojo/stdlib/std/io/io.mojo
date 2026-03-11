@@ -201,7 +201,7 @@ fn _printf_cpu[
 fn _printf[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         _printf_cpu[fmt](args, file)
     else:
         comptime if is_nvidia_gpu():
@@ -389,7 +389,7 @@ fn print[
         file: The output stream.
     """
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         var buffer = _WriteBufferStack(file)
         comptime length = values.__len__()
 

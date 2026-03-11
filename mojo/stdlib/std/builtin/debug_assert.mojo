@@ -418,7 +418,7 @@ fn _debug_assert_msg(
     abort's implementation could use debug_assert)
     """
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         print("At: ", loc, ": Assert Error: ", message, sep="")
 
         comptime if ASSERT_MODE != "warn":

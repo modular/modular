@@ -531,7 +531,7 @@ struct IntTuple(
         """
         # Skip validation during compile-time interpretation since the comparison
         # may involve complex type witness expressions that can't be evaluated.
-        if not is_run_in_comptime_interpreter():
+        if not __is_run_in_comptime_interpreter:
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",

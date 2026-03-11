@@ -256,7 +256,7 @@ fn _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
     U+40000..U+FFFFF   | F1..F3     | 80..BF      | 80..BF     | 80..BF      |
     U+100000..U+10FFFF | F4         | 80..**8F**  | 80..BF     | 80..BF      |
     """
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return _is_valid_utf8_comptime(span)
     else:
         return _is_valid_utf8_runtime(span)

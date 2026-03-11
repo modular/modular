@@ -362,7 +362,7 @@ struct Swizzle(
             base: Least significant bits to keep constant.
             shift: Distance to shift the mask.
         """
-        if not is_run_in_comptime_interpreter():
+        if not __is_run_in_comptime_interpreter:
             assert (
                 bits >= 0 and base >= 0
             ), "Require non-negative mask bits and base"

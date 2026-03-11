@@ -2587,7 +2587,7 @@ struct SIMD[dtype: DType, size: Int](
         elif offset % simd_width_of[Self.dtype]():
             return slice_body()
 
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             return slice_body()
 
         comptime if is_apple_gpu():

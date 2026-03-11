@@ -192,7 +192,7 @@ fn fence[
     operations around it as specified by the ordering parameter.
     """
 
-    if is_run_in_comptime_interpreter():
+    if __is_run_in_comptime_interpreter:
         return
 
     __mlir_op.`pop.fence`[
@@ -253,7 +253,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The current value of the atomic.
         """
 
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             return ptr[]
 
         return __mlir_op.`pop.load`[
@@ -302,7 +302,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The original value before addition.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var res = ptr[]
             ptr[] += rhs
             return res
@@ -342,7 +342,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The value of the value before the operation.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var res = ptr[]
             ptr[] = value
             return res
@@ -378,7 +378,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             value: The value to store.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             ptr[] = value
             return
 
@@ -452,7 +452,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             The original value before subtraction.
         """
         # Comptime interpreter doesn't support these operations.
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             var res = self.value
             self.value -= rhs
             return res
@@ -513,7 +513,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             Self.dtype.is_numeric()
         ), "the input type must be arithmetic"
 
-        if is_run_in_comptime_interpreter():
+        if __is_run_in_comptime_interpreter:
             if ptr[] == expected:
                 # Safety: This is at compile-time so data races will not happen.
                 ptr[] = desired

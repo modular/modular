@@ -2628,7 +2628,7 @@ fn _memchr[
     source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
 ) -> source.UnsafePointerType:
     if (
-        is_run_in_comptime_interpreter()
+        __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
     ):
         var ptr = source.unsafe_ptr()
@@ -2684,7 +2684,7 @@ fn _memmem[
     ],
 ) -> haystack_span.UnsafePointerType:
     if (
-        is_run_in_comptime_interpreter()
+        __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
     ):
         var haystack = haystack_span.unsafe_ptr()
