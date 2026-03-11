@@ -155,9 +155,7 @@ class FlowMatchEulerDiscreteScheduler:
             if self.shift_terminal is not None and self.shift_terminal > 0:
                 one_minus_z = 1.0 - sigmas
                 scale_factor = one_minus_z[-1] / (1.0 - self.shift_terminal)
-                sigmas = (1.0 - (one_minus_z / scale_factor)).astype(
-                    np.float32
-                )
+                sigmas = (1.0 - (one_minus_z / scale_factor)).astype(np.float32)
 
             timesteps = sigmas * 1000.0
             if reverse:
