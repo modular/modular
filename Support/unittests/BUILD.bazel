@@ -45,6 +45,15 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "LogTest",
+    srcs = ["LogTest.cpp"],
+    deps = [
+        "//Support:Log",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
     name = "HashUtilsTest",
     srcs = ["HashUtilsTest.cpp"],
     deps = [
