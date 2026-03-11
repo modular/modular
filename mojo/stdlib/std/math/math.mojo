@@ -2144,10 +2144,8 @@ fn log10[
         return _llvm_unary_fn["llvm.log10"](x)
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.log10"](x)
-    elif is_compile_time():
-        return _llvm_unary_fn["llvm.log10"](x)
 
-    return _call_libm["log10"](x)
+    return _llvm_unary_fn["llvm.log10"](x)
 
 # ===----------------------------------------------------------------------=== #
 # log1p
