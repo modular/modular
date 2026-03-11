@@ -144,7 +144,9 @@ struct TileWriter[
 
     # FP8 uses float32 epilogue (GEX-2630), bf16 uses native type
     comptime epilogue_dtype = (
-        Self.c_type if Self.a_type == DType.bfloat16 else DType.float32
+        DType.bfloat16 if (
+            Self.a_type == Self.c_type == DType.bfloat16
+        ) else DType.float32
     )
 
     # Stage dimensions - now use direct dimension access

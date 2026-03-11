@@ -666,7 +666,10 @@ struct BlackwellMatmulSM100Kernel[
     @always_inline
     fn validate_constraints():
         """Validate parameter constraints at compile time."""
-        comptime assert Self.c_type != DType.float32, "c_type cannot be float32"
+        comptime assert Self.c_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "c_type cannot be float32 or float8_e4m3fn"
         comptime assert Self.transpose_b, "Only support transposed B (K-major)"
         comptime assert Self.cta_group in (
             1,

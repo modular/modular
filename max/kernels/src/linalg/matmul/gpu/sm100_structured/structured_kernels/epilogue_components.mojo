@@ -165,6 +165,10 @@ fn store_fragment_to_smem[
     from std.memory import bitcast
 
     comptime c_type = dst.dtype
+    comptime assert (
+        c_type == DType.bfloat16
+    ), "vec_dtype must be bfloat16 for this function"
+
     comptime stsmx_row_size = 32 // size_of[
         c_type
     ]() if stageN % 16 == 0 else 16 // size_of[c_type]()
@@ -225,6 +229,88 @@ fn store_fragment_to_smem[
 
 
 @always_inline
+fn fp8_frag_to_smem[
+    swizzle_mode: TensorMapSwizzle,
+    stageN: Int,
+    transpose_c: Bool,
+    vec_dtype: DType,
+    vec_size: Int,
+](
+    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    dst: TileTensor[address_space=AddressSpace.SHARED, ...],
+    warp_offset: UInt32 = 0,
+):
+    """Store fragment to SMEM via st.shared instruction."""
+    comptime assert stageN == 16, "stageN must be 16 for FP8 output type"
+    comptime assert (
+        vec_dtype == dst.dtype == DType.float8_e4m3fn
+    ), "vec_dtype and dst.dtype must be float8_e4m3fn for FP8 output type"
+
+    comptime load_width = 2
+    comptime repeats = stageN // 8
+    comptime assert (
+        vec_size // 4
+    ) == repeats, "vec_size must be divisible by 4 and equal to repeats * 4"
+
+    var coords = FragmentCoords[stageN, repeats](UInt32(lane_id()))
+    var top = coords.top_upper
+    var bot = coords.bottom_upper
+
+    comptime for rep in range(repeats):
+        comptime inc = rep * 8
+        comptime offset = rep * 4
+
+        var top_row = top[0]
+        var top_col = top[1] + UInt32(inc)
+        var bot_row = bot[0]
+        var bot_col = bot[1] + UInt32(inc)
+
+        var elem0 = vec[offset]
+        var elem1 = vec[offset + 1]
+        var elem2 = vec[offset + 2]
+        var elem3 = vec[offset + 3]
+
+        comptime if transpose_c:
+            var m0n0 = top_col * UInt32(stageN) + top_row
+            var m0n1 = (top_col + 1) * UInt32(stageN) + top_row
+            var m1n0 = bot_col * UInt32(stageN) + bot_row
+            var m1n1 = (bot_col + 1) * UInt32(stageN) + bot_row
+
+            var dst_ptr = dst.ptr.mut_cast[True]()
+            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+                m0n0, SIMD[dst.dtype, 1](elem0)
+            )
+            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+                m0n1, SIMD[dst.dtype, 1](elem1)
+            )
+            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+                m1n0, SIMD[dst.dtype, 1](elem2)
+            )
+            dst_ptr.store[alignment=align_of[SIMD[dst.dtype, 1]]()](
+                m1n1, SIMD[dst.dtype, 1](elem3)
+            )
+
+        else:
+            var top_elems = SIMD[vec_dtype, load_width](elem0, elem1).cast[
+                dst.dtype
+            ]()
+            var bot_elems = SIMD[vec_dtype, load_width](elem2, elem3).cast[
+                dst.dtype
+            ]()
+
+            var top_ptr_offset = top_row * UInt32(stageN) + top_col
+            var bot_ptr_offset = bot_row * UInt32(stageN) + bot_col
+
+            var dst_ptr = dst.ptr.mut_cast[True]()
+            dst_ptr.store[alignment=align_of[type_of(top_elems)]()](
+                top_ptr_offset, top_elems
+            )
+            dst_ptr.store[alignment=align_of[type_of(bot_elems)]()](
+                bot_ptr_offset, bot_elems
+            )
+
+
+@always_inline
 fn store_fragment_to_smem[
     vec_dtype: DType,
     vec_size: Int,
@@ -238,7 +324,14 @@ fn store_fragment_to_smem[
     dst: TileTensor[address_space=AddressSpace.SHARED, ...],
     warp_offset: UInt32 = 0,
 ):
-    """Store fragment to SMEM via st.matrix."""
+    """Store fragment to SMEM via st.matrix instruction for bf16 output type and st.shared instruction for FP8 output type.
+    """
+
+    comptime if dst.dtype in (DType.float8_e4m3fn,):  # FP32/FP8 output type
+        return fp8_frag_to_smem[c_swizzle, stageN, transpose_c](
+            vec, dst, warp_offset
+        )
+
     from std.gpu.compute.mma import st_matrix
     from std.memory import bitcast
 
@@ -501,9 +594,7 @@ struct TMAStoreExecutor[
     )
 
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
-    comptime num_c_smem_tiles = 128 // Self.swizzle_width // (
-        1 if Self.is_lower_frag_required else 2
-    )
+    comptime num_c_smem_tiles = Self.BM // Self.swizzle_width
     comptime c_smem_shape0 = Self.c_smem_dim0
     comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
     comptime CG1_TMA_BM = Self.c_smem_shape0
@@ -725,33 +816,47 @@ struct TMAStoreExecutor[
                 Self.stageN, Self.stage_contiguous_size // 2
             ](Coord(Idx(Int(warp_id // 2)), Idx(0)))
 
-            # Convert to LayoutTensor for TMA async_store
-            comptime split_layout = Layout.row_major(
-                Self.stageN, Self.stage_contiguous_size // 2
-            )
-            comptime SMemPtrType = UnsafePointer[
-                Scalar[Self.c_type],
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-            ]
-            var c_split_lt = SMemTile[Self.c_type, split_layout, alignment=128](
-                rebind[SMemPtrType](c_split.ptr.mut_cast[True]())
-            )
+            comptime for i in range(Self.num_c_smem_tiles):
+                var c_split_tile = c_split.tile[
+                    Self.stageN // Self.num_c_smem_tiles,
+                    Self.stage_contiguous_size // 2,
+                ](Coord(Idx(i), Idx(0)))
 
-            comptime if Self.batched:
-                c_tma_op.async_store(
-                    c_split_lt,
-                    StaticTuple[UInt32, 3](
-                        UInt32(store_coords.coord_m),
-                        UInt32(store_coords.coord_n),
-                        UInt32(store_coords.coord_b),
-                    ),
+                comptime split_layout = Layout.row_major(
+                    Self.stageN, Self.swizzle_width
                 )
-            else:
-                c_tma_op.async_store(
-                    c_split_lt,
-                    (Int(store_coords.coord_m), Int(store_coords.coord_n)),
-                )
+                comptime SMemPtrType = UnsafePointer[
+                    Scalar[Self.c_type],
+                    MutAnyOrigin,
+                    address_space=AddressSpace.SHARED,
+                ]
+                var c_split_lt = SMemTile[
+                    Self.c_type, split_layout, alignment=128
+                ](rebind[SMemPtrType](c_split_tile.ptr.mut_cast[True]()))
+
+                comptime if Self.batched:
+                    c_tma_op.async_store(
+                        c_split_lt,
+                        StaticTuple[UInt32, 3](
+                            UInt32(
+                                store_coords.coord_m
+                                + UInt(i * Self.swizzle_width)
+                            ),
+                            UInt32(store_coords.coord_n),
+                            UInt32(store_coords.coord_b),
+                        ),
+                    )
+                else:
+                    c_tma_op.async_store(
+                        c_split_lt,
+                        (
+                            Int(
+                                store_coords.coord_m
+                                + UInt(i * Self.swizzle_width)
+                            ),
+                            Int(store_coords.coord_n),
+                        ),
+                    )
         else:
             # Path B: loop over swizzle tiles
             comptime tile_dim0 = (
